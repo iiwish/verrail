@@ -7764,4 +7764,28 @@ describe("http2 preface scan post-preface replay buffer", () => {
     expect(ledger.bytesInUse).toBe(0);
     expect(counts.rejections).toBe(1);
   });
+
+  it("releases the scan-buffer tokens when the readiness timeout elapses with no preface found", async () => {
+    const { channel, control } = makeFakeChannel();
+    const { ledger } = makeCountingLedger(1024 * 1024);
+    const scan = __http2PrefaceScanTesting.scanForHttp2ClientPreface(channel, {
+      capBytes: 4_096,
+      // A short bound, so the test does not wait out a production-sized one.
+      timeoutMs: 20,
+      ledger,
+    });
+    // Partial, non-matching data arrives and stays charged while the scan
+    // keeps searching. No preface ever completes, so nothing else in the
+    // scan releases this charge — only the timeout path can.
+    const partial = "not-a-preface-and-never-will-be";
+    control.emitData(Buffer.from(partial));
+    expect(ledger.bytesInUse).toBe(Buffer.byteLength(partial, "utf8"));
+    expect(ledger.liveTokenCount).toBe(1);
+    // The bound readiness timeout elapses before a preface ever arrives. The
+    // scan must release its held tokens here — the one terminal path that
+    // has no cap or ledger refusal of its own to trigger a release.
+    expect(await scan.settled).toBe("missing");
+    expect(ledger.bytesInUse).toBe(0);
+    expect(ledger.liveTokenCount).toBe(0);
+  });
 });

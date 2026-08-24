@@ -2589,7 +2589,11 @@ function createHttp2PrefaceScanningChannel(
     onMissing: () => void;
     ledger?: DuplexAggregateByteLedger | null;
   },
-): { channel: CommandManagedDuplexChannel; replayOverflowed: () => boolean } {
+): {
+  channel: CommandManagedDuplexChannel;
+  replayOverflowed: () => boolean;
+  disposeScanBuffer: () => void;
+} {
   const ledger = options.ledger ?? null;
   let scanBuffer: Buffer = Buffer.alloc(0);
   let sawPreface = false;
@@ -2726,6 +2730,21 @@ function createHttp2PrefaceScanningChannel(
       close: () => channel.close(),
     },
     replayOverflowed: () => replayOverflow,
+    /**
+     * Release every held `http2_preface_scan` token and drop the scan
+     * buffer, for a caller-side terminal path this function itself never
+     * reaches — the bound readiness timeout elapsing while the scan is
+     * still searching, with no preface found and no cap or ledger refusal
+     * of its own. A call after the preface already matched, or after the
+     * cap or the ledger already failed the scan closed, is a no-op: both
+     * paths already released the scan tokens themselves.
+     */
+    disposeScanBuffer: (): void => {
+      if (sawPreface || failed) return;
+      failed = true;
+      scanBuffer = Buffer.alloc(0);
+      releaseScanTokens();
+    },
   };
 }
 
@@ -2758,21 +2777,34 @@ function scanForHttp2ClientPreface(
   const settled = new Promise<Http2PrefaceScanResult>((resolve) => {
     resolveSettled = resolve;
   });
+  // Reassigned to the real function once `createHttp2PrefaceScanningChannel`
+  // returns, below. `settle` can only actually run after that point (the
+  // timer fires later, and `onMissing`/`onFound` fire from inside the
+  // channel's own `onData`, which registers after this call), so the
+  // placeholder never runs for real.
+  let disposeScanBuffer: () => void = () => {};
   const settle = (result: Http2PrefaceScanResult): void => {
     if (settledOnce) return;
     settledOnce = true;
     clearTimeout(timer);
+    // The bound readiness timeout can elapse while the scan still searches,
+    // with no preface found and no cap or ledger refusal of its own. That
+    // path holds no other cleanup, so release its `http2_preface_scan`
+    // tokens here. A `found` result, or a `missing` result the scan itself
+    // already failed closed, is a no-op inside `disposeScanBuffer`.
+    if (result === "missing") disposeScanBuffer();
     resolveSettled(result);
   };
   const timer = setTimeout(() => settle("missing"), options.timeoutMs);
   timer.unref?.();
-  const { channel: scanned, replayOverflowed } = createHttp2PrefaceScanningChannel(channel, {
+  const scan = createHttp2PrefaceScanningChannel(channel, {
     capBytes: options.capBytes,
     onFound: () => settle("found"),
     onMissing: () => settle("missing"),
     ledger: options.ledger,
   });
-  return { scanned, settled, replayOverflowed };
+  disposeScanBuffer = scan.disposeScanBuffer;
+  return { scanned: scan.channel, settled, replayOverflowed: scan.replayOverflowed };
 }
 
 /**
