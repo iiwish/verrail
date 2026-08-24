@@ -80,6 +80,7 @@ const SANDBOX_EXEC_CHANNEL_BRIDGE = "bridge";
 // mode runs one Node HTTP/2 client session directly on stdin/stdout, after it
 // sends the one READY line the host readiness gate expects. The generated
 // `.mjs` selects the mode from `PAPERCLIP_API_BRIDGE_MODE`.
+// HTTP/2 is the preferred transport. `queue_v1` is the soft-deprecated fallback.
 const SANDBOX_CALLBACK_BRIDGE_FILE_MODE = "queue_v1";
 export const SANDBOX_CALLBACK_BRIDGE_DUPLEX_MODE = "duplex_v1";
 /** The active non-file transport mode. It replaced {@link SANDBOX_CALLBACK_BRIDGE_DUPLEX_MODE}

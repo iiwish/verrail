@@ -3194,6 +3194,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
   // `duplexCommandStream` is exactly `true`. Any other value of either gate
   // selects the file bridge. The caller reads this from the experimental instance
   // setting `enableSandboxDuplexBridge`. The default is the file bridge.
+  // HTTP/2 is the preferred transport. `queue_v1` is the soft-deprecated fallback.
   enableSandboxDuplexBridge?: boolean | null;
   // The deadline for the duplex readiness handshake, in milliseconds. On a
   // timeout the host closes the partial channel and selects the file bridge. The
@@ -3432,6 +3433,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
   // experimental setting is exactly `true`, the resolved capability
   // `duplexCommandStream` is exactly `true`, and the runner exposes the duplex
   // channel. Any other value of either gate selects the file bridge below.
+  // HTTP/2 is the preferred transport. `queue_v1` is the soft-deprecated fallback.
   const duplexRequested = input.enableSandboxDuplexBridge === true;
   const capabilityGranted =
     "effectiveCapabilities" in target &&

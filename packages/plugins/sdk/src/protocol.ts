@@ -1116,6 +1116,8 @@ export const LOGIN_PTY_EXIT_NOTIFICATION = "loginPty.exit";
 // This base64 form is not the sandbox provider channel's wire format. That
 // channel carries raw bytes with no base64 armor: a live measurement of the
 // provider transport proved that every byte value survives it unchanged.
+//
+// HTTP/2 is the preferred transport. `queue_v1` is the soft-deprecated fallback.
 
 /** The wire-safe JSON-RPC form of one duplex channel byte chunk: a base64 string. */
 export type ChannelBytesWireValue = string;

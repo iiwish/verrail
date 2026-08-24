@@ -117,6 +117,8 @@ export interface CommandManagedRuntimeRunner {
    * bidirectional channel to a long-lived command in the sandbox. The SSH runner
    * and every provider without the capability omit the member, so a caller gates
    * on its presence in the same style as {@link syncIn}/{@link syncOut}.
+   *
+   * HTTP/2 is the preferred transport. `queue_v1` is the soft-deprecated fallback.
    */
   openDuplexChannel?(input: DuplexChannelOpenInput): Promise<CommandManagedDuplexChannel>;
 }
