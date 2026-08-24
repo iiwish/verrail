@@ -80,15 +80,19 @@ if (serverManifest.dependencies?.[runnerManifest.name] !== undefined) {
 if (serverManifest.devDependencies?.[runnerManifest.name] !== "workspace:*") {
   violations.push("server must resolve runner from a workspace-only development dependency");
 }
-for (const scriptName of ["build", "prepack"]) {
-  if (!serverManifest.scripts?.[scriptName]?.includes("vendor-paperclip-runner.mjs")) {
-    violations.push(`server ${scriptName} must vendor the built runner distribution`);
-  }
-  if (!serverManifest.scripts?.[scriptName]?.includes("paperclip-runner build:typescript")) {
-    violations.push(
-      `server ${scriptName} must bootstrap the runner TypeScript distribution`,
-    );
-  }
+const serverBuildScript = serverManifest.scripts?.build ?? "";
+if (!serverBuildScript.includes("vendor-paperclip-runner.mjs")) {
+  violations.push("server build must vendor the built runner distribution");
+}
+if (!serverBuildScript.includes("paperclip-runner build:typescript")) {
+  violations.push("server build must bootstrap the runner TypeScript distribution");
+}
+const serverPrepackScript = serverManifest.scripts?.prepack ?? "";
+if (!serverPrepackScript.includes("prepare:ui-dist")) {
+  violations.push("server prepack must prepare its packaged UI distribution");
+}
+if (!serverPrepackScript.includes("pnpm run build")) {
+  violations.push("server prepack must build the complete server distribution");
 }
 
 for (const relativePath of [
