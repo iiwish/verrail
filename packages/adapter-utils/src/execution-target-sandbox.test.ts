@@ -17,6 +17,7 @@ import {
 
 import {
   __duplexReadinessTesting,
+  __http2PrefaceScanTesting,
   buildDuplexGatewayLaunchArgv,
   DEFAULT_REMOTE_SANDBOX_ADAPTER_TIMEOUT_SEC,
   adapterExecutionTargetDuplexTelemetryRecorder,
@@ -7587,5 +7588,130 @@ describe("duplex readiness gate replay-buffer reservation", () => {
     expect(ledger.bytesInUse).toBe(0);
     expect(gate.retainedReadinessBufferLength()).toBe(0);
     expect(counts.underflows).toBe(0);
+  });
+});
+
+describe("http2 preface scan post-preface replay buffer", () => {
+  // The HTTP/2 client connection preface, 24 octets (RFC 9113, Section 3.4).
+  // A test writes this literal, not the production constant, so the test
+  // proves the real wire bytes match, not only that the two source files
+  // agree on a name.
+  const PREFACE = Buffer.from("505249202a20485454502f322e300d0a0d0a534d0d0a0d0a", "hex");
+
+  // A fake duplex channel the test drives directly. `control.emitData`
+  // re-enters the data listener the scan bound at construction. The fake
+  // records the stop call, so a test proves an overflow fails closed.
+  function makeFakeChannel(): {
+    channel: CommandManagedDuplexChannel;
+    control: { stopCount: number; emitData: (chunk: Buffer) => void };
+  } {
+    let dataListener: ((chunk: Uint8Array) => void) | null = null;
+    const control = {
+      stopCount: 0,
+      emitData: (chunk: Buffer): void => dataListener?.(chunk),
+    };
+    const channel: CommandManagedDuplexChannel = {
+      write(): void {},
+      onData(listener: (chunk: Uint8Array) => void): void {
+        dataListener = listener;
+      },
+      onExit(): void {},
+      stop(): void {
+        control.stopCount += 1;
+      },
+      close(): Promise<void> {
+        return Promise.resolve();
+      },
+    };
+    return { channel, control };
+  }
+
+  function makeCountingLedger(ceilingBytes: number): {
+    ledger: DuplexAggregateByteLedger;
+    counts: { rejections: number };
+  } {
+    const counts = { rejections: 0 };
+    const ledger = new DuplexAggregateByteLedger({
+      ceilingBytes,
+      telemetry: {
+        setBytesInUse(): void {},
+        recordReservationRejection(): void {
+          counts.rejections += 1;
+        },
+        recordAccountingUnderflow(): void {},
+      },
+    });
+    return { ledger, counts };
+  }
+
+  it("charges the post-preface bytes and releases them after the downstream bind", async () => {
+    const { channel, control } = makeFakeChannel();
+    const { ledger } = makeCountingLedger(1024 * 1024);
+    const scan = __http2PrefaceScanTesting.scanForHttp2ClientPreface(channel, {
+      capBytes: 4_096,
+      timeoutMs: 5_000,
+      ledger,
+    });
+    const suffix = "one-http2-frame";
+    // The preface and the trailing suffix arrive in one chunk. The scan
+    // delivers every byte from the preface onward, inclusive, so the charged
+    // and replayed bytes carry the preface itself plus the suffix.
+    const fromPreface = Buffer.concat([PREFACE, Buffer.from(suffix)]).toString("utf8");
+    control.emitData(Buffer.concat([PREFACE, Buffer.from(suffix)]));
+    expect(await scan.settled).toBe("found");
+    expect(scan.replayOverflowed()).toBe(false);
+    expect(ledger.bytesInUse).toBe(Buffer.byteLength(fromPreface, "utf8"));
+    expect(ledger.liveTokenCount).toBe(1);
+    // The HTTP/2 server binds and replays the bytes; the scan releases the
+    // token after the synchronous handoff.
+    const replayed: string[] = [];
+    scan.scanned.onData((chunk) => replayed.push(Buffer.from(chunk).toString("utf8")));
+    expect(replayed).toEqual([fromPreface]);
+    expect(ledger.bytesInUse).toBe(0);
+    expect(ledger.liveTokenCount).toBe(0);
+  });
+
+  it("fails closed and stops the channel when the post-preface buffer floods past the cap", async () => {
+    const { channel, control } = makeFakeChannel();
+    const { ledger } = makeCountingLedger(1024 * 1024);
+    const scan = __http2PrefaceScanTesting.scanForHttp2ClientPreface(channel, {
+      capBytes: 64,
+      timeoutMs: 5_000,
+      ledger,
+    });
+    // The preface arrives alone, so the pending buffer starts empty.
+    control.emitData(PREFACE);
+    expect(await scan.settled).toBe("found");
+    expect(scan.replayOverflowed()).toBe(false);
+    // A post-preface chunk larger than the cap floods the buffer before the
+    // HTTP/2 server binds. The scan drops the buffer, stops the channel, and
+    // fails closed — the same shape a missing preface fails closed.
+    control.emitData(Buffer.from("x".repeat(128)));
+    expect(scan.replayOverflowed()).toBe(true);
+    expect(control.stopCount).toBe(1);
+    expect(ledger.bytesInUse).toBe(0);
+    expect(ledger.liveTokenCount).toBe(0);
+    // Binding the downstream listener replays nothing: the scan dropped the
+    // buffer on the overflow.
+    const replayed: string[] = [];
+    scan.scanned.onData((chunk) => replayed.push(Buffer.from(chunk).toString("utf8")));
+    expect(replayed).toEqual([]);
+  });
+
+  it("fails closed when the aggregate byte ledger refuses the post-preface reservation", async () => {
+    const { channel, control } = makeFakeChannel();
+    // The ceiling admits the preface scan (no charge) but not an 8-byte suffix.
+    const { ledger, counts } = makeCountingLedger(4);
+    const scan = __http2PrefaceScanTesting.scanForHttp2ClientPreface(channel, {
+      capBytes: 4_096,
+      timeoutMs: 5_000,
+      ledger,
+    });
+    control.emitData(Buffer.concat([PREFACE, Buffer.from("12345678")]));
+    expect(await scan.settled).toBe("found");
+    expect(scan.replayOverflowed()).toBe(true);
+    expect(control.stopCount).toBe(1);
+    expect(ledger.bytesInUse).toBe(0);
+    expect(counts.rejections).toBe(1);
   });
 });

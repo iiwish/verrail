@@ -2564,11 +2564,28 @@ const HTTP2_CLIENT_CONNECTION_PREFACE = Buffer.from(
  * caller can abort the open and fall back to `queue_v1`. The function holds
  * no prologue byte count: it always scans for the fixed 24-octet sequence,
  * never a length.
+ *
+ * The bytes that follow the found preface, before the HTTP/2 server binds a
+ * downstream listener, land in `pendingAfterPreface`. This buffer holds
+ * untrusted bytes on the same footing as the pre-preface scan buffer, so it
+ * carries the same {@link DUPLEX_READINESS_BUFFER_CAP_BYTES} cap and, when the
+ * caller supplies one, charges each retained chunk against the process
+ * aggregate byte ledger under the `http2_preface_replay` owner. A chunk that
+ * would pass the cap, or that the ledger refuses, fails closed: the function
+ * drops the buffer, releases its ledger tokens, and stops the channel. The
+ * caller reads {@link replayOverflowed} after the preface settles and, on
+ * `true`, treats the open the same as a missing preface.
  */
 function createHttp2PrefaceScanningChannel(
   channel: CommandManagedDuplexChannel,
-  options: { capBytes: number; onFound: () => void; onMissing: () => void },
-): CommandManagedDuplexChannel {
+  options: {
+    capBytes: number;
+    onFound: () => void;
+    onMissing: () => void;
+    ledger?: DuplexAggregateByteLedger | null;
+  },
+): { channel: CommandManagedDuplexChannel; replayOverflowed: () => boolean } {
+  const ledger = options.ledger ?? null;
   let scanBuffer: Buffer = Buffer.alloc(0);
   let sawPreface = false;
   let failed = false;
@@ -2577,18 +2594,54 @@ function createHttp2PrefaceScanningChannel(
   // wrapped channel replays them on attach, the same pattern the readiness
   // gate itself uses for its own post-READY replay buffer.
   let pendingAfterPreface: Buffer = Buffer.alloc(0);
+  // Every `http2_preface_replay` reservation token this buffer holds. The
+  // function releases each token exactly once, on the downstream handoff or
+  // on an overflow.
+  const replayTokens: ReservationToken[] = [];
+  let replayOverflow = false;
+
+  function releaseReplayTokens(): void {
+    if (!ledger) return;
+    for (const token of replayTokens) {
+      ledger.release(token);
+    }
+    replayTokens.length = 0;
+  }
+
+  // Drop the pending buffer, release its tokens, and stop the channel. The
+  // caller reads `replayOverflowed()` after the preface settles and falls
+  // back the same way it does for a missing preface.
+  function overflowAndStop(): void {
+    replayOverflow = true;
+    pendingAfterPreface = Buffer.alloc(0);
+    releaseReplayTokens();
+    channel.stop();
+  }
 
   function deliver(chunk: Buffer): void {
     if (downstream) {
       downstream(chunk);
       return;
     }
+    if (replayOverflow) return;
+    if (pendingAfterPreface.length + chunk.byteLength > options.capBytes) {
+      overflowAndStop();
+      return;
+    }
+    if (ledger) {
+      const token = ledger.reserve("http2_preface_replay", chunk.byteLength);
+      if (!token) {
+        overflowAndStop();
+        return;
+      }
+      replayTokens.push(token);
+    }
     pendingAfterPreface =
       pendingAfterPreface.length === 0 ? chunk : Buffer.concat([pendingAfterPreface, chunk]);
   }
 
   channel.onData((chunk) => {
-    if (failed) return;
+    if (failed || replayOverflow) return;
     if (sawPreface) {
       deliver(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       return;
@@ -2616,18 +2669,26 @@ function createHttp2PrefaceScanningChannel(
   });
 
   return {
-    write: (data: Uint8Array) => channel.write(data),
-    onData: (listener: (chunk: Uint8Array) => void) => {
-      downstream = listener;
-      if (pendingAfterPreface.length > 0) {
-        const replay = pendingAfterPreface;
-        pendingAfterPreface = Buffer.alloc(0);
-        listener(replay);
-      }
+    channel: {
+      write: (data: Uint8Array) => channel.write(data),
+      onData: (listener: (chunk: Uint8Array) => void) => {
+        downstream = listener;
+        if (pendingAfterPreface.length > 0) {
+          const replay = pendingAfterPreface;
+          pendingAfterPreface = Buffer.alloc(0);
+          listener(replay);
+        }
+        // Release every replay token exactly once, after the synchronous
+        // handoff to the downstream listener. The same pattern the readiness
+        // gate applies to its own `readiness_replay` tokens on its own
+        // downstream handoff.
+        releaseReplayTokens();
+      },
+      onExit: (listener: (exit: { exitCode: number | null }) => void) => channel.onExit(listener),
+      stop: () => channel.stop(),
+      close: () => channel.close(),
     },
-    onExit: (listener: (exit: { exitCode: number | null }) => void) => channel.onExit(listener),
-    stop: () => channel.stop(),
-    close: () => channel.close(),
+    replayOverflowed: () => replayOverflow,
   };
 }
 
@@ -2642,12 +2703,19 @@ type Http2PrefaceScanResult = "found" | "missing";
  * keeps one configured value for both the READY-line wait and this
  * immediately-following preface wait; the task adds no new timeout setting.
  * Returns the scanning channel alongside the settled result, so the caller
- * binds the HTTP/2 server to it only on a `found` result.
+ * binds the HTTP/2 server to it only on a `found` result. On a `found`
+ * result, the caller must still read `replayOverflowed()`: the post-preface
+ * buffer can overflow its cap or its ledger reservation after the preface
+ * settles as `found` and before the caller binds a downstream listener.
  */
 function scanForHttp2ClientPreface(
   channel: CommandManagedDuplexChannel,
-  options: { capBytes: number; timeoutMs: number },
-): { scanned: CommandManagedDuplexChannel; settled: Promise<Http2PrefaceScanResult> } {
+  options: { capBytes: number; timeoutMs: number; ledger?: DuplexAggregateByteLedger | null },
+): {
+  scanned: CommandManagedDuplexChannel;
+  settled: Promise<Http2PrefaceScanResult>;
+  replayOverflowed: () => boolean;
+} {
   let resolveSettled!: (result: Http2PrefaceScanResult) => void;
   let settledOnce = false;
   const settled = new Promise<Http2PrefaceScanResult>((resolve) => {
@@ -2661,13 +2729,26 @@ function scanForHttp2ClientPreface(
   };
   const timer = setTimeout(() => settle("missing"), options.timeoutMs);
   timer.unref?.();
-  const scanned = createHttp2PrefaceScanningChannel(channel, {
+  const { channel: scanned, replayOverflowed } = createHttp2PrefaceScanningChannel(channel, {
     capBytes: options.capBytes,
     onFound: () => settle("found"),
     onMissing: () => settle("missing"),
+    ledger: options.ledger,
   });
-  return { scanned, settled };
+  return { scanned, settled, replayOverflowed };
 }
+
+/**
+ * Test-only surface for {@link scanForHttp2ClientPreface}. A test drives the
+ * post-preface replay cap and ledger charge across every terminal path
+ * without the whole bridge. Production code never reads this export.
+ */
+export const __http2PrefaceScanTesting = {
+  scanForHttp2ClientPreface: (
+    channel: CommandManagedDuplexChannel,
+    options: { capBytes: number; timeoutMs: number; ledger?: DuplexAggregateByteLedger | null },
+  ) => scanForHttp2ClientPreface(channel, options),
+};
 
 /**
  * The terminal run disposition for the `http2_v1` path, in the same shape as
@@ -3583,20 +3664,32 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
         const prefaceScan = scanForHttp2ClientPreface(gate.brokerChannel, {
           capBytes: DUPLEX_READINESS_BUFFER_CAP_BYTES,
           timeoutMs: readinessTimeoutMs,
+          // Inject the same host-process aggregate byte ledger the readiness
+          // gate charges, so the post-preface pre-bind buffer counts toward
+          // the same aggregate ceiling.
+          ledger: duplexAggregateByteLedger,
         });
         const prefaceResult = await prefaceScan.settled;
-        if (prefaceResult === "missing") {
+        if (prefaceResult === "missing" || prefaceScan.replayOverflowed()) {
           // Fail closed, the same shape as a readiness failure: close the
           // partial channel inside the cleanup budget, then select the file
           // bridge. No HTTP/2 server ever bound to this channel, so no
           // request reached it or any endpoint.
           gate.disposePendingReplay();
           await closeDuplexChannelWithinBudget(openedChannel, DEFAULT_DUPLEX_CLEANUP_BUDGET_MS);
-          duplexChannelOpen.fallback("preface_missing");
-          await onLog(
-            "stderr",
-            "[paperclip] Sandbox HTTP/2 client preface did not appear inside the bounded readiness buffer (preface_missing). Using the file bridge.\n",
-          );
+          if (prefaceResult === "missing") {
+            duplexChannelOpen.fallback("preface_missing");
+            await onLog(
+              "stderr",
+              "[paperclip] Sandbox HTTP/2 client preface did not appear inside the bounded readiness buffer (preface_missing). Using the file bridge.\n",
+            );
+          } else {
+            duplexChannelOpen.fallback("aggregate_bytes_exceeded");
+            await onLog(
+              "stderr",
+              "[paperclip] Sandbox HTTP/2 post-preface buffer exceeded the aggregate byte ceiling (aggregate_bytes_exceeded). Using the file bridge.\n",
+            );
+          }
         } else {
           // The run disposition latch for the http2_v1 path, in the same
           // shape the retired duplex_v1 broker exposed. A loss ordered before
