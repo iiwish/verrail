@@ -7644,6 +7644,48 @@ describe("http2 preface scan post-preface replay buffer", () => {
     return { ledger, counts };
   }
 
+  it("charges the pre-preface scan buffer while it searches, across many chunks", async () => {
+    const { channel, control } = makeFakeChannel();
+    const { ledger, counts } = makeCountingLedger(1024 * 1024);
+    const scan = __http2PrefaceScanTesting.scanForHttp2ClientPreface(channel, {
+      capBytes: 4_096,
+      timeoutMs: 5_000,
+      ledger,
+    });
+    // Noise, then the preface, arrive as two separate chunks: the scan
+    // charges each chunk against the ledger as it grows the buffer, not
+    // only once the preface is found.
+    const noise = "not-the-preface-yet";
+    control.emitData(Buffer.from(noise));
+    expect(ledger.bytesInUse).toBe(Buffer.byteLength(noise, "utf8"));
+    expect(ledger.liveTokenCount).toBe(1);
+    control.emitData(PREFACE);
+    expect(await scan.settled).toBe("found");
+    // The preface match releases the whole scan buffer (the noise prefix,
+    // dropped, plus the preface) and re-charges only the retained preface
+    // under the replay owner.
+    expect(ledger.bytesInUse).toBe(PREFACE.byteLength);
+    expect(ledger.liveTokenCount).toBe(1);
+    expect(counts.rejections).toBe(0);
+  });
+
+  it("fails closed when the aggregate byte ledger refuses the pre-preface scan reservation", async () => {
+    const { channel, control } = makeFakeChannel();
+    // The ceiling admits nothing: even the 24-octet preface itself cannot
+    // reserve, so the scan fails closed before it ever finds a preface.
+    const { ledger, counts } = makeCountingLedger(4);
+    const scan = __http2PrefaceScanTesting.scanForHttp2ClientPreface(channel, {
+      capBytes: 4_096,
+      timeoutMs: 5_000,
+      ledger,
+    });
+    control.emitData(Buffer.concat([PREFACE, Buffer.from("12345678")]));
+    expect(await scan.settled).toBe("missing");
+    expect(scan.replayOverflowed()).toBe(false);
+    expect(ledger.bytesInUse).toBe(0);
+    expect(counts.rejections).toBe(1);
+  });
+
   it("charges the post-preface bytes and releases them after the downstream bind", async () => {
     const { channel, control } = makeFakeChannel();
     const { ledger } = makeCountingLedger(1024 * 1024);
@@ -7698,17 +7740,25 @@ describe("http2 preface scan post-preface replay buffer", () => {
     expect(replayed).toEqual([]);
   });
 
-  it("fails closed when the aggregate byte ledger refuses the post-preface reservation", async () => {
+  it("fails closed when the aggregate byte ledger refuses the post-preface replay reservation", async () => {
     const { channel, control } = makeFakeChannel();
-    // The ceiling admits the preface scan (no charge) but not an 8-byte suffix.
-    const { ledger, counts } = makeCountingLedger(4);
+    // The ceiling admits the 24-octet preface itself, but not an 8-byte
+    // suffix on top of it.
+    const { ledger, counts } = makeCountingLedger(30);
     const scan = __http2PrefaceScanTesting.scanForHttp2ClientPreface(channel, {
       capBytes: 4_096,
       timeoutMs: 5_000,
       ledger,
     });
-    control.emitData(Buffer.concat([PREFACE, Buffer.from("12345678")]));
+    // The preface arrives alone, so it is the only bytes charged so far.
+    control.emitData(PREFACE);
     expect(await scan.settled).toBe("found");
+    expect(scan.replayOverflowed()).toBe(false);
+    expect(ledger.bytesInUse).toBe(PREFACE.byteLength);
+    // A post-preface suffix, on top of the retained preface, passes the
+    // ceiling. The scan drops the buffer, stops the channel, and fails
+    // closed — the same shape a missing preface fails closed.
+    control.emitData(Buffer.from("12345678"));
     expect(scan.replayOverflowed()).toBe(true);
     expect(control.stopCount).toBe(1);
     expect(ledger.bytesInUse).toBe(0);

@@ -2563,15 +2563,20 @@ const HTTP2_CLIENT_CONNECTION_PREFACE = Buffer.from(
  * found, it calls `onMissing` exactly one time and stops buffering, so the
  * caller can abort the open and fall back to `queue_v1`. The function holds
  * no prologue byte count: it always scans for the fixed 24-octet sequence,
- * never a length.
+ * never a length. The scan buffer holds untrusted, sandbox-controlled bytes
+ * on the same footing as the readiness gate's own pre-READY buffer, so, when
+ * the caller supplies a ledger, it charges each received chunk against the
+ * process aggregate byte ledger under the `http2_preface_scan` owner before
+ * the chunk grows the buffer. A refusal fails closed the same way the cap
+ * does: the function drops the buffer and calls `onMissing`.
  *
  * The bytes that follow the found preface, before the HTTP/2 server binds a
  * downstream listener, land in `pendingAfterPreface`. This buffer holds
- * untrusted bytes on the same footing as the pre-preface scan buffer, so it
- * carries the same {@link DUPLEX_READINESS_BUFFER_CAP_BYTES} cap and, when the
- * caller supplies one, charges each retained chunk against the process
- * aggregate byte ledger under the `http2_preface_replay` owner. A chunk that
- * would pass the cap, or that the ledger refuses, fails closed: the function
+ * untrusted bytes on the same footing as the scan buffer, so it carries the
+ * same {@link DUPLEX_READINESS_BUFFER_CAP_BYTES} cap and, when the caller
+ * supplies a ledger, charges each retained chunk against it under the
+ * `http2_preface_replay` owner. A chunk that would pass the cap, or that the
+ * ledger refuses, fails closed: the function
  * drops the buffer, releases its ledger tokens, and stops the channel. The
  * caller reads {@link replayOverflowed} after the preface settles and, on
  * `true`, treats the open the same as a missing preface.
@@ -2598,6 +2603,13 @@ function createHttp2PrefaceScanningChannel(
   // function releases each token exactly once, on the downstream handoff or
   // on an overflow.
   const replayTokens: ReservationToken[] = [];
+  // Every `http2_preface_scan` reservation token the pre-preface `scanBuffer`
+  // holds. The scan is untrusted, sandbox-controlled input on the same
+  // footing as the readiness gate's own pre-READY buffer, so it charges the
+  // ledger the same way: one reservation per received chunk, released in
+  // full on the terminal scan outcome — the preface found, the cap passed
+  // with no match, or a ledger refusal.
+  const scanTokens: ReservationToken[] = [];
   let replayOverflow = false;
 
   function releaseReplayTokens(): void {
@@ -2606,6 +2618,14 @@ function createHttp2PrefaceScanningChannel(
       ledger.release(token);
     }
     replayTokens.length = 0;
+  }
+
+  function releaseScanTokens(): void {
+    if (!ledger) return;
+    for (const token of scanTokens) {
+      ledger.release(token);
+    }
+    scanTokens.length = 0;
   }
 
   // Drop the pending buffer, release its tokens, and stop the channel. The
@@ -2646,17 +2666,28 @@ function createHttp2PrefaceScanningChannel(
       deliver(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       return;
     }
-    scanBuffer =
-      scanBuffer.length === 0
-        ? Buffer.isBuffer(chunk)
-          ? chunk
-          : Buffer.from(chunk)
-        : Buffer.concat([scanBuffer, chunk]);
+    const rawChunk = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    // Charge this chunk against the aggregate ledger before it grows
+    // `scanBuffer`. A refusal fails closed the same way the cap does: drop
+    // the buffer and report a missing preface.
+    if (ledger) {
+      const token = ledger.reserve("http2_preface_scan", rawChunk.byteLength);
+      if (!token) {
+        failed = true;
+        scanBuffer = Buffer.alloc(0);
+        releaseScanTokens();
+        options.onMissing();
+        return;
+      }
+      scanTokens.push(token);
+    }
+    scanBuffer = scanBuffer.length === 0 ? rawChunk : Buffer.concat([scanBuffer, rawChunk]);
     const offset = scanBuffer.indexOf(HTTP2_CLIENT_CONNECTION_PREFACE);
     if (offset === -1) {
       if (scanBuffer.length > options.capBytes) {
         failed = true;
         scanBuffer = Buffer.alloc(0);
+        releaseScanTokens();
         options.onMissing();
       }
       return;
@@ -2665,6 +2696,12 @@ function createHttp2PrefaceScanningChannel(
     options.onFound();
     const fromPreface = Buffer.from(scanBuffer.subarray(offset));
     scanBuffer = Buffer.alloc(0);
+    // Release the scan tokens before `deliver` charges the same bytes under
+    // `http2_preface_replay`. The two calls run inside one synchronous
+    // callback with no `await` between them, so no other reservation can
+    // observe the released state in between; releasing first keeps the
+    // ledger's momentary peak at the real retained bytes, not double them.
+    releaseScanTokens();
     deliver(fromPreface);
   });
 
