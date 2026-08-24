@@ -11,8 +11,13 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
     }
   },
+  "sideEffects": false,
   "files": [
     "dist",
     "protocol",
@@ -42,7 +47,9 @@
     "check:conformance-parity": "cargo test --manifest-path runner/Cargo.toml --locked -p paperclip-runner-core runs_the_mock_core_path_with_stable_output",
     "check:replay-parity": "cargo test --manifest-path runner/Cargo.toml --locked -p paperclip-runner-core replay_fixture_parity",
     "check:runner": "pnpm run typecheck:rust && pnpm run test:rust && pnpm run check:conformance-parity && pnpm run check:replay-parity",
-    "check:all": "pnpm run check:protocol && pnpm run check:runner",
+    "check:package-boundaries": "node scripts/check-package-boundaries.mjs",
+    "check:clean-consumers": "node scripts/check-clean-consumers.mjs",
+    "check:all": "pnpm run check:protocol && pnpm run check:runner && pnpm run check:package-boundaries && pnpm run check:clean-consumers",
     "trace:conformance:rust": "cargo run --quiet --manifest-path runner/Cargo.toml --locked -p paperclip-runner-core --bin conformance-tracer"
   },
   "dependencies": {

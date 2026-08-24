@@ -66,6 +66,7 @@ RUN pnpm --filter @paperclipai/plugin-sdk build
 ARG PAPERCLIP_BUILD_COMMIT=""
 RUN pnpm --filter @paperclipai/server build
 RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" && exit 1)
+RUN test -f server/dist/vendor/paperclip-runner/index.js || (echo "ERROR: vendored runner build output missing" && exit 1)
 
 FROM base AS production
 ARG USER_UID=1000

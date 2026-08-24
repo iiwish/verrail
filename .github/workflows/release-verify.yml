@@ -42,6 +42,39 @@ jobs:
       - name: Typecheck
         run: pnpm -r typecheck
 
+  runner_package:
+    name: Runner package
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Verify Runner package and clean-consumer boundary
+        run: pnpm --filter @paperclipai/paperclip-runner check:all
+
+      - name: Verify server vendoring boundary
+        run: node --test server/scripts/vendor-paperclip-runner.test.mjs
+
   general_tests:
     name: General tests (${{ matrix.group_label }})
     runs-on: ubuntu-latest

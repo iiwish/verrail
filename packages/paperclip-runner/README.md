@@ -22,8 +22,17 @@ undiscoverable because no production application binding or server authority
 has landed. Catalog membership alone does not grant authority. See
 [`SEMANTIC_ACTIONS.md`](SEMANTIC_ACTIONS.md) for the catalog boundary.
 
-The root export is intentionally narrow. The `./testing` entry point and package
-release boundary will arrive with the later package-boundary change.
+The package has two initial public surfaces:
+
+- `@paperclipai/paperclip-runner` contains runtime contracts, validation,
+  replay/reducer logic, the semantic catalog, and the authorization dispatcher.
+- `@paperclipai/paperclip-runner/testing` adds Node-only fixture loading and a
+  provider-neutral semantic conformance kit for deterministic test adapters.
+
+No SDK, browser, React, eval, live-console, lab, or provider-experiment entry
+point is exported. The package remains private in this wave. Server builds
+vendor its compiled distribution so published server installs do not depend on
+an independently published runner package.
 
 Run the complete contract gate with:
 
@@ -55,6 +64,12 @@ outputs with their sources; do not edit them by hand.
 
 Use `generate:semantic-action-catalog` after changing a semantic action
 declaration. Its checked-in JSON inventory must land with the source change.
+
+Run `check:package-boundaries` to verify the two-entry export map, private
+server-vendoring boundary, Docker bootstrap, and CI wiring. Run
+`check:clean-consumers` to pack the package, install it with its dependency
+closure in a temporary isolated consumer, exercise both declared exports, and
+prove deferred subpaths remain unavailable.
 
 The gate compiles every schema with AJV 2020-12, validates accepted fixtures,
 rejects unsupported required versions, checks generated TypeScript schema
