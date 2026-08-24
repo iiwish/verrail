@@ -156,10 +156,8 @@ export interface EffectiveExecutionCapabilities {
 }
 
 /**
- * @deprecated Renamed to `EffectiveExecutionCapabilities`. This alias is
- * removed in a later major release. It stays an `interface` (not a `type`
- * alias) so a consumer that still merges declarations into the old name
- * keeps working.
+ * @deprecated Renamed to `EffectiveExecutionCapabilities`. This alias will
+ * be removed in a later major release.
  */
 export interface EffectiveSandboxCapabilities extends EffectiveExecutionCapabilities {}
 
