@@ -84,9 +84,11 @@ for (const scriptName of ["build", "prepack"]) {
   if (!serverManifest.scripts?.[scriptName]?.includes("vendor-paperclip-runner.mjs")) {
     violations.push(`server ${scriptName} must vendor the built runner distribution`);
   }
-}
-if (!serverManifest.scripts?.build?.includes("paperclip-runner build:typescript")) {
-  violations.push("standalone server builds must bootstrap the runner TypeScript distribution");
+  if (!serverManifest.scripts?.[scriptName]?.includes("paperclip-runner build:typescript")) {
+    violations.push(
+      `server ${scriptName} must bootstrap the runner TypeScript distribution`,
+    );
+  }
 }
 
 for (const relativePath of [

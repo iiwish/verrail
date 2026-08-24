@@ -101,4 +101,24 @@ describe("semantic conformance kit", () => {
       }),
     ).rejects.toThrow("semantic_conformance_non_json_observation");
   });
+
+  it("fails closed for sparse normalized arrays", async () => {
+    const sparseEffects = Array(1);
+    await expect(
+      runSemanticConformanceKit({
+        vectors: [{ id: "finish", operationId: "finish_task", input: {} }],
+        adapters: [
+          adapter("mock", allowed),
+          {
+            id: "invalid",
+            execute: async () =>
+              ({
+                ...allowed,
+                effects: sparseEffects,
+              }) as unknown as SemanticConformanceObservation,
+          },
+        ],
+      }),
+    ).rejects.toThrow("semantic_conformance_non_json_observation");
+  });
 });

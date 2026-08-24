@@ -142,7 +142,12 @@ function canonicalJson(
   ancestors.add(value);
   try {
     if (Array.isArray(value)) {
-      return `[${value.map((entry) => canonicalJson(entry, ancestors)).join(",")}]`;
+      const entries: string[] = [];
+      for (let index = 0; index < value.length; index += 1) {
+        if (!Object.hasOwn(value, index)) throw invalidObservation();
+        entries.push(canonicalJson(value[index], ancestors));
+      }
+      return `[${entries.join(",")}]`;
     }
     const record = value as Record<string, unknown>;
     return `{${Object.keys(record)
