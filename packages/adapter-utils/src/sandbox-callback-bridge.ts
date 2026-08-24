@@ -72,12 +72,19 @@ export const SANDBOX_CALLBACK_BRIDGE_ENTRYPOINT = "paperclip-bridge-server.mjs";
 const SANDBOX_EXEC_CHANNEL_ENV = "PAPERCLIP_SANDBOX_EXEC_CHANNEL";
 const SANDBOX_EXEC_CHANNEL_BRIDGE = "bridge";
 
-// The two bridge modes the generated gateway supports. The file mode polls a
-// request/response queue on disk. The duplex mode forwards one request frame to
-// stdout and resolves one response frame from stdin. The generated `.mjs`
-// selects the mode from `PAPERCLIP_API_BRIDGE_MODE`.
+// The bridge modes the generated gateway supports. The file mode polls a
+// request/response queue on disk. The retired duplex mode forwarded one
+// request frame to stdout and resolved one response frame from stdin; the
+// generated gateway still defines it, but no mode dispatch selects it anymore
+// — the http2 mode replaced it as the active non-file transport. The http2
+// mode runs one Node HTTP/2 client session directly on stdin/stdout, after it
+// sends the one READY line the host readiness gate expects. The generated
+// `.mjs` selects the mode from `PAPERCLIP_API_BRIDGE_MODE`.
 const SANDBOX_CALLBACK_BRIDGE_FILE_MODE = "queue_v1";
 export const SANDBOX_CALLBACK_BRIDGE_DUPLEX_MODE = "duplex_v1";
+/** The active non-file transport mode. It replaced {@link SANDBOX_CALLBACK_BRIDGE_DUPLEX_MODE}
+ * in the mode-selection path. */
+export const SANDBOX_CALLBACK_BRIDGE_HTTP2_MODE = "http2_v1";
 
 // The duplex gateway HTTP wait budget default. The gateway waits this long for a
 // response frame before it answers the local caller with a 502 timeout. The
@@ -2289,6 +2296,8 @@ export function getSandboxCallbackBridgeServerSource(): string {
 import { createServer } from "node:http";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import http2 from "node:http2";
+import { Duplex } from "node:stream";
 
 const bridgeMode = process.env.PAPERCLIP_API_BRIDGE_MODE || "${SANDBOX_CALLBACK_BRIDGE_FILE_MODE}";
 const queueDir = process.env.PAPERCLIP_BRIDGE_QUEUE_DIR;
@@ -2334,7 +2343,11 @@ const allowedHeaders = new Set(${JSON.stringify([...DEFAULT_SANDBOX_CALLBACK_BRI
 if (!bridgeToken) {
   throw new Error("PAPERCLIP_BRIDGE_TOKEN is required.");
 }
-if (bridgeMode !== "${SANDBOX_CALLBACK_BRIDGE_DUPLEX_MODE}" && !queueDir) {
+if (
+  bridgeMode !== "${SANDBOX_CALLBACK_BRIDGE_DUPLEX_MODE}" &&
+  bridgeMode !== "${SANDBOX_CALLBACK_BRIDGE_HTTP2_MODE}" &&
+  !queueDir
+) {
   throw new Error("PAPERCLIP_BRIDGE_QUEUE_DIR and PAPERCLIP_BRIDGE_TOKEN are required.");
 }
 
@@ -2928,7 +2941,231 @@ function runDuplexGateway() {
   });
 }
 
-if (bridgeMode === "${SANDBOX_CALLBACK_BRIDGE_DUPLEX_MODE}") {
+// ---------------------------------------------------------------------------
+// http2_v1: run one Node HTTP/2 client session directly on stdin/stdout.
+//
+// This gateway writes exactly one frame-codec line before it hands stdin and
+// stdout to the HTTP/2 client: the READY line, so the host readiness gate
+// accepts the same handshake it already accepts for every mode. After that
+// one write, only the HTTP/2 client touches stdout: this function calls
+// writeFrame no more, and it starts no heartbeat timer, so no non-HTTP/2
+// writer can put a byte on stdout between the READY line and the client
+// connection preface.
+// ---------------------------------------------------------------------------
+
+function createStdioDuplex() {
+  const duplex = new Duplex({
+    read() {
+      // process.stdin pushes bytes through the "data" listener below; there
+      // is nothing to pull on demand here.
+    },
+    write(chunk, _encoding, callback) {
+      const flushed = process.stdout.write(chunk);
+      if (flushed) {
+        callback();
+      } else {
+        process.stdout.once("drain", () => callback());
+      }
+    },
+  });
+  process.stdin.on("data", (chunk) => {
+    duplex.push(chunk);
+  });
+  process.stdin.on("end", () => {
+    duplex.push(null);
+  });
+  process.stdin.on("error", (error) => {
+    duplex.destroy(error instanceof Error ? error : new Error(String(error)));
+  });
+  return duplex;
+}
+
+function runHttp2Gateway() {
+  function diag(message) {
+    // Diagnostics go to stderr only, the same as every other mode.
+    process.stderr.write("[paperclip-bridge] " + message + "\\n");
+  }
+  function writeFrame(frame) {
+    process.stdout.write(encodeDuplexFrame(frame));
+  }
+
+  const authority = "bridge.internal";
+  let session = null;
+  let unavailable = false;
+
+  function openSession() {
+    if (session) return session;
+    const stdio = createStdioDuplex();
+    session = http2.connect("http://" + authority, {
+      createConnection: () => stdio,
+    });
+    session.on("error", () => {
+      unavailable = true;
+    });
+    session.on("close", () => {
+      unavailable = true;
+    });
+    session.on("goaway", (errorCode, lastStreamId) => {
+      diag("host sent GOAWAY (errorCode=" + errorCode + ", lastStreamId=" + lastStreamId + ")");
+    });
+    return session;
+  }
+
+  function forwardOverHttp2(request) {
+    return new Promise((resolve, reject) => {
+      const activeSession = openSession();
+      const query = request.query || "";
+      const pathWithQuery =
+        query.length === 0 ? request.path : request.path + (query.charAt(0) === "?" ? query : "?" + query);
+      const outboundHeaders = Object.assign(
+        {
+          ":method": request.method,
+          ":path": pathWithQuery,
+          authorization: "Bearer " + bridgeToken,
+        },
+        request.headers,
+      );
+      let stream;
+      try {
+        stream = activeSession.request(outboundHeaders, { endStream: request.body.length === 0 });
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(String(error)));
+        return;
+      }
+      const chunks = [];
+      let status = 502;
+      let responseHeaders = {};
+      let settled = false;
+      const settle = (run) => {
+        if (settled) return;
+        settled = true;
+        run();
+      };
+      stream.on("response", (headers) => {
+        const raw = headers[":status"];
+        status = typeof raw === "number" ? raw : Number(raw) || 502;
+        responseHeaders = {};
+        for (const [key, value] of Object.entries(headers)) {
+          if (key.charAt(0) === ":" || value == null) continue;
+          responseHeaders[key] = Array.isArray(value) ? value.join(", ") : String(value);
+        }
+      });
+      stream.on("data", (chunk) => chunks.push(chunk));
+      stream.once("end", () =>
+        settle(() => resolve({ status: status, headers: responseHeaders, body: Buffer.concat(chunks) })),
+      );
+      stream.once("error", (error) =>
+        settle(() => reject(error instanceof Error ? error : new Error(String(error)))),
+      );
+      stream.once("aborted", () => settle(() => reject(new Error("Bridge HTTP/2 stream aborted."))));
+      if (request.body.length > 0) {
+        stream.end(request.body);
+      } else if (!stream.writableEnded) {
+        stream.end();
+      }
+    });
+  }
+
+  const server = createServer(async (req, res) => {
+    try {
+      const auth = req.headers.authorization || "";
+      const receivedToken = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length) : "";
+      if (!tokensMatch(receivedToken)) {
+        writeJsonResponse(res, 401, { error: "Invalid bridge token." });
+        return;
+      }
+      if (unavailable) {
+        writeJsonResponse(res, 503, { error: "bridge_unavailable" });
+        return;
+      }
+      const url = new URL(req.url || "/", "http://127.0.0.1");
+      const contentType = typeof req.headers["content-type"] === "string" ? req.headers["content-type"] : "";
+      if (req.method && req.method !== "GET" && req.method !== "HEAD" && !/json/i.test(contentType)) {
+        writeJsonResponse(res, 415, { error: "Bridge only accepts JSON request bodies." });
+        return;
+      }
+      const requestBodyBuffer = Buffer.from(await readBody(req), "utf8");
+      let response;
+      try {
+        response = await forwardOverHttp2({
+          method: req.method || "GET",
+          path: url.pathname,
+          query: url.search,
+          headers: normalizeHeaders(req.headers),
+          body: requestBodyBuffer,
+        });
+      } catch (error) {
+        writeJsonResponse(res, 502, { error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+      res.statusCode = typeof response.status === "number" ? response.status : 200;
+      for (const [key, value] of Object.entries(response.headers || {})) {
+        if (typeof value !== "string" || key.toLowerCase() === "content-length") continue;
+        res.setHeader(key, value);
+      }
+      res.end(response.body);
+    } catch (error) {
+      writeJsonResponse(res, 502, { error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  process.on("SIGINT", () => {
+    try {
+      server.close();
+    } catch (error) {
+      diag("server close error: " + (error && error.message ? error.message : String(error)));
+    }
+    process.exit(0);
+  });
+  process.on("SIGTERM", () => {
+    try {
+      server.close();
+    } catch (error) {
+      diag("server close error: " + (error && error.message ? error.message : String(error)));
+    }
+    process.exit(0);
+  });
+
+  // Bind-or-exit, the same rule every mode applies: the host assigns a
+  // positive loopback port, and the gateway binds exactly that port or exits
+  // nonzero. It never selects a different port.
+  if (!Number.isInteger(port) || port <= 0) {
+    diag("http2 gateway requires a positive assigned PAPERCLIP_BRIDGE_PORT; got " + String(port));
+    process.exit(1);
+  }
+  server.on("error", (error) => {
+    diag(
+      "http2 gateway could not bind port " +
+        String(port) +
+        ": " +
+        (error && error.message ? error.message : String(error)),
+    );
+    process.exit(1);
+  });
+  server.listen(port, host, () => {
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      diag("http2 gateway did not expose a TCP address");
+      process.exit(1);
+      return;
+    }
+    // Send the one frame-codec line on this path: the READY line the host
+    // readiness gate expects. Open the HTTP/2 client session on the very next
+    // statement, so the client connection preface is the next byte the host
+    // sees after READY, with no other writer in between.
+    writeFrame({ version: DUPLEX_FRAME_VERSION, type: "ready", nonce: bridgeNonce });
+    gatewayReady = true;
+    openSession();
+  });
+}
+
+if (bridgeMode === "${SANDBOX_CALLBACK_BRIDGE_HTTP2_MODE}") {
+  runHttp2Gateway();
+} else if (bridgeMode === "${SANDBOX_CALLBACK_BRIDGE_DUPLEX_MODE}") {
+  // No host selection path sets this mode anymore (http2_v1 replaced it), but
+  // the generated gateway keeps the mode reachable: it stays defined here,
+  // unchanged, so nothing that still spawns the gateway directly with this
+  // mode name breaks.
   runDuplexGateway();
 } else {
   await runFileGateway();
