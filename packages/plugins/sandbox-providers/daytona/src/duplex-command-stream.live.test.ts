@@ -119,7 +119,7 @@ describeLive("Daytona duplex channel (live)", () => {
 
         // The channel child still answers. A write returns as program output.
         const ping = `chan-${randomUUID()}`;
-        session.write(`${ping}\n`);
+        session.write(Buffer.from(`${ping}\n`));
         await waitFor(readOutput, (text) => text.includes(ping), 30_000, "channel echo");
       } finally {
         await session.close();
@@ -141,7 +141,7 @@ describeLive("Daytona duplex channel (live)", () => {
         const baseline = readOutput().length;
 
         const line = `PING-${randomUUID()}`;
-        session.write(`${line}\n`);
+        session.write(Buffer.from(`${line}\n`));
         await waitFor(
           readOutput,
           (text) => text.slice(baseline).includes(line),
@@ -216,7 +216,7 @@ describeLive("Daytona duplex channel (live)", () => {
           const line = `RTT-${index}-${randomUUID()}`;
           const baseline = readOutput().length;
           const start = Date.now();
-          session.write(`${line}\n`);
+          session.write(Buffer.from(`${line}\n`));
           await waitFor(
             readOutput,
             (text) => text.slice(baseline).includes(line),
@@ -264,7 +264,7 @@ describeLive("Daytona duplex channel (live)", () => {
       // before its echo returns. The abrupt close models a lost provider channel.
       await new Promise((resolve) => setTimeout(resolve, 4_000));
       const inFlight = `INFLIGHT-${randomUUID()}`;
-      session.write(`${inFlight}\n`);
+      session.write(Buffer.from(`${inFlight}\n`));
       // Close at once, without waiting for the echo. The pending round trip never
       // settles through the stream; the channel tears down instead.
       await session.close();
