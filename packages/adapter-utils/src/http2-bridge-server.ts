@@ -263,11 +263,11 @@ export function buildHttp2BridgeForwardUrl(
 export const DEFAULT_HTTP2_BRIDGE_PING_INTERVAL_MS = 5_000;
 /** The default bound a sent PING waits for its ack before the session counts as stalled. */
 export const DEFAULT_HTTP2_BRIDGE_PING_STALL_MS = 20_000;
-/** The default bound on the time a request body takes to arrive in full, from
- * the first byte after the token check to the last byte of the body. A
- * stream that misses this bound is a stalled stream, not a slow one: the
- * server destroys it and rejects the request, so the wait never runs
- * forever. */
+/** The default idle bound on a request body read: the maximum gap between
+ * two received chunks (or between the token check and the first chunk)
+ * before the server treats the stream as stalled. Each received chunk resets
+ * this bound, so a slow peer that keeps making real progress completes; only
+ * a peer that stops sending trips it. */
 export const DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_TIMEOUT_MS = 30_000;
 /** The default bound {@link Http2BridgeServerHandle.close} waits for an
  * active session to close on its own before it force-destroys the session. A
@@ -377,8 +377,9 @@ export interface CreateHttp2BridgeServerOptions {
   pingIntervalMs?: number;
   /** The bound a sent PING waits for its ack before the server closes the session. */
   pingStallMs?: number;
-  /** The bound on the time one request body takes to arrive in full. The
-   * default is {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_TIMEOUT_MS}. */
+  /** The idle bound on a request body read: the maximum gap between two
+   * received chunks. The default is
+   * {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_TIMEOUT_MS}. */
   requestBodyTimeoutMs?: number;
   /** The bound {@link Http2BridgeServerHandle.close} waits for an active
    * session to close on its own before it force-destroys the session. The
@@ -433,9 +434,11 @@ function toOutboundHeaderRecord(headers: http2.IncomingHttpHeaders): Record<stri
 }
 
 /**
- * Read one authenticated request body, bounded on both size and time. A peer
- * that sends the request body too slowly, or stops sending it mid-stream,
- * holds this promise open with no other limit; the timeout closes that gap.
+ * Read one authenticated request body, bounded on both size and time. The
+ * time bound is an idle bound, not an absolute one: each received chunk
+ * resets it, so a slow peer that keeps making real progress completes, while
+ * a peer that stops sending mid-stream — the same failure a stalled network
+ * path or a hung sandbox process produces — still trips the bound.
  *
  * The `close` listener is the settle-of-last-resort: it fires whenever the
  * stream ends for any reason at all — a normal end, an error, a timeout- or
@@ -445,23 +448,28 @@ function toOutboundHeaderRecord(headers: http2.IncomingHttpHeaders): Record<stri
 function readHttp2StreamBody(
   stream: http2.ServerHttp2Stream,
   maxBodyBytes: number,
-  timeoutMs: number,
+  idleTimeoutMs: number,
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let totalBytes = 0;
     let settled = false;
+    let idleTimer: ReturnType<typeof setTimeout>;
     const settle = (run: () => void) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timeoutTimer);
+      clearTimeout(idleTimer);
       run();
     };
-    const timeoutTimer = setTimeout(() => {
-      settle(() => reject(new Error("Bridge request body timed out before it completed.")));
-      stream.destroy();
-    }, timeoutMs);
-    timeoutTimer.unref?.();
+    const armIdleTimer = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        settle(() => reject(new Error("Bridge request body stalled before it completed.")));
+        stream.destroy();
+      }, idleTimeoutMs);
+      idleTimer.unref?.();
+    };
+    armIdleTimer();
     stream.on("data", (chunk: Buffer) => {
       totalBytes += chunk.byteLength;
       if (totalBytes > maxBodyBytes) {
@@ -470,6 +478,10 @@ function readHttp2StreamBody(
         return;
       }
       chunks.push(chunk);
+      // The chunk is real progress, so the peer is not stalled: reset the
+      // idle bound instead of letting it expire under a slow but active
+      // upload.
+      armIdleTimer();
     });
     stream.once("end", () => settle(() => resolve(Buffer.concat(chunks))));
     stream.once("error", (error) => settle(() => reject(error instanceof Error ? error : new Error(String(error)))));

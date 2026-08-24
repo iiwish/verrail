@@ -369,6 +369,55 @@ describe("createHttp2BridgeServer + createSandboxHttp2BridgeGateway", () => {
     }
   });
 
+  it("test_a_slow_but_progressing_request_body_completes_instead_of_timing_out", async () => {
+    // The idle bound is well under the total time the whole body takes, so a
+    // one-shot bound over the full read would trip. Each chunk resets the
+    // bound, so the request still completes.
+    const { handle, bridgeToken, clientSide } = bindTestServer({
+      requestBodyTimeoutMs: 80,
+      forwardRequest: async (request) => ({
+        status: 200,
+        body: JSON.stringify({ bodyLength: request.body.byteLength }),
+      }),
+    });
+    const rawClient = connectRawClient(clientSide);
+    try {
+      const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const req = rawClient.request({
+          ":method": "POST",
+          ":path": "/api/issues/abc/comments",
+          authorization: `Bearer ${bridgeToken}`,
+        });
+        let status = 0;
+        let body = "";
+        req.setEncoding("utf8");
+        req.on("response", (headers) => {
+          status = Number(headers[":status"]) || 0;
+        });
+        req.on("data", (chunk) => (body += chunk));
+        req.on("end", () => resolve({ status, body }));
+        req.on("error", reject);
+        // Five chunks, each inside the idle bound, summing past it.
+        let sent = 0;
+        const sendNext = () => {
+          if (sent >= 5) {
+            req.end();
+            return;
+          }
+          sent += 1;
+          req.write("chunk");
+          setTimeout(sendNext, 40);
+        };
+        sendNext();
+      });
+      expect(response.status).toBe(200);
+      expect(JSON.parse(response.body)).toEqual({ bodyLength: "chunk".length * 5 });
+    } finally {
+      rawClient.close();
+      await handle.close();
+    }
+  });
+
   it("test_close_force_destroys_a_session_with_a_stalled_stream_instead_of_waiting_forever", async () => {
     const { handle, bridgeToken, clientSide } = bindTestServer({
       // A body timeout far longer than the close grace, so `close()` is the
