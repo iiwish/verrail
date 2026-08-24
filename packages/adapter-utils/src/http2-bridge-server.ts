@@ -263,6 +263,17 @@ export function buildHttp2BridgeForwardUrl(
 export const DEFAULT_HTTP2_BRIDGE_PING_INTERVAL_MS = 5_000;
 /** The default bound a sent PING waits for its ack before the session counts as stalled. */
 export const DEFAULT_HTTP2_BRIDGE_PING_STALL_MS = 20_000;
+/** The default bound on the time a request body takes to arrive in full, from
+ * the first byte after the token check to the last byte of the body. A
+ * stream that misses this bound is a stalled stream, not a slow one: the
+ * server destroys it and rejects the request, so the wait never runs
+ * forever. */
+export const DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_TIMEOUT_MS = 30_000;
+/** The default bound {@link Http2BridgeServerHandle.close} waits for an
+ * active session to close on its own before it force-destroys the session. A
+ * session that carries a stalled stream would otherwise hold `close()` open
+ * forever, because `session.close()` waits for every open stream to end. */
+export const DEFAULT_HTTP2_BRIDGE_CLOSE_GRACE_MS = 5_000;
 
 function startHttp2BridgePingWatchdog(
   session: http2.ServerHttp2Session,
@@ -366,6 +377,13 @@ export interface CreateHttp2BridgeServerOptions {
   pingIntervalMs?: number;
   /** The bound a sent PING waits for its ack before the server closes the session. */
   pingStallMs?: number;
+  /** The bound on the time one request body takes to arrive in full. The
+   * default is {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_TIMEOUT_MS}. */
+  requestBodyTimeoutMs?: number;
+  /** The bound {@link Http2BridgeServerHandle.close} waits for an active
+   * session to close on its own before it force-destroys the session. The
+   * default is {@link DEFAULT_HTTP2_BRIDGE_CLOSE_GRACE_MS}. */
+  closeGraceMs?: number;
   /** The sink for a GOAWAY the server observed on a session (one the sandbox
    * side sent to the host). */
   onGoaway?: (record: Http2BridgeGoawayRecord) => void;
@@ -414,7 +432,21 @@ function toOutboundHeaderRecord(headers: http2.IncomingHttpHeaders): Record<stri
   return out;
 }
 
-function readHttp2StreamBody(stream: http2.ServerHttp2Stream, maxBodyBytes: number): Promise<Buffer> {
+/**
+ * Read one authenticated request body, bounded on both size and time. A peer
+ * that sends the request body too slowly, or stops sending it mid-stream,
+ * holds this promise open with no other limit; the timeout closes that gap.
+ *
+ * The `close` listener is the settle-of-last-resort: it fires whenever the
+ * stream ends for any reason at all — a normal end, an error, a timeout- or
+ * shutdown-triggered `destroy()`, or a peer reset — so the promise always
+ * settles and the caller never awaits a stream that already went away.
+ */
+function readHttp2StreamBody(
+  stream: http2.ServerHttp2Stream,
+  maxBodyBytes: number,
+  timeoutMs: number,
+): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let totalBytes = 0;
@@ -422,8 +454,14 @@ function readHttp2StreamBody(stream: http2.ServerHttp2Stream, maxBodyBytes: numb
     const settle = (run: () => void) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timeoutTimer);
       run();
     };
+    const timeoutTimer = setTimeout(() => {
+      settle(() => reject(new Error("Bridge request body timed out before it completed.")));
+      stream.destroy();
+    }, timeoutMs);
+    timeoutTimer.unref?.();
     stream.on("data", (chunk: Buffer) => {
       totalBytes += chunk.byteLength;
       if (totalBytes > maxBodyBytes) {
@@ -436,6 +474,7 @@ function readHttp2StreamBody(stream: http2.ServerHttp2Stream, maxBodyBytes: numb
     stream.once("end", () => settle(() => resolve(Buffer.concat(chunks))));
     stream.once("error", (error) => settle(() => reject(error instanceof Error ? error : new Error(String(error)))));
     stream.once("aborted", () => settle(() => reject(new Error("Bridge request stream aborted."))));
+    stream.once("close", () => settle(() => reject(new Error("Bridge request stream closed before it completed."))));
   });
 }
 
@@ -462,6 +501,8 @@ export function createHttp2BridgeServer(options: CreateHttp2BridgeServerOptions)
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_SANDBOX_CALLBACK_BRIDGE_MAX_BODY_BYTES;
   const pingIntervalMs = options.pingIntervalMs ?? DEFAULT_HTTP2_BRIDGE_PING_INTERVAL_MS;
   const pingStallMs = options.pingStallMs ?? DEFAULT_HTTP2_BRIDGE_PING_STALL_MS;
+  const requestBodyTimeoutMs = options.requestBodyTimeoutMs ?? DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_TIMEOUT_MS;
+  const closeGraceMs = options.closeGraceMs ?? DEFAULT_HTTP2_BRIDGE_CLOSE_GRACE_MS;
 
   const server = http2.createServer(HTTP2_BRIDGE_SERVER_OPTIONS);
   const activeSessions = new Set<http2.ServerHttp2Session>();
@@ -503,7 +544,7 @@ export function createHttp2BridgeServer(options: CreateHttp2BridgeServerOptions)
 
     let body: Buffer;
     try {
-      body = await readHttp2StreamBody(stream, maxBodyBytes);
+      body = await readHttp2StreamBody(stream, maxBodyBytes, requestBodyTimeoutMs);
     } catch (error) {
       respondJson(stream, 413, { error: error instanceof Error ? error.message : String(error) });
       return;
@@ -582,6 +623,12 @@ export function createHttp2BridgeServer(options: CreateHttp2BridgeServerOptions)
       return duplex;
     },
     async close(): Promise<void> {
+      // `session.close()` sends GOAWAY and waits for every open stream to end
+      // on its own; a stalled stream (its body never completes, and its own
+      // timeout has not yet fired) would hold this wait open forever. The
+      // grace timer bounds it: past `closeGraceMs`, the server force-destroys
+      // the session, which ends its streams at once and settles their body
+      // reads through the `close` backstop in `readHttp2StreamBody`.
       await Promise.all(
         [...activeSessions].map(
           (session) =>
@@ -590,7 +637,14 @@ export function createHttp2BridgeServer(options: CreateHttp2BridgeServerOptions)
                 resolve();
                 return;
               }
-              session.close(() => resolve());
+              const forceDestroyTimer = setTimeout(() => {
+                if (!session.destroyed) session.destroy();
+              }, closeGraceMs);
+              forceDestroyTimer.unref?.();
+              session.close(() => {
+                clearTimeout(forceDestroyTimer);
+                resolve();
+              });
             }),
         ),
       );

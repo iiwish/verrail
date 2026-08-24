@@ -75,6 +75,8 @@ interface TestPairOptions {
   bridgeToken?: string;
   pingIntervalMs?: number;
   pingStallMs?: number;
+  requestBodyTimeoutMs?: number;
+  closeGraceMs?: number;
   onGoaway?: (record: Http2BridgeGoawayRecord) => void;
   onSessionError?: (error: Error) => void;
   onSession?: (session: http2.ServerHttp2Session) => void;
@@ -97,6 +99,8 @@ function bindTestServer(options: TestPairOptions = {}) {
     forwardRequest,
     pingIntervalMs: options.pingIntervalMs,
     pingStallMs: options.pingStallMs,
+    requestBodyTimeoutMs: options.requestBodyTimeoutMs,
+    closeGraceMs: options.closeGraceMs,
     onGoaway: options.onGoaway,
     onSessionError: options.onSessionError,
     onSession: options.onSession,
@@ -310,6 +314,87 @@ describe("createHttp2BridgeServer + createSandboxHttp2BridgeGateway", () => {
     } finally {
       rawClient.close();
       await handle.close();
+    }
+  });
+
+  it("test_a_stalled_request_body_settles_instead_of_hanging_forever", async () => {
+    let forwarderCalled = false;
+    const { handle, bridgeToken, clientSide } = bindTestServer({
+      requestBodyTimeoutMs: 30,
+      forwardRequest: async () => {
+        forwarderCalled = true;
+        return { status: 200 };
+      },
+    });
+    const rawClient = connectRawClient(clientSide);
+    try {
+      const startMs = Date.now();
+      // A partial, never-ended body stalls the read. The timeout destroys the
+      // stream, so the request settles (through an `error` or a `close`, not
+      // a clean response) well inside the bound, instead of hanging forever.
+      await new Promise<void>((resolve) => {
+        const req = rawClient.request({
+          ":method": "POST",
+          ":path": "/api/issues/abc/comments",
+          authorization: `Bearer ${bridgeToken}`,
+        });
+        req.on("error", () => resolve());
+        req.on("close", () => resolve());
+        req.write("partial-body");
+      });
+      expect(Date.now() - startMs).toBeLessThan(5_000);
+      expect(forwarderCalled).toBe(false);
+
+      // The session survives the timed-out stream: a second, complete request
+      // still succeeds.
+      const survivingResponse = await new Promise<{ status: number }>((resolve, reject) => {
+        const req = rawClient.request({
+          ":method": "POST",
+          ":path": "/api/issues/abc/comments",
+          authorization: `Bearer ${bridgeToken}`,
+        });
+        let status = 0;
+        req.on("response", (headers) => {
+          status = Number(headers[":status"]) || 0;
+        });
+        req.on("data", () => undefined);
+        req.on("end", () => resolve({ status }));
+        req.on("error", reject);
+        req.end();
+      });
+      expect(survivingResponse.status).toBe(200);
+    } finally {
+      rawClient.close();
+      await handle.close();
+    }
+  });
+
+  it("test_close_force_destroys_a_session_with_a_stalled_stream_instead_of_waiting_forever", async () => {
+    const { handle, bridgeToken, clientSide } = bindTestServer({
+      // A body timeout far longer than the close grace, so `close()` is the
+      // only thing that bounds the wait in this test.
+      requestBodyTimeoutMs: 60_000,
+      closeGraceMs: 30,
+    });
+    const rawClient = connectRawClient(clientSide);
+    try {
+      const req = rawClient.request({
+        ":method": "POST",
+        ":path": "/api/issues/abc/comments",
+        authorization: `Bearer ${bridgeToken}`,
+      });
+      req.write("partial-body");
+      // Give the request time to reach the server before close() runs.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      const closeStart = Date.now();
+      await handle.close();
+      const closeElapsedMs = Date.now() - closeStart;
+      // `close()` force-destroyed the stalled session at the grace bound,
+      // instead of waiting on `session.close()` forever.
+      expect(closeElapsedMs).toBeLessThan(5_000);
+    } finally {
+      rawClient.close();
     }
   });
 
