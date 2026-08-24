@@ -7686,6 +7686,53 @@ describe("http2 preface scan post-preface replay buffer", () => {
     expect(counts.rejections).toBe(1);
   });
 
+  it("rejects a single pre-preface chunk over the cap without reserving or concatenating it", async () => {
+    const { channel, control } = makeFakeChannel();
+    // The ceiling is far larger than the cap, so a ledger refusal cannot
+    // explain a rejection here: only the cap check on the chunk's
+    // prospective length can.
+    const { ledger, counts } = makeCountingLedger(1024 * 1024);
+    const scan = __http2PrefaceScanTesting.scanForHttp2ClientPreface(channel, {
+      capBytes: 64,
+      timeoutMs: 5_000,
+      ledger,
+    });
+    // One chunk, larger than the cap on its own, with no preface inside it.
+    // The scan must reject it on its prospective length before the
+    // `Buffer.concat` allocation and before the ledger reservation, so
+    // nothing here ever charges the ledger.
+    control.emitData(Buffer.from("x".repeat(128)));
+    expect(await scan.settled).toBe("missing");
+    expect(scan.replayOverflowed()).toBe(false);
+    expect(ledger.bytesInUse).toBe(0);
+    expect(ledger.liveTokenCount).toBe(0);
+    expect(counts.rejections).toBe(0);
+  });
+
+  it("rejects a pre-preface chunk that tips an already-buffered scan past the cap", async () => {
+    const { channel, control } = makeFakeChannel();
+    const { ledger, counts } = makeCountingLedger(1024 * 1024);
+    const scan = __http2PrefaceScanTesting.scanForHttp2ClientPreface(channel, {
+      capBytes: 64,
+      timeoutMs: 5_000,
+      ledger,
+    });
+    // The first chunk stays under the cap on its own, so the scan buffers
+    // and charges it while it keeps searching.
+    const firstChunk = "n".repeat(40);
+    control.emitData(Buffer.from(firstChunk));
+    expect(ledger.bytesInUse).toBe(Buffer.byteLength(firstChunk, "utf8"));
+    // The second chunk, added to the first, passes the cap. The scan must
+    // reject it before the concat that would grow the buffer past the cap,
+    // and it must drop the already-buffered first chunk too.
+    control.emitData(Buffer.from("n".repeat(40)));
+    expect(await scan.settled).toBe("missing");
+    expect(scan.replayOverflowed()).toBe(false);
+    expect(ledger.bytesInUse).toBe(0);
+    expect(ledger.liveTokenCount).toBe(0);
+    expect(counts.rejections).toBe(0);
+  });
+
   it("charges the post-preface bytes and releases them after the downstream bind", async () => {
     const { channel, control } = makeFakeChannel();
     const { ledger } = makeCountingLedger(1024 * 1024);

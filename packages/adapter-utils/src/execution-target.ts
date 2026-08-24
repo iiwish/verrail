@@ -2671,6 +2671,21 @@ function createHttp2PrefaceScanningChannel(
       return;
     }
     const rawChunk = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    // Reject the chunk on its prospective length before it grows
+    // `scanBuffer`, the same way `deliver` bounds `pendingAfterPreface`. A
+    // single oversized chunk — or a chunk that tips an already-large buffer
+    // past the cap — must fail closed here, before the `Buffer.concat` call
+    // below performs the allocation. Checking the cap only after the concat
+    // still bounds the retained buffer, but it lets one untrusted chunk
+    // force an allocation as large as the chunk itself, unbounded by
+    // `capBytes`.
+    if (scanBuffer.length + rawChunk.byteLength > options.capBytes) {
+      failed = true;
+      scanBuffer = Buffer.alloc(0);
+      releaseScanTokens();
+      options.onMissing();
+      return;
+    }
     // Charge this chunk against the aggregate ledger before it grows
     // `scanBuffer`. A refusal fails closed the same way the cap does: drop
     // the buffer and report a missing preface.
@@ -2688,12 +2703,6 @@ function createHttp2PrefaceScanningChannel(
     scanBuffer = scanBuffer.length === 0 ? rawChunk : Buffer.concat([scanBuffer, rawChunk]);
     const offset = scanBuffer.indexOf(HTTP2_CLIENT_CONNECTION_PREFACE);
     if (offset === -1) {
-      if (scanBuffer.length > options.capBytes) {
-        failed = true;
-        scanBuffer = Buffer.alloc(0);
-        releaseScanTokens();
-        options.onMissing();
-      }
       return;
     }
     sawPreface = true;
