@@ -155,8 +155,13 @@ export interface EffectiveExecutionCapabilities {
   readonly duplexCommandStream: boolean;
 }
 
-/** @deprecated Renamed to `EffectiveExecutionCapabilities`. This alias is removed in a later major release. */
-export type EffectiveSandboxCapabilities = EffectiveExecutionCapabilities;
+/**
+ * @deprecated Renamed to `EffectiveExecutionCapabilities`. This alias is
+ * removed in a later major release. It stays an `interface` (not a `type`
+ * alias) so a consumer that still merges declarations into the old name
+ * keeps working.
+ */
+export interface EffectiveSandboxCapabilities extends EffectiveExecutionCapabilities {}
 
 export interface AdapterSandboxExecutionTarget extends AdapterExecutionTargetWorkspaceMetadata {
   kind: "remote";
