@@ -250,17 +250,22 @@ for (const deferred of ["evals", "browser", "react", "standalone", "devtools", "
 
 async function pack(packageRoot, destination) {
   const output = capture(
-    "npm",
-    ["pack", "--ignore-scripts", "--json", "--pack-destination", destination],
+    "pnpm",
+    ["pack", "--json", "--pack-destination", destination],
     packageRoot,
+    { env: { PNPM_CONFIG_IGNORE_SCRIPTS: "true" } },
   );
-  const records = JSON.parse(output);
-  if (!Array.isArray(records) || records.length !== 1) {
-    throw new Error(`Expected one npm pack record from ${packageRoot}`);
+  const parsed = JSON.parse(output);
+  const record = Array.isArray(parsed) ? parsed[0] : parsed;
+  if (
+    (Array.isArray(parsed) && parsed.length !== 1) ||
+    record === null ||
+    typeof record !== "object"
+  ) {
+    throw new Error(`Expected one pnpm pack record from ${packageRoot}`);
   }
-  const record = records[0];
   if (!Array.isArray(record.files) || typeof record.filename !== "string") {
-    throw new Error(`npm pack returned incomplete metadata for ${packageRoot}`);
+    throw new Error(`pnpm pack returned incomplete metadata for ${packageRoot}`);
   }
   return {
     tarball: resolve(destination, basename(record.filename)),
@@ -269,9 +274,7 @@ async function pack(packageRoot, destination) {
 }
 
 function run(command, args, cwd, { env = {} } = {}) {
-  const usesPnpm = command === "pnpm";
-  const executable = usesPnpm ? pnpmInvocation.executable : command;
-  const effectiveArgs = usesPnpm ? [...pnpmInvocation.prefixArgs, ...args] : args;
+  const { executable, effectiveArgs } = resolveInvocation(command, args);
   const result = spawnSync(executable, effectiveArgs, {
     cwd,
     encoding: "utf8",
@@ -284,11 +287,12 @@ function run(command, args, cwd, { env = {} } = {}) {
   }
 }
 
-function capture(command, args, cwd) {
-  const result = spawnSync(command, args, {
+function capture(command, args, cwd, { env = {} } = {}) {
+  const { executable, effectiveArgs } = resolveInvocation(command, args);
+  const result = spawnSync(executable, effectiveArgs, {
     cwd,
     encoding: "utf8",
-    env: { ...process.env, CI: "true" },
+    env: { ...process.env, CI: "true", ...env },
     stdio: ["ignore", "pipe", "pipe"],
     maxBuffer: 32 * 1024 * 1024,
   });
@@ -298,6 +302,14 @@ function capture(command, args, cwd) {
     throw new Error(`${command} ${args.join(" ")} failed in ${cwd}`);
   }
   return result.stdout;
+}
+
+function resolveInvocation(command, args) {
+  if (command !== "pnpm") return { executable: command, effectiveArgs: args };
+  return {
+    executable: pnpmInvocation.executable,
+    effectiveArgs: [...pnpmInvocation.prefixArgs, ...args],
+  };
 }
 
 function resolvePnpmInvocation() {
