@@ -8,9 +8,9 @@ import {
   normalizeDuplexProvider,
   type DuplexFallbackReason,
   type DuplexTransportValue,
-} from "./duplex-telemetry.js";
+} from "./duplex-observability.js";
 
-describe("duplex telemetry: HTTP/2 event mapping (accepted security fix 7)", () => {
+describe("duplex observability: HTTP/2 event mapping (accepted security fix 7)", () => {
   it("test_http2_events_map_to_the_loss_taxonomy", () => {
     // Every closed HTTP/2 event name maps to a value from the existing,
     // closed DuplexLossReason set. The map reuses one taxonomy across every
@@ -51,7 +51,7 @@ describe("duplex telemetry: HTTP/2 event mapping (accepted security fix 7)", () 
   });
 });
 
-describe("duplex telemetry: closed transport and fallback-reason values", () => {
+describe("duplex observability: closed transport and fallback-reason values", () => {
   it("accepts the http2 transport value and the preface_missing fallback reason", () => {
     // A type-level check: these string literals must widen to the exported
     // union types with no cast, so a drift in either union breaks the build.
@@ -62,7 +62,7 @@ describe("duplex telemetry: closed transport and fallback-reason values", () => 
   });
 });
 
-describe("duplex telemetry: existing normalization stays intact", () => {
+describe("duplex observability: existing normalization stays intact", () => {
   it("still maps an unknown loss cause and an unknown provider key to their closed defaults", () => {
     expect(normalizeDuplexLossReason("not_a_real_reason")).toBe("other");
     expect(normalizeDuplexProvider("some-unlisted-plugin")).toBe("other");

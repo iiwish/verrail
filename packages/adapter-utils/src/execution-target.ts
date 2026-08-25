@@ -55,13 +55,13 @@ import {
 import { decodeDuplexLine, DEFAULT_MAX_DUPLEX_FRAME_BYTES } from "./duplex-frame-codec.js";
 import type { ReassembledBody } from "./duplex-body-spool.js";
 import {
-  createDuplexTelemetry,
+  createDuplexObservability,
   mapHttp2EventToDuplexLossReason,
   type DuplexFallbackReason,
   type DuplexLossReason,
-  type DuplexTelemetryRecorder,
+  type DuplexObservabilityRecorder,
   type Http2TelemetryEventName,
-} from "./duplex-telemetry.js";
+} from "./duplex-observability.js";
 import {
   DUPLEX_CHANNEL_AGGREGATE_BYTES_EXCEEDED,
   type DuplexAggregateByteLedger,
@@ -182,12 +182,12 @@ export interface AdapterSandboxExecutionTarget extends AdapterExecutionTargetWor
    */
   streamRunLogs?: boolean | null;
   /**
-   * The injected duplex telemetry recorder for this run. The host attaches it on
-   * the same seam as `runner`, so this live object stays on the host and never
-   * enters the sandbox environment. The bridge binds it to the fixed duplex
-   * observability surface. Absent means the safe no-op default.
+   * The injected duplex observability recorder for this run. The host attaches
+   * it on the same seam as `runner`, so this live object stays on the host and
+   * never enters the sandbox environment. The bridge binds it to the fixed
+   * duplex observability surface. Absent means the safe no-op default.
    */
-  duplexTelemetryRecorder?: DuplexTelemetryRecorder | null;
+  duplexObservabilityRecorder?: DuplexObservabilityRecorder | null;
   /**
    * The process-owned aggregate byte ledger for the sandbox duplex channel. The
    * host stamps this same object on every sandbox target on the same seam as
@@ -430,15 +430,15 @@ export function adapterExecutionTargetEnablesSandboxDuplexBridge(
 }
 
 /**
- * Read the injected duplex telemetry recorder off a target. Only a sandbox
- * target with a recorder attached returns it. Every other target returns null,
- * so the bridge falls back to the safe no-op recorder.
+ * Read the injected duplex observability recorder off a target. Only a
+ * sandbox target with a recorder attached returns it. Every other target
+ * returns null, so the bridge falls back to the safe no-op recorder.
  */
-export function adapterExecutionTargetDuplexTelemetryRecorder(
+export function adapterExecutionTargetDuplexObservabilityRecorder(
   target: AdapterExecutionTarget | null | undefined,
-): DuplexTelemetryRecorder | null {
+): DuplexObservabilityRecorder | null {
   return target?.kind === "remote" && target.transport === "sandbox"
-    ? target.duplexTelemetryRecorder ?? null
+    ? target.duplexObservabilityRecorder ?? null
     : null;
 }
 
@@ -3374,7 +3374,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
   // span, the request span, the guarded counters, and the transport event. The
   // default is a no-op recorder, so the surface stays inert until the host injects
   // a real recorder.
-  duplexTelemetryRecorder?: DuplexTelemetryRecorder | null;
+  duplexObservabilityRecorder?: DuplexObservabilityRecorder | null;
 }): Promise<AdapterExecutionTargetPaperclipBridgeHandle | null> {
   if (!adapterExecutionTargetUsesPaperclipBridge(input.target)) {
     return null;
@@ -3445,8 +3445,8 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
   // is a no-op, so the facade is inert until the host injects a real recorder.
   const duplexProviderKey =
     "providerKey" in target ? target.providerKey ?? undefined : undefined;
-  const duplexTelemetry = createDuplexTelemetry({
-    recorder: input.duplexTelemetryRecorder ?? undefined,
+  const duplexObservability = createDuplexObservability({
+    recorder: input.duplexObservabilityRecorder ?? undefined,
     providerKey: duplexProviderKey,
     // http2_v1 is the one active non-file transport now; every non-file
     // record this facade produces stamps the `http2` transport value.
@@ -3603,14 +3603,14 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
   // capability or the runner method absent. A later channel-open failure records
   // its own fallback through the channel-open attempt below.
   if (!duplexRequested) {
-    duplexTelemetry.recordFallback("gate_off");
+    duplexObservability.recordFallback("gate_off");
   } else if (!capabilityGranted || typeof openDuplexChannel !== "function") {
-    duplexTelemetry.recordFallback("capability_absent");
+    duplexObservability.recordFallback("capability_absent");
   }
   if (duplexRequested && capabilityGranted && typeof openDuplexChannel === "function") {
     // Begin the channel-open attempt. The block reports exactly one terminal:
     // `ready` on success, or `fallback(reason)` on an open or a readiness failure.
-    const duplexChannelOpen = duplexTelemetry.startChannelOpen();
+    const duplexChannelOpen = duplexObservability.startChannelOpen();
     const readinessTimeoutMs =
       typeof input.duplexReadinessTimeoutMs === "number" &&
       Number.isFinite(input.duplexReadinessTimeoutMs) &&
@@ -3789,7 +3789,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
               return;
             }
             const lossClass = anyStreamDispatched ? "post_dispatch" : "pre_dispatch";
-            duplexTelemetry.recordLoss(lossClass, reason);
+            duplexObservability.recordLoss(lossClass, reason);
             void onLog("stderr", `[paperclip] Sandbox HTTP/2 channel lost (${reason}). The run fails.\n`);
           };
 
@@ -3817,10 +3817,10 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
                 undefined,
                 { suppressDebugLog: true },
               );
-              duplexTelemetry.recordRequest({ latencyMs: Date.now() - dispatchStartMs, outcome: "ok" });
+              duplexObservability.recordRequest({ latencyMs: Date.now() - dispatchStartMs, outcome: "ok" });
               return { status: result.status, headers: result.headers, body: result.body };
             } catch (error) {
-              duplexTelemetry.recordRequest({ latencyMs: Date.now() - dispatchStartMs, outcome: "error" });
+              duplexObservability.recordRequest({ latencyMs: Date.now() - dispatchStartMs, outcome: "error" });
               throw error;
             }
           };

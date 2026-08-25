@@ -20,7 +20,7 @@ import {
   __http2PrefaceScanTesting,
   buildDuplexGatewayLaunchArgv,
   DEFAULT_REMOTE_SANDBOX_ADAPTER_TIMEOUT_SEC,
-  adapterExecutionTargetDuplexTelemetryRecorder,
+  adapterExecutionTargetDuplexObservabilityRecorder,
   adapterExecutionTargetEnablesSandboxDuplexBridge,
   adapterExecutionTargetSessionIdentity,
   adapterExecutionTargetToRemoteSpec,
@@ -75,7 +75,7 @@ import {
   type DuplexBrokerState,
 } from "./duplex-bridge-broker.js";
 import {
-  createDuplexTelemetry,
+  createDuplexObservability,
   DUPLEX_AGGREGATE_BYTE_LEDGER_METRIC_NAMES,
   DUPLEX_COUNTER_AGGREGATE_BYTE_ACCOUNTING_UNDERFLOW_TOTAL,
   DUPLEX_COUNTER_AGGREGATE_BYTE_RESERVATION_REJECTIONS_TOTAL,
@@ -87,12 +87,12 @@ import {
   DUPLEX_SPAN_CHANNEL_OPEN,
   DUPLEX_SPAN_REQUEST,
   DUPLEX_TRANSPORT_EVENT,
-  type DuplexTelemetryCounterRecord,
-  type DuplexTelemetryDimensions,
-  type DuplexTelemetryEventRecord,
-  type DuplexTelemetryRecorder,
-  type DuplexTelemetrySpanRecord,
-} from "./duplex-telemetry.js";
+  type DuplexObservabilityCounterRecord,
+  type DuplexObservabilityDimensions,
+  type DuplexObservabilityEventRecord,
+  type DuplexObservabilityRecorder,
+  type DuplexObservabilitySpanRecord,
+} from "./duplex-observability.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -3442,7 +3442,7 @@ describe("sandbox adapter execution targets", () => {
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
       enableSandboxDuplexBridge: true,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       expect(bridge).not.toBeNull();
@@ -3563,7 +3563,7 @@ describe("sandbox adapter execution targets", () => {
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
       enableSandboxDuplexBridge: true,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       // The file bridge serves, not the duplex transport.
@@ -3674,8 +3674,8 @@ describe("sandbox adapter execution targets", () => {
     await mkdir(remoteCwd, { recursive: true });
     const api = await startRecordingApiServer();
 
-    const counters: DuplexTelemetryCounterRecord[] = [];
-    const recorder: DuplexTelemetryRecorder = {
+    const counters: DuplexObservabilityCounterRecord[] = [];
+    const recorder: DuplexObservabilityRecorder = {
       recordSpan() {},
       incrementCounter(record) {
         counters.push(record);
@@ -3694,7 +3694,7 @@ describe("sandbox adapter execution targets", () => {
       timeoutMs: 30_000,
       runner: makeHttp2SelectionRunner().runner,
       effectiveCapabilities: duplexCapabilities(true),
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     };
     const openBridge = await startAdapterExecutionTargetPaperclipBridge({
       runId: "run-http2-open",
@@ -3704,7 +3704,7 @@ describe("sandbox adapter execution targets", () => {
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
       enableSandboxDuplexBridge: true,
-      duplexTelemetryRecorder: adapterExecutionTargetDuplexTelemetryRecorder(openTarget),
+      duplexObservabilityRecorder: adapterExecutionTargetDuplexObservabilityRecorder(openTarget),
     });
     try {
       expect(openBridge?.env.PAPERCLIP_API_BRIDGE_MODE).toBe("http2_v1");
@@ -3726,7 +3726,7 @@ describe("sandbox adapter execution targets", () => {
       timeoutMs: 30_000,
       runner: makeDuplexSelectionRunner().runner,
       effectiveCapabilities: duplexCapabilities(true),
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     };
     const fallbackBridge = await startAdapterExecutionTargetPaperclipBridge({
       runId: "run-duplex-fallback",
@@ -3736,7 +3736,7 @@ describe("sandbox adapter execution targets", () => {
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
       enableSandboxDuplexBridge: false,
-      duplexTelemetryRecorder: adapterExecutionTargetDuplexTelemetryRecorder(fallbackTarget),
+      duplexObservabilityRecorder: adapterExecutionTargetDuplexObservabilityRecorder(fallbackTarget),
     });
     try {
       expect(fallbackBridge?.env.PAPERCLIP_API_BRIDGE_MODE).toBe("queue_v1");
@@ -4008,15 +4008,15 @@ describe("sandbox adapter execution targets", () => {
   // dimensions, and values. An optional `failEvery` flag makes every method throw,
   // so a test proves a telemetry failure never breaks the request path.
   function createRecordingDuplexRecorder(options: { failEvery?: boolean } = {}): {
-    recorder: DuplexTelemetryRecorder;
-    spans: DuplexTelemetrySpanRecord[];
-    counters: DuplexTelemetryCounterRecord[];
-    events: DuplexTelemetryEventRecord[];
+    recorder: DuplexObservabilityRecorder;
+    spans: DuplexObservabilitySpanRecord[];
+    counters: DuplexObservabilityCounterRecord[];
+    events: DuplexObservabilityEventRecord[];
   } {
-    const spans: DuplexTelemetrySpanRecord[] = [];
-    const counters: DuplexTelemetryCounterRecord[] = [];
-    const events: DuplexTelemetryEventRecord[] = [];
-    const recorder: DuplexTelemetryRecorder = {
+    const spans: DuplexObservabilitySpanRecord[] = [];
+    const counters: DuplexObservabilityCounterRecord[] = [];
+    const events: DuplexObservabilityEventRecord[] = [];
+    const recorder: DuplexObservabilityRecorder = {
       recordSpan(record) {
         if (options.failEvery) throw new Error("telemetry sink down");
         spans.push(record);
@@ -4035,7 +4035,7 @@ describe("sandbox adapter execution targets", () => {
 
   // Every dimension key a record carries must be one of the fixed keys. The set is
   // closed, so a new key never reaches a sink by accident.
-  function assertOnlyFixedDimensionKeys(dimensions: DuplexTelemetryDimensions | undefined): void {
+  function assertOnlyFixedDimensionKeys(dimensions: DuplexObservabilityDimensions | undefined): void {
     expect(dimensions).toBeDefined();
     for (const key of Object.keys(dimensions ?? {})) {
       expect(DUPLEX_DIMENSION_KEYS).toContain(key as (typeof DUPLEX_DIMENSION_KEYS)[number]);
@@ -4105,7 +4105,7 @@ describe("sandbox adapter execution targets", () => {
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
       enableSandboxDuplexBridge: true,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       expect(bridge?.env.PAPERCLIP_API_BRIDGE_MODE).toBe("http2_v1");
@@ -4171,7 +4171,7 @@ describe("sandbox adapter execution targets", () => {
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
       enableSandboxDuplexBridge: true,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       expect(bridge?.env.PAPERCLIP_API_BRIDGE_MODE).toBe("queue_v1");
@@ -4250,7 +4250,7 @@ describe("sandbox adapter execution targets", () => {
         hostApiToken: "real-run-jwt",
         hostApiUrl: api.origin,
         enableSandboxDuplexBridge: true,
-        duplexTelemetryRecorder: recorder,
+        duplexObservabilityRecorder: recorder,
       });
       try {
         // The channel never opened, so the host serves the file bridge.
@@ -4313,7 +4313,7 @@ describe("sandbox adapter execution targets", () => {
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
       enableSandboxDuplexBridge: true,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       expect(bridge?.env.PAPERCLIP_API_BRIDGE_MODE).toBe("http2_v1");
@@ -4376,7 +4376,7 @@ describe("sandbox adapter execution targets", () => {
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
       enableSandboxDuplexBridge: true,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       // The throwing recorder never blocked the http2 selection.
@@ -4401,7 +4401,7 @@ describe("sandbox adapter execution targets", () => {
     // `recordHttp2Loss` (execution-target.ts) never accepts a raw error
     // message: it maps every host-observed HTTP/2 event to one fixed, closed
     // `DuplexLossReason` value before any sink reads it (accepted security
-    // fix 7, `duplex-telemetry.test.ts` pins the closed map). A raw provider
+    // fix 7, `duplex-observability.test.ts` pins the closed map). A raw provider
     // error string has no code path into a sink on the http2_v1 transport, so
     // this test proves the property that does need a live run: the route,
     // the query, the body, and both tokens never ride a sink either.
@@ -4449,7 +4449,7 @@ describe("sandbox adapter execution targets", () => {
         hostApiToken: AGENT_TOKEN_SENTINEL,
         hostApiUrl: api.origin,
         enableSandboxDuplexBridge: true,
-        duplexTelemetryRecorder: recorder,
+        duplexObservabilityRecorder: recorder,
         onLog: async (_stream, chunk) => {
           logLines.push(chunk);
         },
@@ -4527,7 +4527,7 @@ describe("sandbox adapter execution targets", () => {
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
       enableSandboxDuplexBridge: true,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       expect(bridge?.env.PAPERCLIP_API_BRIDGE_MODE).toBe("http2_v1");
@@ -4601,7 +4601,7 @@ describe("sandbox adapter execution targets", () => {
       // A long readiness timeout, so the buffer cap, not the timeout, drives the
       // failure.
       duplexReadinessTimeoutMs: 5_000,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       expect(bridge).not.toBeNull();
@@ -4659,7 +4659,7 @@ describe("sandbox adapter execution targets", () => {
       // A long readiness timeout, so the buffer cap, not the timeout, drives the
       // failure.
       duplexReadinessTimeoutMs: 5_000,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       expect(bridge).not.toBeNull();
@@ -4715,7 +4715,7 @@ describe("sandbox adapter execution targets", () => {
       // A long readiness timeout, so the aggregate ledger, not the timeout, drives
       // the failure.
       duplexReadinessTimeoutMs: 5_000,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       expect(bridge).not.toBeNull();
@@ -4838,7 +4838,7 @@ describe("sandbox adapter execution targets", () => {
       hostApiUrl: api.origin,
       enableSandboxDuplexBridge: true,
       duplexReadinessTimeoutMs: 5_000,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       expect(bridge).not.toBeNull();
@@ -4895,7 +4895,7 @@ describe("sandbox adapter execution targets", () => {
       hostApiUrl: api.origin,
       enableSandboxDuplexBridge: true,
       duplexReadinessTimeoutMs: 5_000,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       expect(bridge).not.toBeNull();
@@ -4955,7 +4955,7 @@ describe("sandbox adapter execution targets", () => {
       hostApiUrl: api.origin,
       enableSandboxDuplexBridge: true,
       duplexReadinessTimeoutMs: 5_000,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       expect(bridge).not.toBeNull();
@@ -5006,7 +5006,7 @@ describe("sandbox adapter execution targets", () => {
       hostApiUrl: api.origin,
       enableSandboxDuplexBridge: true,
       duplexReadinessTimeoutMs: 5_000,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       expect(bridge).not.toBeNull();
@@ -5064,7 +5064,7 @@ describe("sandbox adapter execution targets", () => {
       enableSandboxDuplexBridge: true,
       // A long readiness timeout, so the cap, not the timeout, drives the failure.
       duplexReadinessTimeoutMs: 5_000,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       expect(bridge).not.toBeNull();
@@ -5114,7 +5114,7 @@ describe("sandbox adapter execution targets", () => {
       hostApiUrl: api.origin,
       enableSandboxDuplexBridge: true,
       duplexReadinessTimeoutMs: 5_000,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       expect(bridge?.env.PAPERCLIP_API_BRIDGE_MODE).toBe("queue_v1");
@@ -5287,7 +5287,7 @@ describe("sandbox adapter execution targets", () => {
       // A short readiness timeout, so the preface-missing bound (which reapplies
       // this same value) fires quickly in the test.
       duplexReadinessTimeoutMs: 500,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       expect(bridge).not.toBeNull();
@@ -5331,7 +5331,7 @@ describe("sandbox adapter execution targets", () => {
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
       enableSandboxDuplexBridge: false,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       expect(bridge).not.toBeNull();
@@ -5378,7 +5378,7 @@ describe("sandbox adapter execution targets", () => {
       hostApiUrl: api.origin,
       enableSandboxDuplexBridge: true,
       duplexReadinessTimeoutMs: 500,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       expect(bridge).not.toBeNull();
@@ -5565,7 +5565,7 @@ describe("sandbox adapter execution targets", () => {
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
       enableSandboxDuplexBridge: true,
-      duplexTelemetryRecorder: recorder,
+      duplexObservabilityRecorder: recorder,
     });
     try {
       expect(bridge?.env.PAPERCLIP_API_BRIDGE_MODE).toBe("http2_v1");
@@ -7001,9 +7001,9 @@ describe("createDuplexBridgeBroker", () => {
   });
 
   it("keeps a success when a loss orders after a host-observed orderly completion, and emits no loss event", async () => {
-    const events: DuplexTelemetryEventRecord[] = [];
-    const counters: DuplexTelemetryCounterRecord[] = [];
-    const recorder: DuplexTelemetryRecorder = {
+    const events: DuplexObservabilityEventRecord[] = [];
+    const counters: DuplexObservabilityCounterRecord[] = [];
+    const recorder: DuplexObservabilityRecorder = {
       recordSpan() {},
       incrementCounter(record) {
         counters.push(record);
@@ -7016,7 +7016,7 @@ describe("createDuplexBridgeBroker", () => {
     const broker = await createDuplexBridgeBroker({
       channel: fake.channel,
       forwardRequest: async () => ({ status: 200 }),
-      telemetry: createDuplexTelemetry({ recorder, providerKey: "daytona" }),
+      telemetry: createDuplexObservability({ recorder, providerKey: "daytona" }),
     });
     broker.start();
 
@@ -7032,10 +7032,10 @@ describe("createDuplexBridgeBroker", () => {
   });
 
   it("carries the typed loss_reason on the transport loss event and keeps a sentinel message off every sink", async () => {
-    const spans: DuplexTelemetrySpanRecord[] = [];
-    const counters: DuplexTelemetryCounterRecord[] = [];
-    const events: DuplexTelemetryEventRecord[] = [];
-    const recorder: DuplexTelemetryRecorder = {
+    const spans: DuplexObservabilitySpanRecord[] = [];
+    const counters: DuplexObservabilityCounterRecord[] = [];
+    const events: DuplexObservabilityEventRecord[] = [];
+    const recorder: DuplexObservabilityRecorder = {
       recordSpan(record) {
         spans.push(record);
       },
@@ -7052,7 +7052,7 @@ describe("createDuplexBridgeBroker", () => {
     const broker = await createDuplexBridgeBroker({
       channel: fake.channel,
       forwardRequest: async () => ({ status: 200 }),
-      telemetry: createDuplexTelemetry({ recorder, providerKey: "daytona" }),
+      telemetry: createDuplexObservability({ recorder, providerKey: "daytona" }),
       logger: (message) => logLines.push(message),
     });
     broker.start();
