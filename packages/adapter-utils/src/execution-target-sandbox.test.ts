@@ -7893,4 +7893,92 @@ describe("http2 preface scan post-preface replay buffer", () => {
     expect(ledger.bytesInUse).toBe(0);
     expect(ledger.liveTokenCount).toBe(0);
   });
+
+  it("finds a preface fragmented into many one-byte chunks", async () => {
+    const { channel, control } = makeFakeChannel();
+    const { ledger } = makeCountingLedger(1024 * 1024);
+    const scan = __http2PrefaceScanTesting.scanForHttp2ClientPreface(channel, {
+      capBytes: 4_096,
+      timeoutMs: 5_000,
+      ledger,
+    });
+    // A slow sandbox socket can deliver the preface one byte at a time. The
+    // scan must still find it and deliver the exact octets, the same as it
+    // does for a preface that arrives in one chunk.
+    for (const byte of PREFACE) {
+      control.emitData(Buffer.from([byte]));
+    }
+    expect(await scan.settled).toBe("found");
+    expect(scan.replayOverflowed()).toBe(false);
+    const replayed: string[] = [];
+    scan.scanned.onData((chunk) => replayed.push(Buffer.from(chunk).toString("utf8")));
+    expect(replayed).toEqual([PREFACE.toString("utf8")]);
+  });
+
+  it("bounds the pre-preface scan search and growth-copy work by the bytes received, across many one-byte fragments", async () => {
+    const { channel, control } = makeFakeChannel();
+    const { ledger } = makeCountingLedger(1024 * 1024);
+    __http2PrefaceScanTesting.resetScanSearchUnits();
+    __http2PrefaceScanTesting.resetScanBufferGrowthCopyUnits();
+    // An adversarial sandbox sends many one-byte fragments, none of them the
+    // preface, right up to the cap boundary. A search that always restarts
+    // from the beginning of the retained buffer re-examines the whole
+    // buffer on every fragment; a one-copy-per-fragment append copies the
+    // whole retained buffer on every fragment. Both are quadratic in the
+    // fragment count.
+    const capBytes = 2_048;
+    const scan = __http2PrefaceScanTesting.scanForHttp2ClientPreface(channel, {
+      capBytes,
+      timeoutMs: 5_000,
+      ledger,
+    });
+    for (let i = 0; i < capBytes; i += 1) {
+      control.emitData(Buffer.from([0x2e])); // '.', never part of the preface
+    }
+    // One more one-byte fragment tips the retained buffer past the cap, so
+    // the scan settles and this test can read the final work counts.
+    control.emitData(Buffer.from([0x2e]));
+    expect(await scan.settled).toBe("missing");
+    const searchUnits = __http2PrefaceScanTesting.readScanSearchUnits();
+    const growthCopyUnits = __http2PrefaceScanTesting.readScanBufferGrowthCopyUnits();
+    // Each one-byte fragment can re-examine at most the preface's 24 octets
+    // of overlap (RFC 9113, Section 3.4), so the search work stays within a
+    // small multiple of capBytes. Doubling growth copies a logarithmic
+    // number of times, each at most the current buffer length, so the
+    // growth-copy work stays within a small multiple of capBytes too. A
+    // per-fragment full rescan or full copy is quadratic (about
+    // capBytes^2 / 2), far above either bound.
+    expect(searchUnits).toBeLessThanOrEqual(50 * capBytes);
+    expect(growthCopyUnits).toBeLessThanOrEqual(4 * capBytes);
+  });
+
+  it("bounds the post-preface replay buffer growth-copy work by the bytes received, across many one-byte fragments, and still enforces the cap", async () => {
+    const { channel, control } = makeFakeChannel();
+    const { ledger } = makeCountingLedger(1024 * 1024);
+    __http2PrefaceScanTesting.resetReplayBufferGrowthCopyUnits();
+    const capBytes = 2_048;
+    const scan = __http2PrefaceScanTesting.scanForHttp2ClientPreface(channel, {
+      capBytes,
+      timeoutMs: 5_000,
+      ledger,
+    });
+    control.emitData(PREFACE);
+    expect(await scan.settled).toBe("found");
+    // Many one-byte post-preface fragments arrive before the HTTP/2 server
+    // binds, right up to the cap boundary. A one-copy-per-fragment append
+    // copies the whole retained buffer on every fragment; the fix must
+    // instead grow by doubling.
+    const postPrefaceBytes = capBytes - PREFACE.byteLength;
+    for (let i = 0; i < postPrefaceBytes; i += 1) {
+      control.emitData(Buffer.from([0x2e]));
+    }
+    const growthCopyUnits = __http2PrefaceScanTesting.readReplayBufferGrowthCopyUnits();
+    expect(growthCopyUnits).toBeLessThanOrEqual(4 * capBytes);
+    // One more one-byte fragment tips the retained buffer past the cap. The
+    // scan drops the buffer, stops the channel, and fails closed — the same
+    // shape a missing preface fails closed.
+    control.emitData(Buffer.from([0x2e]));
+    expect(scan.replayOverflowed()).toBe(true);
+    expect(control.stopCount).toBe(1);
+  });
 });

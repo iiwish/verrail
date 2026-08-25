@@ -2549,6 +2549,95 @@ const HTTP2_CLIENT_CONNECTION_PREFACE = Buffer.from(
   "hex",
 );
 
+/** The one shared empty buffer. The preface scan starts and resets its two
+ * retained buffers to it. */
+const HTTP2_PREFACE_EMPTY_BUFFER = Buffer.alloc(0);
+
+// The count of bytes the preface scan's substring search examines, in bytes.
+// A search that always starts from the beginning of the retained buffer
+// re-examines the whole buffer on every fragment, so this count grows
+// quadratically in the number of fragments. `findPrefaceFrom` instead
+// resumes from where the prior search left off, so this count stays linear
+// in the bytes received. A test reads this count to prove the search work
+// does not regress to the quadratic shape. Production code never reads this
+// count.
+let http2PrefaceScanSearchUnits = 0;
+
+// The count of bytes the pre-preface scan buffer copies while it grows its
+// backing storage. A one-copy-per-fragment append copies the whole retained
+// buffer on every fragment, so this count grows quadratically in the number
+// of fragments. The doubling-growth approach copies only on a reallocation,
+// so this count stays linear in the bytes received. A test reads this count
+// to prove the growth work does not regress to the quadratic shape.
+// Production code never reads this count.
+let http2PrefaceScanBufferGrowthCopyUnits = 0;
+
+// The same count as `http2PrefaceScanBufferGrowthCopyUnits`, for the
+// post-preface replay buffer instead of the pre-preface scan buffer.
+let http2PrefaceReplayBufferGrowthCopyUnits = 0;
+
+/**
+ * A byte buffer that grows its backing storage by doubling its capacity,
+ * instead of copying the whole retained buffer on every appended fragment. A
+ * sender that trickles input in many small fragments would otherwise force
+ * one full copy of the whole retained buffer per fragment: with the buffer
+ * growing toward its cap, that is quadratic work in the number of fragments.
+ * Doubling the backing storage's capacity only when the current capacity
+ * runs out reallocates and copies a logarithmic number of times, so the
+ * total copy work stays linear in the bytes received. `countGrowthCopy`
+ * receives the number of bytes each reallocation copies, so a test can add
+ * these up and prove the growth work stays linear.
+ */
+function createGrowableByteBuffer(countGrowthCopy: (copiedBytes: number) => void): {
+  view: () => Buffer;
+  length: () => number;
+  append: (chunk: Uint8Array) => void;
+  reset: () => void;
+} {
+  let used: Buffer = HTTP2_PREFACE_EMPTY_BUFFER;
+  let storage: Buffer = HTTP2_PREFACE_EMPTY_BUFFER;
+  return {
+    view: () => used,
+    length: () => used.length,
+    append: (chunk: Uint8Array): void => {
+      const usedLength = used.length;
+      const neededLength = usedLength + chunk.byteLength;
+      if (neededLength > storage.length) {
+        let nextCapacity = storage.length === 0 ? chunk.byteLength : storage.length * 2;
+        while (nextCapacity < neededLength) {
+          nextCapacity *= 2;
+        }
+        const grown = Buffer.allocUnsafe(nextCapacity);
+        storage.copy(grown, 0, 0, usedLength);
+        countGrowthCopy(usedLength);
+        storage = grown;
+      }
+      storage.set(chunk, usedLength);
+      used = storage.subarray(0, neededLength);
+    },
+    reset: (): void => {
+      used = HTTP2_PREFACE_EMPTY_BUFFER;
+      storage = HTTP2_PREFACE_EMPTY_BUFFER;
+    },
+  };
+}
+
+/**
+ * Find the client connection preface in `buffer` at or after index `from`
+ * and return its offset, or -1. This counts the real scan distance for a
+ * test: from `from` up to the found preface's end, or to the end of the
+ * buffer when it finds none. The count stays linear in the bytes received
+ * when the caller advances `from` to just short of the buffer's end on every
+ * miss, instead of always searching from the start of the buffer.
+ */
+function findPrefaceFrom(buffer: Buffer, from: number): number {
+  const offset = buffer.indexOf(HTTP2_CLIENT_CONNECTION_PREFACE, from);
+  const scannedTo =
+    offset === -1 ? buffer.length : offset + HTTP2_CLIENT_CONNECTION_PREFACE.length;
+  http2PrefaceScanSearchUnits += Math.max(scannedTo - from, 0);
+  return offset;
+}
+
 /**
  * Wrap the readiness gate's broker channel so its `onData` delivers no byte
  * until the client connection preface appears, then delivers every byte from
@@ -2595,19 +2684,32 @@ function createHttp2PrefaceScanningChannel(
   disposeScanBuffer: () => void;
 } {
   const ledger = options.ledger ?? null;
-  let scanBuffer: Buffer = Buffer.alloc(0);
+  // The pre-preface scan buffer. `scanBuf.append` grows its backing storage
+  // by doubling, instead of copying the whole retained buffer on every
+  // fragment — see {@link createGrowableByteBuffer}. `scanSearchFrom` is the
+  // first index the next search must examine: `findPrefaceFrom` advances it
+  // to just short of the buffer's end on every miss, so a fragmented preface
+  // is found without a full rescan of the retained buffer on every fragment.
+  const scanBuf = createGrowableByteBuffer((copiedBytes) => {
+    http2PrefaceScanBufferGrowthCopyUnits += copiedBytes;
+  });
+  let scanSearchFrom = 0;
   let sawPreface = false;
   let failed = false;
   let downstream: ((chunk: Uint8Array) => void) | null = null;
   // Bytes found after the preface before a downstream listener attaches. The
   // wrapped channel replays them on attach, the same pattern the readiness
-  // gate itself uses for its own post-READY replay buffer.
-  let pendingAfterPreface: Buffer = Buffer.alloc(0);
+  // gate itself uses for its own post-READY replay buffer. This also grows
+  // by doubling, for the same reason as `scanBuf`: fragmented post-preface
+  // input must not force a full copy of the retained buffer per fragment.
+  const pendingAfterPreface = createGrowableByteBuffer((copiedBytes) => {
+    http2PrefaceReplayBufferGrowthCopyUnits += copiedBytes;
+  });
   // Every `http2_preface_replay` reservation token this buffer holds. The
   // function releases each token exactly once, on the downstream handoff or
   // on an overflow.
   const replayTokens: ReservationToken[] = [];
-  // Every `http2_preface_scan` reservation token the pre-preface `scanBuffer`
+  // Every `http2_preface_scan` reservation token the pre-preface scan buffer
   // holds. The scan is untrusted, sandbox-controlled input on the same
   // footing as the readiness gate's own pre-READY buffer, so it charges the
   // ledger the same way: one reservation per received chunk, released in
@@ -2637,7 +2739,7 @@ function createHttp2PrefaceScanningChannel(
   // back the same way it does for a missing preface.
   function overflowAndStop(): void {
     replayOverflow = true;
-    pendingAfterPreface = Buffer.alloc(0);
+    pendingAfterPreface.reset();
     releaseReplayTokens();
     channel.stop();
   }
@@ -2648,7 +2750,7 @@ function createHttp2PrefaceScanningChannel(
       return;
     }
     if (replayOverflow) return;
-    if (pendingAfterPreface.length + chunk.byteLength > options.capBytes) {
+    if (pendingAfterPreface.length() + chunk.byteLength > options.capBytes) {
       overflowAndStop();
       return;
     }
@@ -2660,8 +2762,7 @@ function createHttp2PrefaceScanningChannel(
       }
       replayTokens.push(token);
     }
-    pendingAfterPreface =
-      pendingAfterPreface.length === 0 ? chunk : Buffer.concat([pendingAfterPreface, chunk]);
+    pendingAfterPreface.append(chunk);
   }
 
   channel.onData((chunk) => {
@@ -2671,44 +2772,57 @@ function createHttp2PrefaceScanningChannel(
       return;
     }
     const rawChunk = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    // Reject the chunk on its prospective length before it grows
-    // `scanBuffer`, the same way `deliver` bounds `pendingAfterPreface`. A
-    // single oversized chunk — or a chunk that tips an already-large buffer
-    // past the cap — must fail closed here, before the `Buffer.concat` call
-    // below performs the allocation. Checking the cap only after the concat
-    // still bounds the retained buffer, but it lets one untrusted chunk
-    // force an allocation as large as the chunk itself, unbounded by
-    // `capBytes`.
-    if (scanBuffer.length + rawChunk.byteLength > options.capBytes) {
+    // Reject the chunk on its prospective length before it grows the scan
+    // buffer, the same way `deliver` bounds `pendingAfterPreface`. A single
+    // oversized chunk — or a chunk that tips an already-large buffer past
+    // the cap — must fail closed here, before `scanBuf.append` performs the
+    // allocation. Checking the cap only after the append still bounds the
+    // retained buffer, but it lets one untrusted chunk force an allocation
+    // as large as the chunk itself, unbounded by `capBytes`.
+    if (scanBuf.length() + rawChunk.byteLength > options.capBytes) {
       failed = true;
-      scanBuffer = Buffer.alloc(0);
+      scanBuf.reset();
+      scanSearchFrom = 0;
       releaseScanTokens();
       options.onMissing();
       return;
     }
-    // Charge this chunk against the aggregate ledger before it grows
-    // `scanBuffer`. A refusal fails closed the same way the cap does: drop
+    // Charge this chunk against the aggregate ledger before it grows the
+    // scan buffer. A refusal fails closed the same way the cap does: drop
     // the buffer and report a missing preface.
     if (ledger) {
       const token = ledger.reserve("http2_preface_scan", rawChunk.byteLength);
       if (!token) {
         failed = true;
-        scanBuffer = Buffer.alloc(0);
+        scanBuf.reset();
+        scanSearchFrom = 0;
         releaseScanTokens();
         options.onMissing();
         return;
       }
       scanTokens.push(token);
     }
-    scanBuffer = scanBuffer.length === 0 ? rawChunk : Buffer.concat([scanBuffer, rawChunk]);
-    const offset = scanBuffer.indexOf(HTTP2_CLIENT_CONNECTION_PREFACE);
+    scanBuf.append(rawChunk);
+    const scanBuffer = scanBuf.view();
+    const offset = findPrefaceFrom(scanBuffer, scanSearchFrom);
     if (offset === -1) {
+      // No match yet. Resume the next search just short of the buffer's
+      // end, keeping back an overlap of one octet less than the preface
+      // length, so a preface split across this fragment and the next one is
+      // still found. Each byte enters that overlap window a bounded number
+      // of times, so the total search work stays linear in the bytes
+      // received, not quadratic in the number of fragments.
+      scanSearchFrom = Math.max(
+        0,
+        scanBuffer.length - (HTTP2_CLIENT_CONNECTION_PREFACE.length - 1),
+      );
       return;
     }
     sawPreface = true;
     options.onFound();
     const fromPreface = Buffer.from(scanBuffer.subarray(offset));
-    scanBuffer = Buffer.alloc(0);
+    scanBuf.reset();
+    scanSearchFrom = 0;
     // Release the scan tokens before `deliver` charges the same bytes under
     // `http2_preface_replay`. The two calls run inside one synchronous
     // callback with no `await` between them, so no other reservation can
@@ -2723,9 +2837,15 @@ function createHttp2PrefaceScanningChannel(
       write: (data: Uint8Array) => channel.write(data),
       onData: (listener: (chunk: Uint8Array) => void) => {
         downstream = listener;
-        if (pendingAfterPreface.length > 0) {
-          const replay = pendingAfterPreface;
-          pendingAfterPreface = Buffer.alloc(0);
+        if (pendingAfterPreface.length() > 0) {
+          // Copy the exact retained bytes instead of handing the listener
+          // the growable buffer's backing view. That backing storage can
+          // run ahead of the bytes in use (the doubling growth in
+          // `pendingAfterPreface.append` over-provisions it), so a raw view
+          // would keep the whole over-provisioned allocation alive for as
+          // long as the listener holds its reference.
+          const replay = Buffer.from(pendingAfterPreface.view());
+          pendingAfterPreface.reset();
           listener(replay);
         }
         // Release every replay token exactly once, after the synchronous
@@ -2751,7 +2871,8 @@ function createHttp2PrefaceScanningChannel(
     disposeScanBuffer: (): void => {
       if (sawPreface || failed) return;
       failed = true;
-      scanBuffer = Buffer.alloc(0);
+      scanBuf.reset();
+      scanSearchFrom = 0;
       releaseScanTokens();
     },
   };
@@ -2826,6 +2947,18 @@ export const __http2PrefaceScanTesting = {
     channel: CommandManagedDuplexChannel,
     options: { capBytes: number; timeoutMs: number; ledger?: DuplexAggregateByteLedger | null },
   ) => scanForHttp2ClientPreface(channel, options),
+  readScanSearchUnits: (): number => http2PrefaceScanSearchUnits,
+  resetScanSearchUnits: (): void => {
+    http2PrefaceScanSearchUnits = 0;
+  },
+  readScanBufferGrowthCopyUnits: (): number => http2PrefaceScanBufferGrowthCopyUnits,
+  resetScanBufferGrowthCopyUnits: (): void => {
+    http2PrefaceScanBufferGrowthCopyUnits = 0;
+  },
+  readReplayBufferGrowthCopyUnits: (): number => http2PrefaceReplayBufferGrowthCopyUnits,
+  resetReplayBufferGrowthCopyUnits: (): void => {
+    http2PrefaceReplayBufferGrowthCopyUnits = 0;
+  },
 };
 
 /**
