@@ -2849,9 +2849,13 @@ function createHttp2PrefaceScanningChannel(
           listener(replay);
         }
         // Release every replay token exactly once, after the synchronous
-        // handoff to the downstream listener. The same pattern the readiness
-        // gate applies to its own `readiness_replay` tokens on its own
-        // downstream handoff.
+        // handoff to the downstream listener. Order is safe here: the
+        // downstream listener is the bound HTTP/2 server duplex, which holds
+        // no aggregate-ledger reservation of its own for these bytes, so
+        // this release cannot overlap a second reservation for the same
+        // bytes. Contrast the readiness gate's own `readiness_replay`
+        // handoff, which releases first because its downstream listener (the
+        // preface scanner) does take its own reservation for the same bytes.
         releaseReplayTokens();
       },
       onExit: (listener: (exit: { exitCode: number | null }) => void) => channel.onExit(listener),
@@ -3466,12 +3470,18 @@ function createDuplexReadinessGate(
       if (pending.length > 0) {
         const replay = pending;
         pending = READINESS_EMPTY_BUFFER;
+        // Release every readiness-replay token before the synchronous handoff
+        // to the broker, not after. The broker (the HTTP/2 preface scanner)
+        // charges its own reservation for these same bytes inside
+        // `listener(replay)` below, under a different owner. Releasing first
+        // keeps the ledger's momentary peak at the real retained bytes, not
+        // double them: the release and the broker's reserve both run inside
+        // this one synchronous call, with no `await` between them, so no
+        // other route can claim the freed capacity in between.
+        releaseReplayTokens();
         listener(replay);
+        return;
       }
-      // Release every readiness-replay token exactly once, after the synchronous
-      // handoff to the broker. The broker charges its own decode retention inside
-      // the `listener(replay)` call above, so the release here never opens an
-      // admission gap for the same retained bytes.
       releaseReplayTokens();
     },
     onExit: (listener: (exit: { exitCode: number | null }) => void) => {

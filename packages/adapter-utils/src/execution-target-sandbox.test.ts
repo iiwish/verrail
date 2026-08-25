@@ -7647,6 +7647,48 @@ describe("duplex readiness gate replay-buffer reservation", () => {
     expect(gate.retainedReadinessBufferLength()).toBe(0);
     expect(counts.underflows).toBe(0);
   });
+
+  it("releases the readiness_replay token before the downstream listener runs, so a same-size downstream reservation for the same bytes does not double-book", async () => {
+    const { channel, control } = makeFakeReadinessChannel();
+    const suffix = "s".repeat(512);
+    const suffixBytes = Buffer.byteLength(suffix, "utf8");
+    // The ceiling admits the READY line plus one reservation of the suffix
+    // size, but not a second, separate reservation of the suffix on top of
+    // that. A downstream listener that reserves the same bytes under its own
+    // owner — the real shape of the HTTP/2 preface scanner — proves the gate
+    // releases its own `readiness_replay` token first: the downstream
+    // reservation must still fit.
+    const { ledger, counts } = makeCountingLedger(Buffer.byteLength(readyLine(), "utf8") + suffixBytes);
+    const gate = __duplexReadinessTesting.createReadinessGate(channel, {
+      nonce: READY_NONCE,
+      timeoutMs: 5_000,
+      ledger,
+    });
+    control.emitData(`${readyLine()}${suffix}`);
+    expect((await gate.ready).ok).toBe(true);
+    expect(ledger.bytesInUse).toBe(suffixBytes);
+
+    let peakBytesInUseDuringHandoff = -1;
+    let downstreamToken: ReturnType<DuplexAggregateByteLedger["reserve"]> = null;
+    gate.brokerChannel.onData((chunk) => {
+      // The downstream listener reserves the same bytes under its own owner,
+      // the same way the preface scanner charges `http2_preface_scan` for the
+      // replayed chunk. The gate must have released its own token before this
+      // call runs, so this reservation fits under the tight ceiling.
+      downstreamToken = ledger.reserve("http2_preface_scan", chunk.byteLength);
+      peakBytesInUseDuringHandoff = ledger.bytesInUse;
+    });
+
+    // The downstream reservation succeeded: the gate's release ran first, so
+    // only one reservation for these bytes was ever live at once.
+    expect(downstreamToken).not.toBeNull();
+    expect(peakBytesInUseDuringHandoff).toBe(suffixBytes);
+    expect(counts.rejections).toBe(0);
+    expect(counts.underflows).toBe(0);
+    // The gate's own token is gone; only the downstream token remains live.
+    expect(ledger.liveTokenCount).toBe(1);
+    expect(ledger.bytesInUse).toBe(suffixBytes);
+  });
 });
 
 describe("http2 preface scan post-preface replay buffer", () => {
