@@ -422,22 +422,35 @@ export const DEFAULT_HTTP2_BRIDGE_PING_STALL_MS = 20_000;
  * a peer that stops sending trips it. */
 export const DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_TIMEOUT_MS = 30_000;
 /** The default lifetime window a request body read gets before it needs real
- * progress to earn another one. Unlike the idle bound, a chunk resets this
- * window only when it also clears {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_LIFETIME_PROGRESS_BYTES}
- * of cumulative progress since the window last renewed — so an upload that
- * keeps making real progress never trips this bound, however long the whole
- * read takes, while a peer that sends only enough to dodge the idle bound
- * above, and no more, still exhausts it. */
+ * progress to earn another one; paired with
+ * {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_LIFETIME_PROGRESS_BYTES}. This
+ * bound is an intentional design limit, not a defect and not open for
+ * removal or relaxation without a replacement bound: it caps the worst-case
+ * time one request body read can occupy a
+ * {@link HTTP2_BRIDGE_MAX_CONCURRENT_STREAMS} stream slot, a cap the idle
+ * bound above cannot provide on its own. Known consequence: an authenticated
+ * upload whose sustained rate stays under the progress floor inside every
+ * window — under roughly `lifetimeProgressBytes / maxLifetimeMs` — is reset
+ * before it completes, even while it keeps sending real data. This
+ * consequence is accepted because sandbox callback bodies are small
+ * control-plane payloads, not bulk transfers, so a legitimate call clears
+ * the floor by a wide margin. A caller that needs a slower floor raises both
+ * this constant and {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_LIFETIME_PROGRESS_BYTES}
+ * together, in proportion. */
 export const DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_MAX_LIFETIME_MS = 120_000;
 /** The default amount of cumulative body progress, in bytes, a request body
- * read must make within one lifetime window to renew that window. An
- * authenticated peer that sends one small chunk every few seconds never trips
- * the idle bound, so without this progress floor the lifetime bound alone
- * could hold one of the {@link HTTP2_BRIDGE_MAX_CONCURRENT_STREAMS} stream
- * slots open indefinitely by renewing on every chunk regardless of size. A
- * real upload clears this floor within moments of its lifetime window at any
- * reasonable transfer rate; a peer trickling only enough bytes to reset the
- * idle bound does not, so the lifetime bound still catches it. */
+ * read must make within one {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_MAX_LIFETIME_MS}
+ * window to renew that window. The server enforces this floor because the
+ * idle bound above cannot close this gap on its own: a peer that sends one
+ * small chunk every few seconds resets the idle bound forever without ever
+ * finishing, holding one of the {@link HTTP2_BRIDGE_MAX_CONCURRENT_STREAMS}
+ * stream slots open indefinitely. This is an intentional design limit, not a
+ * defect. Known consequence: an authenticated peer whose sustained transfer
+ * rate stays under this floor within any one window is reset before its
+ * upload completes, even though it never stops sending. This consequence is
+ * accepted because sandbox callback bodies are small control-plane payloads,
+ * not bulk transfers — the floor is roughly one byte every 15 ms, far below
+ * any legitimate call's rate. */
 export const DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_LIFETIME_PROGRESS_BYTES = 8_192;
 /** The default bound {@link Http2BridgeServerHandle.close} waits for an
  * active session to close on its own before it force-destroys the session. A
@@ -552,11 +565,17 @@ export interface CreateHttp2BridgeServerOptions {
    * {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_TIMEOUT_MS}. */
   requestBodyTimeoutMs?: number;
   /** The lifetime window a request body read gets before it needs real
-   * progress to renew it; see {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_MAX_LIFETIME_MS}.
-   * The default is {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_MAX_LIFETIME_MS}. */
+   * progress to renew it. This bound caps worst-case stream-slot occupancy;
+   * it is not a transfer-rate optimization. See
+   * {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_MAX_LIFETIME_MS} for why the
+   * server enforces it and the known consequence for an unusually slow
+   * upload. The default is {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_MAX_LIFETIME_MS}. */
   requestBodyMaxLifetimeMs?: number;
   /** The cumulative progress, in bytes, a request body read must make within
-   * one lifetime window to renew that window. The default is
+   * one lifetime window to renew that window. See
+   * {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_LIFETIME_PROGRESS_BYTES} for why
+   * the server enforces this floor and the known consequence for an
+   * unusually slow upload. The default is
    * {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_LIFETIME_PROGRESS_BYTES}. */
   requestBodyLifetimeProgressBytes?: number;
   /** The bound {@link Http2BridgeServerHandle.close} waits for an active
@@ -632,15 +651,18 @@ function toOutboundHeaderRecord(headers: http2.IncomingHttpHeaders): Record<stri
  * The lifetime bound is an idle-progress bound: a received chunk renews it
  * only once cumulative progress since the last renewal clears
  * `lifetimeProgressBytes`, not on every chunk the way the idle bound above
- * does. An upload that keeps making real progress renews this bound well
- * before it expires, at any reasonable transfer rate, so it never trips —
- * however long the whole read takes past `maxLifetimeMs`. A peer that sends
- * only enough to dodge the idle bound, and no more, never clears the
- * progress floor, so this bound still ends the read. Either bound alone is
- * not enough — the idle bound alone lets a trickling peer renew forever on
- * chunks too small to count as progress; the progress floor alone, with no
- * bound at all, would need each single chunk to arrive within some fixed
- * time of the last, which is exactly what the idle bound already checks.
+ * does. This is an intentional design limit, not a defect, and it is not
+ * open for removal or relaxation without a replacement bound. It exists to
+ * cap the worst-case time one read can occupy a
+ * {@link HTTP2_BRIDGE_MAX_CONCURRENT_STREAMS} stream slot — a cap the idle
+ * bound cannot provide alone, because a peer that sends one small chunk
+ * every few seconds resets the idle bound forever without ever finishing.
+ * Known consequence: an authenticated peer whose sustained rate stays under
+ * `lifetimeProgressBytes / maxLifetimeMs` inside every window is reset
+ * before its upload completes, even while it keeps sending real data. This
+ * consequence is accepted because sandbox callback bodies are small
+ * control-plane payloads, not bulk transfers, so a legitimate call clears
+ * the floor by a wide margin.
  *
  * The `close` listener is the settle-of-last-resort: it fires whenever the
  * stream ends for any reason at all — a normal end, an error, a timeout- or
