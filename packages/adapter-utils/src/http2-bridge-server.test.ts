@@ -77,6 +77,7 @@ interface TestPairOptions {
   pingStallMs?: number;
   requestBodyTimeoutMs?: number;
   requestBodyMaxLifetimeMs?: number;
+  requestBodyLifetimeCeilingMs?: number;
   closeGraceMs?: number;
   onGoaway?: (record: Http2BridgeGoawayRecord) => void;
   onSessionError?: (error: Error) => void;
@@ -102,6 +103,7 @@ function bindTestServer(options: TestPairOptions = {}) {
     pingStallMs: options.pingStallMs,
     requestBodyTimeoutMs: options.requestBodyTimeoutMs,
     requestBodyMaxLifetimeMs: options.requestBodyMaxLifetimeMs,
+    requestBodyLifetimeCeilingMs: options.requestBodyLifetimeCeilingMs,
     closeGraceMs: options.closeGraceMs,
     onGoaway: options.onGoaway,
     onSessionError: options.onSessionError,
@@ -420,25 +422,28 @@ describe("createHttp2BridgeServer + createSandboxHttp2BridgeGateway", () => {
     }
   });
 
-  it("test_a_trickling_request_body_still_trips_the_independent_lifetime_bound", async () => {
-    // The idle bound is generous, so a chunk every 15ms never lets it expire.
-    // The lifetime bound is short and never resets, so it still ends the
-    // read once it passes — even though every chunk arrived comfortably
-    // inside the idle bound. This is the failure mode an authenticated
-    // sandbox could otherwise use to hold one of the concurrent-stream slots
-    // open indefinitely: send just enough to keep resetting the idle bound,
-    // and never finish the body.
+  it("test_progress_renews_the_lifetime_bound_but_the_hard_ceiling_still_stops_it", async () => {
+    // The idle bound is generous, so a chunk every 40ms never lets it
+    // expire. The lifetime bound (50ms) is short, but each chunk renews it,
+    // so the read survives past 50ms — proving a slow peer that keeps
+    // making real progress does not lose the stream early. The hard ceiling
+    // (150ms) never renews, so the read still ends once the read's total
+    // age passes it, no matter how the peer paces its chunks. This is the
+    // failure mode an authenticated sandbox could otherwise use to hold one
+    // of the concurrent-stream slots open indefinitely: keep sending just
+    // enough to renew the lifetime bound, and never finish the body.
     //
-    // Every write below lands well before the lifetime bound, and the test
-    // makes no further call on the stream after that: nothing races the
-    // server's own reset of it once the bound passes, so this proves the
-    // bound from the server's own, deterministic effect (the forward handler
-    // never runs) instead of from a raw client-stream event whose timing
-    // Node does not guarantee here.
+    // Every write below lands well before the current lifetime deadline,
+    // and the test makes no further call on the stream after the last one:
+    // nothing races the server's own reset of it once the ceiling passes,
+    // so this proves the bound from the server's own, deterministic effect
+    // (the forward handler never runs) instead of from a raw client-stream
+    // event whose timing Node does not guarantee here.
     let forwarderCalled = false;
     const { handle, bridgeToken, clientSide } = bindTestServer({
       requestBodyTimeoutMs: 5_000,
-      requestBodyMaxLifetimeMs: 60,
+      requestBodyMaxLifetimeMs: 50,
+      requestBodyLifetimeCeilingMs: 150,
       forwardRequest: async () => {
         forwarderCalled = true;
         return { status: 200 };
@@ -452,15 +457,16 @@ describe("createHttp2BridgeServer + createSandboxHttp2BridgeGateway", () => {
         authorization: `Bearer ${bridgeToken}`,
       });
       req.on("error", () => undefined);
-      // Three chunks, 15ms apart, every one of them sent well before the
-      // 60ms lifetime bound. The body never ends: this request never calls
-      // `.end()`.
-      for (let chunkIndex = 0; chunkIndex < 3; chunkIndex += 1) {
-        req.write("x");
-        await new Promise((resolve) => setTimeout(resolve, 15));
+      // Four chunks, 40ms apart. The total send time, about 120ms, already
+      // passes the 50ms lifetime bound — proving renewal keeps the read
+      // alive past it — but stays under the 150ms hard ceiling. The body
+      // never ends: this request never calls `.end()`.
+      for (let chunkIndex = 0; chunkIndex < 4; chunkIndex += 1) {
+        req.write("chunk");
+        await new Promise((resolve) => setTimeout(resolve, 40));
       }
-      // Wait past the lifetime bound with no further write, so the server
-      // has time to destroy the stalled stream on its own.
+      // Wait past the hard ceiling with no further write, so the server has
+      // time to destroy the stalled stream on its own.
       await new Promise((resolve) => setTimeout(resolve, 150));
       expect(forwarderCalled).toBe(false);
 
@@ -527,59 +533,52 @@ describe("createHttp2BridgeServer + createSandboxHttp2BridgeGateway", () => {
     }
   });
 
-  it("test_a_steadily_progressing_upload_still_trips_the_lifetime_bound_past_the_window", async () => {
-    // The idle bound is generous and every chunk carries real progress, so
-    // the idle bound alone would let this upload run forever. The lifetime
-    // bound is an absolute ceiling that never renews from progress: it still
-    // ends the read once the whole upload runs past it, proving the bound
-    // does not depend on how much, or how little, progress the peer reports.
+  it("test_a_slow_but_progressing_upload_completes_past_the_base_lifetime_bound", async () => {
+    // The base lifetime bound (50ms) is short, but every chunk below carries
+    // real progress and renews it, and the hard ceiling (5s) is generous.
+    // The total send time, about 200ms, passes the 50ms base bound several
+    // times over, so this proves a slow but genuinely progressing upload now
+    // completes instead of losing its stream mid-upload.
     let forwarderCalled = false;
     const { handle, bridgeToken, clientSide } = bindTestServer({
       requestBodyTimeoutMs: 5_000,
       requestBodyMaxLifetimeMs: 50,
-      forwardRequest: async () => {
+      requestBodyLifetimeCeilingMs: 5_000,
+      forwardRequest: async (request) => {
         forwarderCalled = true;
-        return { status: 200 };
+        return { status: 200, body: JSON.stringify({ bodyLength: request.body.byteLength }) };
       },
     });
     const rawClient = connectRawClient(clientSide);
     try {
-      const req = rawClient.request({
-        ":method": "POST",
-        ":path": "/api/issues/abc/comments",
-        authorization: `Bearer ${bridgeToken}`,
-      });
-      req.on("error", () => undefined);
-      // Six chunks, 40ms apart (well inside the idle bound), each real
-      // progress. The total send time, about 200ms, passes the 50ms
-      // lifetime bound several times over, so the read must not complete.
-      let sent = 0;
-      while (sent < 6) {
-        sent += 1;
-        req.write("chunk");
-        await new Promise((resolve) => setTimeout(resolve, 40));
-      }
-      expect(forwarderCalled).toBe(false);
-      req.close();
-
-      // The session survives the reset stream: a second, complete request
-      // still succeeds.
-      const survivingResponse = await new Promise<{ status: number }>((resolve, reject) => {
-        const survivingReq = rawClient.request({
+      const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const req = rawClient.request({
           ":method": "POST",
           ":path": "/api/issues/abc/comments",
           authorization: `Bearer ${bridgeToken}`,
         });
         let status = 0;
-        survivingReq.on("response", (headers) => {
+        let body = "";
+        req.setEncoding("utf8");
+        req.on("response", (headers) => {
           status = Number(headers[":status"]) || 0;
         });
-        survivingReq.on("data", () => undefined);
-        survivingReq.on("end", () => resolve({ status }));
-        survivingReq.on("error", reject);
-        survivingReq.end();
+        req.on("data", (chunk) => (body += chunk));
+        req.on("end", () => resolve({ status, body }));
+        req.on("error", reject);
+        void (async () => {
+          // Six chunks, 40ms apart (well inside the idle bound), each real
+          // progress.
+          for (let sent = 0; sent < 6; sent += 1) {
+            req.write("chunk");
+            await new Promise((r) => setTimeout(r, 40));
+          }
+          req.end();
+        })();
       });
-      expect(survivingResponse.status).toBe(200);
+      expect(forwarderCalled).toBe(true);
+      expect(response.status).toBe(200);
+      expect(JSON.parse(response.body)).toEqual({ bodyLength: "chunk".length * 6 });
     } finally {
       rawClient.close();
       await handle.close();
