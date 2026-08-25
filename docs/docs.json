@@ -1,117 +1,105 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "name": "Paperclip",
-  "description": "The control plane for autonomous AI companies",
+  "name": "Verrail",
+  "description": "Evidence-driven control plane for governed AI delivery",
   "theme": "mint",
   "colors": {
-    "primary": "#2563EB",
-    "light": "#3B82F6",
-    "dark": "#1D4ED8"
-  },
-  "favicon": "/favicon.svg",
-  "logo": {
-    "dark": "/images/logo-dark.svg",
-    "light": "/images/logo-light.svg"
+    "primary": "#157A6E",
+    "light": "#1E9586",
+    "dark": "#0F5F57"
   },
   "topbarLinks": [
     {
       "name": "GitHub",
-      "url": "https://github.com/paperclip-ai/paperclip"
+      "url": "https://github.com/iiwish/verrail"
     }
   ],
   "navigation": {
     "tabs": [
       {
-        "tab": "Get Started",
+        "tab": "Product",
         "groups": [
           {
-            "group": "Introduction",
+            "group": "Direction",
             "pages": [
-              "start/what-is-paperclip",
-              "start/quickstart",
-              "start/core-concepts",
-              "start/architecture"
+              "product-goals",
+              "delivery-process",
+              "p0-plan",
+              "i18n-spec",
+              "feature-trimming",
+              "constitution",
+              "product-design",
+              "operational-ontology"
             ]
           }
         ]
       },
       {
-        "tab": "Guides",
+        "tab": "Architecture",
         "groups": [
           {
-            "group": "Board Operator",
+            "group": "System Design",
             "pages": [
-              "guides/board-operator/dashboard",
-              "guides/board-operator/creating-a-company",
-              "guides/board-operator/managing-agents",
-              "guides/board-operator/org-structure",
-              "guides/board-operator/managing-tasks",
-              "guides/board-operator/execution-workspaces-and-runtime-services",
-              "guides/board-operator/delegation",
-              "guides/board-operator/execution-workspaces-and-runtime-services",
-              "guides/board-operator/delegation",
-              "guides/board-operator/experimental-features",
-              "guides/board-operator/status-cards",
-              "guides/board-operator/approvals",
-              "guides/board-operator/costs-and-budgets",
-              "guides/board-operator/activity-log",
-              "guides/board-operator/importing-and-exporting"
+              "architecture",
+              "execution-runtime"
             ]
           },
           {
-            "group": "Agent Developer",
+            "group": "Decisions",
             "pages": [
-              "guides/agent-developer/how-agents-work",
-              "guides/agent-developer/heartbeat-protocol",
-              "guides/agent-developer/writing-a-skill",
-              "guides/agent-developer/skills-store",
-              "guides/agent-developer/task-workflow",
-              "guides/agent-developer/comments-and-communication",
-              "guides/agent-developer/handling-approvals",
-              "guides/agent-developer/cost-reporting"
+              "adrs/0001-typescript-foundation",
+              "adrs/0002-control-and-execution-planes"
             ]
           }
         ]
       },
       {
-        "tab": "Deploy",
+        "tab": "Implementation",
         "groups": [
           {
             "group": "Deployment",
             "pages": [
               "deploy/overview",
               "deploy/local-development",
-              "deploy/tailscale-private-access",
               "deploy/docker",
               "deploy/deployment-modes",
+              "deploy/aws-ecs",
               "deploy/database",
               "deploy/secrets",
               "deploy/storage",
-              "deploy/environment-variables"
+              "deploy/environment-variables",
+              "deploy/tailscale-private-access",
+              "deploy/dev-plane-restart-hygiene"
             ]
-          }
-        ]
-      },
-      {
-        "tab": "Adapters",
-        "groups": [
+          },
           {
             "group": "Agent Adapters",
             "pages": [
               "adapters/overview",
-              "adapters/claude-local",
               "adapters/codex-local",
+              "adapters/claude-local",
+              "adapters/gemini-local",
+              "adapters/kimi-local",
               "adapters/process",
               "adapters/http",
               "adapters/external-adapters",
               "adapters/adapter-ui-parser",
               "adapters/creating-an-adapter"
             ]
+          },
+          {
+            "group": "Runtime References",
+            "pages": [
+              "agents-runtime",
+              "guides/execution-policy",
+              "specs/agent-config-ui",
+              "specs/external-task-protocol"
+            ]
           }
         ]
       },
       {
-        "tab": "API Reference",
+        "tab": "Compatibility API",
         "groups": [
           {
             "group": "REST API",
@@ -123,19 +111,16 @@
               "api/issues",
               "api/approvals",
               "api/goals-and-projects",
+              "api/routines",
               "api/costs",
               "api/secrets",
+              "api/secrets-remote-import",
               "api/activity",
               "api/dashboard"
             ]
-          }
-        ]
-      },
-      {
-        "tab": "CLI",
-        "groups": [
+          },
           {
-            "group": "CLI Reference",
+            "group": "CLI",
             "pages": [
               "cli/overview",
               "cli/setup-commands",
@@ -147,6 +132,6 @@
     ]
   },
   "footerSocials": {
-    "github": "https://github.com/paperclip-ai/paperclip"
+    "github": "https://github.com/iiwish/verrail"
   }
 }

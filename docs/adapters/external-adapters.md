@@ -405,4 +405,4 @@ Other Paperclip users can then install your adapter by package name from the UI 
 
 - [UI Parser Contract](/adapters/adapter-ui-parser) — add a custom run-log parser so the UI renders your adapter's output correctly
 - [Creating an Adapter](/adapters/creating-an-adapter) — full walkthrough of adapter internals
-- [How Agents Work](/guides/agent-developer/how-agents-work) — understand the heartbeat lifecycle your adapter serves
+- [Agent Runtime](/agents-runtime) — understand the runtime lifecycle your adapter serves

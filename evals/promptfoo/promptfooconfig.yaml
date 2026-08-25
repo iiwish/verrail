@@ -3,7 +3,7 @@
 #
 # Tests narrow heartbeat behaviors across models with deterministic assertions.
 # Test cases are organized by category in tests/*.yaml files.
-# See doc/plans/2026-03-13-agent-evals-framework.md for the full framework plan.
+# See docs/product-design.md for the target AgentVersion evaluation contract.
 #
 # Usage:
 #   cd evals/promptfoo && promptfoo eval

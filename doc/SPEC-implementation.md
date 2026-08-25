@@ -1451,7 +1451,7 @@ V1 supports company import/export using a portable package contract:
 - markdown-first package rooted at `COMPANY.md`
 - implicit folder discovery by convention
 - `.paperclip.yaml` sidecar for Paperclip-specific fidelity
-- canonical base package is vendor-neutral and aligned with `docs/companies/companies-spec.md`
+- canonical base package is vendor-neutral and uses the conventions defined in this section
 - common conventions:
   - `agents/<slug>/AGENTS.md`
   - `teams/<slug>/TEAM.md`

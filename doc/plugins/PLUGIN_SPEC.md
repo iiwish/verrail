@@ -2,8 +2,11 @@
 
 Status: proposed complete spec for the post-V1 plugin system
 
-This document is the complete specification for Paperclip's plugin and extension architecture.
-It expands the brief plugin notes in [doc/SPEC.md](../SPEC.md) and should be read alongside the comparative analysis in [doc/plugins/ideas-from-opencode.md](./ideas-from-opencode.md).
+This document is the complete specification for the inherited Paperclip plugin
+and extension architecture. Verrail's governing plugin boundary is defined in
+[`docs/architecture.md`](../../docs/architecture.md); this implementation
+reference should be read alongside the comparative analysis in
+[doc/plugins/ideas-from-opencode.md](./ideas-from-opencode.md).
 
 This is not part of the V1 implementation contract in [doc/SPEC-implementation.md](../SPEC-implementation.md).
 It is the full target architecture for the plugin system that should follow V1.

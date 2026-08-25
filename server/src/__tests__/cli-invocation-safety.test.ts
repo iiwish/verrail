@@ -335,7 +335,7 @@ const SKIP_DIRS = new Set([
   "tmp",
 ]);
 
-const SKIP_PATH_PREFIXES = ["doc/logs/", "doc/plans/", "scripts/"];
+const SKIP_PATH_PREFIXES = ["artifacts/", "scripts/"];
 
 const SCAN_EXTENSIONS = new Set([
   ".md",

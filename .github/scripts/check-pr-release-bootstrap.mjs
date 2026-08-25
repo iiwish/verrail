@@ -68,7 +68,7 @@ export function addedWorkspaceDependencyNames(files) {
 function buildNotice({ name, reason }) {
   const bootstrap =
     `a **maintainer** must run \`pnpm run release:bootstrap-package -- ${name} --publish\` ` +
-    'and configure npm trusted publishing (see `doc/PUBLISHING.md`)';
+    'and configure npm trusted publishing for the Verrail package registry';
 
   if (reason === 'depended') {
     return (

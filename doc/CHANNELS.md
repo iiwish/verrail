@@ -95,5 +95,6 @@ dist-tag (the recommended way), only if you write version ranges by hand.
 
 ## For maintainers
 
-The publishing mechanics, promotion flow, and release checklist live in
-[`RELEASING.md`](RELEASING.md).
+Do not publish inherited package names from the Verrail fork. Define registry
+ownership, package names, signing, promotion, and rollback in a Verrail release
+ADR before enabling a release channel.

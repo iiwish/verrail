@@ -4,21 +4,27 @@ Guidance for human and AI contributors working in this repository.
 
 ## 1. Purpose
 
-Paperclip is a control plane for AI-agent companies.
-The current implementation target is V1 and is defined in `doc/SPEC-implementation.md`.
+Verrail is an evidence-driven control plane for governed AI delivery.
+The product target is defined in `docs/`; inherited Paperclip documents describe
+the current TypeScript implementation only and do not define product direction.
 
 ## 2. Read This First
 
 Before making changes, read in this order:
 
-1. `doc/GOAL.md`
-2. `doc/PRODUCT.md`
-3. `doc/SPEC-implementation.md`
-4. `doc/DEVELOPING.md`
-5. `doc/DATABASE.md`
+1. `docs/README.md`
+2. `docs/product-goals.md`
+3. `docs/constitution.md`
+4. `docs/product-design.md`
+5. `docs/operational-ontology.md`
+6. `docs/architecture.md`
+7. `doc/DEVELOPING.md`
+8. `doc/DATABASE.md`
 
-`doc/SPEC.md` is long-horizon product context.
-`doc/SPEC-implementation.md` is the concrete V1 build contract.
+`doc/SPEC-implementation.md` is an inherited implementation reference while the
+domain migration is in progress. When it conflicts with `docs/`, new product work
+follows `docs/` and preserves existing behavior through an explicit compatibility
+or migration plan.
 
 ## 3. Repo Map
 
@@ -33,7 +39,8 @@ Before making changes, read in this order:
 - `packages/teams-catalog/`: app-shipped teams catalog (`@paperclipai/teams-catalog`)
 - `cli/`: `paperclipai` CLI package (published bin, agent-facing commands)
 - `skills/`: Paperclip runtime/operational skills (not part of the app catalog)
-- `doc/`: operational and product docs
+- `docs/`: Verrail product, ontology, architecture, ADRs, and public technical references
+- `doc/`: inherited implementation and operational references
 
 ## 4. Dev Setup (Auto DB)
 
@@ -65,8 +72,10 @@ pnpm dev
 
 ## 5. Core Engineering Rules
 
-1. Keep changes company-scoped.
-Every domain entity should be scoped to a company and company boundaries must be enforced in routes/services.
+1. Keep changes workspace-scoped.
+Every Verrail domain entity belongs to a Workspace and workspace boundaries must
+be enforced in routes and services. Existing `companyId` fields are compatibility
+storage during migration, not a reason to expand the company/org-chart model.
 
 2. Keep contracts synchronized.
 If you change schema/API behavior, update all impacted layers:
@@ -76,20 +85,27 @@ If you change schema/API behavior, update all impacted layers:
 - `ui` API clients and pages
 
 3. Preserve control-plane invariants.
-- Single-assignee task model
-- Atomic issue checkout semantics
-- Approval gates for governed actions
-- Budget hard-stop auto-pause behavior
-- Activity logging for mutating actions
+- Versioned AgentDefinition, AgentVersion, and Deployment identity
+- Graph Engine authority over node activation and state transitions
+- Separate invocation, execution, decision, action approval, and acceptance authority
+- Version-bound Artifact, Evidence, Review, and Acceptance
+- Lease, fencing, idempotency, budget enforcement, and audit logging
 
-4. Do not replace strategic docs wholesale unless asked.
-Prefer additive updates. Keep `doc/SPEC.md` and `doc/SPEC-implementation.md` aligned.
+4. Keep the Verrail SSOT aligned.
+Product scope changes update `docs/product-goals.md` or `docs/product-design.md`;
+semantic changes update `docs/operational-ontology.md`; implementation-boundary
+changes update `docs/architecture.md` and an ADR when the decision is durable.
 
-5. Keep repo plan docs dated and centralized.
-When you are creating a plan file in the repository itself, new plan documents belong in `doc/plans/` and should use `YYYY-MM-DD-slug.md` filenames. This does not replace Paperclip issue planning: if a Paperclip issue asks for a plan, update the issue `plan` document per the `paperclip` skill instead of creating a repo markdown file.
+5. Keep temporary plans out of the product SSOT.
+Durable product direction belongs in the canonical documents above. Durable
+technical decisions belong in `docs/adrs/`. Task checklists, generated reports,
+PR screenshots, and transient implementation plans do not belong in `docs/`.
 
 6. Attach inspectable generated artifacts.
-When your task produces a user-inspectable deliverable file, follow the Paperclip skill's "Generated Artifacts and Work Products" workflow before final disposition. In this repo, prefer the self-contained skill helper at `skills/paperclip/scripts/paperclip-upload-artifact.sh` so the file is available through the Paperclip API, create/update an artifact work product when the file is the deliverable, link the uploaded artifact in the final issue comment, and then set status. Do not rely on local filesystem paths as the only access path. If an important file intentionally remains workspace-only, create/update a work product with `metadata.resourceRef.kind: "workspace_file"` and a workspace-relative path, then name that work product and path in the final comment. Treat browse/search as a fallback for recovering workspace files, not the preferred deliverable path. See `doc/AGENT-ARTIFACTS.md` for details and `.mp4`/`.webm` examples.
+The inherited artifact helper and API remain usable while the Verrail Artifact
+contract is implemented. Generated deliverables must have a stable workspace or
+uploaded reference, content hash, source task/run, and reviewer-visible location.
+See `doc/AGENT-ARTIFACTS.md` for the current implementation path.
 
 7. Name the three data paths correctly.
 This repo has three separate data paths. Do not confuse them. Match a change to a path by its file path, not by the word "observability" or "telemetry" alone.
@@ -203,7 +219,7 @@ When creating a pull request (via `gh pr create` or any other method), you **mus
 
 A change is done when all are true:
 
-1. Behavior matches `doc/SPEC-implementation.md`
+1. New behavior matches the Verrail contracts in `docs/` and explicitly preserves or migrates inherited behavior
 2. Typecheck, tests, and build pass
 3. Contracts are synced across db/shared/server/ui
 4. Docs updated when behavior or commands change

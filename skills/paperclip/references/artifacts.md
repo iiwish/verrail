@@ -36,9 +36,9 @@ Annotate the work product with `metadata.resourceRef`:
       "issueId": "<issue-id>",
       "workspaceKind": "execution_workspace",
       "workspaceId": "<execution-workspace-id>",
-      "relativePath": "doc/plans/regression-test-plan.md",
+      "relativePath": "artifacts/regression-test-plan.md",
       "line": 1,
-      "displayPath": "doc/plans/regression-test-plan.md"
+      "displayPath": "artifacts/regression-test-plan.md"
     }
   }
 }

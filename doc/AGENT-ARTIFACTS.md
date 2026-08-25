@@ -49,10 +49,10 @@ Expected work product metadata shape:
     "issueId": "<issue-id>",
     "workspaceKind": "execution_workspace",
     "workspaceId": "<execution-workspace-id>",
-    "relativePath": "doc/plans/example.md",
+    "relativePath": "artifacts/example.md",
     "line": 1,
     "column": 1,
-    "displayPath": "doc/plans/example.md:1:1"
+    "displayPath": "artifacts/example.md:1:1"
   }
 }
 ```
