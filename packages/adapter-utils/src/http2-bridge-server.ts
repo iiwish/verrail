@@ -102,8 +102,21 @@ export const HTTP2_BRIDGE_SERVER_OPTIONS: http2.ServerOptions = {
  * them. Past this cap the wrapper treats the channel as stuck, not merely
  * slow, and fails closed: it stops the channel and destroys the `Duplex`, so
  * a producer that keeps outpacing its reader cannot grow host memory without
- * bound. */
+ * bound. This cap also bounds one single chunk: the wrapper checks a chunk's
+ * own size against it before `push()` ever runs, so one oversized chunk
+ * cannot cross the cap on its first delivery, before the queue holds
+ * anything to compare it against. */
 export const DEFAULT_HTTP2_BRIDGE_MAX_BUFFERED_READ_BYTES = HTTP2_BRIDGE_MAX_SESSION_MEMORY * 1024 * 1024;
+/** The default bound, in milliseconds, on how long the read-side queue
+ * {@link wrapDuplexChannelAsNodeDuplex} holds can stay non-empty with no
+ * chunk draining from it. The byte cap above bounds how much memory a stuck
+ * reader can hold; it does not bound how long the reader can stay stuck. A
+ * consumer that never resumes reading would otherwise hold the channel open,
+ * backpressured, for as long as the queue stays under the byte cap. Each
+ * drained chunk renews this bound, so a consumer that keeps making real
+ * progress never trips it; only a consumer that stops resuming entirely
+ * does. */
+export const DEFAULT_HTTP2_BRIDGE_READ_BACKPRESSURE_STALL_MS = 30_000;
 
 /**
  * Wrap a {@link CommandManagedDuplexChannel} as a Node `Duplex`, so an
@@ -123,17 +136,27 @@ export const DEFAULT_HTTP2_BRIDGE_MAX_BUFFERED_READ_BYTES = HTTP2_BRIDGE_MAX_SES
  * wrapper honors that signal instead: while `push()` reports room, it pushes
  * directly; once `push()` reports the readable side is full, it queues each
  * later chunk instead of pushing past that signal, and drains the queue from
- * `read()`, which Node calls again only once the consumer wants more. The
- * queue itself is bounded by {@link DEFAULT_HTTP2_BRIDGE_MAX_BUFFERED_READ_BYTES}
- * (or the caller's `maxBufferedReadBytes`): past that cap the wrapper fails
+ * `read()`, which Node calls again only once the consumer wants more. Every
+ * chunk, on either path, first checks against
+ * {@link DEFAULT_HTTP2_BRIDGE_MAX_BUFFERED_READ_BYTES} (or the caller's
+ * `maxBufferedReadBytes`) on its own size, and the queue checks against the
+ * same cap on its cumulative size: past either check the wrapper fails
  * closed instead of buffering further, because the channel has no pause to
- * fall back on.
+ * fall back on. A second, independent bound —
+ * {@link DEFAULT_HTTP2_BRIDGE_READ_BACKPRESSURE_STALL_MS} (or the caller's
+ * `readBackpressureStallMs`) — covers the case the byte cap does not: a
+ * consumer that stops reading entirely, so the queue never grows past the
+ * byte cap but also never drains. This bound renews on every chunk the
+ * queue drains, so a consumer that keeps making real progress never trips
+ * it.
  */
 export function wrapDuplexChannelAsNodeDuplex(
   channel: CommandManagedDuplexChannel,
-  options: { maxBufferedReadBytes?: number } = {},
+  options: { maxBufferedReadBytes?: number; readBackpressureStallMs?: number } = {},
 ): Duplex {
   const maxBufferedReadBytes = options.maxBufferedReadBytes ?? DEFAULT_HTTP2_BRIDGE_MAX_BUFFERED_READ_BYTES;
+  const readBackpressureStallMs =
+    options.readBackpressureStallMs ?? DEFAULT_HTTP2_BRIDGE_READ_BACKPRESSURE_STALL_MS;
   // Chunks `onData` already delivered that `push()` has not yet accepted,
   // in arrival order. `read()` drains this queue before it lets Node pull
   // any new bytes, so the delivery order the channel used stays intact.
@@ -147,6 +170,34 @@ export function wrapDuplexChannelAsNodeDuplex(
   // after the queue this wrapper still holds fully drains, so a chunk that
   // arrived before the exit is never dropped.
   let channelExited = false;
+  // Arms while the queue holds at least one chunk; clears once it fully
+  // drains. Fires `readBackpressureStallMs` after the queue's last drain (or
+  // its first chunk, if it never drained at all) with no further drain, so a
+  // consumer that stops resuming does not hold the channel open forever
+  // under the byte cap.
+  let backpressureStallTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function clearBackpressureStallTimer(): void {
+    if (backpressureStallTimer === undefined) return;
+    clearTimeout(backpressureStallTimer);
+    backpressureStallTimer = undefined;
+  }
+
+  function armBackpressureStallTimer(): void {
+    clearBackpressureStallTimer();
+    backpressureStallTimer = setTimeout(() => {
+      failClosed(
+        "Sandbox HTTP/2 channel's read backpressure queue did not drain within the stall bound; the reader appears stuck.",
+      );
+    }, readBackpressureStallMs);
+    backpressureStallTimer.unref?.();
+  }
+
+  function failClosed(message: string): void {
+    clearBackpressureStallTimer();
+    channel.stop();
+    duplex.destroy(new Error(message));
+  }
 
   function endReadableIfDrained(): void {
     if (!channelExited || pendingReads.length > 0 || duplex.destroyed) return;
@@ -156,11 +207,21 @@ export function wrapDuplexChannelAsNodeDuplex(
   const duplex: Duplex = new Duplex({
     read() {
       canPushMore = true;
+      let drainedAChunk = false;
       while (canPushMore && pendingReads.length > 0) {
         const next = pendingReads.shift();
         if (next === undefined) break;
         pendingReadBytes -= next.byteLength;
+        drainedAChunk = true;
         canPushMore = duplex.push(next);
+      }
+      if (pendingReads.length === 0) {
+        clearBackpressureStallTimer();
+      } else if (drainedAChunk) {
+        // The queue still holds chunks, but at least one drained just now:
+        // real progress, so the stall bound renews instead of expiring under
+        // a consumer that is still reading, only slowly.
+        armBackpressureStallTimer();
       }
       endReadableIfDrained();
     },
@@ -194,6 +255,17 @@ export function wrapDuplexChannelAsNodeDuplex(
   channel.onData((chunk) => {
     if (duplex.destroyed) return;
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    // Check one chunk's own size against the cap before either path below
+    // runs. `push()` never refuses a call on its size, so a single chunk
+    // larger than the whole cap would otherwise reach Node's internal
+    // buffer unbounded on the direct-push path, before the queue this
+    // wrapper owns ever holds anything to compare a later chunk against.
+    if (bytes.byteLength > maxBufferedReadBytes) {
+      failClosed(
+        "Sandbox HTTP/2 channel delivered one chunk larger than the bounded read backpressure buffer.",
+      );
+      return;
+    }
     if (canPushMore && pendingReads.length === 0) {
       canPushMore = duplex.push(bytes);
       return;
@@ -202,13 +274,16 @@ export function wrapDuplexChannelAsNodeDuplex(
     // pause to slow the sandbox side down: queue this chunk instead of
     // pushing past that signal. Bound the queue, so a producer that keeps
     // outpacing its reader cannot grow it without limit.
+    if (pendingReads.length === 0) {
+      // The queue was empty until this chunk: arm the stall bound, so a
+      // consumer that never resumes reading still ends the channel, even
+      // though this chunk alone stays under the byte cap.
+      armBackpressureStallTimer();
+    }
     pendingReadBytes += bytes.byteLength;
     if (pendingReadBytes > maxBufferedReadBytes) {
-      channel.stop();
-      duplex.destroy(
-        new Error(
-          "Sandbox HTTP/2 channel exceeded the bounded read backpressure buffer; the reader could not keep up.",
-        ),
+      failClosed(
+        "Sandbox HTTP/2 channel exceeded the bounded read backpressure buffer; the reader could not keep up.",
       );
       return;
     }
@@ -218,6 +293,10 @@ export function wrapDuplexChannelAsNodeDuplex(
     channelExited = true;
     endReadableIfDrained();
   });
+  // The channel exited, or `read()`/`onData` above failed the `Duplex`
+  // closed: either way, no further chunk will ever drain, so the stall
+  // timer serves no purpose and only holds a stray handle open.
+  duplex.once("close", clearBackpressureStallTimer);
   return duplex;
 }
 
@@ -490,6 +569,11 @@ export interface CreateHttp2BridgeServerOptions {
    * {@link wrapDuplexChannelAsNodeDuplex}. The default is
    * {@link DEFAULT_HTTP2_BRIDGE_MAX_BUFFERED_READ_BYTES}. */
   maxBufferedReadBytes?: number;
+  /** The bound, in milliseconds, on how long the read backpressure queue
+   * {@link wrapDuplexChannelAsNodeDuplex} holds can stay non-empty with no
+   * chunk draining from it. The default is
+   * {@link DEFAULT_HTTP2_BRIDGE_READ_BACKPRESSURE_STALL_MS}. */
+  readBackpressureStallMs?: number;
   /** The sink for a GOAWAY the server observed on a session (one the sandbox
    * side sent to the host). */
   onGoaway?: (record: Http2BridgeGoawayRecord) => void;
@@ -664,6 +748,8 @@ export function createHttp2BridgeServer(options: CreateHttp2BridgeServerOptions)
     options.requestBodyLifetimeProgressBytes ?? DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_LIFETIME_PROGRESS_BYTES;
   const closeGraceMs = options.closeGraceMs ?? DEFAULT_HTTP2_BRIDGE_CLOSE_GRACE_MS;
   const maxBufferedReadBytes = options.maxBufferedReadBytes ?? DEFAULT_HTTP2_BRIDGE_MAX_BUFFERED_READ_BYTES;
+  const readBackpressureStallMs =
+    options.readBackpressureStallMs ?? DEFAULT_HTTP2_BRIDGE_READ_BACKPRESSURE_STALL_MS;
 
   const server = http2.createServer(HTTP2_BRIDGE_SERVER_OPTIONS);
   const activeSessions = new Set<http2.ServerHttp2Session>();
@@ -785,7 +871,7 @@ export function createHttp2BridgeServer(options: CreateHttp2BridgeServerOptions)
   return {
     server,
     bindChannel(channel: CommandManagedDuplexChannel): Duplex {
-      const duplex = wrapDuplexChannelAsNodeDuplex(channel, { maxBufferedReadBytes });
+      const duplex = wrapDuplexChannelAsNodeDuplex(channel, { maxBufferedReadBytes, readBackpressureStallMs });
       server.emit("connection", duplex);
       return duplex;
     },

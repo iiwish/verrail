@@ -905,20 +905,119 @@ describe("createHttp2BridgeServer + createSandboxHttp2BridgeGateway", () => {
       },
       close: async () => undefined,
     };
-    const duplex = wrapDuplexChannelAsNodeDuplex(channel, { maxBufferedReadBytes: 5_000 });
+    // The cap must clear the default 65,536-byte readable high-water mark,
+    // so the first chunk below still passes the direct-push check and
+    // forces `push()` to report the readable side full; the overflow this
+    // test proves comes from the queue that follows, not from that first
+    // chunk on its own.
+    const duplex = wrapDuplexChannelAsNodeDuplex(channel, { maxBufferedReadBytes: 80_000 });
     // No consumer ever attaches, so the readable side never drains: every
     // chunk past the first, which alone passes the default high-water mark,
     // fills the bounded queue instead of the unbounded internal buffer a
     // caller ignoring `push()`'s return would grow.
     const errored = new Promise<Error>((resolve) => duplex.on("error", resolve));
 
-    dataListener?.(Buffer.alloc(70_000, "a")); // passes the high-water mark; still pushed directly.
-    dataListener?.(Buffer.alloc(2_000, "b")); // queues: 2,000 of the 5,000-byte cap.
-    dataListener?.(Buffer.alloc(2_000, "b")); // queues: 4,000 of the 5,000-byte cap.
-    dataListener?.(Buffer.alloc(2_000, "b")); // 6,000 total bytes passes the cap.
+    dataListener?.(Buffer.alloc(70_000, "a")); // passes the high-water mark and the cap; still pushed directly.
+    dataListener?.(Buffer.alloc(30_000, "b")); // queues: 30,000 of the 80,000-byte cap.
+    dataListener?.(Buffer.alloc(30_000, "b")); // queues: 60,000 of the 80,000-byte cap.
+    dataListener?.(Buffer.alloc(30_000, "b")); // 90,000 queued bytes passes the cap.
 
     const error = await errored;
     expect(error.message).toMatch(/backpressure/i);
     expect(stopped).toBe(true);
+  });
+
+  it("wrapDuplexChannelAsNodeDuplex fails closed on one inbound chunk larger than the bounded read backpressure buffer, before the queue holds anything to compare it against", async () => {
+    let dataListener: ((chunk: Uint8Array) => void) | undefined;
+    let stopped = false;
+    const channel: CommandManagedDuplexChannel = {
+      write: () => undefined,
+      onData: (listener) => {
+        dataListener = listener;
+      },
+      onExit: () => undefined,
+      stop: () => {
+        stopped = true;
+      },
+      close: async () => undefined,
+    };
+    // No consumer ever attaches, and the queue is empty when this chunk
+    // arrives, so a check that only bounds the queue's cumulative size (and
+    // not one chunk's own size) would let this chunk reach `push()` unbound.
+    const duplex = wrapDuplexChannelAsNodeDuplex(channel, { maxBufferedReadBytes: 5_000 });
+    const errored = new Promise<Error>((resolve) => duplex.on("error", resolve));
+
+    dataListener?.(Buffer.alloc(10_000, "a")); // exceeds the 5,000-byte cap on its own, on the very first chunk.
+
+    const error = await errored;
+    expect(error.message).toMatch(/backpressure/i);
+    expect(stopped).toBe(true);
+  });
+
+  it("wrapDuplexChannelAsNodeDuplex fails closed once the read backpressure queue stalls with no drain, even though it stays under the byte cap", async () => {
+    let dataListener: ((chunk: Uint8Array) => void) | undefined;
+    let stopped = false;
+    const channel: CommandManagedDuplexChannel = {
+      write: () => undefined,
+      onData: (listener) => {
+        dataListener = listener;
+      },
+      onExit: () => undefined,
+      stop: () => {
+        stopped = true;
+      },
+      close: async () => undefined,
+    };
+    // A generous byte cap, so the byte-cap check above never fires: this
+    // test proves the independent time bound catches a stuck consumer the
+    // byte cap alone would miss.
+    const duplex = wrapDuplexChannelAsNodeDuplex(channel, {
+      maxBufferedReadBytes: 10_000_000,
+      readBackpressureStallMs: 40,
+    });
+    const errored = new Promise<Error>((resolve) => duplex.on("error", resolve));
+
+    dataListener?.(Buffer.alloc(70_000, "a")); // passes the high-water mark; pushed directly, no consumer drains it.
+    dataListener?.(Buffer.from("queued-and-never-drained")); // queues; no "data" listener ever attaches to drain it.
+
+    const error = await errored;
+    expect(error.message).toMatch(/stall/i);
+    expect(stopped).toBe(true);
+  });
+
+  it("wrapDuplexChannelAsNodeDuplex clears the stall bound once the queue fully drains, instead of firing later on an idle channel", async () => {
+    let dataListener: ((chunk: Uint8Array) => void) | undefined;
+    const channel: CommandManagedDuplexChannel = {
+      write: () => undefined,
+      onData: (listener) => {
+        dataListener = listener;
+      },
+      onExit: () => undefined,
+      stop: () => undefined,
+      close: async () => undefined,
+    };
+    // A short stall bound, so this test proves the drain below clears the
+    // timer instead of merely finishing before a long one would have fired.
+    const duplex = wrapDuplexChannelAsNodeDuplex(channel, {
+      maxBufferedReadBytes: 10_000_000,
+      readBackpressureStallMs: 20,
+    });
+    const received: Buffer[] = [];
+    const drainedAll = new Promise<void>((resolve) => {
+      duplex.on("data", (chunk: Buffer) => {
+        received.push(chunk);
+        if (Buffer.concat(received).includes("-third-")) resolve();
+      });
+    });
+
+    dataListener?.(Buffer.alloc(70_000, "a")); // passes the high-water mark; queues the chunks that follow.
+    dataListener?.(Buffer.from("-second-"));
+    dataListener?.(Buffer.from("-third-"));
+    await drainedAll;
+
+    // Wait past the stall bound with the channel now idle and the queue
+    // empty. A timer the full drain above did not clear would fire here.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(duplex.destroyed).toBe(false);
   });
 });
