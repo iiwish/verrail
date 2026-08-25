@@ -4854,6 +4854,64 @@ describe("sandbox adapter execution targets", () => {
     }
   }, 20000);
 
+  it("bounds the pre-READY buffer growth-copy work by the bytes received", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-duplex-growth-"));
+    cleanupDirs.push(rootDir);
+    const remoteCwd = path.join(rootDir, "workspace");
+    await mkdir(remoteCwd, { recursive: true });
+    const api = await startRecordingApiServer();
+    // An adversarial provider sends many small newline-less fragments before the
+    // cap fires. A one-copy-per-fragment append copies the whole retained buffer
+    // on every fragment, so the total copy work is quadratic in the number of
+    // fragments. The gate must instead grow its backing storage by doubling, so
+    // the total copy work stays linear in the bytes received.
+    const readinessBufferCapBytes = DEFAULT_MAX_DUPLEX_FRAME_BYTES + 4_096;
+    const smallChunk = "x".repeat(64);
+    const chunkCount = Math.ceil(readinessBufferCapBytes / smallChunk.length) + 1;
+    const totalBytes = chunkCount * smallChunk.length;
+    const { runner, control } = makeDuplexSelectionRunner((ctx) => {
+      for (let i = 0; i < chunkCount; i += 1) {
+        ctx.emitRaw(smallChunk);
+      }
+    });
+    const { recorder } = createRecordingDuplexRecorder();
+    const target: AdapterSandboxExecutionTarget = {
+      kind: "remote",
+      transport: "sandbox",
+      providerKey: "daytona",
+      remoteCwd,
+      timeoutMs: 30_000,
+      runner,
+      effectiveCapabilities: duplexCapabilities(true),
+    };
+
+    __duplexReadinessTesting.resetBufferGrowthCopyUnits();
+    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+      runId: "run-growth-bound",
+      target,
+      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      adapterKey: "codex",
+      hostApiToken: "real-run-jwt",
+      hostApiUrl: api.origin,
+      enableSandboxDuplexBridge: true,
+      duplexReadinessTimeoutMs: 5_000,
+      duplexObservabilityRecorder: recorder,
+    });
+    try {
+      expect(bridge).not.toBeNull();
+      expect(control.openCount).toBe(1);
+      const copyUnits = __duplexReadinessTesting.readBufferGrowthCopyUnits();
+      // Doubling growth copies a logarithmic number of times, each at most the
+      // current buffer length, so the total stays within a small multiple of
+      // totalBytes. A per-fragment full-buffer copy is quadratic (about
+      // totalBytes^2 / (2 * chunkSize)), far above this bound.
+      expect(copyUnits).toBeLessThanOrEqual(4 * totalBytes);
+    } finally {
+      await bridge?.stop();
+      await api.close();
+    }
+  }, 20000);
+
   it("bounds the pre-READY skip scan work by the bytes received", async () => {
     const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-duplex-blank-"));
     cleanupDirs.push(rootDir);

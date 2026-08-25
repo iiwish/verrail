@@ -2931,6 +2931,15 @@ async function ensureSandboxRunLogDirectory(input: {
 // stays linear in the bytes received. Production code never reads this count.
 let duplexReadinessNewlineScanUnits = 0;
 
+// The count of bytes `appendReadinessBytes` copies while it grows the pre-READY
+// buffer's backing storage. A one-copy-per-fragment approach copies the whole
+// retained buffer on every fragment, so this count grows quadratically in the
+// number of fragments. The doubling-growth approach copies only on a
+// reallocation, so this count stays linear in the bytes received. A test reads
+// this count to prove the growth work does not regress to the quadratic shape.
+// Production code never reads this count.
+let duplexReadinessBufferGrowthCopyUnits = 0;
+
 /** The newline byte. The readiness buffer is a byte buffer, not a string. */
 const READINESS_NEWLINE_BYTE = 0x0a;
 /** The opening-brace byte. The bracketed-paste retry scans for it, not a string. */
@@ -2961,6 +2970,10 @@ export const __duplexReadinessTesting = {
   readNewlineScanUnits: (): number => duplexReadinessNewlineScanUnits,
   resetNewlineScanUnits: (): void => {
     duplexReadinessNewlineScanUnits = 0;
+  },
+  readBufferGrowthCopyUnits: (): number => duplexReadinessBufferGrowthCopyUnits,
+  resetBufferGrowthCopyUnits: (): void => {
+    duplexReadinessBufferGrowthCopyUnits = 0;
   },
   // Build one readiness gate over a supplied channel, so a test can drive the
   // readiness-replay reservation lifecycle across every terminal path without the
@@ -3057,15 +3070,51 @@ function createDuplexReadinessGate(
     }
     replayTokens.length = 0;
   }
-  // The raw bytes the host reads before the READY frame completes. The buffer is
-  // append-only, so the O(1) cap check on `buffer.length` stays valid.
+  // The raw bytes the host reads before the READY frame completes. `buffer` is
+  // append-only and always a zero-copy view over the used prefix of `storage`,
+  // so the O(1) cap check on `buffer.length` stays valid.
   let buffer: Buffer = READINESS_EMPTY_BUFFER;
+  // The backing storage for `buffer`. `appendReadinessBytes` grows this by
+  // doubling its capacity, instead of copying the whole retained buffer on
+  // every fragment. See `appendReadinessBytes` for why this bounds the total
+  // copy work.
+  let storage: Buffer = READINESS_EMPTY_BUFFER;
   // The start index of the current line in `buffer`. A leading blank line
   // advances this cursor past its newline without a buffer copy.
   let lineStart = 0;
   // The next index to search for a newline. The gate scans from here, so each
   // byte is read at most one time for the newline search.
   let scanFrom = 0;
+
+  /**
+   * Append `chunk` to the pre-READY buffer without copying the bytes already
+   * retained. A sender that trickles the handshake in many small fragments
+   * (a slow socket, a byte-at-a-time PTY echo) would otherwise force one full
+   * copy of the whole retained buffer per fragment: with `buffer` growing
+   * toward the {@link DUPLEX_READINESS_BUFFER_CAP_BYTES} cap, that is
+   * quadratic work in the number of fragments. This instead grows `storage`
+   * by doubling its capacity only when the current capacity runs out, so the
+   * backing store reallocates and copies a logarithmic number of times, and
+   * each append copies only the incoming chunk. The used length still reads
+   * in O(1) through `buffer.length`, so every cap check and slice below stays
+   * unchanged.
+   */
+  function appendReadinessBytes(chunk: Uint8Array): void {
+    const usedLength = buffer.length;
+    const neededLength = usedLength + chunk.byteLength;
+    if (neededLength > storage.length) {
+      let nextCapacity = storage.length === 0 ? chunk.byteLength : storage.length * 2;
+      while (nextCapacity < neededLength) {
+        nextCapacity *= 2;
+      }
+      const grown = Buffer.allocUnsafe(nextCapacity);
+      storage.copy(grown, 0, 0, usedLength);
+      duplexReadinessBufferGrowthCopyUnits += usedLength;
+      storage = grown;
+    }
+    storage.set(chunk, usedLength);
+    buffer = storage.subarray(0, neededLength);
+  }
   // The bytes that followed the READY frame, held until the broker binds.
   let pending: Uint8Array = READINESS_EMPTY_BUFFER;
   // The exit that arrived after READY but before the broker bound, if any.
@@ -3143,8 +3192,10 @@ function createDuplexReadinessGate(
     }
     // Append the new bytes and continue the newline search from `scanFrom`, the
     // first index not yet examined. Each byte is read at most one time for the
-    // search, so the total scan work stays linear in the bytes received.
-    buffer = buffer.length === 0 ? Buffer.from(chunk) : Buffer.concat([buffer, chunk]);
+    // search, and `appendReadinessBytes` copies at most the incoming chunk, so
+    // the total work stays linear in the bytes received, not in the number of
+    // fragments they arrive in.
+    appendReadinessBytes(chunk);
     for (;;) {
       const newlineIndex = findNewlineFrom(buffer, scanFrom);
       if (newlineIndex === -1) {
@@ -3215,15 +3266,24 @@ function createDuplexReadinessGate(
         // keeps the transient charge equal to the suffix, not the sum of the dropped
         // prefix and the retained suffix. The two steps run in one synchronous
         // section, so no other route can take the freed bytes in between.
-        const suffix = buffer.slice(newlineIndex + 1);
-        // Drop the original pre-READY buffer now. The gate keeps only the
-        // retained suffix as `pending`, and it charges that suffix under
-        // `readiness_replay` below. If the gate keeps the buffer, the process
-        // retains the full sandbox-controlled string while the ledger counts
-        // only the suffix, so aggregate retention passes the ceiling. This clear
-        // also covers the broker handoff and the replay disposal. Both run later
-        // and read no buffer bytes.
+        //
+        // Copy the suffix instead of slicing it off `buffer`. `buffer` is a view
+        // over `storage`, and `storage`'s capacity can run ahead of the bytes in
+        // use (the doubling growth in `appendReadinessBytes` over-provisions it).
+        // A slice would keep that whole over-provisioned allocation alive, so the
+        // process would retain more physical bytes than the ledger charges under
+        // `readiness_replay`. The copy is exactly `suffix.length` bytes, one time,
+        // not a per-fragment cost.
+        const suffix = Buffer.from(buffer.subarray(newlineIndex + 1));
+        // Drop the original pre-READY buffer and its backing storage now. The
+        // gate keeps only the retained suffix as `pending`, and it charges that
+        // suffix under `readiness_replay` below. If the gate keeps `storage`, the
+        // process retains the full sandbox-controlled bytes while the ledger
+        // counts only the suffix, so aggregate retention passes the ceiling. This
+        // clear also covers the broker handoff and the replay disposal. Both run
+        // later and read no buffer bytes.
         buffer = READINESS_EMPTY_BUFFER;
+        storage = READINESS_EMPTY_BUFFER;
         releaseReadinessBufferTokens();
         if (ledger && suffix.length > 0) {
           const token = ledger.reserve("readiness_replay", suffix.byteLength);
