@@ -421,37 +421,25 @@ export const DEFAULT_HTTP2_BRIDGE_PING_STALL_MS = 20_000;
  * this bound, so a slow peer that keeps making real progress completes; only
  * a peer that stops sending trips it. */
 export const DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_TIMEOUT_MS = 30_000;
-/** The default lifetime window a request body read gets before it needs real
- * progress to earn another one; paired with
- * {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_LIFETIME_PROGRESS_BYTES}. This
- * bound is an intentional design limit, not a defect and not open for
- * removal or relaxation without a replacement bound: it caps the worst-case
- * time one request body read can occupy a
- * {@link HTTP2_BRIDGE_MAX_CONCURRENT_STREAMS} stream slot, a cap the idle
- * bound above cannot provide on its own. Known consequence: an authenticated
- * upload whose sustained rate stays under the progress floor inside every
- * window — under roughly `lifetimeProgressBytes / maxLifetimeMs` — is reset
- * before it completes, even while it keeps sending real data. This
- * consequence is accepted because sandbox callback bodies are small
- * control-plane payloads, not bulk transfers, so a legitimate call clears
- * the floor by a wide margin. A caller that needs a slower floor raises both
- * this constant and {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_LIFETIME_PROGRESS_BYTES}
- * together, in proportion. */
+/** The default total lifetime bound on a request body read: an absolute
+ * ceiling armed once, at the start of the read, and never renewed by any
+ * later chunk. This bound is independent of
+ * {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_TIMEOUT_MS}: the idle bound
+ * resets on every chunk, so it only catches a peer that stops sending; this
+ * bound catches a peer that never stops sending but also never finishes,
+ * pacing chunks under the idle bound to hold a
+ * {@link HTTP2_BRIDGE_MAX_CONCURRENT_STREAMS} stream slot open forever. A
+ * bound that renews on progress cannot close that gap, because a peer under
+ * its own control decides how much progress to report; only a bound that
+ * never renews closes it. This is an intentional design limit, not a defect
+ * and not open for removal or relaxation without a replacement bound. Known
+ * consequence: an authenticated upload that legitimately takes longer than
+ * this bound to complete is reset even though it keeps sending real data.
+ * This consequence is accepted because sandbox callback bodies are small
+ * control-plane payloads (at most {@link DEFAULT_SANDBOX_CALLBACK_BRIDGE_MAX_BODY_BYTES}
+ * bytes), not bulk transfers, so a legitimate call finishes in a small
+ * fraction of this bound. */
 export const DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_MAX_LIFETIME_MS = 120_000;
-/** The default amount of cumulative body progress, in bytes, a request body
- * read must make within one {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_MAX_LIFETIME_MS}
- * window to renew that window. The server enforces this floor because the
- * idle bound above cannot close this gap on its own: a peer that sends one
- * small chunk every few seconds resets the idle bound forever without ever
- * finishing, holding one of the {@link HTTP2_BRIDGE_MAX_CONCURRENT_STREAMS}
- * stream slots open indefinitely. This is an intentional design limit, not a
- * defect. Known consequence: an authenticated peer whose sustained transfer
- * rate stays under this floor within any one window is reset before its
- * upload completes, even though it never stops sending. This consequence is
- * accepted because sandbox callback bodies are small control-plane payloads,
- * not bulk transfers — the floor is roughly one byte every 15 ms, far below
- * any legitimate call's rate. */
-export const DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_LIFETIME_PROGRESS_BYTES = 8_192;
 /** The default bound {@link Http2BridgeServerHandle.close} waits for an
  * active session to close on its own before it force-destroys the session. A
  * session that carries a stalled stream would otherwise hold `close()` open
@@ -564,20 +552,13 @@ export interface CreateHttp2BridgeServerOptions {
    * received chunks. The default is
    * {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_TIMEOUT_MS}. */
   requestBodyTimeoutMs?: number;
-  /** The lifetime window a request body read gets before it needs real
-   * progress to renew it. This bound caps worst-case stream-slot occupancy;
+  /** The total lifetime bound a request body read gets, armed once and never
+   * renewed by progress. This bound caps worst-case stream-slot occupancy;
    * it is not a transfer-rate optimization. See
    * {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_MAX_LIFETIME_MS} for why the
    * server enforces it and the known consequence for an unusually slow
    * upload. The default is {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_MAX_LIFETIME_MS}. */
   requestBodyMaxLifetimeMs?: number;
-  /** The cumulative progress, in bytes, a request body read must make within
-   * one lifetime window to renew that window. See
-   * {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_LIFETIME_PROGRESS_BYTES} for why
-   * the server enforces this floor and the known consequence for an
-   * unusually slow upload. The default is
-   * {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_LIFETIME_PROGRESS_BYTES}. */
-  requestBodyLifetimeProgressBytes?: number;
   /** The bound {@link Http2BridgeServerHandle.close} waits for an active
    * session to close on its own before it force-destroys the session. The
    * default is {@link DEFAULT_HTTP2_BRIDGE_CLOSE_GRACE_MS}. */
@@ -642,27 +623,27 @@ function toOutboundHeaderRecord(headers: http2.IncomingHttpHeaders): Record<stri
 }
 
 /**
- * Read one authenticated request body, bounded on size and on two
- * independent time bounds. The idle bound resets on each received chunk, so
- * a slow peer that keeps making real progress completes, while a peer that
- * stops sending mid-stream — the same failure a stalled network path or a
- * hung sandbox process produces — still trips it.
+ * Read one request body, bounded on size and on two independent time
+ * bounds.
  *
- * The lifetime bound is an idle-progress bound: a received chunk renews it
- * only once cumulative progress since the last renewal clears
- * `lifetimeProgressBytes`, not on every chunk the way the idle bound above
- * does. This is an intentional design limit, not a defect, and it is not
- * open for removal or relaxation without a replacement bound. It exists to
- * cap the worst-case time one read can occupy a
+ * The idle bound resets on each received chunk, so a slow peer that keeps
+ * making real progress completes, while a peer that stops sending
+ * mid-stream — the same failure a stalled network path or a hung sandbox
+ * process produces — still trips it.
+ *
+ * The lifetime bound is an absolute ceiling: it arms once, when the read
+ * starts, and no later chunk renews it, no matter how much progress the
+ * peer reports. This is an intentional design limit, not a defect, and it
+ * is not open for removal or relaxation without a replacement bound. It
+ * exists to cap the worst-case time one read can occupy a
  * {@link HTTP2_BRIDGE_MAX_CONCURRENT_STREAMS} stream slot — a cap the idle
- * bound cannot provide alone, because a peer that sends one small chunk
- * every few seconds resets the idle bound forever without ever finishing.
- * Known consequence: an authenticated peer whose sustained rate stays under
- * `lifetimeProgressBytes / maxLifetimeMs` inside every window is reset
- * before its upload completes, even while it keeps sending real data. This
- * consequence is accepted because sandbox callback bodies are small
- * control-plane payloads, not bulk transfers, so a legitimate call clears
- * the floor by a wide margin.
+ * bound cannot provide alone, because a peer that keeps every chunk gap
+ * under the idle bound never trips it, no matter how long the read runs.
+ * Known consequence: an authenticated peer whose upload legitimately takes
+ * longer than the lifetime bound to complete is reset even while it keeps
+ * sending real data. This consequence is accepted because sandbox callback
+ * bodies are small control-plane payloads, not bulk transfers, so a
+ * legitimate call finishes in a small fraction of the bound.
  *
  * The `close` listener is the settle-of-last-resort: it fires whenever the
  * stream ends for any reason at all — a normal end, an error, a timeout- or
@@ -674,18 +655,12 @@ function readHttp2StreamBody(
   maxBodyBytes: number,
   idleTimeoutMs: number,
   maxLifetimeMs: number,
-  lifetimeProgressBytes: number,
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let totalBytes = 0;
-    // The `totalBytes` value the lifetime window last renewed at. A chunk
-    // renews the window only once `totalBytes` clears this value by at least
-    // `lifetimeProgressBytes`.
-    let bytesAtLastLifetimeRenewal = 0;
     let settled = false;
     let idleTimer: ReturnType<typeof setTimeout>;
-    let lifetimeTimer: ReturnType<typeof setTimeout>;
     const settle = (run: () => void) => {
       if (settled) return;
       settled = true;
@@ -701,18 +676,15 @@ function readHttp2StreamBody(
       }, idleTimeoutMs);
       idleTimer.unref?.();
     };
-    const armLifetimeTimer = () => {
-      clearTimeout(lifetimeTimer);
-      lifetimeTimer = setTimeout(() => {
-        settle(() =>
-          reject(new Error("Bridge request body exceeded the maximum lifetime bound without enough progress.")),
-        );
-        stream.destroy();
-      }, maxLifetimeMs);
-      lifetimeTimer.unref?.();
-    };
+    // Armed once, below, and never reset by a later chunk: see the
+    // function's own doc comment for why the lifetime bound must stay
+    // independent of progress.
+    const lifetimeTimer: ReturnType<typeof setTimeout> = setTimeout(() => {
+      settle(() => reject(new Error("Bridge request body exceeded the maximum lifetime bound.")));
+      stream.destroy();
+    }, maxLifetimeMs);
+    lifetimeTimer.unref?.();
     armIdleTimer();
-    armLifetimeTimer();
     stream.on("data", (chunk: Buffer) => {
       totalBytes += chunk.byteLength;
       if (totalBytes > maxBodyBytes) {
@@ -723,15 +695,8 @@ function readHttp2StreamBody(
       chunks.push(chunk);
       // The chunk is real progress, so the peer is not stalled: reset the
       // idle bound instead of letting it expire under a slow but active
-      // upload.
+      // upload. The lifetime bound above stays untouched.
       armIdleTimer();
-      // Renew the lifetime window only once cumulative progress since the
-      // last renewal clears the progress floor — a chunk too small to clear
-      // it resets the idle bound above, but not this window.
-      if (totalBytes - bytesAtLastLifetimeRenewal >= lifetimeProgressBytes) {
-        bytesAtLastLifetimeRenewal = totalBytes;
-        armLifetimeTimer();
-      }
     });
     stream.once("end", () => settle(() => resolve(Buffer.concat(chunks))));
     stream.once("error", (error) => settle(() => reject(error instanceof Error ? error : new Error(String(error)))));
@@ -753,6 +718,33 @@ function respondJson(stream: http2.ServerHttp2Stream, status: number, body: unkn
 }
 
 /**
+ * Answer a denied stream, then consume and discard its request body under
+ * the same idle and total lifetime bounds an authenticated request gets.
+ * A denied request's body content never reaches the forward handler, but
+ * the inbound half of the stream still needs a bound: without one, a peer
+ * that leaves the body unfinished keeps the stream open, holding one of the
+ * {@link HTTP2_BRIDGE_MAX_CONCURRENT_STREAMS} slots for as long as it
+ * chooses. Nothing awaits the discard; the caller has already answered the
+ * request and moves on to the next stream.
+ */
+function denyRequest(
+  stream: http2.ServerHttp2Stream,
+  status: number,
+  body: unknown,
+  maxBodyBytes: number,
+  idleTimeoutMs: number,
+  maxLifetimeMs: number,
+): void {
+  respondJson(stream, status, body);
+  if (stream.destroyed || stream.closed) return;
+  readHttp2StreamBody(stream, maxBodyBytes, idleTimeoutMs, maxLifetimeMs).catch(() => {
+    // The idle or lifetime bound above already destroyed the stream, or the
+    // peer reset it first. Either way the slot is free; the discarded body
+    // content is irrelevant to a denial.
+  });
+}
+
+/**
  * Create the host HTTP/2 bridge server. The server runs no listener of its
  * own: a caller wraps one duplex channel through {@link Http2BridgeServerHandle.bindChannel}
  * per sandbox session.
@@ -766,8 +758,6 @@ export function createHttp2BridgeServer(options: CreateHttp2BridgeServerOptions)
   const requestBodyTimeoutMs = options.requestBodyTimeoutMs ?? DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_TIMEOUT_MS;
   const requestBodyMaxLifetimeMs =
     options.requestBodyMaxLifetimeMs ?? DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_MAX_LIFETIME_MS;
-  const requestBodyLifetimeProgressBytes =
-    options.requestBodyLifetimeProgressBytes ?? DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_LIFETIME_PROGRESS_BYTES;
   const closeGraceMs = options.closeGraceMs ?? DEFAULT_HTTP2_BRIDGE_CLOSE_GRACE_MS;
   const maxBufferedReadBytes = options.maxBufferedReadBytes ?? DEFAULT_HTTP2_BRIDGE_MAX_BUFFERED_READ_BYTES;
   const readBackpressureStallMs =
@@ -784,7 +774,14 @@ export function createHttp2BridgeServer(options: CreateHttp2BridgeServerOptions)
     // before route processing and before header processing. This host check
     // is independent of the gateway's own token check on the sandbox side.
     if (!compareBridgeTokensConstantTime(options.bridgeToken, readBridgeTokenHeader(headers))) {
-      respondJson(stream, 401, { error: "Invalid bridge token." });
+      denyRequest(
+        stream,
+        401,
+        { error: "Invalid bridge token." },
+        maxBodyBytes,
+        requestBodyTimeoutMs,
+        requestBodyMaxLifetimeMs,
+      );
       return;
     }
 
@@ -792,7 +789,14 @@ export function createHttp2BridgeServer(options: CreateHttp2BridgeServerOptions)
     // allowlist and the forward request below read this one result.
     const parsedPath = parseCanonicalBridgeRequestPath(headers);
     if (!parsedPath.ok) {
-      respondJson(stream, 400, { error: `Invalid request path: ${parsedPath.reason}` });
+      denyRequest(
+        stream,
+        400,
+        { error: `Invalid request path: ${parsedPath.reason}` },
+        maxBodyBytes,
+        requestBodyTimeoutMs,
+        requestBodyMaxLifetimeMs,
+      );
       return;
     }
     const method = normalizeStreamMethod(headers[":method"]);
@@ -802,7 +806,14 @@ export function createHttp2BridgeServer(options: CreateHttp2BridgeServerOptions)
       routes,
     );
     if (denialReason) {
-      respondJson(stream, 403, { error: denialReason });
+      denyRequest(
+        stream,
+        403,
+        { error: denialReason },
+        maxBodyBytes,
+        requestBodyTimeoutMs,
+        requestBodyMaxLifetimeMs,
+      );
       return;
     }
 
@@ -813,13 +824,7 @@ export function createHttp2BridgeServer(options: CreateHttp2BridgeServerOptions)
 
     let body: Buffer;
     try {
-      body = await readHttp2StreamBody(
-        stream,
-        maxBodyBytes,
-        requestBodyTimeoutMs,
-        requestBodyMaxLifetimeMs,
-        requestBodyLifetimeProgressBytes,
-      );
+      body = await readHttp2StreamBody(stream, maxBodyBytes, requestBodyTimeoutMs, requestBodyMaxLifetimeMs);
     } catch (error) {
       respondJson(stream, 413, { error: error instanceof Error ? error.message : String(error) });
       return;
