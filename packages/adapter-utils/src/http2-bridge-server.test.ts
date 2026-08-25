@@ -76,6 +76,7 @@ interface TestPairOptions {
   pingIntervalMs?: number;
   pingStallMs?: number;
   requestBodyTimeoutMs?: number;
+  requestBodyMaxLifetimeMs?: number;
   closeGraceMs?: number;
   onGoaway?: (record: Http2BridgeGoawayRecord) => void;
   onSessionError?: (error: Error) => void;
@@ -100,6 +101,7 @@ function bindTestServer(options: TestPairOptions = {}) {
     pingIntervalMs: options.pingIntervalMs,
     pingStallMs: options.pingStallMs,
     requestBodyTimeoutMs: options.requestBodyTimeoutMs,
+    requestBodyMaxLifetimeMs: options.requestBodyMaxLifetimeMs,
     closeGraceMs: options.closeGraceMs,
     onGoaway: options.onGoaway,
     onSessionError: options.onSessionError,
@@ -412,6 +414,113 @@ describe("createHttp2BridgeServer + createSandboxHttp2BridgeGateway", () => {
       });
       expect(response.status).toBe(200);
       expect(JSON.parse(response.body)).toEqual({ bodyLength: "chunk".length * 5 });
+    } finally {
+      rawClient.close();
+      await handle.close();
+    }
+  });
+
+  it("test_a_trickling_request_body_still_trips_the_independent_lifetime_bound", async () => {
+    // The idle bound is generous, so a chunk every 15ms never lets it expire.
+    // The lifetime bound is short and never resets, so it still ends the
+    // read once it passes — even though every chunk arrived comfortably
+    // inside the idle bound. This is the failure mode an authenticated
+    // sandbox could otherwise use to hold one of the concurrent-stream slots
+    // open indefinitely: send just enough to keep resetting the idle bound,
+    // and never finish the body.
+    //
+    // Every write below lands well before the lifetime bound, and the test
+    // makes no further call on the stream after that: nothing races the
+    // server's own reset of it once the bound passes, so this proves the
+    // bound from the server's own, deterministic effect (the forward handler
+    // never runs) instead of from a raw client-stream event whose timing
+    // Node does not guarantee here.
+    let forwarderCalled = false;
+    const { handle, bridgeToken, clientSide } = bindTestServer({
+      requestBodyTimeoutMs: 5_000,
+      requestBodyMaxLifetimeMs: 60,
+      forwardRequest: async () => {
+        forwarderCalled = true;
+        return { status: 200 };
+      },
+    });
+    const rawClient = connectRawClient(clientSide);
+    try {
+      const req = rawClient.request({
+        ":method": "POST",
+        ":path": "/api/issues/abc/comments",
+        authorization: `Bearer ${bridgeToken}`,
+      });
+      req.on("error", () => undefined);
+      // Three chunks, 15ms apart, every one of them sent well before the
+      // 60ms lifetime bound. The body never ends: this request never calls
+      // `.end()`.
+      for (let chunkIndex = 0; chunkIndex < 3; chunkIndex += 1) {
+        req.write("x");
+        await new Promise((resolve) => setTimeout(resolve, 15));
+      }
+      // Wait past the lifetime bound with no further write, so the server
+      // has time to destroy the stalled stream on its own.
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(forwarderCalled).toBe(false);
+
+      // The session survives the ended stream: a second, complete request
+      // still succeeds.
+      const survivingResponse = await new Promise<{ status: number }>((resolve, reject) => {
+        const survivingReq = rawClient.request({
+          ":method": "POST",
+          ":path": "/api/issues/abc/comments",
+          authorization: `Bearer ${bridgeToken}`,
+        });
+        let status = 0;
+        survivingReq.on("response", (headers) => {
+          status = Number(headers[":status"]) || 0;
+        });
+        survivingReq.on("data", () => undefined);
+        survivingReq.on("end", () => resolve({ status }));
+        survivingReq.on("error", reject);
+        survivingReq.end();
+      });
+      expect(survivingResponse.status).toBe(200);
+    } finally {
+      rawClient.close();
+      await handle.close();
+    }
+  });
+
+  it("test_a_request_body_within_the_lifetime_bound_still_completes", async () => {
+    // A generous lifetime bound must not interfere with an ordinary request
+    // that finishes well inside it.
+    const { handle, bridgeToken, clientSide } = bindTestServer({
+      requestBodyTimeoutMs: 5_000,
+      requestBodyMaxLifetimeMs: 5_000,
+      forwardRequest: async (request) => ({
+        status: 200,
+        body: JSON.stringify({ bodyLength: request.body.byteLength }),
+      }),
+    });
+    const rawClient = connectRawClient(clientSide);
+    try {
+      const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const req = rawClient.request({
+          ":method": "POST",
+          ":path": "/api/issues/abc/comments",
+          authorization: `Bearer ${bridgeToken}`,
+        });
+        let status = 0;
+        let body = "";
+        req.setEncoding("utf8");
+        req.on("response", (headers) => {
+          status = Number(headers[":status"]) || 0;
+        });
+        req.on("data", (chunk) => (body += chunk));
+        req.on("end", () => resolve({ status, body }));
+        req.on("error", reject);
+        req.write("chunk");
+        req.end();
+      });
+      expect(response.status).toBe(200);
+      expect(JSON.parse(response.body)).toEqual({ bodyLength: "chunk".length });
     } finally {
       rawClient.close();
       await handle.close();

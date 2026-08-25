@@ -269,6 +269,14 @@ export const DEFAULT_HTTP2_BRIDGE_PING_STALL_MS = 20_000;
  * this bound, so a slow peer that keeps making real progress completes; only
  * a peer that stops sending trips it. */
 export const DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_TIMEOUT_MS = 30_000;
+/** The default total lifetime bound on a request body read: the maximum time
+ * from the first byte of the read to the body's completion, independent of
+ * how many chunks arrive or how often. Unlike the idle bound, no chunk resets
+ * this bound. An authenticated peer that sends one small chunk every few
+ * seconds never trips the idle bound, so without this second, independent
+ * bound it could hold one of the {@link HTTP2_BRIDGE_MAX_CONCURRENT_STREAMS}
+ * stream slots open indefinitely. */
+export const DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_MAX_LIFETIME_MS = 120_000;
 /** The default bound {@link Http2BridgeServerHandle.close} waits for an
  * active session to close on its own before it force-destroys the session. A
  * session that carries a stalled stream would otherwise hold `close()` open
@@ -381,6 +389,10 @@ export interface CreateHttp2BridgeServerOptions {
    * received chunks. The default is
    * {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_TIMEOUT_MS}. */
   requestBodyTimeoutMs?: number;
+  /** The total lifetime bound on a request body read, independent of the
+   * idle bound above: no received chunk resets it. The default is
+   * {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_MAX_LIFETIME_MS}. */
+  requestBodyMaxLifetimeMs?: number;
   /** The bound {@link Http2BridgeServerHandle.close} waits for an active
    * session to close on its own before it force-destroys the session. The
    * default is {@link DEFAULT_HTTP2_BRIDGE_CLOSE_GRACE_MS}. */
@@ -434,11 +446,18 @@ function toOutboundHeaderRecord(headers: http2.IncomingHttpHeaders): Record<stri
 }
 
 /**
- * Read one authenticated request body, bounded on both size and time. The
- * time bound is an idle bound, not an absolute one: each received chunk
- * resets it, so a slow peer that keeps making real progress completes, while
- * a peer that stops sending mid-stream — the same failure a stalled network
- * path or a hung sandbox process produces — still trips the bound.
+ * Read one authenticated request body, bounded on size and on two
+ * independent time bounds. The idle bound resets on each received chunk, so
+ * a slow peer that keeps making real progress completes, while a peer that
+ * stops sending mid-stream — the same failure a stalled network path or a
+ * hung sandbox process produces — still trips it. The lifetime bound never
+ * resets: it bounds the total time from the first byte to completion, so a
+ * peer that keeps sending small chunks often enough to dodge the idle bound
+ * still cannot hold the stream open past it. Either bound alone is not
+ * enough — the idle bound alone lets a trickling peer hold a stream slot
+ * indefinitely; the lifetime bound alone would need to be set to the worst
+ * legitimate upload time, which is far longer than a real stall should take
+ * to detect.
  *
  * The `close` listener is the settle-of-last-resort: it fires whenever the
  * stream ends for any reason at all — a normal end, an error, a timeout- or
@@ -449,6 +468,7 @@ function readHttp2StreamBody(
   stream: http2.ServerHttp2Stream,
   maxBodyBytes: number,
   idleTimeoutMs: number,
+  maxLifetimeMs: number,
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -459,6 +479,7 @@ function readHttp2StreamBody(
       if (settled) return;
       settled = true;
       clearTimeout(idleTimer);
+      clearTimeout(lifetimeTimer);
       run();
     };
     const armIdleTimer = () => {
@@ -469,6 +490,13 @@ function readHttp2StreamBody(
       }, idleTimeoutMs);
       idleTimer.unref?.();
     };
+    // Armed once, here, and never reset by a received chunk: this is what
+    // makes the lifetime bound independent of the idle bound above.
+    const lifetimeTimer: ReturnType<typeof setTimeout> = setTimeout(() => {
+      settle(() => reject(new Error("Bridge request body exceeded the maximum lifetime bound.")));
+      stream.destroy();
+    }, maxLifetimeMs);
+    lifetimeTimer.unref?.();
     armIdleTimer();
     stream.on("data", (chunk: Buffer) => {
       totalBytes += chunk.byteLength;
@@ -514,6 +542,8 @@ export function createHttp2BridgeServer(options: CreateHttp2BridgeServerOptions)
   const pingIntervalMs = options.pingIntervalMs ?? DEFAULT_HTTP2_BRIDGE_PING_INTERVAL_MS;
   const pingStallMs = options.pingStallMs ?? DEFAULT_HTTP2_BRIDGE_PING_STALL_MS;
   const requestBodyTimeoutMs = options.requestBodyTimeoutMs ?? DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_TIMEOUT_MS;
+  const requestBodyMaxLifetimeMs =
+    options.requestBodyMaxLifetimeMs ?? DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_MAX_LIFETIME_MS;
   const closeGraceMs = options.closeGraceMs ?? DEFAULT_HTTP2_BRIDGE_CLOSE_GRACE_MS;
 
   const server = http2.createServer(HTTP2_BRIDGE_SERVER_OPTIONS);
@@ -556,7 +586,7 @@ export function createHttp2BridgeServer(options: CreateHttp2BridgeServerOptions)
 
     let body: Buffer;
     try {
-      body = await readHttp2StreamBody(stream, maxBodyBytes, requestBodyTimeoutMs);
+      body = await readHttp2StreamBody(stream, maxBodyBytes, requestBodyTimeoutMs, requestBodyMaxLifetimeMs);
     } catch (error) {
       respondJson(stream, 413, { error: error instanceof Error ? error.message : String(error) });
       return;
