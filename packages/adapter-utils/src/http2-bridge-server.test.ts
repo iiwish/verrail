@@ -77,6 +77,7 @@ interface TestPairOptions {
   pingStallMs?: number;
   requestBodyTimeoutMs?: number;
   requestBodyMaxLifetimeMs?: number;
+  requestBodyLifetimeProgressBytes?: number;
   closeGraceMs?: number;
   onGoaway?: (record: Http2BridgeGoawayRecord) => void;
   onSessionError?: (error: Error) => void;
@@ -102,6 +103,7 @@ function bindTestServer(options: TestPairOptions = {}) {
     pingStallMs: options.pingStallMs,
     requestBodyTimeoutMs: options.requestBodyTimeoutMs,
     requestBodyMaxLifetimeMs: options.requestBodyMaxLifetimeMs,
+    requestBodyLifetimeProgressBytes: options.requestBodyLifetimeProgressBytes,
     closeGraceMs: options.closeGraceMs,
     onGoaway: options.onGoaway,
     onSessionError: options.onSessionError,
@@ -527,6 +529,62 @@ describe("createHttp2BridgeServer + createSandboxHttp2BridgeGateway", () => {
     }
   });
 
+  it("test_an_upload_that_keeps_making_real_progress_completes_past_the_lifetime_window", async () => {
+    // The lifetime window is short, and the whole upload takes several times
+    // longer than it — a fixed, non-resetting deadline at this window would
+    // reset this request. Every chunk clears the progress floor and arrives
+    // well inside the window, so each one renews it, and the request
+    // completes: this is the idle-progress bound in effect, not an absolute
+    // one, and it is the fix for the same upload a fixed deadline would reset.
+    const { handle, bridgeToken, clientSide } = bindTestServer({
+      requestBodyTimeoutMs: 5_000,
+      requestBodyMaxLifetimeMs: 50,
+      requestBodyLifetimeProgressBytes: 5,
+      forwardRequest: async (request) => ({
+        status: 200,
+        body: JSON.stringify({ bodyLength: request.body.byteLength }),
+      }),
+    });
+    const rawClient = connectRawClient(clientSide);
+    try {
+      const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const req = rawClient.request({
+          ":method": "POST",
+          ":path": "/api/issues/abc/comments",
+          authorization: `Bearer ${bridgeToken}`,
+        });
+        let status = 0;
+        let body = "";
+        req.setEncoding("utf8");
+        req.on("response", (headers) => {
+          status = Number(headers[":status"]) || 0;
+        });
+        req.on("data", (chunk) => (body += chunk));
+        req.on("end", () => resolve({ status, body }));
+        req.on("error", reject);
+        // Six chunks, 40ms apart (well inside the 50ms window), each five
+        // bytes (right at the progress floor). The total time to send every
+        // chunk, about 200ms, passes the 50ms window several times over.
+        let sent = 0;
+        const sendNext = () => {
+          if (sent >= 6) {
+            req.end();
+            return;
+          }
+          sent += 1;
+          req.write("chunk");
+          setTimeout(sendNext, 40);
+        };
+        sendNext();
+      });
+      expect(response.status).toBe(200);
+      expect(JSON.parse(response.body)).toEqual({ bodyLength: "chunk".length * 6 });
+    } finally {
+      rawClient.close();
+      await handle.close();
+    }
+  });
+
   it("test_close_force_destroys_a_session_with_a_stalled_stream_instead_of_waiting_forever", async () => {
     const { handle, bridgeToken, clientSide } = bindTestServer({
       // A body timeout far longer than the close grace, so `close()` is the
@@ -796,5 +854,71 @@ describe("createHttp2BridgeServer + createSandboxHttp2BridgeGateway", () => {
     const ended = new Promise<void>((resolve) => duplex.on("end", resolve));
     exitListener?.({ exitCode: 0 });
     await ended;
+  });
+
+  it("wrapDuplexChannelAsNodeDuplex queues chunks past a full readable side and drains them once the consumer reads again", async () => {
+    let dataListener: ((chunk: Uint8Array) => void) | undefined;
+    const channel: CommandManagedDuplexChannel = {
+      write: () => undefined,
+      onData: (listener) => {
+        dataListener = listener;
+      },
+      onExit: () => undefined,
+      stop: () => undefined,
+      close: async () => undefined,
+    };
+    const duplex = wrapDuplexChannelAsNodeDuplex(channel, { maxBufferedReadBytes: 1_000_000 });
+    const received: Buffer[] = [];
+    // The first chunk alone passes the readable side's default 64 KiB
+    // high-water mark, so `push()` reports the readable side full. The two
+    // chunks that follow queue in the wrapper instead of pushing past that
+    // signal — this is the bounded flow-control path this fix adds.
+    dataListener?.(Buffer.alloc(70_000, "a"));
+    dataListener?.(Buffer.from("-second-"));
+    dataListener?.(Buffer.from("-third-"));
+
+    // Attaching a "data" listener now starts flowing mode, which drives the
+    // wrapper's own `read()` until every queued chunk drains, proving no
+    // queued chunk was dropped and the arrival order held.
+    const drainedAll = new Promise<void>((resolve) => {
+      duplex.on("data", (chunk: Buffer) => {
+        received.push(chunk);
+        if (Buffer.concat(received).includes("-third-")) resolve();
+      });
+    });
+    await drainedAll;
+
+    expect(Buffer.concat(received).toString("utf8").endsWith("-second--third-")).toBe(true);
+  });
+
+  it("wrapDuplexChannelAsNodeDuplex stops the channel and destroys the duplex once the bounded read backpressure buffer overflows", async () => {
+    let dataListener: ((chunk: Uint8Array) => void) | undefined;
+    let stopped = false;
+    const channel: CommandManagedDuplexChannel = {
+      write: () => undefined,
+      onData: (listener) => {
+        dataListener = listener;
+      },
+      onExit: () => undefined,
+      stop: () => {
+        stopped = true;
+      },
+      close: async () => undefined,
+    };
+    const duplex = wrapDuplexChannelAsNodeDuplex(channel, { maxBufferedReadBytes: 5_000 });
+    // No consumer ever attaches, so the readable side never drains: every
+    // chunk past the first, which alone passes the default high-water mark,
+    // fills the bounded queue instead of the unbounded internal buffer a
+    // caller ignoring `push()`'s return would grow.
+    const errored = new Promise<Error>((resolve) => duplex.on("error", resolve));
+
+    dataListener?.(Buffer.alloc(70_000, "a")); // passes the high-water mark; still pushed directly.
+    dataListener?.(Buffer.alloc(2_000, "b")); // queues: 2,000 of the 5,000-byte cap.
+    dataListener?.(Buffer.alloc(2_000, "b")); // queues: 4,000 of the 5,000-byte cap.
+    dataListener?.(Buffer.alloc(2_000, "b")); // 6,000 total bytes passes the cap.
+
+    const error = await errored;
+    expect(error.message).toMatch(/backpressure/i);
+    expect(stopped).toBe(true);
   });
 });

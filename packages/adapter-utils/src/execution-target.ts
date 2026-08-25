@@ -3835,6 +3835,15 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
           // one `onExit` registration: the channel primitive holds exactly
           // one listener slot, and `bindChannel` below registers the one that
           // ends the wrapped `Duplex`.
+          //
+          // This object's `stop()` is also the real sandbox-side effect of
+          // the post-bind read backpressure bound `bindChannel` applies
+          // (`wrapDuplexChannelAsNodeDuplex` in `http2-bridge-server.ts`):
+          // this raw provider channel exposes no pause, so once the bounded
+          // read queue there overflows, it calls `stop()` through this exact
+          // chain, down to `prefaceScan.scanned.stop()` and on to the real
+          // channel, instead of letting sandbox-controlled bytes grow host
+          // memory with no bound.
           const channelForHttp2Server: CommandManagedDuplexChannel = {
             write: (data: Uint8Array) => prefaceScan.scanned.write(data),
             onData: (listener: (chunk: Uint8Array) => void) => prefaceScan.scanned.onData(listener),
@@ -3848,6 +3857,9 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
             close: () => prefaceScan.scanned.close(),
           };
           const boundDuplex = http2Server.bindChannel(channelForHttp2Server);
+          // Also catches the `Duplex` this wrapper destroys when the bounded
+          // read backpressure queue overflows post-bind, so that loss still
+          // reaches `recordHttp2Loss` the same way any other write fault does.
           boundDuplex.on("error", () => recordHttp2Loss("write_error"));
 
           duplexChannelOpen.ready();

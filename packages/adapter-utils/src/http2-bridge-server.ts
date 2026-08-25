@@ -95,22 +95,74 @@ export const HTTP2_BRIDGE_SERVER_OPTIONS: http2.ServerOptions = {
 // Duplex channel adapter
 // ---------------------------------------------------------------------------
 
+/** The default cap, in bytes, on the read-side queue {@link wrapDuplexChannelAsNodeDuplex}
+ * holds once `Duplex.push()` reports the readable side is full (a `false`
+ * return). A sandbox-controlled channel has no upstream pause: `onData` below
+ * keeps delivering bytes whether or not the HTTP/2 session keeps up with
+ * them. Past this cap the wrapper treats the channel as stuck, not merely
+ * slow, and fails closed: it stops the channel and destroys the `Duplex`, so
+ * a producer that keeps outpacing its reader cannot grow host memory without
+ * bound. */
+export const DEFAULT_HTTP2_BRIDGE_MAX_BUFFERED_READ_BYTES = HTTP2_BRIDGE_MAX_SESSION_MEMORY * 1024 * 1024;
+
 /**
  * Wrap a {@link CommandManagedDuplexChannel} as a Node `Duplex`, so an
  * `Http2Server` can run one session directly on it (`server.emit("connection",
  * duplex)`). The wrapper never buffers more than one write in flight: it calls
  * the stream write callback only after the channel's own write call settles
  * (the backpressure constraint), never as a delivery signal. The provider
- * accepts many megabytes in milliseconds and holds them in its own buffer; the
- * HTTP/2 receiver-enforced flow-control windows, the request body cap, and the
- * {@link HTTP2_BRIDGE_MAX_CONCURRENT_STREAMS} limit bound the in-flight bytes,
- * not this callback.
+ * accepts many megabytes in milliseconds and holds them in its own buffer, so
+ * this direction stays governed by the channel's own write-settle timing.
+ *
+ * The read direction needs its own bound. The channel exposes no pause: once
+ * `onData` below is registered, the channel keeps calling it for every byte
+ * the sandbox sends, with no way for this wrapper to slow it down. Node's
+ * `Duplex.push()` reports back-pressure through its boolean return, not by
+ * refusing the call, so a caller that ignores a `false` return and keeps
+ * pushing grows the readable side's internal buffer with no limit. This
+ * wrapper honors that signal instead: while `push()` reports room, it pushes
+ * directly; once `push()` reports the readable side is full, it queues each
+ * later chunk instead of pushing past that signal, and drains the queue from
+ * `read()`, which Node calls again only once the consumer wants more. The
+ * queue itself is bounded by {@link DEFAULT_HTTP2_BRIDGE_MAX_BUFFERED_READ_BYTES}
+ * (or the caller's `maxBufferedReadBytes`): past that cap the wrapper fails
+ * closed instead of buffering further, because the channel has no pause to
+ * fall back on.
  */
-export function wrapDuplexChannelAsNodeDuplex(channel: CommandManagedDuplexChannel): Duplex {
+export function wrapDuplexChannelAsNodeDuplex(
+  channel: CommandManagedDuplexChannel,
+  options: { maxBufferedReadBytes?: number } = {},
+): Duplex {
+  const maxBufferedReadBytes = options.maxBufferedReadBytes ?? DEFAULT_HTTP2_BRIDGE_MAX_BUFFERED_READ_BYTES;
+  // Chunks `onData` already delivered that `push()` has not yet accepted,
+  // in arrival order. `read()` drains this queue before it lets Node pull
+  // any new bytes, so the delivery order the channel used stays intact.
+  const pendingReads: Buffer[] = [];
+  let pendingReadBytes = 0;
+  // True once `push()` last reported room for more, or before the first
+  // push call. `onData` pushes directly while this holds; once a `push()`
+  // call reports no room, later chunks queue in `pendingReads` instead.
+  let canPushMore = true;
+  // True once the channel exited. `endReadableIfDrained` pushes `null` only
+  // after the queue this wrapper still holds fully drains, so a chunk that
+  // arrived before the exit is never dropped.
+  let channelExited = false;
+
+  function endReadableIfDrained(): void {
+    if (!channelExited || pendingReads.length > 0 || duplex.destroyed) return;
+    duplex.push(null);
+  }
+
   const duplex: Duplex = new Duplex({
     read() {
-      // The channel pushes bytes through `onData` below as they arrive; there
-      // is nothing to pull on demand here.
+      canPushMore = true;
+      while (canPushMore && pendingReads.length > 0) {
+        const next = pendingReads.shift();
+        if (next === undefined) break;
+        pendingReadBytes -= next.byteLength;
+        canPushMore = duplex.push(next);
+      }
+      endReadableIfDrained();
     },
     write(chunk: unknown, _encoding, callback) {
       const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as ArrayBufferLike);
@@ -140,10 +192,31 @@ export function wrapDuplexChannelAsNodeDuplex(channel: CommandManagedDuplexChann
     },
   });
   channel.onData((chunk) => {
-    duplex.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    if (duplex.destroyed) return;
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    if (canPushMore && pendingReads.length === 0) {
+      canPushMore = duplex.push(bytes);
+      return;
+    }
+    // The readable side already reported it is full, and the channel has no
+    // pause to slow the sandbox side down: queue this chunk instead of
+    // pushing past that signal. Bound the queue, so a producer that keeps
+    // outpacing its reader cannot grow it without limit.
+    pendingReadBytes += bytes.byteLength;
+    if (pendingReadBytes > maxBufferedReadBytes) {
+      channel.stop();
+      duplex.destroy(
+        new Error(
+          "Sandbox HTTP/2 channel exceeded the bounded read backpressure buffer; the reader could not keep up.",
+        ),
+      );
+      return;
+    }
+    pendingReads.push(bytes);
   });
   channel.onExit(() => {
-    duplex.push(null);
+    channelExited = true;
+    endReadableIfDrained();
   });
   return duplex;
 }
@@ -269,14 +342,24 @@ export const DEFAULT_HTTP2_BRIDGE_PING_STALL_MS = 20_000;
  * this bound, so a slow peer that keeps making real progress completes; only
  * a peer that stops sending trips it. */
 export const DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_TIMEOUT_MS = 30_000;
-/** The default total lifetime bound on a request body read: the maximum time
- * from the first byte of the read to the body's completion, independent of
- * how many chunks arrive or how often. Unlike the idle bound, no chunk resets
- * this bound. An authenticated peer that sends one small chunk every few
- * seconds never trips the idle bound, so without this second, independent
- * bound it could hold one of the {@link HTTP2_BRIDGE_MAX_CONCURRENT_STREAMS}
- * stream slots open indefinitely. */
+/** The default lifetime window a request body read gets before it needs real
+ * progress to earn another one. Unlike the idle bound, a chunk resets this
+ * window only when it also clears {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_LIFETIME_PROGRESS_BYTES}
+ * of cumulative progress since the window last renewed — so an upload that
+ * keeps making real progress never trips this bound, however long the whole
+ * read takes, while a peer that sends only enough to dodge the idle bound
+ * above, and no more, still exhausts it. */
 export const DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_MAX_LIFETIME_MS = 120_000;
+/** The default amount of cumulative body progress, in bytes, a request body
+ * read must make within one lifetime window to renew that window. An
+ * authenticated peer that sends one small chunk every few seconds never trips
+ * the idle bound, so without this progress floor the lifetime bound alone
+ * could hold one of the {@link HTTP2_BRIDGE_MAX_CONCURRENT_STREAMS} stream
+ * slots open indefinitely by renewing on every chunk regardless of size. A
+ * real upload clears this floor within moments of its lifetime window at any
+ * reasonable transfer rate; a peer trickling only enough bytes to reset the
+ * idle bound does not, so the lifetime bound still catches it. */
+export const DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_LIFETIME_PROGRESS_BYTES = 8_192;
 /** The default bound {@link Http2BridgeServerHandle.close} waits for an
  * active session to close on its own before it force-destroys the session. A
  * session that carries a stalled stream would otherwise hold `close()` open
@@ -389,14 +472,24 @@ export interface CreateHttp2BridgeServerOptions {
    * received chunks. The default is
    * {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_TIMEOUT_MS}. */
   requestBodyTimeoutMs?: number;
-  /** The total lifetime bound on a request body read, independent of the
-   * idle bound above: no received chunk resets it. The default is
-   * {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_MAX_LIFETIME_MS}. */
+  /** The lifetime window a request body read gets before it needs real
+   * progress to renew it; see {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_MAX_LIFETIME_MS}.
+   * The default is {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_MAX_LIFETIME_MS}. */
   requestBodyMaxLifetimeMs?: number;
+  /** The cumulative progress, in bytes, a request body read must make within
+   * one lifetime window to renew that window. The default is
+   * {@link DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_LIFETIME_PROGRESS_BYTES}. */
+  requestBodyLifetimeProgressBytes?: number;
   /** The bound {@link Http2BridgeServerHandle.close} waits for an active
    * session to close on its own before it force-destroys the session. The
    * default is {@link DEFAULT_HTTP2_BRIDGE_CLOSE_GRACE_MS}. */
   closeGraceMs?: number;
+  /** The cap, in bytes, on data this server holds once a bound `Duplex`
+   * reports its readable side is full (`push()` returns `false`). Past this
+   * cap the server treats the channel as stuck, not merely slow: see
+   * {@link wrapDuplexChannelAsNodeDuplex}. The default is
+   * {@link DEFAULT_HTTP2_BRIDGE_MAX_BUFFERED_READ_BYTES}. */
+  maxBufferedReadBytes?: number;
   /** The sink for a GOAWAY the server observed on a session (one the sandbox
    * side sent to the host). */
   onGoaway?: (record: Http2BridgeGoawayRecord) => void;
@@ -450,14 +543,20 @@ function toOutboundHeaderRecord(headers: http2.IncomingHttpHeaders): Record<stri
  * independent time bounds. The idle bound resets on each received chunk, so
  * a slow peer that keeps making real progress completes, while a peer that
  * stops sending mid-stream — the same failure a stalled network path or a
- * hung sandbox process produces — still trips it. The lifetime bound never
- * resets: it bounds the total time from the first byte to completion, so a
- * peer that keeps sending small chunks often enough to dodge the idle bound
- * still cannot hold the stream open past it. Either bound alone is not
- * enough — the idle bound alone lets a trickling peer hold a stream slot
- * indefinitely; the lifetime bound alone would need to be set to the worst
- * legitimate upload time, which is far longer than a real stall should take
- * to detect.
+ * hung sandbox process produces — still trips it.
+ *
+ * The lifetime bound is an idle-progress bound: a received chunk renews it
+ * only once cumulative progress since the last renewal clears
+ * `lifetimeProgressBytes`, not on every chunk the way the idle bound above
+ * does. An upload that keeps making real progress renews this bound well
+ * before it expires, at any reasonable transfer rate, so it never trips —
+ * however long the whole read takes past `maxLifetimeMs`. A peer that sends
+ * only enough to dodge the idle bound, and no more, never clears the
+ * progress floor, so this bound still ends the read. Either bound alone is
+ * not enough — the idle bound alone lets a trickling peer renew forever on
+ * chunks too small to count as progress; the progress floor alone, with no
+ * bound at all, would need each single chunk to arrive within some fixed
+ * time of the last, which is exactly what the idle bound already checks.
  *
  * The `close` listener is the settle-of-last-resort: it fires whenever the
  * stream ends for any reason at all — a normal end, an error, a timeout- or
@@ -469,12 +568,18 @@ function readHttp2StreamBody(
   maxBodyBytes: number,
   idleTimeoutMs: number,
   maxLifetimeMs: number,
+  lifetimeProgressBytes: number,
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let totalBytes = 0;
+    // The `totalBytes` value the lifetime window last renewed at. A chunk
+    // renews the window only once `totalBytes` clears this value by at least
+    // `lifetimeProgressBytes`.
+    let bytesAtLastLifetimeRenewal = 0;
     let settled = false;
     let idleTimer: ReturnType<typeof setTimeout>;
+    let lifetimeTimer: ReturnType<typeof setTimeout>;
     const settle = (run: () => void) => {
       if (settled) return;
       settled = true;
@@ -490,14 +595,18 @@ function readHttp2StreamBody(
       }, idleTimeoutMs);
       idleTimer.unref?.();
     };
-    // Armed once, here, and never reset by a received chunk: this is what
-    // makes the lifetime bound independent of the idle bound above.
-    const lifetimeTimer: ReturnType<typeof setTimeout> = setTimeout(() => {
-      settle(() => reject(new Error("Bridge request body exceeded the maximum lifetime bound.")));
-      stream.destroy();
-    }, maxLifetimeMs);
-    lifetimeTimer.unref?.();
+    const armLifetimeTimer = () => {
+      clearTimeout(lifetimeTimer);
+      lifetimeTimer = setTimeout(() => {
+        settle(() =>
+          reject(new Error("Bridge request body exceeded the maximum lifetime bound without enough progress.")),
+        );
+        stream.destroy();
+      }, maxLifetimeMs);
+      lifetimeTimer.unref?.();
+    };
     armIdleTimer();
+    armLifetimeTimer();
     stream.on("data", (chunk: Buffer) => {
       totalBytes += chunk.byteLength;
       if (totalBytes > maxBodyBytes) {
@@ -510,6 +619,13 @@ function readHttp2StreamBody(
       // idle bound instead of letting it expire under a slow but active
       // upload.
       armIdleTimer();
+      // Renew the lifetime window only once cumulative progress since the
+      // last renewal clears the progress floor — a chunk too small to clear
+      // it resets the idle bound above, but not this window.
+      if (totalBytes - bytesAtLastLifetimeRenewal >= lifetimeProgressBytes) {
+        bytesAtLastLifetimeRenewal = totalBytes;
+        armLifetimeTimer();
+      }
     });
     stream.once("end", () => settle(() => resolve(Buffer.concat(chunks))));
     stream.once("error", (error) => settle(() => reject(error instanceof Error ? error : new Error(String(error)))));
@@ -544,7 +660,10 @@ export function createHttp2BridgeServer(options: CreateHttp2BridgeServerOptions)
   const requestBodyTimeoutMs = options.requestBodyTimeoutMs ?? DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_TIMEOUT_MS;
   const requestBodyMaxLifetimeMs =
     options.requestBodyMaxLifetimeMs ?? DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_MAX_LIFETIME_MS;
+  const requestBodyLifetimeProgressBytes =
+    options.requestBodyLifetimeProgressBytes ?? DEFAULT_HTTP2_BRIDGE_REQUEST_BODY_LIFETIME_PROGRESS_BYTES;
   const closeGraceMs = options.closeGraceMs ?? DEFAULT_HTTP2_BRIDGE_CLOSE_GRACE_MS;
+  const maxBufferedReadBytes = options.maxBufferedReadBytes ?? DEFAULT_HTTP2_BRIDGE_MAX_BUFFERED_READ_BYTES;
 
   const server = http2.createServer(HTTP2_BRIDGE_SERVER_OPTIONS);
   const activeSessions = new Set<http2.ServerHttp2Session>();
@@ -586,7 +705,13 @@ export function createHttp2BridgeServer(options: CreateHttp2BridgeServerOptions)
 
     let body: Buffer;
     try {
-      body = await readHttp2StreamBody(stream, maxBodyBytes, requestBodyTimeoutMs, requestBodyMaxLifetimeMs);
+      body = await readHttp2StreamBody(
+        stream,
+        maxBodyBytes,
+        requestBodyTimeoutMs,
+        requestBodyMaxLifetimeMs,
+        requestBodyLifetimeProgressBytes,
+      );
     } catch (error) {
       respondJson(stream, 413, { error: error instanceof Error ? error.message : String(error) });
       return;
@@ -660,7 +785,7 @@ export function createHttp2BridgeServer(options: CreateHttp2BridgeServerOptions)
   return {
     server,
     bindChannel(channel: CommandManagedDuplexChannel): Duplex {
-      const duplex = wrapDuplexChannelAsNodeDuplex(channel);
+      const duplex = wrapDuplexChannelAsNodeDuplex(channel, { maxBufferedReadBytes });
       server.emit("connection", duplex);
       return duplex;
     },
