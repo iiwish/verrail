@@ -19,5 +19,8 @@ export function formatDate(
   locale?: SupportedLocale,
 ) {
   const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return typeof value === "string" ? value : "";
+  }
   return new Intl.DateTimeFormat(activeLocale(locale), options).format(date);
 }

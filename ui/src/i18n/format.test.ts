@@ -13,4 +13,9 @@ describe("locale formatting", () => {
       .toBe("August 25, 2026");
     expect(formatCurrency(42, "USD", "en")).toContain("42.00");
   });
+
+  it("preserves invalid date strings without throwing", () => {
+    expect(formatDate("not-a-date", undefined, "en")).toBe("not-a-date");
+    expect(formatDate(new Date(Number.NaN), undefined, "zh-CN")).toBe("");
+  });
 });
