@@ -122,8 +122,8 @@ jobs:
           version: 9.15.4
 
       - name: Restore regenerated PR lockfile (if policy uploaded one)
+        if: needs.policy.outputs.lockfile_regenerated == '1'
         uses: actions/download-artifact@v8
-        continue-on-error: true
         with:
           name: pr-lockfile
           path: .
@@ -136,6 +136,18 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Validate UI design token usage
+        run: pnpm check:token-gates
+
+      - name: Verify Verrail i18n contracts
+        run: >-
+          pnpm --filter @paperclipai/ui exec vitest run
+          src/i18n/locale-validation.test.ts
+          src/i18n/locale-preference.test.ts
+          src/i18n/locale-runtime.test.ts
+          src/i18n/format.test.ts
+          src/components/InboxAgentPolicyControl.test.tsx
 
       - name: Typecheck workspaces whose build scripts skip TypeScript
         run: pnpm run typecheck:build-gaps
@@ -206,8 +218,8 @@ jobs:
           version: 9.15.4
 
       - name: Restore regenerated PR lockfile (if policy uploaded one)
+        if: needs.policy.outputs.lockfile_regenerated == '1'
         uses: actions/download-artifact@v8
-        continue-on-error: true
         with:
           name: pr-lockfile
           path: .
@@ -265,8 +277,8 @@ jobs:
           version: 9.15.4
 
       - name: Restore regenerated PR lockfile (if policy uploaded one)
+        if: needs.policy.outputs.lockfile_regenerated == '1'
         uses: actions/download-artifact@v8
-        continue-on-error: true
         with:
           name: pr-lockfile
           path: .
@@ -324,8 +336,8 @@ jobs:
           version: 9.15.4
 
       - name: Restore regenerated PR lockfile (if policy uploaded one)
+        if: needs.policy.outputs.lockfile_regenerated == '1'
         uses: actions/download-artifact@v8
-        continue-on-error: true
         with:
           name: pr-lockfile
           path: .
@@ -358,8 +370,8 @@ jobs:
           version: 9.15.4
 
       - name: Restore regenerated PR lockfile (if policy uploaded one)
+        if: needs.policy.outputs.lockfile_regenerated == '1'
         uses: actions/download-artifact@v8
-        continue-on-error: true
         with:
           name: pr-lockfile
           path: .
@@ -433,8 +445,8 @@ jobs:
           version: 9.15.4
 
       - name: Restore regenerated PR lockfile (if policy uploaded one)
+        if: needs.policy.outputs.lockfile_regenerated == '1'
         uses: actions/download-artifact@v8
-        continue-on-error: true
         with:
           name: pr-lockfile
           path: .
@@ -506,3 +518,39 @@ jobs:
         env:
           E2E_SHARDS_RESULT: ${{ needs.e2e_shards.result }}
         run: test "$E2E_SHARDS_RESULT" = "success"
+
+  ci:
+    name: CI
+    if: ${{ always() }}
+    needs:
+      - policy
+      - typecheck_release_registry
+      - verify
+      - build
+      - verify_serialized_server
+      - canary_dry_run
+      - e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Require every PR quality gate
+        env:
+          POLICY_RESULT: ${{ needs.policy.result }}
+          TYPECHECK_RESULT: ${{ needs.typecheck_release_registry.result }}
+          GENERAL_TESTS_RESULT: ${{ needs.verify.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          SERIALIZED_TESTS_RESULT: ${{ needs.verify_serialized_server.result }}
+          CANARY_RESULT: ${{ needs.canary_dry_run.result }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+        run: |
+          for result in \
+            "$POLICY_RESULT" \
+            "$TYPECHECK_RESULT" \
+            "$GENERAL_TESTS_RESULT" \
+            "$BUILD_RESULT" \
+            "$SERIALIZED_TESTS_RESULT" \
+            "$CANARY_RESULT" \
+            "$E2E_RESULT"; do
+            test "$result" = "success"
+          done

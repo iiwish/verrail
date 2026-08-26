@@ -1,4 +1,5 @@
 import { cn } from "../../lib/utils";
+import { useTranslation } from "react-i18next";
 
 /**
  * The agent arc — create the agent, connect it, review — is the part of the
@@ -60,6 +61,7 @@ export function Stepper({
   canJumpToStep?: (target: number) => boolean;
   onJumpToStep?: (target: number) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="mb-7 flex flex-col gap-3.5">
       <div className="flex items-center gap-2">
@@ -69,7 +71,9 @@ export function Stepper({
             <button
               key={segment}
               type="button"
-              aria-label={AGENT_ARC_STEP_LABELS[segment - 1] ?? `Step ${segment}`}
+              aria-label={t(`onboarding.agentArc.step${segment}`, {
+                defaultValue: AGENT_ARC_STEP_LABELS[segment - 1] ?? t("onboarding.step", { step: segment }),
+              })}
               aria-current={segment === step ? "step" : undefined}
               disabled={!jumpable}
               onClick={() => jumpable && onJumpToStep?.(segment)}
@@ -83,7 +87,7 @@ export function Stepper({
         })}
       </div>
       <span className="text-(length:--text-micro) font-medium uppercase tracking-widest text-muted-foreground">
-        Step {step} of {total}
+        {t("onboarding.stepProgress", { step, total })}
       </span>
     </div>
   );

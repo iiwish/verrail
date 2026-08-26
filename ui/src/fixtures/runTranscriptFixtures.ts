@@ -52,8 +52,8 @@ export const runTranscriptFixtureEntries: TranscriptEntry[] = [
     name: "command_execution",
     toolUseId: "item_1",
     input: {
-      command: "sed -n '1,220p' doc/GOAL.md",
-      cwd: "/workspace/paperclip",
+      command: "sed -n '1,220p' docs/product-goals.md",
+      cwd: "/workspace/verrail",
     },
   },
   {
@@ -63,14 +63,14 @@ export const runTranscriptFixtureEntries: TranscriptEntry[] = [
     toolUseId: "item_2",
     input: {
       command: "sed -n '1,320p' doc/SPEC-implementation.md",
-      cwd: "/workspace/paperclip",
+      cwd: "/workspace/verrail",
     },
   },
   {
     kind: "tool_result",
     ts: "2026-03-11T15:21:19.034Z",
     toolUseId: "item_1",
-    content: "command: sed -n '1,220p' doc/GOAL.md\nstatus: completed\nexit_code: 0\n\n# Paperclip\n\nPaperclip is the backbone of the autonomous economy.",
+    content: "command: sed -n '1,220p' docs/product-goals.md\nstatus: completed\nexit_code: 0\n\n# Verrail\n\nVerrail is an evidence-driven control plane for governed AI delivery.",
     isError: false,
   },
   {
@@ -223,4 +223,3 @@ export const runTranscriptFixtureEntries: TranscriptEntry[] = [
     errors: [],
   },
 ];
-

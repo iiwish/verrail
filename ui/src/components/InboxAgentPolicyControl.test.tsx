@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { InboxAgentPolicy } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InboxAgentPolicyControl } from "./InboxAgentPolicyControl";
+import { setLocale } from "@/i18n";
 
 const mockAgentsApi = vi.hoisted(() => ({ list: vi.fn() }));
 const mockInboxAgentPolicyApi = vi.hoisted(() => ({ getMine: vi.fn(), updateMine: vi.fn() }));
@@ -79,7 +80,8 @@ function optionByTitle(container: HTMLElement, title: string) {
 describe("InboxAgentPolicyControl", () => {
   let container: HTMLDivElement;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await setLocale("en");
     container = document.createElement("div");
     document.body.appendChild(container);
     mockAgentsApi.list.mockResolvedValue([
@@ -93,9 +95,37 @@ describe("InboxAgentPolicyControl", () => {
     );
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     document.body.innerHTML = "";
     vi.clearAllMocks();
+    await setLocale("en");
+  });
+
+  it("renders the policy controls in Simplified Chinese", async () => {
+    await setLocale("zh-CN");
+    const root = render(container);
+    await flush();
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("允许智能体整理我的收件箱");
+      expect(optionByTitle(container, "我的所有智能体")).toBeTruthy();
+      expect(optionByTitle(container, "仅限指定智能体")).toBeTruthy();
+      expect(optionByTitle(container, "关闭")).toBeTruthy();
+      expect(container.textContent).not.toContain("Let agents tidy my inbox");
+    });
+
+    await act(async () => optionByTitle(container, "仅限指定智能体")!.click());
+    await flush();
+    const selector = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("选择智能体"),
+    );
+    await act(async () => selector!.click());
+    await flush();
+
+    expect(document.body.querySelector('input[placeholder="筛选智能体"]')).toBeTruthy();
+    expect(document.body.querySelector('button[aria-label="允许 Gardener"]')).toBeTruthy();
+
+    act(() => root.unmount());
   });
 
   it("surfaces policy load failures instead of staying on loading", async () => {

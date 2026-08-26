@@ -1,27 +1,23 @@
 import type { Resource } from "i18next";
 
 import { assertValidLocaleMessages } from "./locale-validation";
+import en from "./locales/en.json";
+import zhCN from "./locales/zh-CN.json";
 
 export const DEFAULT_LOCALE = "en" as const;
+export const SUPPORTED_LOCALES = ["en", "zh-CN"] as const;
 
-const localeModules = import.meta.glob("./locales/*.json", {
-  eager: true,
-  import: "default",
-}) as Record<string, unknown>;
+export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
 
-export const localeMessages = Object.fromEntries(
-  Object.entries(localeModules).map(([path, messages]) => {
-    const locale = path.match(/\/([A-Za-z0-9_-]+)\.json$/)?.[1];
-    if (!locale) {
-      throw new Error(`Invalid locale file path: ${path}`);
-    }
-    return [locale, messages];
-  }),
-);
+export const localeOptions: ReadonlyArray<{ code: SupportedLocale; label: string }> = [
+  { code: "en", label: "English" },
+  { code: "zh-CN", label: "简体中文" },
+];
 
-if (!(DEFAULT_LOCALE in localeMessages)) {
-  throw new Error(`Missing default locale messages for ${DEFAULT_LOCALE}`);
-}
+export const localeMessages: Record<SupportedLocale, unknown> = {
+  en,
+  "zh-CN": zhCN,
+};
 
 for (const [locale, messages] of Object.entries(localeMessages)) {
   try {
@@ -32,10 +28,16 @@ for (const [locale, messages] of Object.entries(localeMessages)) {
   }
 }
 
-export const supportedLocales = Object.keys(localeMessages);
+export const supportedLocales: SupportedLocale[] = [...SUPPORTED_LOCALES];
 
 export const i18nextResources: Resource = Object.fromEntries(
   Object.entries(localeMessages).map(([locale, messages]) => [locale, { translation: messages }]),
 ) as Resource;
 
-export type SupportedLocale = keyof typeof localeMessages;
+export function normalizeLocale(value: unknown): SupportedLocale | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().replaceAll("_", "-").toLowerCase();
+  if (normalized === "zh" || normalized.startsWith("zh-")) return "zh-CN";
+  if (normalized === "en" || normalized.startsWith("en-")) return "en";
+  return null;
+}

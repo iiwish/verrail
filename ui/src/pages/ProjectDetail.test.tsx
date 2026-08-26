@@ -246,6 +246,27 @@ describe("ProjectDetail", () => {
     });
   });
 
+  it("renders an invalid target date without crashing", async () => {
+    mockLocation.pathname = "/projects/project-1/overview";
+    mockProjectsApi.get.mockResolvedValue(project({ targetDate: "not-a-date" }));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    await act(async () => {
+      root = createRoot(container);
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <ProjectDetail />
+        </QueryClientProvider>,
+      );
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(container.textContent).toContain("not-a-date");
+  });
+
   describe("plugin detail-tab deep links", () => {
     const PLUGIN_TAB = "plugin:paperclipai.plugin-llm-wiki:project-knowledge";
     const knowledgeSlot = {

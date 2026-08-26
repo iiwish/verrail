@@ -767,8 +767,8 @@ under `pnpm --filter @paperclipai/skills-catalog test`. Validation fails when:
 
 Trust level is derived from inventory: `markdown_only` (markdown + references
 only), `assets` (other non-script files), or `scripts_executables` (any
-executable script). The build contract is documented in
-`doc/plans/2026-05-26-skills-cli-catalog-contract.md`.
+executable script). The package validator and generated manifest are the
+executable catalog contract.
 
 CI runs `pnpm --filter @paperclipai/skills-catalog validate` and the package's
 vitest suite, so always regenerate the manifest in the same commit as the

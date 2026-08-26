@@ -42,7 +42,7 @@ describe("AppErrorBoundary", () => {
       );
     });
 
-    expect(container.textContent).toContain("Paperclip hit an error");
+    expect(container.textContent).toContain("Verrail hit an error");
     expect(container.textContent).toContain("Maximum update depth exceeded");
     expect(
       Array.from(container.querySelectorAll("button")).some(
@@ -65,7 +65,7 @@ describe("AppErrorBoundary", () => {
       );
     });
 
-    expect(container.textContent).toContain("Paperclip hit an error");
+    expect(container.textContent).toContain("Verrail hit an error");
     expect(container.textContent).toContain("effect exploded");
 
     act(() => {

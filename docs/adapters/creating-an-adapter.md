@@ -278,4 +278,4 @@ The invariant is pinned by the "no-remote-git contract" case in `packages/adapte
 
 - [External Adapters](/adapters/external-adapters) — build a standalone adapter plugin
 - [UI Parser Contract](/adapters/adapter-ui-parser) — ship a custom run-log parser
-- [How Agents Work](/guides/agent-developer/how-agents-work) — the heartbeat lifecycle
+- [Agent Runtime](/agents-runtime) — the runtime lifecycle

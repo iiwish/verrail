@@ -2,7 +2,8 @@
 
 Eval framework for testing Paperclip agent behaviors across models and prompt versions.
 
-See [the evals framework plan](../doc/plans/2026-03-13-agent-evals-framework.md) for full design rationale.
+Verrail's target evaluation and release semantics are defined in
+[the product contract](../docs/product-design.md).
 
 ## Quick Start
 

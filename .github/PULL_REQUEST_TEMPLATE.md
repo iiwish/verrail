@@ -4,12 +4,12 @@
 
 <!--
   Required. Trace your reasoning from the top of the project down to this
-  specific change. Start with what Paperclip is, then narrow through the
+  specific change. Start with what Verrail is, then narrow through the
   subsystem, the problem, and why this PR exists. Use blockquote style.
   Aim for 5–8 steps. See CONTRIBUTING.md for full examples.
 -->
 
-> - Paperclip is the open source app people use to manage AI agents for work
+> - Verrail is an evidence-driven control plane for governed AI delivery
 > - [Which subsystem or capability is involved]
 > - [What problem or gap exists]
 > - [Why it needs to be addressed]
@@ -26,7 +26,7 @@
       Include duplicates and closely related issues too.
 
   Only reference PUBLIC GitHub issues/PRs here. Do NOT paste internal,
-  instance-local Paperclip references — ticket ids like PAPA-123 / PAP-224,
+  instance-local references — ticket ids like PAPA-123 / PAP-224,
   /PAP/issues/... or agent://... links, or localhost/tailnet URLs. Other
   contributors cannot open them. See CONTRIBUTING.md → "No Internal Issue
   References".
@@ -73,7 +73,7 @@
 
 -
 
-> For core feature work, check [`ROADMAP.md`](ROADMAP.md) first and discuss it in `#dev` before opening the PR. Feature PRs that overlap with planned core work may need to be redirected — check the roadmap first. See `CONTRIBUTING.md`.
+> For core feature work, check `docs/product-goals.md`, `docs/product-design.md`, and `docs/architecture.md` before opening the pull request. Update the canonical document when the product scope or architecture changes.
 
 ## Model Used
 
@@ -94,15 +94,14 @@
 
 - [ ] I have included a thinking path that traces from project context to this change
 - [ ] I have specified the model used (with version and capability details)
-- [ ] I have checked ROADMAP.md and confirmed this PR does not duplicate planned core work
+- [ ] I have checked the canonical Verrail documents and confirmed this PR aligns with the product direction
 - [ ] I have searched GitHub for duplicate or related PRs and linked them above
 - [ ] I have either (a) linked existing issues with `Fixes: #` / `Closes #` / `Refs #` OR (b) described the issue in-PR following the relevant issue template
-- [ ] I have not referenced internal/instance-local Paperclip issues or links (only public GitHub `#NNN` / `github.com/paperclipai/paperclip` URLs)
+- [ ] I have not referenced internal or instance-local issues or links
 - [ ] My branch name describes the change (e.g. `docs/...`, `fix/...`) and contains no internal Paperclip ticket id or instance-derived details
 - [ ] I have run tests locally and they pass
 - [ ] I have added or updated tests where applicable
 - [ ] I have updated relevant documentation to reflect my changes
 - [ ] I have considered and documented any risks above
-- [ ] All Paperclip CI gates are green
-- [ ] Greptile is 5/5 with no open P2s, recommendations, or follow-ups
-- [ ] I will address all Greptile and reviewer comments before requesting merge
+- [ ] All required Verrail CI gates are green
+- [ ] I will address all reviewer comments before requesting merge

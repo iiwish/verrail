@@ -5,9 +5,6 @@ scripts/release*.sh @cryppadotta @devinfoley @nickyleach
 scripts/release-*.mjs @cryppadotta @devinfoley @nickyleach
 scripts/create-github-release.sh @cryppadotta @devinfoley @nickyleach
 scripts/rollback-latest.sh @cryppadotta @devinfoley @nickyleach
-doc/RELEASING.md @cryppadotta @devinfoley @nickyleach
-doc/PUBLISHING.md @cryppadotta @devinfoley @nickyleach
-doc/RELEASE-AUTOMATION-SETUP.md @cryppadotta @devinfoley @nickyleach
 skills/** @cryppadotta @devinfoley @nickyleach
 
 # Package files — dependency changes require review

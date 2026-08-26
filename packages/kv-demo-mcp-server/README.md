@@ -13,8 +13,7 @@ package stores — the package stores the values, Paperclip stores the
 connection, the profile/policy decisions, and the audit log.
 
 This package pairs with the operator guide in
-[doc/MCP-ACCESS-GOVERNANCE.md](../../doc/MCP-ACCESS-GOVERNANCE.md) and the
-recorded walkthrough in [doc/MCP-DEMO-SCRIPT.md](../../doc/MCP-DEMO-SCRIPT.md).
+[doc/MCP-ACCESS-GOVERNANCE.md](../../doc/MCP-ACCESS-GOVERNANCE.md).
 
 ## What you get
 
@@ -152,9 +151,8 @@ After the wizard finishes, expect:
   approve. Calls to `kv_delete` show `tool_gateway.call_denied` with
   `reasonCode: quarantined_catalog_entry`.
 
-The recorded walkthrough in [doc/MCP-DEMO-SCRIPT.md](../../doc/MCP-DEMO-SCRIPT.md)
-runs all three cases end-to-end against this package and matches the audit
-rows above.
+The read, approval-gated write, and denied cases above form the expected
+end-to-end smoke sequence for this package.
 
 ## What lives where
 

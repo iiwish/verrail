@@ -58,7 +58,7 @@ const recentList: WorkspaceFileListResponse = {
     item("ui/src/components/WorkspaceFileBrowser.tsx", 2),
     item("ui/src/components/FileViewerSheet.tsx", 2),
     item("server/src/routes/file-resources.ts", 14),
-    item("doc/PRODUCT.md", 60),
+    item("docs/product-design.md", 60),
     item("packages/shared/src/types/workspace-file-resource.ts", 64),
     item("server/src/services/very/deeply/nested/structure/workspace-file-resources.ts", 180),
   ],

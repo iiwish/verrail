@@ -31,7 +31,8 @@ Paperclip-derived text ingestion stays limited to issue titles/descriptions, iss
 - Issue work products are **metadata-only** in Phase 5.
 - The wiki must not fetch `/api/assets/:id/content`, dereference work-product `url` fields, or store those capability-bearing links in source bundles/snapshots.
 
-The accepted policy lives in [doc/plans/2026-05-06-llm-wiki-paperclip-asset-security-gate.md](../../../doc/plans/2026-05-06-llm-wiki-paperclip-asset-security-gate.md).
+The governing rule is Verrail's accepted-evidence and trusted-memory principle
+in [the project constitution](../../../docs/constitution.md).
 
 ## Development
 

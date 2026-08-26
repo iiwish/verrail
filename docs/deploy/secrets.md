@@ -55,8 +55,8 @@ Separately from env bindings, the **server itself** consumes a company secret
 named `GITHUB_TOKEN`, `GH_TOKEN`, or `PAPERCLIP_GITHUB_TOKEN` (by name, no
 binding needed) to authenticate server-side git operations — cloning private
 GitHub repos for repo-only project workspaces and refreshing worktree base
-refs. See
-[Execution workspaces](../guides/board-operator/execution-workspaces-and-runtime-services.md#private-repositories-and-repo-only-project-workspaces).
+refs. The target private-execution and data-egress contract is defined in
+[Verrail execution runtime](../execution-runtime.md).
 
 ## User-Specific Secrets
 

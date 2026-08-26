@@ -1,16 +1,19 @@
-# Changing Paperclip's UI — a field guide
+# Changing Verrail's UI - a field guide
 
 How to make visual changes now that the design system exists. Written for everyone: designers, engineers, and AI agents (AGENTS.md points here via DESIGN.md).
 
 ## The one-minute mental model
 
-Paperclip's look lives in **three layers**, and you almost always work in the first one:
+Verrail's implementation design system lives in **three layers**, and you almost always work in the first one:
 
 1. **Tokens** — every color, text size, spacing, radius, and shadow is a named value in `ui/src/index.css`. Change a token, and every surface using it follows.
 2. **Components** — consume tokens, never raw values. One component per job (one Button, one Card, one ToggleSwitch).
 3. **Screenshots** — 510 baseline images (255 stories × light/dark) downloaded into `tests/storybook-visual/.snapshots/` from the pinned external archive in `tests/storybook-visual/baseline-manifest.json`. They are the proof of what the UI looks like. Any visual change shows up as a screenshot diff; no visual change proves itself the same way.
 
-The rules live in [`DESIGN.md`](../../DESIGN.md) (repo root). The reasoning behind past decisions lives in [`DECISION-SHEET.md`](DECISION-SHEET.md). If you disagree with a rule, change `DESIGN.md` first (with review) — don't quietly diverge in code.
+The implementation rules live in [`DESIGN.md`](../../DESIGN.md) and the product
+workflow rules live in [`docs/product-design.md`](../../docs/product-design.md).
+If you disagree with a rule, change its canonical document first with review;
+do not quietly diverge in code.
 
 ## The three commands
 
@@ -57,13 +60,13 @@ That's the system working. Two cases:
 - **You meant it** → review the diffs (they're your design review), then `pnpm test:storybook-visual:update`, publish the packed baseline archive, and commit the manifest update with the change. A PR with visual changes but no baseline-manifest update is incomplete; baseline changes with no explanation are a red flag.
 - **You didn't mean it** → you broke something. The diff images show you exactly where. Do not update the baseline to make it green.
 
-Three stories are known to flake under full parallel load (they pass in isolation — see DECISION-SHEET). Re-run a single story with `npx playwright test --config tests/storybook-visual/playwright.config.ts -g "<story name>"` before assuming a real failure.
+When a story flakes under full parallel load, re-run it in isolation with
+`npx playwright test --config tests/storybook-visual/playwright.config.ts -g "<story name>"`
+before assuming a real failure.
 
 ## For AI-agent sessions
 
-(Running a session as the human? See [`AGENT-SESSIONS.md`](AGENT-SESSIONS.md) — this section is instructions for the agent itself.)
-
-This system was built to be steered by instruction. "Make all running indicators blue" or "collapse these three grays into one" should land as a token edit or a small codemod plus a snapshot diff — not a manual hunt. If a change is mechanical and touches many files, write an idempotent script in `scripts/` (see `codemod-*.mjs` for the pattern) instead of hand-editing. DESIGN.md is loaded via AGENTS.md; follow it exactly, and record consequential choices in DECISION-SHEET.md.
+This system was built to be steered by instruction. "Make all running indicators blue" or "collapse these three grays into one" should land as a token edit or a small codemod plus a snapshot diff, not a manual hunt. If a change is mechanical and touches many files, write an idempotent script in `scripts/` (see `codemod-*.mjs` for the pattern) instead of hand-editing. `DESIGN.md` is loaded via `AGENTS.md`; follow it exactly, and record durable product or architecture choices in the corresponding canonical document or ADR.
 
 ## What's deliberately not done yet (don't fix ad hoc)
 
@@ -71,4 +74,4 @@ This system was built to be steered by instruction. "Make all running indicators
 - **Hand-rolled cards/pills → `Card`/`Badge`**, sidebar agents-section unification — queued as a component-convergence pass with per-site snapshot verification.
 - **ESLint ratchet** — will eventually enforce the token rules at lint time; until then `check:token-gates` is the gate.
 
-See `DECISION-SHEET.md` for the full ledger.
+Do not expand these debt items while implementing unrelated product work.

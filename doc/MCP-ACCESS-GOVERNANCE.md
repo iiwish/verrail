@@ -118,7 +118,7 @@ Paperclip plays two roles in the MCP graph, and confusing them is the most commo
                  └────────────┘
 ```
 
-**Endpoint mode** — Paperclip exposes its own MCP surface so external clients (Claude Code, IDEs, scripts) can manipulate Paperclip tasks and agents. This is what `doc/TASKS-mcp.md` covers. Access control here is the standard Paperclip auth model ([DEPLOYMENT-MODES.md](./DEPLOYMENT-MODES.md)): bearer keys, sessions, board API key.
+**Endpoint mode** — Paperclip exposes its own MCP surface so external clients (Claude Code, IDEs, scripts) can manipulate Paperclip tasks and agents. Access control here is the standard Paperclip auth model ([DEPLOYMENT-MODES.md](./DEPLOYMENT-MODES.md)): bearer keys, sessions, board API key.
 
 **Gateway mode** — Paperclip proxies tool calls from a Paperclip agent to an upstream MCP server (GitHub, Linear, a local stdio fixture, etc.). Every call goes through profile selection, policy evaluation, optional human approval, rate limiting, redaction, and audit. This is what the rest of this document covers.
 
@@ -426,6 +426,5 @@ These are intentional gaps as of the MCP Access Governance v1 launch. Track or w
 | Audit | `GET /api/tool-gateway/audit?companyId=…&limit=…`, `GET /api/companies/:companyId/tools/runs/:runId/decisions` | Call event log. |
 | Stdio templates | `GET /api/companies/:companyId/tools/stdio-templates` | Approved local stdio template IDs only. |
 | Bulk import preview | `POST /api/companies/:companyId/tools/mcp/import-json` | Inspect a discovery JSON without persisting anything. |
-| Demo script | [MCP-DEMO-SCRIPT.md](./MCP-DEMO-SCRIPT.md) | Walks read / approval-gated write / denied flows end-to-end. |
 | Runtime runbook | [MCP-RUNTIME-OPERATIONS.md](./MCP-RUNTIME-OPERATIONS.md) | Alerts, stuck slots, recovery. |
 | Deployment modes | [DEPLOYMENT-MODES.md](./DEPLOYMENT-MODES.md) | Auth, exposure, bind. |
