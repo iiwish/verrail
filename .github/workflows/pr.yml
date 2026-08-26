@@ -518,3 +518,39 @@ jobs:
         env:
           E2E_SHARDS_RESULT: ${{ needs.e2e_shards.result }}
         run: test "$E2E_SHARDS_RESULT" = "success"
+
+  ci:
+    name: CI
+    if: ${{ always() }}
+    needs:
+      - policy
+      - typecheck_release_registry
+      - verify
+      - build
+      - verify_serialized_server
+      - canary_dry_run
+      - e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Require every PR quality gate
+        env:
+          POLICY_RESULT: ${{ needs.policy.result }}
+          TYPECHECK_RESULT: ${{ needs.typecheck_release_registry.result }}
+          GENERAL_TESTS_RESULT: ${{ needs.verify.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          SERIALIZED_TESTS_RESULT: ${{ needs.verify_serialized_server.result }}
+          CANARY_RESULT: ${{ needs.canary_dry_run.result }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+        run: |
+          for result in \
+            "$POLICY_RESULT" \
+            "$TYPECHECK_RESULT" \
+            "$GENERAL_TESTS_RESULT" \
+            "$BUILD_RESULT" \
+            "$SERIALIZED_TESTS_RESULT" \
+            "$CANARY_RESULT" \
+            "$E2E_RESULT"; do
+            test "$result" = "success"
+          done
