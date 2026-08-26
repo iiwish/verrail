@@ -219,10 +219,16 @@ export function CommandPalette() {
     showSearchAll && visibleIssues.length === 0 && matchedProjects.length === 0;
 
   return (
-    <CommandDialog open={open} onOpenChange={(v) => {
+    <CommandDialog
+      title={t("commandPalette.title")}
+      description={t("commandPalette.description")}
+      closeLabel={t("common.close")}
+      open={open}
+      onOpenChange={(v) => {
         setOpen(v);
         if (v && isMobile) setSidebarOpen(false);
-      }}>
+      }}
+    >
       <CommandInput
         placeholder={t("commandPalette.placeholder")}
         value={query}

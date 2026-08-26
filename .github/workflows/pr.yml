@@ -137,6 +137,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Validate UI design token usage
+        run: pnpm check:token-gates
+
+      - name: Verify Verrail i18n contracts
+        run: >-
+          pnpm --filter @paperclipai/ui exec vitest run
+          src/i18n/locale-validation.test.ts
+          src/i18n/locale-preference.test.ts
+          src/i18n/locale-runtime.test.ts
+          src/i18n/format.test.ts
+          src/components/InboxAgentPolicyControl.test.tsx
+
       - name: Typecheck workspaces whose build scripts skip TypeScript
         run: pnpm run typecheck:build-gaps
 

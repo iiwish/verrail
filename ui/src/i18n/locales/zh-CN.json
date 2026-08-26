@@ -34,6 +34,39 @@
         "title": "语言",
         "description": "选择 Verrail 控件和消息使用的语言。",
         "label": "界面语言"
+      },
+      "inboxAgentPolicy": {
+        "title": "允许智能体整理我的收件箱",
+        "description": "选择你管理的智能体是否可以代你归档收件箱中的任务。任何归档都可以撤销，任务属性中也会记录执行归档的智能体。",
+        "ariaLabel": "智能体归档收件箱策略",
+        "loading": "正在加载收件箱智能体策略...",
+        "loadFailed": "加载收件箱智能体策略失败。",
+        "saveFailed": "保存收件箱智能体策略失败。",
+        "allowedAgents": "允许整理收件箱的智能体",
+        "selectAgents": "选择智能体",
+        "selectedAgents_one": "已选择 {{count}} 个智能体",
+        "selectedAgents_other": "已选择 {{count}} 个智能体",
+        "emptyAgents": "你还没有管理任何智能体。",
+        "filterAgents": "筛选智能体",
+        "noMatches": "没有匹配项。",
+        "allowAgent": "允许 {{name}}",
+        "saved": "已保存",
+        "saving": "正在保存...",
+        "save": "保存",
+        "modes": {
+          "open": {
+            "title": "我的所有智能体",
+            "description": "允许你管理的任何智能体归档收件箱中的任务。"
+          },
+          "allowlist": {
+            "title": "仅限指定智能体",
+            "description": "仅允许你在下方选择的智能体整理收件箱。"
+          },
+          "disabled": {
+            "title": "关闭",
+            "description": "任何智能体都不能归档收件箱中的任务。"
+          }
+        }
       }
     },
     "company": {
@@ -544,9 +577,67 @@
     "home": "首页",
     "create": "新建",
     "mobileNavigation": "移动端导航",
+    "skipToMainContent": "跳到主要内容",
+    "openSidebar": "打开侧边栏",
+    "closeSidebar": "关闭侧边栏",
     "keepSidebarExpanded": "保持侧边栏展开",
     "expandSidebar": "展开侧边栏",
     "collapseSidebar": "收起侧边栏"
+  },
+  "sidebarAgents": {
+    "newAgent": "新建智能体",
+    "sectionActions": "智能体区域操作",
+    "browseAgents": "浏览智能体",
+    "sort": "智能体排序",
+    "seeAllAgents": "查看全部智能体",
+    "pauseAgent": "暂停智能体",
+    "resumeAgent": "恢复智能体",
+    "budgetPaused": "因预算暂停",
+    "invalidOrgChain": "组织关系无效",
+    "builtInStatus": "内置智能体：{{status}}",
+    "builtInStatuses": {
+      "needs_setup": "需要配置",
+      "pending_approval": "待审批"
+    },
+    "pausedByBudget": "智能体因预算限制暂停",
+    "budgetPauseReason": "智能体因预算限制而暂停",
+    "openActions": "打开 {{name}} 的操作菜单",
+    "removeFromStarred": "取消星标",
+    "starAgent": "添加星标",
+    "editAgent": "编辑智能体",
+    "leaving": "正在退出...",
+    "leaveAgent": "退出智能体",
+    "paused": "智能体已暂停",
+    "resumed": "智能体已恢复",
+    "pauseFailed": "无法暂停智能体",
+    "resumeFailed": "无法恢复智能体",
+    "sortModes": {
+      "top": "置顶优先",
+      "alphabetical": "按名称",
+      "recent": "最近活跃"
+    }
+  },
+  "companySwitcher": {
+    "company": "工作区",
+    "organization": "组织",
+    "open": "打开{{noun}}切换器",
+    "openNamed": "打开 {{name}} {{noun}}切换器",
+    "selectCompany": "选择工作区",
+    "selectOrganization": "选择组织",
+    "switchCompany": "切换工作区",
+    "switchOrganization": "切换组织",
+    "reorder": "调整 {{name}} 的顺序",
+    "loadingOrganizations": "正在加载组织...",
+    "loadOrganizationsFailed": "无法加载组织",
+    "noOrganizations": "暂无组织",
+    "loadCompaniesFailed": "无法加载工作区",
+    "tryAgain": "重试",
+    "noCompanies": "暂无工作区",
+    "createOrganization": "新建组织...",
+    "invite": "邀请成员",
+    "inviteNamed": "邀请成员加入 {{name}}",
+    "signingOut": "正在退出...",
+    "signOut": "退出登录"
   },
   "settingsNav": {
     "general": "常规",
@@ -902,6 +993,8 @@
     "cancel": "取消"
   },
   "commandPalette": {
+    "title": "命令面板",
+    "description": "搜索要运行的命令...",
     "placeholder": "搜索任务、智能体和项目...",
     "noQuickMatchesBefore": "没有匹配的快捷任务。按",
     "noQuickMatchesAfter": "搜索全部内容，或继续输入以缩小范围。",

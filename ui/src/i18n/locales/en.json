@@ -34,6 +34,39 @@
         "title": "Language",
         "description": "Choose the language used for Verrail controls and messages.",
         "label": "Interface language"
+      },
+      "inboxAgentPolicy": {
+        "title": "Let agents tidy my inbox",
+        "description": "Choose whether the agents you manage may archive tasks out of your inbox on your behalf. You can undo any archive, and every agent archive is attributed in the task's properties.",
+        "ariaLabel": "Inbox agent archiving policy",
+        "loading": "Loading inbox agent policy...",
+        "loadFailed": "Failed to load inbox agent policy.",
+        "saveFailed": "Failed to save inbox agent policy.",
+        "allowedAgents": "Agents allowed to tidy my inbox",
+        "selectAgents": "Select agents",
+        "selectedAgents_one": "{{count}} agent selected",
+        "selectedAgents_other": "{{count}} agents selected",
+        "emptyAgents": "You don't manage any agents yet.",
+        "filterAgents": "Filter agents",
+        "noMatches": "No matches.",
+        "allowAgent": "Allow {{name}}",
+        "saved": "Saved",
+        "saving": "Saving...",
+        "save": "Save",
+        "modes": {
+          "open": {
+            "title": "Any of my agents",
+            "description": "Let any agent you manage archive tasks out of your inbox."
+          },
+          "allowlist": {
+            "title": "Only chosen agents",
+            "description": "Restrict inbox tidying to the agents you pick below."
+          },
+          "disabled": {
+            "title": "Off",
+            "description": "Agents can never archive tasks from your inbox."
+          }
+        }
       }
     },
     "company": {
@@ -544,9 +577,67 @@
     "home": "Home",
     "create": "Create",
     "mobileNavigation": "Mobile navigation",
+    "skipToMainContent": "Skip to main content",
+    "openSidebar": "Open sidebar",
+    "closeSidebar": "Close sidebar",
     "keepSidebarExpanded": "Keep sidebar expanded",
     "expandSidebar": "Expand sidebar",
     "collapseSidebar": "Collapse sidebar"
+  },
+  "sidebarAgents": {
+    "newAgent": "New agent",
+    "sectionActions": "Agents section actions",
+    "browseAgents": "Browse agents",
+    "sort": "Agent sort",
+    "seeAllAgents": "See all agents",
+    "pauseAgent": "Pause agent",
+    "resumeAgent": "Resume agent",
+    "budgetPaused": "Budget paused",
+    "invalidOrgChain": "Invalid org chain",
+    "builtInStatus": "Built-in agent {{status}}",
+    "builtInStatuses": {
+      "needs_setup": "needs setup",
+      "pending_approval": "pending approval"
+    },
+    "pausedByBudget": "Agent paused by budget",
+    "budgetPauseReason": "Agent was paused by budget limits",
+    "openActions": "Open actions for {{name}}",
+    "removeFromStarred": "Remove from starred",
+    "starAgent": "Star agent",
+    "editAgent": "Edit agent",
+    "leaving": "Leaving...",
+    "leaveAgent": "Leave agent",
+    "paused": "Agent paused",
+    "resumed": "Agent resumed",
+    "pauseFailed": "Could not pause agent",
+    "resumeFailed": "Could not resume agent",
+    "sortModes": {
+      "top": "Top",
+      "alphabetical": "Alphabetical",
+      "recent": "Recent"
+    }
+  },
+  "companySwitcher": {
+    "company": "company",
+    "organization": "organization",
+    "open": "Open {{noun}} switcher",
+    "openNamed": "Open {{name}} {{noun}} switcher",
+    "selectCompany": "Select company",
+    "selectOrganization": "Select organization",
+    "switchCompany": "Switch company",
+    "switchOrganization": "Switch organization",
+    "reorder": "Reorder {{name}}",
+    "loadingOrganizations": "Loading organizations...",
+    "loadOrganizationsFailed": "Could not load organizations",
+    "noOrganizations": "No organizations",
+    "loadCompaniesFailed": "Couldn't load companies",
+    "tryAgain": "Try again",
+    "noCompanies": "No companies",
+    "createOrganization": "Create new organization...",
+    "invite": "Invite people",
+    "inviteNamed": "Invite people to {{name}}",
+    "signingOut": "Signing out...",
+    "signOut": "Sign out"
   },
   "settingsNav": {
     "general": "General",
@@ -902,6 +993,8 @@
     "cancel": "Cancel"
   },
   "commandPalette": {
+    "title": "Command Palette",
+    "description": "Search for a command to run...",
     "placeholder": "Search tasks, agents, projects...",
     "noQuickMatchesBefore": "No quick task matches. Press",
     "noQuickMatchesAfter": "to search all or keep typing to refine.",

@@ -131,6 +131,9 @@ export function AgentMultiSelect({
   contentAlign = "start",
   headerContent,
   emptyMessage = "No agents yet.",
+  filterPlaceholder = "Filter agents",
+  noMatchesMessage = "No matches.",
+  getSelectionAriaLabel = (agent) => `Allow ${agent.name}`,
   showSelectionPreview = true,
   onOpenChange,
 }: {
@@ -153,6 +156,9 @@ export function AgentMultiSelect({
   contentAlign?: ComponentProps<typeof PopoverContent>["align"];
   headerContent?: ReactNode;
   emptyMessage?: string;
+  filterPlaceholder?: string;
+  noMatchesMessage?: string;
+  getSelectionAriaLabel?: (agent: AgentMultiSelectOption) => string;
   showSelectionPreview?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
@@ -224,7 +230,7 @@ export function AgentMultiSelect({
           <Input
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
-            placeholder="Filter agents"
+            placeholder={filterPlaceholder}
             className="h-8"
             autoFocus
           />
@@ -253,7 +259,7 @@ export function AgentMultiSelect({
                   <Checkbox
                     checked={workingAgentIds.has(agent.id)}
                     disabled={optionDisabled}
-                    aria-label={`Allow ${agent.name}`}
+                    aria-label={getSelectionAriaLabel(agent)}
                     onCheckedChange={(checked) => {
                       const next = new Set(workingAgentIds);
                       if (checked) next.add(agent.id);
@@ -273,7 +279,7 @@ export function AgentMultiSelect({
               );
             })}
             {filteredAgents.length === 0 ? (
-              <div className="px-3 py-4 text-sm text-muted-foreground">No matches.</div>
+              <div className="px-3 py-4 text-sm text-muted-foreground">{noMatchesMessage}</div>
             ) : null}
           </div>
         )}
