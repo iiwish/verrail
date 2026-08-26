@@ -14,9 +14,9 @@
 | --- | --- |
 | [`product-goals.md`](./product-goals.md) | 产品目标、阶段路线、退出门槛和近期优先级 |
 | [`delivery-process.md`](./delivery-process.md) | 专业交付流程、风险模式、状态和完成门禁 |
-| [`p0-plan.md`](./p0-plan.md) | P0 的中文 i18n 与产品裁剪执行顺序 |
+| [`p0-plan.md`](./p0-plan.md) | P0 的翻译表面锁定、中文 i18n 批次与验收顺序 |
 | [`i18n-spec.md`](./i18n-spec.md) | 中文语言检测、切换、持久化、翻译与验收合同 |
-| [`feature-trimming.md`](./feature-trimming.md) | 继承功能的保留、转化、冻结和删除决策 |
+| [`feature-trimming.md`](./feature-trimming.md) | P0 产品功能保留结论、翻译排除表面与独立清理规则 |
 | [`constitution.md`](./constitution.md) | 不可绕过的治理、安全、责任和交付原则 |
 | [`product-design.md`](./product-design.md) | 用户、产品对象、核心旅程、范围与验收标准 |
 | [`operational-ontology.md`](./operational-ontology.md) | 核心实体、状态、关系、授权类型和系统不变量 |

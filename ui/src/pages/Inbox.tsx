@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { deriveOriginatingActor, INBOX_MINE_ISSUE_STATUS_FILTER } from "@paperclipai/shared";
@@ -218,8 +219,8 @@ function firstNonEmptyLine(value: string | null | undefined): string | null {
   return line ?? null;
 }
 
-function runFailureMessage(run: HeartbeatRun): string {
-  return firstNonEmptyLine(run.error) ?? firstNonEmptyLine(run.stderrExcerpt) ?? "Run exited with an error.";
+function runFailureMessage(run: HeartbeatRun, fallback: string): string {
+  return firstNonEmptyLine(run.error) ?? firstNonEmptyLine(run.stderrExcerpt) ?? fallback;
 }
 
 function approvalStatusLabel(status: Approval["status"]): string {
@@ -310,9 +311,10 @@ export function FailedRunInboxRow({
   selected?: boolean;
   className?: string;
 }) {
+  const { t } = useTranslation();
   const issueId = readIssueIdFromRun(run);
   const issue = issueId ? issueById.get(issueId) ?? null : null;
-  const displayError = runFailureMessage(run);
+  const displayError = runFailureMessage(run, t("inbox.runError"));
   const showUnreadSlot = unreadState !== null;
   const showUnreadDot = unreadState === "visible" || unreadState === "fading";
 
@@ -332,7 +334,7 @@ export function FailedRunInboxRow({
                   "inline-flex h-4 w-4 items-center justify-center rounded-full transition-colors",
                   "hover:bg-blue-500/20",
                 )}
-                aria-label="Mark as read"
+                aria-label={t("inbox.markRead")}
               >
                 <span className={cn(
                   "block h-2 w-2 rounded-full transition-opacity duration-300",
@@ -367,7 +369,7 @@ export function FailedRunInboxRow({
                   {issue.title}
                 </>
               ) : (
-                <>Failed run{linkedAgentName ? ` — ${linkedAgentName}` : ""}</>
+                <>{t("inbox.failedRun")}{linkedAgentName ? ` — ${linkedAgentName}` : ""}</>
               )}
             </span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
@@ -391,14 +393,14 @@ export function FailedRunInboxRow({
             disabled={isRetrying}
           >
             <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-            {isRetrying ? "Retrying…" : "Retry"}
+            {isRetrying ? t("inbox.retrying") : t("common.retry")}
           </Button>
           {!showUnreadSlot && (
             <button
               type="button"
               onClick={onDismiss}
               className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
-              aria-label="Dismiss"
+              aria-label={t("inbox.dismiss")}
             >
               <X className="h-4 w-4" />
             </button>
@@ -415,14 +417,14 @@ export function FailedRunInboxRow({
           disabled={isRetrying}
         >
           <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-          {isRetrying ? "Retrying…" : "Retry"}
+          {isRetrying ? t("inbox.retrying") : t("common.retry")}
         </Button>
         {!showUnreadSlot && (
           <button
             type="button"
             onClick={onDismiss}
             className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-            aria-label="Dismiss"
+            aria-label={t("inbox.dismiss")}
           >
             <X className="h-4 w-4" />
           </button>
@@ -457,6 +459,7 @@ function ApprovalInboxRow({
   selected?: boolean;
   className?: string;
 }) {
+  const { t } = useTranslation();
   const Icon = typeIcon[approval.type] ?? defaultTypeIcon;
   const label = approvalLabel(approval.type, approval.payload as Record<string, unknown> | null);
   const showResolutionButtons =
@@ -481,7 +484,7 @@ function ApprovalInboxRow({
                   "inline-flex h-4 w-4 items-center justify-center rounded-full transition-colors",
                   "hover:bg-blue-500/20",
                 )}
-                aria-label="Mark as read"
+                aria-label={t("inbox.markRead")}
               >
                 <span className={cn(
                   "block h-2 w-2 rounded-full transition-opacity duration-300",
@@ -511,9 +514,9 @@ function ApprovalInboxRow({
               {label}
             </span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-              <span className="capitalize">{approvalStatusLabel(approval.status)}</span>
-              {requesterName ? <span>requested by {requesterName}</span> : null}
-              <span>updated {timeAgo(approval.updatedAt)}</span>
+              <span>{t(`statuses.${approval.status}`, { defaultValue: approvalStatusLabel(approval.status) })}</span>
+              {requesterName ? <span>{t("inbox.requestedBy", { name: requesterName })}</span> : null}
+              <span>{t("inbox.updated", { time: timeAgo(approval.updatedAt) })}</span>
             </span>
           </span>
         </Link>
@@ -530,7 +533,7 @@ function ApprovalInboxRow({
                   onClick={onApprove}
                   disabled={isPending}
                 >
-                  Approve
+                  {t("approvals.detail.approve")}
                 </Button>
                 <Button
                   variant="destructive"
@@ -539,7 +542,7 @@ function ApprovalInboxRow({
                   onClick={onReject}
                   disabled={isPending}
                 >
-                  Reject
+                  {t("approvals.detail.reject")}
                 </Button>
               </>
             ) : null}
@@ -554,7 +557,7 @@ function ApprovalInboxRow({
             onClick={onApprove}
             disabled={isPending}
           >
-            Approve
+            {t("approvals.detail.approve")}
           </Button>
           <Button
             variant="destructive"
@@ -563,7 +566,7 @@ function ApprovalInboxRow({
             onClick={onReject}
             disabled={isPending}
           >
-            Reject
+            {t("approvals.detail.reject")}
           </Button>
         </div>
       ) : null}
@@ -594,7 +597,10 @@ function JoinRequestInboxRow({
   selected?: boolean;
   className?: string;
 }) {
-  const label = formatJoinRequestInboxLabel(joinRequest);
+  const { t } = useTranslation();
+  const label = joinRequest.requestType === "human"
+    ? formatJoinRequestInboxLabel(joinRequest)
+    : t("inbox.agentJoinRequest", { name: joinRequest.agentName ? `: ${joinRequest.agentName}` : "" });
   const showUnreadSlot = unreadState !== null;
   const showUnreadDot = unreadState === "visible" || unreadState === "fading";
 
@@ -614,7 +620,7 @@ function JoinRequestInboxRow({
                   "inline-flex h-4 w-4 items-center justify-center rounded-full transition-colors",
                   "hover:bg-blue-500/20",
                 )}
-                aria-label="Mark as read"
+                aria-label={t("inbox.markRead")}
               >
                 <span className={cn(
                   "block h-2 w-2 rounded-full transition-opacity duration-300",
@@ -638,8 +644,8 @@ function JoinRequestInboxRow({
               {label}
             </span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-              <span>requested {timeAgo(joinRequest.createdAt)} from IP {joinRequest.requestIp}</span>
-              {joinRequest.adapterType && <span>adapter: {joinRequest.adapterType}</span>}
+              <span>{t("inbox.joinRequested", { time: timeAgo(joinRequest.createdAt), ip: joinRequest.requestIp })}</span>
+              {joinRequest.adapterType && <span>{t("inbox.adapter", { name: joinRequest.adapterType })}</span>}
             </span>
           </span>
         </div>
@@ -653,7 +659,7 @@ function JoinRequestInboxRow({
             onClick={onApprove}
             disabled={isPending}
           >
-            Approve
+            {t("approvals.detail.approve")}
           </Button>
           <Button
             variant="destructive"
@@ -662,7 +668,7 @@ function JoinRequestInboxRow({
             onClick={onReject}
             disabled={isPending}
           >
-            Reject
+            {t("approvals.detail.reject")}
           </Button>
         </div>
       </div>
@@ -673,7 +679,7 @@ function JoinRequestInboxRow({
           onClick={onApprove}
           disabled={isPending}
         >
-          Approve
+          {t("approvals.detail.approve")}
         </Button>
         <Button
           variant="destructive"
@@ -682,7 +688,7 @@ function JoinRequestInboxRow({
           onClick={onReject}
           disabled={isPending}
         >
-          Reject
+          {t("approvals.detail.reject")}
         </Button>
       </div>
     </div>
@@ -690,6 +696,7 @@ function JoinRequestInboxRow({
 }
 
 export function Inbox() {
+  const { t } = useTranslation();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { openNewIssue } = useDialogActions();
@@ -771,8 +778,8 @@ export function Inbox() {
   });
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Inbox" }]);
-  }, [setBreadcrumbs]);
+    setBreadcrumbs([{ label: t("inbox.title") }]);
+  }, [setBreadcrumbs, t]);
 
   useEffect(() => {
     saveLastInboxTab(tab);
@@ -1258,7 +1265,7 @@ export function Inbox() {
         const run = item.run;
         const name = agentById.get(run.agentId);
         if (name?.toLowerCase().includes(q)) return true;
-        const msg = runFailureMessage(run);
+        const msg = runFailureMessage(run, t("inbox.runError"));
         if (msg.toLowerCase().includes(q)) return true;
         const issueId = readIssueIdFromRun(run);
         if (issueId) {
@@ -1285,6 +1292,7 @@ export function Inbox() {
     isolatedWorkspacesEnabled,
     normalizedSearchQuery,
     projectWorkspaceById,
+    t,
   ]);
 
   const archivedSearchIssues = useMemo(
@@ -2268,7 +2276,7 @@ export function Inbox() {
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="search"
-            placeholder="Search inbox…"
+            placeholder={t("inbox.search")}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => {
@@ -2298,15 +2306,15 @@ export function Inbox() {
             items={[
               {
                 value: "mine",
-                label: "Mine",
+                label: t("inbox.tabs.mine"),
               },
               {
                 value: "recent",
-                label: "Recent",
+                label: t("inbox.tabs.recent"),
               },
-              { value: "unread", label: "Unread" },
-              { value: "blocked", label: "Blocked" },
-              { value: "all", label: "All" },
+              { value: "unread", label: t("inbox.tabs.unread") },
+              { value: "blocked", label: t("inbox.tabs.blocked") },
+              { value: "all", label: t("inbox.tabs.all") },
             ]}
           />
         </Tabs>
@@ -2316,7 +2324,7 @@ export function Inbox() {
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search inbox…"
+              placeholder={t("inbox.search")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -2364,14 +2372,14 @@ export function Inbox() {
                     variant="outline"
                     size="icon"
                     className={cn("h-8 w-8 shrink-0", blockedGroupBy !== "none" && "bg-accent")}
-                    title="Group"
+                    title={t("inbox.group")}
                   >
                     <Layers className="h-3.5 w-3.5" />
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent align="end" className="w-44 p-0">
                   <div className="space-y-0.5 p-2">
-                    {BLOCKED_GROUP_OPTIONS.map(([value, label]) => (
+                    {BLOCKED_GROUP_OPTIONS.map(([value]) => (
                       <button
                         key={value}
                         type="button"
@@ -2381,7 +2389,7 @@ export function Inbox() {
                         )}
                         onClick={() => setBlockedGroupBy(value)}
                       >
-                        <span>{label}</span>
+                        <span>{t(`inbox.blockedGroup.${value}`)}</span>
                         {blockedGroupBy === value ? <Check className="h-3.5 w-3.5" /> : null}
                       </button>
                     ))}
@@ -2393,7 +2401,7 @@ export function Inbox() {
                 visibleColumnSet={visibleIssueColumnSet}
                 onToggleColumn={toggleIssueColumn}
                 onResetColumns={() => setIssueColumns(DEFAULT_INBOX_ISSUE_COLUMNS)}
-                title="Choose which inbox columns stay visible"
+                title={t("inbox.chooseColumns")}
                 iconOnly
               />
               <Popover>
@@ -2403,14 +2411,14 @@ export function Inbox() {
                     variant="outline"
                     size="icon"
                     className="h-8 w-8 shrink-0"
-                    title="Sort"
+                    title={t("inbox.sort")}
                   >
                     <ArrowUpDown className="h-3.5 w-3.5" />
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent align="end" className="w-48 p-0">
                   <div className="space-y-0.5 p-2">
-                    {BLOCKED_SORT_OPTIONS.map(([value, label]) => (
+                    {BLOCKED_SORT_OPTIONS.map(([value]) => (
                       <button
                         key={value}
                         type="button"
@@ -2420,7 +2428,7 @@ export function Inbox() {
                         )}
                         onClick={() => setBlockedSortBy(value)}
                       >
-                        <span>{label}</span>
+                        <span>{t(`inbox.blockedSort.${value}`)}</span>
                         {blockedSortBy === value ? <Check className="h-3.5 w-3.5" /> : null}
                       </button>
                     ))}
@@ -2436,7 +2444,7 @@ export function Inbox() {
                 size="icon"
                 className={cn("hidden h-8 w-8 shrink-0 sm:inline-flex", nestingEnabled && "bg-accent")}
                 onClick={toggleNesting}
-                title={nestingEnabled ? "Disable parent-child nesting" : "Enable parent-child nesting"}
+                title={nestingEnabled ? t("tasks.disableNesting") : t("tasks.enableNesting")}
               >
                 <ListTree className="h-3.5 w-3.5" />
               </Button>
@@ -2462,7 +2470,7 @@ export function Inbox() {
                     variant="outline"
                     size="icon"
                     className={cn("h-8 w-8 shrink-0", groupBy !== "none" && "bg-accent")}
-                    title="Group"
+                    title={t("inbox.group")}
                   >
                     <Layers className="h-3.5 w-3.5" />
                   </Button>
@@ -2470,11 +2478,11 @@ export function Inbox() {
                 <PopoverContent align="end" className="w-40 p-2">
                   <div className="space-y-0.5">
                     {([
-                      ["none", "None"],
-                      ["type", "Type"],
-                      ["assignee", "Responsible"],
-                      ["project", "Project"],
-                      ...(isolatedWorkspacesEnabled ? ([["workspace", "Workspace"]] as const) : []),
+                      ["none", t("inbox.groupValues.none")],
+                      ["type", t("inbox.groupValues.type")],
+                      ["assignee", t("inbox.groupValues.responsible")],
+                      ["project", t("projects.detail.project")],
+                      ...(isolatedWorkspacesEnabled ? ([["workspace", t("projects.detail.tabs.workspaces")]] as const) : []),
                     ] as const).map(([value, label]) => (
                       <button
                         key={value}
@@ -2497,7 +2505,7 @@ export function Inbox() {
                 visibleColumnSet={visibleIssueColumnSet}
                 onToggleColumn={toggleIssueColumn}
                 onResetColumns={() => setIssueColumns(DEFAULT_INBOX_ISSUE_COLUMNS)}
-                title="Choose which inbox columns stay visible"
+                title={t("inbox.chooseColumns")}
                 iconOnly
               />
               {canMarkAllRead && (
@@ -2510,19 +2518,19 @@ export function Inbox() {
                     onClick={() => setShowMarkAllReadConfirm(true)}
                     disabled={markAllReadMutation.isPending}
                   >
-                    {markAllReadMutation.isPending ? "Marking…" : "Mark all as read"}
+                    {markAllReadMutation.isPending ? t("inbox.marking") : t("inbox.markAllRead")}
                   </Button>
                   <Dialog open={showMarkAllReadConfirm} onOpenChange={setShowMarkAllReadConfirm}>
                     <DialogContent className="sm:max-w-md">
                       <DialogHeader>
-                        <DialogTitle>Mark all as read?</DialogTitle>
+                        <DialogTitle>{t("inbox.markAllReadConfirm")}</DialogTitle>
                         <DialogDescription>
-                          This will mark {unreadIssueIds.length} unread {unreadIssueIds.length === 1 ? "item" : "items"} as read.
+                          {t("inbox.markAllReadDescription", { count: unreadIssueIds.length })}
                         </DialogDescription>
                       </DialogHeader>
                       <DialogFooter>
                         <Button variant="outline" onClick={() => setShowMarkAllReadConfirm(false)}>
-                          Cancel
+                          {t("common.cancel")}
                         </Button>
                         <Button
                           onClick={() => {
@@ -2530,7 +2538,7 @@ export function Inbox() {
                             markAllReadMutation.mutate(unreadIssueIds);
                           }}
                         >
-                          Mark all as read
+                          {t("inbox.markAllRead")}
                         </Button>
                       </DialogFooter>
                     </DialogContent>
@@ -2550,15 +2558,15 @@ export function Inbox() {
             onValueChange={(value) => updateAllCategoryFilter(value as InboxCategoryFilter)}
           >
             <SelectTrigger className="h-8 w-(--sz-170px) text-xs">
-              <SelectValue placeholder="Category" />
+              <SelectValue placeholder={t("inbox.category")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="everything">All categories</SelectItem>
-              <SelectItem value="issues_i_touched">My recent tasks</SelectItem>
-              <SelectItem value="join_requests">Join requests</SelectItem>
-              <SelectItem value="approvals">Approvals</SelectItem>
-              <SelectItem value="failed_runs">Failed runs</SelectItem>
-              <SelectItem value="alerts">Alerts</SelectItem>
+              <SelectItem value="everything">{t("inbox.categories.all")}</SelectItem>
+              <SelectItem value="issues_i_touched">{t("inbox.categories.recentTasks")}</SelectItem>
+              <SelectItem value="join_requests">{t("inbox.categories.joinRequests")}</SelectItem>
+              <SelectItem value="approvals">{t("approvals.title")}</SelectItem>
+              <SelectItem value="failed_runs">{t("inbox.categories.failedRuns")}</SelectItem>
+              <SelectItem value="alerts">{t("inbox.alerts")}</SelectItem>
             </SelectContent>
           </Select>
 
@@ -2568,12 +2576,12 @@ export function Inbox() {
               onValueChange={(value) => updateAllApprovalFilter(value as InboxApprovalFilter)}
             >
               <SelectTrigger className="h-8 w-(--sz-170px) text-xs">
-                <SelectValue placeholder="Approval status" />
+                <SelectValue placeholder={t("inbox.approvalStatus")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All approval statuses</SelectItem>
-                <SelectItem value="actionable">Needs action</SelectItem>
-                <SelectItem value="resolved">Resolved</SelectItem>
+                <SelectItem value="all">{t("inbox.approvalFilters.all")}</SelectItem>
+                <SelectItem value="actionable">{t("inbox.approvalFilters.actionable")}</SelectItem>
+                <SelectItem value="resolved">{t("inbox.approvalFilters.resolved")}</SelectItem>
               </SelectContent>
             </Select>
           )}
@@ -2612,14 +2620,14 @@ export function Inbox() {
           icon={searchQuery.trim() ? Search : InboxIcon}
           message={
             searchQuery.trim()
-              ? "No inbox items match your search."
+              ? t("inbox.empty.search")
               : tab === "mine"
-              ? "Inbox zero."
+              ? t("inbox.empty.mine")
               : tab === "unread"
-              ? "No new inbox items."
+              ? t("inbox.empty.unread")
               : tab === "recent"
-                ? "No recent inbox items."
-                : "No inbox items match these filters."
+                ? t("inbox.empty.recent")
+                : t("inbox.empty.filters")
           }
         />
       )}
@@ -3099,7 +3107,7 @@ export function Inbox() {
           {showSeparatorBefore("alerts") && <Separator />}
           <div>
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Alerts
+              {t("inbox.alerts")}
             </h3>
             <div className="divide-y divide-border border border-border">
               {showAggregateAgentError && (
@@ -3111,14 +3119,14 @@ export function Inbox() {
                     <AlertTriangle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
                     <span className="text-sm">
                       <span className="font-medium">{dashboard!.agents.error}</span>{" "}
-                      {dashboard!.agents.error === 1 ? "agent has" : "agents have"} errors
+                      {t("inbox.agentErrors", { count: dashboard!.agents.error })}
                     </span>
                   </Link>
                   <button
                     type="button"
                     onClick={() => dismissAlert("alert:agent-errors")}
                     className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/alert:opacity-100"
-                    aria-label="Dismiss"
+                    aria-label={t("inbox.dismiss")}
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
@@ -3132,16 +3140,16 @@ export function Inbox() {
                   >
                     <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-400" />
                     <span className="text-sm">
-                      Budget at{" "}
+                      {t("inbox.budgetAt")} {" "}
                       <span className="font-medium">{dashboard!.costs.monthUtilizationPercent}%</span>{" "}
-                      utilization this month
+                      {t("inbox.monthUtilization")}
                     </span>
                   </Link>
                   <button
                     type="button"
                     onClick={() => dismissAlert("alert:budget")}
                     className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/alert:opacity-100"
-                    aria-label="Dismiss"
+                    aria-label={t("inbox.dismiss")}
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>

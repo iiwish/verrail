@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { resolverPolicyLabel } from "../lib/interaction-audience";
+import { useTranslation } from "@/i18n";
 
 const INTERACTION_KIND_LABELS: Record<IssueThreadInteractionKind, string> = {
   suggest_tasks: "Suggested tasks",
@@ -148,7 +149,11 @@ function GovernanceSelect({
   ariaLabel: string;
   mobileLabel: string;
 }) {
+  const { t } = useTranslation();
   const options = governanceOptions(field);
+  const valueLabel = value === GOVERNANCE_UNSET
+    ? t(`settings.governance.unset.${field}`)
+    : t(`settings.governance.policies.${value}`, { defaultValue: resolverPolicyLabel(value) });
   return (
     <div className="min-w-0">
       {/*
@@ -181,7 +186,7 @@ function GovernanceSelect({
            * sets `valueNodeHasChildren`, which suppresses that portal, so the
            * trigger shows exactly the label and nothing else.
            */}
-          <SelectValue>{governanceValueLabel(field, value)}</SelectValue>
+          <SelectValue>{valueLabel}</SelectValue>
         </SelectTrigger>
         {/*
          * Cap the option list so the effect sentences wrap instead of stretching
@@ -194,7 +199,7 @@ function GovernanceSelect({
               value={option.value}
               // Keyboard typeahead matches on `textValue` when given; without it
               // Radix would match against the effect prose too.
-              textValue={option.label}
+              textValue={option.value === GOVERNANCE_UNSET ? t(`settings.governance.unset.${field}`) : t(`settings.governance.policies.${option.value}`, { defaultValue: option.label })}
               className="text-xs"
             >
               {/*
@@ -203,9 +208,9 @@ function GovernanceSelect({
                * after saving (PAP-17280).
                */}
               <span className="flex min-w-0 flex-col gap-0.5">
-                <span>{option.label}</span>
+                <span>{option.value === GOVERNANCE_UNSET ? t(`settings.governance.unset.${field}`) : t(`settings.governance.policies.${option.value}`, { defaultValue: option.label })}</span>
                 <span className="text-(length:--text-micro) text-muted-foreground">
-                  {option.effect}
+                  {t(`settings.governance.effects.${field}.${option.value}`, { defaultValue: option.effect })}
                 </span>
               </span>
             </SelectItem>
@@ -235,22 +240,15 @@ export function InteractionGovernancePanel({
   isPending?: boolean;
   errorMessage?: string | null;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-4" data-testid="company-settings-interaction-governance-section">
       <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-        Interaction governance
+        {t("settings.governance.title")}
       </div>
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          Thread interactions are open by default:{" "}
-          <span className="font-medium text-foreground">Anyone</span> in the company — the
-          board or any agent, including the one that asked — can respond. Narrow a kind
-          only when you need to.{" "}
-          <span className="font-medium text-foreground">Default policy</span> is the
-          audience new cards get when the requester does not ask for one;{" "}
-          <span className="font-medium text-foreground">Cap</span> narrows every request of
-          that kind and can never widen one. Tool-approval confirmations always stay{" "}
-          <span className="font-medium text-foreground">Human only</span>.
+          {t("settings.governance.description")}
         </p>
         {/*
          * Responsive: below `sm` the row collapses to a single column so the
@@ -261,25 +259,25 @@ export function InteractionGovernancePanel({
          */}
         <div className="grid grid-cols-1 gap-y-4 sm:grid-cols-[1fr_auto_auto] sm:items-center sm:gap-x-4 sm:gap-y-2.5">
           <div className="hidden text-xs font-medium text-muted-foreground uppercase tracking-wide sm:block">
-            Kind
+            {t("settings.governance.kind")}
           </div>
           <div className="hidden text-xs font-medium text-muted-foreground uppercase tracking-wide sm:block">
-            Default policy
+            {t("settings.governance.defaultPolicy")}
           </div>
           <div className="hidden text-xs font-medium text-muted-foreground uppercase tracking-wide sm:block">
-            Cap
+            {t("settings.governance.cap")}
           </div>
           {ISSUE_THREAD_INTERACTION_KINDS.map((kind) => {
             const entry = governance[kind] ?? {};
-            const kindLabel = INTERACTION_KIND_LABELS[kind];
+            const kindLabel = t(`settings.governance.kinds.${kind}`, { defaultValue: INTERACTION_KIND_LABELS[kind] });
             return (
               <Fragment key={kind}>
                 <div className="text-sm font-medium sm:font-normal">{kindLabel}</div>
                 <GovernanceSelect
                   field="defaultPolicy"
                   testId={`governance-${kind}-default`}
-                  ariaLabel={`Default resolver audience for ${kindLabel}`}
-                  mobileLabel="Default policy"
+                  ariaLabel={t("settings.governance.defaultAria", { kind: kindLabel })}
+                  mobileLabel={t("settings.governance.defaultPolicy")}
                   value={toGovernanceSelectValue(entry.defaultPolicy)}
                   disabled={isPending}
                   onChange={(v) => onChange(kind, "defaultPolicy", v)}
@@ -287,8 +285,8 @@ export function InteractionGovernancePanel({
                 <GovernanceSelect
                   field="cap"
                   testId={`governance-${kind}-cap`}
-                  ariaLabel={`Resolver cap for ${kindLabel}`}
-                  mobileLabel="Cap"
+                  ariaLabel={t("settings.governance.capAria", { kind: kindLabel })}
+                  mobileLabel={t("settings.governance.cap")}
                   value={toGovernanceSelectValue(entry.cap)}
                   disabled={isPending}
                   onChange={(v) => onChange(kind, "cap", v)}

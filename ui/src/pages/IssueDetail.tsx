@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode, type Ref } from "react";
+import { useTranslation } from "react-i18next";
 import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { Link, useLocation, useNavigate, useNavigationType, useParams } from "@/lib/router";
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
@@ -542,15 +543,17 @@ function attributionInitials(name: string): string {
 
 function AttributionAvatar({
   label,
+  testIdLabel,
   actor,
   via,
 }: {
-  label: "Assignee" | "Originating";
+  label: string;
+  testIdLabel: "assignee" | "originating";
   actor: AttributionActor;
   via?: string | null;
 }) {
-  const accessibleLabel = via ? `${label}: ${actor.name} · via ${via}` : `${label}: ${actor.name}`;
-  const testIdLabel = label.toLowerCase();
+  const { t } = useTranslation();
+  const accessibleLabel = via ? t("tasks.detail.actorVia", { label, name: actor.name, via }) : `${label}: ${actor.name}`;
 
   return (
     <Tooltip>
@@ -582,7 +585,7 @@ function AttributionAvatar({
             <div className="text-(length:--text-nano) font-medium uppercase leading-none text-background/70">{label}</div>
             <div className="max-w-48 truncate text-xs font-medium leading-4 text-background">{actor.name}</div>
             {via ? (
-              <div className="max-w-48 truncate text-(length:--text-nano) leading-3 text-background/60">via {via}</div>
+              <div className="max-w-48 truncate text-(length:--text-nano) leading-3 text-background/60">{t("tasks.detail.via", { name: via })}</div>
             ) : null}
           </div>
         </div>
@@ -602,6 +605,7 @@ function IssueAttributionByline({
   userProfileMap: ReadonlyMap<string, import("../lib/company-members").CompanyUserProfile>;
   userLabelMap: ReadonlyMap<string, string>;
 }) {
+  const { t } = useTranslation();
   const assignee: AttributionActor | null = issue.assigneeAgentId
     ? {
         kind: "agent",
@@ -643,9 +647,9 @@ function IssueAttributionByline({
 
   return (
     <TooltipProvider>
-      <AvatarGroup className="-space-x-1.5" aria-label="Task people" data-testid="issue-attribution-avatar-stack">
-        {assignee ? <AttributionAvatar label="Assignee" actor={assignee} /> : null}
-        {originator ? <AttributionAvatar label="Originating" actor={originator} via={originatorVia} /> : null}
+      <AvatarGroup className="-space-x-1.5" aria-label={t("tasks.detail.people")} data-testid="issue-attribution-avatar-stack">
+        {assignee ? <AttributionAvatar label={t("tasks.detail.assignee")} testIdLabel="assignee" actor={assignee} /> : null}
+        {originator ? <AttributionAvatar label={t("tasks.detail.originating")} testIdLabel="originating" actor={originator} via={originatorVia} /> : null}
       </AvatarGroup>
     </TooltipProvider>
   );
@@ -872,6 +876,7 @@ function InboxMobileToolbar({
   onProperties,
   onHide,
 }: InboxMobileToolbarProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -890,7 +895,7 @@ function InboxMobileToolbar({
             navigate(backHref);
           }
         }}
-        aria-label="Back to inbox"
+        aria-label={t("tasks.detail.backToInbox")}
       >
         <ArrowLeft className="h-5 w-5" />
       </Button>
@@ -902,7 +907,7 @@ function InboxMobileToolbar({
             size="icon-sm"
             onClick={onArchive}
             disabled={archivePending}
-            aria-label="Archive from inbox"
+            aria-label={t("tasks.detail.archiveFromInbox")}
           >
             <Archive className="h-5 w-5" />
           </Button>
@@ -910,7 +915,7 @@ function InboxMobileToolbar({
 
         <Popover open={menuOpen} onOpenChange={setMenuOpen}>
           <PopoverTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label="More actions">
+            <Button variant="ghost" size="icon-sm" aria-label={t("tasks.detail.moreActions")}>
               <MoreVertical className="h-5 w-5" />
             </Button>
           </PopoverTrigger>
@@ -920,14 +925,14 @@ function InboxMobileToolbar({
               onClick={() => { onCopy(); setMenuOpen(false); }}
             >
               <Copy className="h-3 w-3" />
-              Copy as markdown
+              {t("tasks.detail.copyMarkdown")}
             </button>
             <button
               className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
               onClick={() => { onProperties(); setMenuOpen(false); }}
             >
               <SlidersHorizontal className="h-3 w-3" />
-              Properties
+              {t("tasks.detail.properties")}
             </button>
             {issueIdProp && (
               <button
@@ -935,7 +940,7 @@ function InboxMobileToolbar({
                 onClick={() => { onHide(); setMenuOpen(false); }}
               >
                 <EyeOff className="h-3 w-3" />
-                Hide this task
+                {t("tasks.detail.hideTask")}
               </button>
             )}
           </PopoverContent>
@@ -1129,6 +1134,7 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
   externalReferences,
   linkCaseReferences,
 }: IssueDetailChatTabProps) {
+  const { t } = useTranslation();
   // Seam for the Classic Task Interface (flag: enableClassicTaskInterface).
   // Flag ON renders the legacy IssueChatThread verbatim; flag OFF (the
   // default) renders the chat-style TaskChatThread. Both components share one
@@ -1441,6 +1447,7 @@ function IssueDetailActivityTab({
   handoffFocusSignal = 0,
   externalReferences,
 }: IssueDetailActivityTabProps) {
+  const { t } = useTranslation();
   const { data: activity, isLoading: activityLoading } = useQuery({
     queryKey: queryKeys.issues.activity(issueId),
     queryFn: () => activityApi.forIssue(issueId),
@@ -1552,13 +1559,13 @@ function IssueDetailActivityTab({
     <>
       {shouldShowCostSummary && (
         <div className="mb-3 px-3 py-2 rounded-lg border border-border">
-          <div className="text-sm font-medium text-muted-foreground mb-1">Cost Summary</div>
+          <div className="text-sm font-medium text-muted-foreground mb-1">{t("tasks.detail.cost.title")}</div>
           {!issueCostSummary.hasCost && !issueCostSummary.hasTokens && !hasIssueTreeCost ? (
-            <div className="text-xs text-muted-foreground">No cost data yet.</div>
+            <div className="text-xs text-muted-foreground">{t("tasks.detail.cost.empty")}</div>
           ) : (
             <div className="space-y-1 text-xs text-muted-foreground tabular-nums">
               <div className="flex flex-wrap gap-3">
-                <span className="font-medium text-foreground">This task</span>
+                <span className="font-medium text-foreground">{t("tasks.detail.cost.thisTask")}</span>
                 {issueCostSummary.hasCost ? (
                   <span className="font-medium text-foreground">
                     ${issueCostSummary.cost.toFixed(4)}
@@ -1566,26 +1573,26 @@ function IssueDetailActivityTab({
                 ) : null}
                 {issueCostSummary.hasTokens ? (
                   <span>
-                    Tokens {formatTokens(issueCostSummary.totalTokens)}
+                    {t("tasks.detail.cost.tokens")} {formatTokens(issueCostSummary.totalTokens)}
                     {issueCostSummary.cached > 0
-                      ? ` (in ${formatTokens(issueCostSummary.input)}, out ${formatTokens(issueCostSummary.output)}, cached ${formatTokens(issueCostSummary.cached)})`
-                      : ` (in ${formatTokens(issueCostSummary.input)}, out ${formatTokens(issueCostSummary.output)})`}
+                      ? ` (${t("tasks.detail.cost.tokenBreakdownCached", { input: formatTokens(issueCostSummary.input), output: formatTokens(issueCostSummary.output), cached: formatTokens(issueCostSummary.cached) })})`
+                      : ` (${t("tasks.detail.cost.tokenBreakdown", { input: formatTokens(issueCostSummary.input), output: formatTokens(issueCostSummary.output) })})`}
                   </span>
                 ) : null}
                 {issueCostSummary.hasRuntime ? (
                   <span>
-                    Runtime {formatDurationMs(issueCostSummary.runtimeMs)}
-                    {` (${issueCostSummary.runCount} run${issueCostSummary.runCount === 1 ? "" : "s"})`}
+                    {t("tasks.detail.cost.runtime")} {formatDurationMs(issueCostSummary.runtimeMs)}
+                    {` (${t("tasks.detail.cost.runCount", { count: issueCostSummary.runCount })})`}
                   </span>
                 ) : null}
                 {!issueCostSummary.hasCost && !issueCostSummary.hasTokens && !issueCostSummary.hasRuntime ? (
-                  <span>No direct cost data.</span>
+                  <span>{t("tasks.detail.cost.noDirectData")}</span>
                 ) : null}
               </div>
               {hasIssueTreeCost && issueTreeCostSummary ? (
                 <div className="flex flex-wrap gap-3">
                   <span className="font-medium text-foreground">
-                    Including sub-tasks {(issueTreeCostSummary.costCents / 100).toLocaleString(undefined, {
+                    {t("tasks.detail.cost.includingSubtasks")} {(issueTreeCostSummary.costCents / 100).toLocaleString(undefined, {
                       style: "currency",
                       currency: "USD",
                       minimumFractionDigits: 4,
@@ -1593,18 +1600,18 @@ function IssueDetailActivityTab({
                     })}
                   </span>
                   <span>
-                    Tokens {formatTokens(issueTreeCostTokens)}
+                    {t("tasks.detail.cost.tokens")} {formatTokens(issueTreeCostTokens)}
                     {issueTreeCostSummary.cachedInputTokens > 0
-                      ? ` (in ${formatTokens(issueTreeCostSummary.inputTokens)}, out ${formatTokens(issueTreeCostSummary.outputTokens)}, cached ${formatTokens(issueTreeCostSummary.cachedInputTokens)})`
-                      : ` (in ${formatTokens(issueTreeCostSummary.inputTokens)}, out ${formatTokens(issueTreeCostSummary.outputTokens)})`}
+                      ? ` (${t("tasks.detail.cost.tokenBreakdownCached", { input: formatTokens(issueTreeCostSummary.inputTokens), output: formatTokens(issueTreeCostSummary.outputTokens), cached: formatTokens(issueTreeCostSummary.cachedInputTokens) })})`
+                      : ` (${t("tasks.detail.cost.tokenBreakdown", { input: formatTokens(issueTreeCostSummary.inputTokens), output: formatTokens(issueTreeCostSummary.outputTokens) })})`}
                   </span>
                   {issueTreeCostSummary.runCount > 0 ? (
                     <span>
-                      Runtime {formatDurationMs(issueTreeCostSummary.runtimeMs)}
-                      {` (${issueTreeCostSummary.runCount} run${issueTreeCostSummary.runCount === 1 ? "" : "s"})`}
+                      {t("tasks.detail.cost.runtime")} {formatDurationMs(issueTreeCostSummary.runtimeMs)}
+                      {` (${t("tasks.detail.cost.runCount", { count: issueTreeCostSummary.runCount })})`}
                     </span>
                   ) : null}
-                  <span>{issueTreeCostSummary.issueCount} task{issueTreeCostSummary.issueCount === 1 ? "" : "s"}</span>
+                  <span>{t("tasks.detail.cost.taskCount", { count: issueTreeCostSummary.issueCount })}</span>
                 </div>
               ) : null}
             </div>
@@ -1692,6 +1699,7 @@ function IssueDetailActivityTab({
 }
 
 export function IssueDetail() {
+  const { t } = useTranslation();
   const { issueId } = useParams<{ issueId: string }>();
   const { selectedCompanyId } = useCompany();
   // Classic Task Interface (flag: enableClassicTaskInterface): with the flag
@@ -1885,8 +1893,8 @@ export function IssueDetail() {
     }
   }, [hasLiveRuns, locallyQueuedCommentRunIds.size]);
   const sourceBreadcrumb = useMemo(
-    () => readIssueDetailBreadcrumb(issueId, location.state, location.search) ?? { label: "Tasks", href: "/issues" },
-    [issueId, location.state, location.search],
+    () => readIssueDetailBreadcrumb(issueId, location.state, location.search) ?? { label: t("tasks.title"), href: "/issues" },
+    [issueId, location.state, location.search, t],
   );
 
   const { data: rawChildIssuesData, isLoading: childIssuesLoading } = useQuery({
@@ -2165,10 +2173,10 @@ export function IssueDetail() {
       options.push({ id: `agent:${agent.id}`, label: agent.name });
     }
     if (currentUserId) {
-      options.push({ id: `user:${currentUserId}`, label: "Me" });
+      options.push({ id: `user:${currentUserId}`, label: t("tasks.detail.me") });
     }
     return options;
-  }, [agents, companyMembers?.users, currentUserId]);
+  }, [agents, companyMembers?.users, currentUserId, t]);
 
   const actualAssigneeValue = useMemo(
     () => assigneeValueFromSelection(issue ?? {}),
@@ -2302,7 +2310,7 @@ export function IssueDetail() {
 
     try {
       await issuesApi.unarchiveFromInbox(id);
-      pushToast({ title: "Task restored to inbox", tone: "success" });
+      pushToast({ title: t("tasks.detail.restoredToInbox"), tone: "success" });
     } catch (error) {
       if (companyId) {
         beginLocalInboxArchive(companyId, id);
@@ -2310,8 +2318,8 @@ export function IssueDetail() {
         boundLocalInboxArchive(companyId, id);
       }
       pushToast({
-        title: "Undo failed",
-        body: error instanceof Error ? error.message : "Unable to restore this task to the inbox",
+        title: t("tasks.detail.undoFailed"),
+        body: error instanceof Error ? error.message : t("tasks.detail.restoreFailed"),
         tone: "error",
       });
     } finally {
@@ -2459,7 +2467,7 @@ export function IssueDetail() {
       if (treeControlMode === "resume") {
         const pauseHoldId = treeControlState?.activePauseHold?.holdId;
         if (!pauseHoldId) {
-          throw new Error("No active subtree pause hold is available to resume.");
+          throw new Error(t("tasks.detail.noPauseHold"));
         }
         const releasedHold = await issuesApi.releaseTreeHold(issueId!, pauseHoldId, {
           reason: treeControlReason.trim() || null,
@@ -3334,7 +3342,7 @@ export function IssueDetail() {
 
   const uploadAttachment = useMutation({
     mutationFn: async (file: File) => {
-      if (!selectedCompanyId) throw new Error("No company selected");
+      if (!selectedCompanyId) throw new Error(t("tasks.selectCompany"));
       return issuesApi.uploadAttachment(selectedCompanyId, issueId!, file);
     },
     onSuccess: () => {
@@ -3401,10 +3409,10 @@ export function IssueDetail() {
       invalidateIssueCollections();
       navigate(sourceBreadcrumb.href.startsWith("/inbox") ? sourceBreadcrumb.href : "/inbox", { replace: true });
       pushToast({
-        title: "Task archived from inbox",
+        title: t("tasks.detail.archivedFromInbox"),
         tone: "success",
         action: {
-          label: "Undo",
+          label: t("tasks.detail.undo"),
           onClick: () => {
             void undoInboxArchive(id, context?.companyId, context?.previousData ?? []);
           },
@@ -3871,12 +3879,12 @@ export function IssueDetail() {
     try {
       await copyTextToClipboard(md);
       setCopied(true);
-      pushToast({ title: "Copied to clipboard", tone: "success" });
+      pushToast({ title: t("tasks.detail.copiedClipboard"), tone: "success" });
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
       pushToast({
-        title: "Copy failed",
-        body: error instanceof Error ? error.message : "Unable to copy task markdown",
+        title: t("tasks.detail.copyFailed"),
+        body: error instanceof Error ? error.message : t("tasks.detail.copyMarkdownFailed"),
         tone: "error",
       });
     }
@@ -4009,8 +4017,8 @@ export function IssueDetail() {
   const runFinalizationActions = useMemo<readonly IssueChatRunFinalizationAction[]>(() => [
     {
       id: "cancel",
-      label: "Stop and cancel",
-      pendingLabel: "Stopping and cancelling...",
+      label: t("tasks.detail.stopCancel"),
+      pendingLabel: t("tasks.detail.stoppingCancel"),
       isPending:
         stopAndFinalizeRun.isPending &&
         stopAndFinalizeRun.variables?.status === "cancelled",
@@ -4020,8 +4028,8 @@ export function IssueDetail() {
     },
     {
       id: "done",
-      label: "Stop and done",
-      pendingLabel: "Stopping and marking done...",
+      label: t("tasks.detail.stopDone"),
+      pendingLabel: t("tasks.detail.stoppingDone"),
       isPending:
         stopAndFinalizeRun.isPending &&
         stopAndFinalizeRun.variables?.status === "done",
@@ -4033,6 +4041,7 @@ export function IssueDetail() {
     stopAndFinalizeRun.isPending,
     stopAndFinalizeRun.mutateAsync,
     stopAndFinalizeRun.variables?.status,
+    t,
   ]);
   const handleAcceptInteraction = useCallback(async (
     interaction: ActionableIssueThreadInteraction,
@@ -4096,7 +4105,7 @@ export function IssueDetail() {
     mutationFn: async (
       request: import("../components/IssueRecoveryActionCard").RecoveryReissueRequest,
     ) => {
-      if (!issue) throw new Error("Task is not loaded yet.");
+      if (!issue) throw new Error(t("tasks.detail.notLoaded"));
       const sourceLabel = issue.identifier ?? "the stalled task";
       const descriptionLines = [
         `Re-issued from ${sourceLabel} on an isolated git worktree after a workspace branch divergence.`,
@@ -4448,10 +4457,10 @@ export function IssueDetail() {
         )}
       >
         <Paperclip className="h-3.5 w-3.5 mr-1.5" />
-        {uploadAttachment.isPending || importMarkdownDocument.isPending ? "Uploading..." : (
+        {uploadAttachment.isPending || importMarkdownDocument.isPending ? t("tasks.detail.uploading") : (
           <>
-            <span className="hidden sm:inline">Upload attachment</span>
-            <span className="sm:hidden">Upload</span>
+            <span className="hidden sm:inline">{t("tasks.detail.uploadAttachment")}</span>
+            <span className="sm:hidden">{t("tasks.detail.upload")}</span>
           </>
         )}
       </Button>
@@ -4538,20 +4547,20 @@ export function IssueDetail() {
           {issue.originKind === "issue_productivity_review" ? (
             <Badge variant="outline"
               className="border-amber-500/40 bg-amber-500/10 text-(length:--text-nano) text-amber-700 dark:text-amber-300"
-              title="This task is a productivity review."
+              title={t("tasks.detail.productivityReviewTitle")}
             >
               <Eye className="h-3 w-3" />
-              Productivity review
+              {t("tasks.detail.productivityReview")}
             </Badge>
           ) : null}
 
           {issue.originKind === "task_watchdog" ? (
             <Badge variant="outline"
               className="border-sky-500/40 bg-sky-500/10 text-(length:--text-nano) text-sky-700 dark:text-sky-300"
-              title="This task is a generated watchdog task. It verifies whether stopped work in the watched task tree is legitimate."
+              title={t("tasks.detail.watchdogTitle")}
             >
               <ScanEye className="h-3 w-3" />
-              Watchdog
+              {t("tasks.detail.watchdog")}
             </Badge>
           ) : null}
 
@@ -4577,10 +4586,10 @@ export function IssueDetail() {
             <Badge variant="outline"
               data-testid="issue-detail-parked-blocker"
               className="border-amber-500/60 bg-amber-500/15 text-(length:--text-nano) text-amber-700 dark:text-amber-300"
-              title="Blocked by parked work — at least one assigned blocker is in backlog and will not wake its assignee."
+              title={t("tasks.detail.parkedBlockerTitle")}
             >
               <Flag className="h-3 w-3" />
-              Blocked by parked work
+              {t("tasks.detail.parkedBlocker")}
             </Badge>
           ) : null}
 
@@ -4640,7 +4649,7 @@ export function IssueDetail() {
                 variant="ghost"
                 size="icon-xs"
                 onClick={copyIssueToClipboard}
-                title="Copy task as markdown"
+                title={t("tasks.detail.copyMarkdown")}
               >
                 {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
               </Button>
@@ -4648,7 +4657,7 @@ export function IssueDetail() {
                 variant="ghost"
                 size="icon-xs"
                 onClick={() => setMobilePropsOpen(true)}
-                title="Properties"
+                title={t("tasks.detail.properties")}
               >
                 <SlidersHorizontal className="h-4 w-4" />
               </Button>
@@ -4664,8 +4673,8 @@ export function IssueDetail() {
                   if (!archivePending && issue?.id) archiveFromInbox.mutate(issue.id);
                 }}
                 disabled={archivePending}
-                title="Archive from inbox"
-                aria-label="Archive from inbox"
+                title={t("tasks.detail.archiveFromInbox")}
+                aria-label={t("tasks.detail.archiveFromInbox")}
               >
                 <Archive className="h-4 w-4" />
               </Button>
@@ -4675,8 +4684,8 @@ export function IssueDetail() {
                 variant="ghost"
                 size="icon-xs"
                 onClick={() => setFileViewerPromptOpen(true)}
-                title="Open file... (g f)"
-                aria-label="Open file in this issue"
+                title={t("tasks.detail.openFileShortcut")}
+                aria-label={t("tasks.detail.openFile")}
               >
                 <FileCode2 className="h-4 w-4" />
               </Button>
@@ -4685,7 +4694,7 @@ export function IssueDetail() {
               variant="ghost"
               size="icon-xs"
               onClick={copyIssueToClipboard}
-              title="Copy task as markdown"
+              title={t("tasks.detail.copyMarkdown")}
             >
               {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
             </Button>
@@ -4704,7 +4713,7 @@ export function IssueDetail() {
                 }
                 setPanelVisible(true);
               }}
-              title="Show properties"
+              title={t("tasks.detail.showProperties")}
             >
               <SlidersHorizontal className="h-4 w-4" />
             </Button>
@@ -4715,8 +4724,8 @@ export function IssueDetail() {
                   variant="ghost"
                   size="icon-xs"
                   className="shrink-0"
-                  aria-label="More task actions"
-                  title="More task actions"
+                  aria-label={t("tasks.detail.moreTaskActions")}
+                  title={t("tasks.detail.moreTaskActions")}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
@@ -4852,7 +4861,7 @@ export function IssueDetail() {
             onSave={(description) => updateIssue.mutateAsync({ description })}
             as="p"
             className="text-sm leading-7 text-foreground"
-            placeholder="Add a description..."
+            placeholder={t("tasks.detail.addDescription")}
             multiline
             foldable
             mentions={mentionOptions}
@@ -5030,7 +5039,7 @@ export function IssueDetail() {
       {taskChatShellEnabled ? null : showRichSubIssuesSection ? (
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-medium text-muted-foreground">Sub-tasks</h3>
+            <h3 className="text-sm font-medium text-muted-foreground">{t("tasks.detail.subtasks")}</h3>
           </div>
           <IssuesList
             issues={childIssues}
@@ -5177,7 +5186,7 @@ export function IssueDetail() {
         return (
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-medium text-muted-foreground">Artifacts</h3>
+              <h3 className="text-sm font-medium text-muted-foreground">{t("artifacts.title")}</h3>
             </div>
             <div className="flex flex-wrap gap-2">
               {workProductsWithFileRefs.map(({ product, fileRef }) => (
@@ -5437,12 +5446,12 @@ export function IssueDetail() {
 
             <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground">
-                Reason (optional)
+                {t("tasks.detail.reasonOptional")}
               </label>
               <Textarea
                 value={treeControlReason}
                 onChange={(event) => setTreeControlReason(event.target.value)}
-                placeholder="Explain why this subtree control is being applied..."
+                placeholder={t("tasks.detail.treeControlReasonPlaceholder")}
                 className="min-h-(--sz-88px)"
               />
             </div>
@@ -5546,7 +5555,7 @@ export function IssueDetail() {
                             </span>
                             <span className="min-w-0 flex-1 truncate">{candidate.title}</span>
                             {candidate.skipped && candidate.skipReason === "terminal_status" ? (
-                              <span className="shrink-0 text-xs text-muted-foreground">Complete</span>
+                              <span className="shrink-0 text-xs text-muted-foreground">{t("tasks.detail.complete")}</span>
                             ) : null}
                           </Link>
                         </div>
@@ -5555,13 +5564,13 @@ export function IssueDetail() {
                   ) : null}
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground">Preview unavailable.</p>
+                <p className="text-xs text-muted-foreground">{t("tasks.detail.previewUnavailable")}</p>
               )}
             </div>
           </div>
           <DialogFooter className="border-t border-border/60 bg-background px-6 py-4">
             <Button variant="outline" onClick={() => setTreeControlOpen(false)} disabled={executeTreeControl.isPending}>
-              Close
+              {t("common.close")}
             </Button>
             <Button
               onClick={() => executeTreeControl.mutate()}
@@ -5578,7 +5587,7 @@ export function IssueDetail() {
       <Sheet open={mobilePropsOpen} onOpenChange={setMobilePropsOpen}>
         <SheetContent side="bottom" className="max-h-(--sz-85dvh) pb-(--sz-safe-bottom)">
           <SheetHeader>
-            <SheetTitle className="text-sm">Properties</SheetTitle>
+            <SheetTitle className="text-sm">{t("tasks.detail.properties")}</SheetTitle>
           </SheetHeader>
           <ScrollArea className="flex-1 overflow-y-auto">
             <div className="px-4 pb-4">

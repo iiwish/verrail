@@ -88,16 +88,15 @@ GitHub 需求
 
 ### P0：中文可用与产品收口
 
-目标：形成一个中文用户可以直接使用、产品边界清晰的 Verrail 基线，为 G1 产品骨架降低认知和工程负担。
+目标：形成一个中文用户可以直接使用、产品边界清晰且验证可靠的 Verrail 基线，为 G1 产品骨架降低认知和工程负担。
 
 交付：
 
-- `en` 与 `zh-CN` 完整 i18n，包含浏览器检测、语言切换、本地持久化和 locale 校验；
-- 默认信息架构收口到 Home、Projects、Agents、Infrastructure、Governance 与 Settings；
-- 非核心表面按 Retain、Transform、Freeze、Delete 分类，先冻结再按依赖纵向删除；
+- 保持现有业务功能和信息架构，锁定用户可达页面与内部排除表面；
+- 锁定最终可达产品表面后完成 `en` 与 `zh-CN` i18n，包含浏览器检测、语言切换、本地持久化和 locale 校验；
 - 保护 Adapter、Plugin、Runtime、Sandbox、Secret、成本、审计和存量数据兼容边界。
 
-退出门槛：核心可达旅程中英文可用，默认产品入口不再表达 AI 公司或实验功能集合，至少一批低风险表面完成纵向删除。
+退出门槛：核心可达旅程中英文可用；locale 与相关回归验证通过；现有业务功能和企业执行基础保持可用。
 
 实施合同见 [`p0-plan.md`](./p0-plan.md)、[`i18n-spec.md`](./i18n-spec.md) 和 [`feature-trimming.md`](./feature-trimming.md)。
 
@@ -171,16 +170,15 @@ GitHub 需求
 
 ## 7. 近期实施顺序
 
-1. 完成 P0 locale 核心与现有功能依赖盘点；
-2. 加入语言菜单并按 allowlist 收口默认产品表面；
-3. 批量完成核心旅程中文化，并删除第一批低风险实验/示例表面；
-4. 定义 Project/Target/Stage 数据合同和兼容映射；
-5. 构建 Target Workbench 的只读真实数据骨架；
-6. 引入 ArtifactRevision、Evidence、Review 与 Acceptance 最小合同；
-7. 打通一个固定 Codex Deployment 的 GitHub 交付闭环；
-8. 把 Runner Protocol 和 SandboxDriver 从进程实现中抽成稳定接口；
-9. 在真实 Linux 环境完成 CubeSandbox Spike，再决定生产准入；
-10. 以设计伙伴工作流验证 Cloud/Private Runner 组合。
+1. 锁定 P0 用户可达页面和内部排除表面，不裁剪现有业务功能；
+2. 完成 locale 检测、语言切换、本地持久化和锁定表面的中英文翻译；
+3. 定义 Project/Target/Stage 数据合同和兼容映射；
+4. 构建 Target Workbench 的只读真实数据骨架；
+5. 引入 ArtifactRevision、Evidence、Review 与 Acceptance 最小合同；
+6. 打通一个固定 Codex Deployment 的 GitHub 交付闭环；
+7. 把 Runner Protocol 和 SandboxDriver 从进程实现中抽成稳定接口；
+8. 在真实 Linux 环境完成 CubeSandbox Spike，再决定生产准入；
+9. 以设计伙伴工作流验证 Cloud/Private Runner 组合。
 
 ## 8. 成功指标
 

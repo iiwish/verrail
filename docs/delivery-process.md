@@ -2,7 +2,7 @@
 
 版本：0.1
 
-状态：`Ready_For_User_Review`
+状态：`Confirmed`
 
 最后更新：2026-08-25
 
@@ -97,4 +97,4 @@ Draft
 
 ## 7. P0 应用
 
-中文 i18n 使用 `Audit And Batch`，按工作流审计与翻译；功能裁剪使用 `Governed Delivery`，先隐藏和冻结，再按纵向依赖删除。两个工作流共享同一套验收与证据规则，具体计划见 [`p0-plan.md`](./p0-plan.md)。
+P0 使用 `Audit And Batch` 锁定用户可达表面，并按用户工作流实施中文 i18n。当前业务功能保持不变，内部设计、测试和开发页面不进入翻译范围。生产内部路由的清理由独立 `Governed Delivery` 任务处理，不作为 i18n 门禁。具体计划见 [`p0-plan.md`](./p0-plan.md)。

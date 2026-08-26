@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "../lib/utils";
 import type { WorkspaceAccessState } from "../lib/workspace-access-state";
+import { useTranslation } from "@/i18n";
+import type { TFunction } from "i18next";
 
 /**
  * Workspace access surface (PAP-17572).
@@ -28,13 +30,37 @@ const STATE_BADGE_CLASSES: Record<WorkspaceAccessState["state"], string> = {
   failed: "border-destructive/50 text-destructive",
 };
 
-const STATE_LABELS: Record<WorkspaceAccessState["state"], string> = {
-  provisioning: "Provisioning",
-  validating: "Validating clone",
-  ready: "Ready",
-  degraded: "Degraded",
-  repairing: "Repairing",
-  failed: "Failed",
+function translateAccessCopy(value: string, t: TFunction) {
+  const key = ACCESS_COPY_KEYS[value];
+  return key ? t(key) : value;
+}
+
+const ACCESS_COPY_KEYS: Record<string, string> = {
+  "Provisioning": "workspace.access.status.provisioning",
+  "Validating clone": "workspace.access.status.validating",
+  "Ready": "workspace.access.status.ready",
+  "Degraded": "workspace.access.status.degraded",
+  "Repairing": "workspace.access.status.repairing",
+  "Failed": "workspace.access.status.failed",
+  "Repair failed": "workspace.access.repairFailed",
+  "View repair log": "workspace.access.viewRepairLog",
+  "Database provisioning failed": "workspace.access.provisionFailed",
+  "View provisioning log": "workspace.access.viewProvisionLog",
+  "Repairing workspace database": "workspace.access.repairingDatabase",
+  "Repair in progress": "workspace.access.repairInProgress",
+  "Provisioning database": "workspace.access.provisioningDatabase",
+  "Workspace is not running": "workspace.access.notRunning",
+  "Start workspace": "workspace.access.start",
+  "Workspace is degraded": "workspace.access.degraded",
+  "Validating": "workspace.access.validating",
+  "Repair workspace": "workspace.access.repair",
+  "Ready — snapshot-local sign-in": "workspace.access.readyLocal",
+  "Open workspace": "workspace.access.open",
+  "Opening the workspace signs you in to the cloned board without a password.": "workspace.access.openDescription",
+  "Start the workspace runtime to publish its board.": "workspace.access.startDescription",
+  "Only the isolated database is replaced; the git worktree and your files are preserved.": "workspace.access.repairDescription",
+  "Restoring the isolated database clone for this workspace. This runs once before the first start.": "workspace.access.provisionDescription",
+  "The clone did not finish, so this workspace has no usable database yet.": "workspace.access.provisionFailedDescription",
 };
 
 const ACTION_ICONS = {
@@ -62,6 +88,7 @@ export function WorkspaceAccessCard({
   onViewLogs: () => void;
   errorMessage?: string | null;
 }) {
+  const { t } = useTranslation();
   const Icon = ACTION_ICONS[access.action.kind];
   const isWaiting = access.action.kind === "wait";
   const handlers: Record<WorkspaceAccessState["action"]["kind"], () => void> = {
@@ -79,7 +106,7 @@ export function WorkspaceAccessCard({
     <Card data-testid="workspace-access-card" data-state={access.state}>
       <CardHeader>
         <div className="flex flex-wrap items-center gap-2">
-          <CardTitle>{access.title}</CardTitle>
+          <CardTitle>{translateAccessCopy(access.title, t)}</CardTitle>
           <span
             data-testid="workspace-access-badge"
             className={cn(
@@ -90,10 +117,10 @@ export function WorkspaceAccessCard({
             {(access.state === "repairing" || access.state === "provisioning") && (
               <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
             )}
-            {STATE_LABELS[access.state]}
+            {t(`workspace.access.status.${access.state}`)}
           </span>
         </div>
-        <CardDescription>{access.description}</CardDescription>
+        <CardDescription>{translateAccessCopy(access.description, t)}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -108,16 +135,16 @@ export function WorkspaceAccessCard({
             ) : (
               <Icon className={cn("mr-2 h-4 w-4", isWaiting && "animate-spin")} />
             )}
-            {access.action.label}
+            {translateAccessCopy(access.action.label, t)}
           </Button>
           {access.state === "ready" && !access.handoffAvailable ? (
             <span className="text-xs text-muted-foreground">
-              Signs in with the snapshot-local credentials captured when this clone was made.
+              {t("workspace.access.snapshotCredentials")}
             </span>
           ) : null}
           {access.state === "ready" && access.handoffAvailable ? (
             <span className="text-xs text-muted-foreground">
-              Uses a single-use login handoff — no password needed.
+              {t("workspace.access.singleUseHandoff")}
             </span>
           ) : null}
         </div>
@@ -128,8 +155,8 @@ export function WorkspaceAccessCard({
         ) : null}
         {access.secondaryNotice && SecondaryNoticeIcon ? (
           <div data-testid="workspace-access-secondary-notice" className="flex flex-col gap-1.5 text-sm">
-            <p className="font-medium text-destructive">{access.secondaryNotice.title}</p>
-            <p className="text-muted-foreground">{access.secondaryNotice.description}</p>
+            <p className="font-medium text-destructive">{translateAccessCopy(access.secondaryNotice.title, t)}</p>
+            <p className="text-muted-foreground">{translateAccessCopy(access.secondaryNotice.description, t)}</p>
             <Button
               type="button"
               variant="link"
@@ -139,7 +166,7 @@ export function WorkspaceAccessCard({
               onClick={handlers[access.secondaryNotice.action.kind]}
             >
               <SecondaryNoticeIcon className="mr-2 h-4 w-4" />
-              {access.secondaryNotice.action.label}
+              {translateAccessCopy(access.secondaryNotice.action.label, t)}
             </Button>
           </div>
         ) : null}

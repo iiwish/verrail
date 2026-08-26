@@ -2,6 +2,8 @@ import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { deriveAgentUrlKey, deriveProjectUrlKey, normalizeProjectUrlKey, hasNonAsciiContent } from "@paperclipai/shared";
 import type { BillingType, FinanceDirection, FinanceEventKind } from "@paperclipai/shared";
+import { getCurrentLocale } from "@/i18n";
+import { timeAgo } from "./timeAgo";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -34,11 +36,16 @@ export function asFiniteNumber(value: unknown, fallback: number) {
 }
 
 export function formatCents(cents: number): string {
-  return `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return new Intl.NumberFormat(getCurrentLocale(), {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
 }
 
 export function formatNumber(n: number): string {
-  return n.toLocaleString("en-US");
+  return new Intl.NumberFormat(getCurrentLocale()).format(n);
 }
 
 /**
@@ -51,7 +58,7 @@ export function formatProjectBudget(budget: { amountCents: number; windowKind: s
 }
 
 export function formatDate(date: Date | string): string {
-  return new Date(date).toLocaleDateString("en-US", {
+  return new Date(date).toLocaleDateString(getCurrentLocale(), {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -59,7 +66,7 @@ export function formatDate(date: Date | string): string {
 }
 
 export function formatDateTime(date: Date | string): string {
-  return new Date(date).toLocaleString("en-US", {
+  return new Date(date).toLocaleString(getCurrentLocale(), {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -69,7 +76,7 @@ export function formatDateTime(date: Date | string): string {
 }
 
 export function formatShortDate(date: Date | string): string {
-  return new Date(date).toLocaleString("en-US", {
+  return new Date(date).toLocaleString(getCurrentLocale(), {
     month: "short",
     day: "numeric",
   });
@@ -78,14 +85,8 @@ export function formatShortDate(date: Date | string): string {
 export function relativeTime(date: Date | string): string {
   const now = Date.now();
   const then = new Date(date).getTime();
-  const diffSec = Math.round((now - then) / 1000);
-  if (diffSec < 60) return "just now";
-  const diffMin = Math.round(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.round(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDay = Math.round(diffHr / 24);
-  if (diffDay < 30) return `${diffDay}d ago`;
+  const diffDay = Math.round((now - then) / (24 * 60 * 60 * 1000));
+  if (diffDay < 30) return timeAgo(date);
   return formatDate(date);
 }
 

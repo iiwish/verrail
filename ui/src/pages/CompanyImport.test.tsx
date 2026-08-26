@@ -922,7 +922,7 @@ describe("CompanyImport", () => {
 
       // Success-leaning panel, not the failure panel.
       expect(container.textContent).toContain("Import completed");
-      expect(container.textContent).toContain("open it to view it");
+      expect(container.textContent).toContain("ready to open");
       expect(container.textContent).not.toContain("Import failed");
       expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({ tone: "success" }));
       // The company list is refreshed so the new company appears in the switcher.

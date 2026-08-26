@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { getCurrentLocale, useTranslation } from "@/i18n";
 
 export type RoutineListProjectSummary = {
   name: string;
@@ -34,9 +35,9 @@ export type RoutineListRowItem = {
   } | null;
 };
 
-export function formatLastRunTimestamp(value: Date | string | null | undefined) {
-  if (!value) return "Never";
-  return new Date(value).toLocaleString();
+export function formatLastRunTimestamp(value: Date | string | null | undefined, neverLabel = "Never") {
+  if (!value) return neverLabel;
+  return new Date(value).toLocaleString(getCurrentLocale());
 }
 
 export function formatRoutineRunStatus(value: string | null | undefined) {
@@ -56,7 +57,7 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
   runningRoutineId,
   statusMutationRoutineId,
   href,
-  configureLabel = "Edit",
+  configureLabel,
   managedByLabel,
   secondaryDetails,
   runNowButton = false,
@@ -95,6 +96,7 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
   onToggleEnabled: (routine: TRoutine, enabled: boolean) => void;
   onToggleArchived?: (routine: TRoutine) => void;
 }) {
+  const { t } = useTranslation();
   const enabled = routine.status === "active";
   const isArchived = routine.status === "archived";
   const isStatusPending = statusMutationRoutineId === routine.id;
@@ -122,7 +124,7 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
             type="checkbox"
             className="h-4 w-4 rounded border-border"
             checked={selected}
-            aria-label={`Select ${routine.title}`}
+            aria-label={t("routines.row.select", { title: routine.title })}
             onChange={(event) => onSelectChange?.(routine, event.target.checked)}
           />
         </div>
@@ -132,7 +134,7 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
           <span className="truncate text-sm font-medium">{routine.title}</span>
           {(isArchived || routine.status === "paused" || isDraft) ? (
             <span className="text-xs text-muted-foreground">
-              {isArchived ? "archived" : isDraft ? "draft" : "paused"}
+              {t(`statuses.${isArchived ? "archived" : isDraft ? "draft" : "paused"}`)}
             </span>
           ) : null}
           {managedByLabel ? (
@@ -145,15 +147,15 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
               className="h-2.5 w-2.5 shrink-0 rounded-sm"
               style={{ backgroundColor: project?.color ?? "var(--project-none)" }}
             />
-            <span>{routine.projectId ? (project?.name ?? "Unknown project") : "No project"}</span>
+            <span>{routine.projectId ? (project?.name ?? t("routines.groupLabels.Unknown project")) : t("routines.noProject")}</span>
           </span>
           <span className="flex items-center gap-2">
             {agent?.icon ? <AgentIcon icon={agent.icon} className="h-3.5 w-3.5 shrink-0" /> : null}
-            <span>{routine.assigneeAgentId ? (agent?.name ?? "Unknown agent") : "No default agent"}</span>
+            <span>{routine.assigneeAgentId ? (agent?.name ?? t("routines.groupLabels.Unknown agent")) : t("routines.row.noDefaultAgent")}</span>
           </span>
           <span>
-            {formatLastRunTimestamp(routine.lastRun?.triggeredAt)}
-            {routine.lastRun ? ` · ${formatRoutineRunStatus(routine.lastRun.status)}` : ""}
+            {formatLastRunTimestamp(routine.lastRun?.triggeredAt, t("routines.row.never"))}
+            {routine.lastRun?.status ? ` · ${t(`statuses.${routine.lastRun.status}`, { defaultValue: formatRoutineRunStatus(routine.lastRun.status) ?? routine.lastRun.status })}` : ""}
           </span>
         </div>
         {secondaryDetails ? (
@@ -170,7 +172,7 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
             onClick={() => onRunNow(routine)}
           >
             <Play className="h-3.5 w-3.5" />
-            {runningRoutineId === routine.id ? "Running..." : "Run now"}
+            {runningRoutineId === routine.id ? t("routines.row.running") : t("routines.row.runNow")}
           </Button>
         ) : null}
 
@@ -180,28 +182,28 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
             checked={enabled}
             onCheckedChange={() => onToggleEnabled(routine, enabled)}
             disabled={isStatusPending || isArchived || disableToggle}
-            aria-label={enabled ? `Disable ${routine.title}` : `Enable ${routine.title}`}
+            aria-label={enabled ? t("routines.row.disable", { title: routine.title }) : t("routines.row.enable", { title: routine.title })}
           />
           <span className="w-12 text-xs text-muted-foreground">
-            {isArchived ? "Archived" : isDraft ? "Draft" : enabled ? "On" : "Off"}
+            {isArchived ? t("statuses.archived") : isDraft ? t("statuses.draft") : enabled ? t("routines.row.on") : t("routines.row.off")}
           </span>
         </div>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label={`More actions for ${routine.title}`}>
+            <Button variant="ghost" size="icon-sm" aria-label={t("routines.row.moreActions", { title: routine.title })}>
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem asChild>
-              <Link to={href}>{configureLabel}</Link>
+              <Link to={href}>{configureLabel ?? t("routines.row.edit")}</Link>
             </DropdownMenuItem>
             <DropdownMenuItem
               disabled={runDisabled}
               onClick={() => onRunNow(routine)}
             >
-              {runningRoutineId === routine.id ? "Running..." : "Run now"}
+              {runningRoutineId === routine.id ? t("routines.row.running") : t("routines.row.runNow")}
             </DropdownMenuItem>
             {extraMenuItems ? (
               <>
@@ -214,14 +216,14 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
               onClick={() => onToggleEnabled(routine, enabled)}
               disabled={isStatusPending || isArchived || disableToggle}
             >
-              {enabled ? "Pause" : "Enable"}
+              {enabled ? t("routines.row.pause") : t("routines.row.enableAction")}
             </DropdownMenuItem>
             {!hideArchiveAction && onToggleArchived ? (
               <DropdownMenuItem
                 onClick={() => onToggleArchived(routine)}
                 disabled={isStatusPending}
               >
-                {routine.status === "archived" ? "Restore" : "Archive"}
+                {routine.status === "archived" ? t("routines.row.restore") : t("routines.row.archive")}
               </DropdownMenuItem>
             ) : null}
           </DropdownMenuContent>

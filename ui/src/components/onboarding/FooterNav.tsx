@@ -1,4 +1,5 @@
 import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Button } from "../ui/button";
 
 /**
@@ -24,6 +25,7 @@ export function FooterNav({
   loadingLabel?: string;
   onPrimary: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="flex items-center justify-between pt-6">
       {onBack ? (
@@ -37,7 +39,7 @@ export function FooterNav({
           disabled={loading}
         >
           <ArrowLeft className="mr-1 size-3.5" />
-          Back
+          {t("common.back")}
         </Button>
       ) : (
         <span />

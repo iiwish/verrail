@@ -1,8 +1,8 @@
 # Verrail P0 中文 i18n 规格
 
-版本：0.1
+版本：1.0
 
-状态：`Ready_For_User_Review`
+状态：`Implemented`
 
 最后更新：2026-08-25
 
@@ -11,6 +11,10 @@
 ## 1. Outcome
 
 中文用户首次打开 Verrail 时可以自动获得简体中文界面，也可以随时在英文和简体中文之间切换。显式选择在刷新和重新打开浏览器后保持有效，界面不存在半中文半英文的核心旅程。
+
+i18n 在 P0 用户可达页面和内部排除表面锁定后实施，不以功能删除为前置条件。翻译范围以 [`feature-trimming.md`](./feature-trimming.md) 的 Surface Lock 为输入，不翻译 DEV-only、UX Lab、性能页、Design Guide 和 Storybook。
+
+P0 实现包含 `en` 与 `zh-CN` 注册表、浏览器语言检测、显式语言切换、安全本地持久化、`<html lang>` 同步、locale-aware formatter、资源结构校验和核心用户旅程翻译。Profile Settings 是语言控制的权威入口。
 
 ## 2. P0 语言范围
 
@@ -66,6 +70,9 @@ P0 持久化是浏览器级偏好，不增加用户表字段。跨设备语言�
 - API、HTTP、MCP、CLI、SQL、模型名、键盘键和协议标识；
 - URL、路径、代码、日志、邮件正文和 Provider 原始诊断；
 - 用户创建的 Project、Target、Agent、Artifact 和评论内容。
+- Plugin/Provider manifest 提供的名称、说明和 Plugin 自有页面内容。
+
+默认关闭的实验功能不属于 P0 核心翻译门禁；公共应用壳、共享组件和启用后进入正常用户旅程的表面仍使用同一 i18n 合同。
 
 服务端稳定错误码与 UI 翻译分离。UI 根据可识别错误码显示本地化消息，未知诊断保留可检查的原始信息。
 
@@ -120,3 +127,9 @@ P0 持久化是浏览器级偏好，不增加用户表字段。跨设备语言�
 - RTL 支持；
 - 完整国际时区与多币种产品策略；
 - 在 P0 同时正式支持简体中文之外的新增语言。
+
+## 10. 验证状态
+
+自动验证覆盖 locale 规范化、持久化优先级、浏览器语言回退、存储异常、资源键与占位符一致性、运行时切换、`<html lang>` 同步以及日期、数字和金额格式化。Workspace typecheck、UI token gates 和生产构建通过。
+
+浏览器验收确认中文浏览器首次进入认证界面时使用简体中文且 `<html lang="zh-CN">` 生效；390 x 844 视口不存在水平溢出。完整应用服务在当前 macOS 主机上受缺失的 `@embedded-postgres/darwin-arm64` 本机包限制，完整数据旅程由相关 React/Vitest 回归覆盖。
