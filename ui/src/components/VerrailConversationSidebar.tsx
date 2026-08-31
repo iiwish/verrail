@@ -77,7 +77,7 @@ function ConversationRow({
           <Button
             variant="ghost"
             size="icon-sm"
-            className="mr-1 shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+            className="mr-1 shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
             aria-label={t("chat.actions")}
           >
             <MoreHorizontal className="h-4 w-4" />
@@ -139,6 +139,7 @@ export function VerrailConversationSidebar() {
     onSuccess: (conversation) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all(selectedCompanyId!) });
       queryClient.invalidateQueries({ queryKey: queryKeys.conversations.detail(selectedCompanyId!, conversation.id) });
+      setRenaming(null);
       if (conversation.status === "archived" && conversation.id === conversationId) navigate("/chat");
     },
   });
@@ -200,6 +201,9 @@ export function VerrailConversationSidebar() {
             className="h-8 pl-8 text-xs"
           />
         </div>
+        {createMutation.error || updateMutation.error ? (
+          <p role="alert" className="px-2 text-xs text-destructive">{t("chat.actionFailed")}</p>
+        ) : null}
       </div>
 
       <nav className="min-h-0 flex-1 overflow-y-auto pb-3 scrollbar-auto-hide" aria-label={t("nav.chat")}>
@@ -256,7 +260,6 @@ export function VerrailConversationSidebar() {
             onKeyDown={(event) => {
               if (event.key === "Enter" && renaming && renameValue.trim()) {
                 updateMutation.mutate({ id: renaming.id, patch: { title: renameValue.trim() } });
-                setRenaming(null);
               }
             }}
             autoFocus
@@ -267,7 +270,6 @@ export function VerrailConversationSidebar() {
               onClick={() => {
                 if (!renaming || !renameValue.trim()) return;
                 updateMutation.mutate({ id: renaming.id, patch: { title: renameValue.trim() } });
-                setRenaming(null);
               }}
               disabled={!renameValue.trim() || updateMutation.isPending}
             >

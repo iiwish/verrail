@@ -600,6 +600,7 @@
     "unavailable": "Deployments are unavailable. Try again."
   },
   "chat": {
+    "actionFailed": "The conversation could not be updated. Try again.",
     "new": "New conversation",
     "search": "Search conversations",
     "loading": "Loading conversations...",

@@ -229,4 +229,22 @@ describe("conversation routes", () => {
       vi.useRealTimers();
     }
   });
+
+  it("releases runtime capacity immediately when the child process fails to start", async () => {
+    const { createConversationRuntimeCleanupBarrier } = await import("../routes/conversations.js");
+    const release = vi.fn();
+    const removeRuntimeDirectory = vi.fn();
+    const barrier = createConversationRuntimeCleanupBarrier({
+      release,
+      removeRuntimeDirectory,
+      forceStopTree: vi.fn(),
+      destroyOutputStreams: vi.fn(),
+    });
+
+    barrier.onError();
+    barrier.onClose();
+
+    expect(release).toHaveBeenCalledOnce();
+    expect(removeRuntimeDirectory).toHaveBeenCalledOnce();
+  });
 });

@@ -160,6 +160,7 @@ Infrastructure 的当前页面复用既有 Environment、Secret、Adapter 和 Pl
 
 - Verrail 品牌应用壳；
 - `/home` 操作型入口，复用当前 Attention、Inbox、Live Run 和 Project 数据；
+- `/chat` 持久会话、基础会话管理和本地受限兼容运行时；
 - `/projects` 与 `/projects/:projectId/targets`；
 - `/targets/:targetId` 只读 Target Workbench 骨架；
 - 新 Sidebar、Command Palette 和 Breadcrumb 的 Canonical Route；
@@ -168,7 +169,7 @@ Infrastructure 的当前页面复用既有 Environment、Secret、Adapter 和 Pl
 
 首个切片不创建新的权威 Target 写模型，不删除旧路由，不迁移 Auth 领域逻辑或身份安全标识，也不迁移 Secret、Plugin、Adapter 或执行恢复逻辑；Auth 表面的 Verrail Display Name 仍按品牌合同处理。
 
-## 10. 验收标准
+## 11. 验收标准
 
 1. 用户进入 Workspace 后首先看到 Home，而不是 AI 公司 Dashboard；
 2. 一级导航只包含 Home、Chat、Projects、Agents、Infrastructure、Governance 和 Settings；
@@ -183,7 +184,7 @@ Infrastructure 的当前页面复用既有 Environment、Secret、Adapter 和 Pl
 11. 无权访问的导航、Badge、搜索结果和聚合计数不泄露跨 Workspace 或受限对象信息；
 12. 相关组件测试、路由测试、权限测试、locale/parity、`pnpm check:token-gates`、typecheck 和 build 通过。
 
-## 11. 非目标
+## 12. 非目标
 
 - 不在导航批次实现完整 Target 数据模型或 Temporal Workflow；
 - 不通过 UI 重定向伪造 Case、Issue、Goal 与 Target 的业务等价；

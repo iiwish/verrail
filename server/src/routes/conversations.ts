@@ -573,7 +573,7 @@ export function conversationRoutes(db: Db, opts: { deploymentMode: DeploymentMod
         runtimeClosed = true;
         clearTimeout(timeout);
         if (forceKillTimer) clearTimeout(forceKillTimer);
-        cleanupBarrier.onExit();
+        cleanupBarrier.onError();
         if (!res.writableEnded && !res.destroyed) {
           res.write(`data: ${JSON.stringify({
             type: "error",

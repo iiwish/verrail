@@ -131,6 +131,7 @@ export function VerrailChat() {
     setErrorText("");
 
     let targetConversationId = conversationId;
+    let controller: AbortController | null = null;
     try {
       if (!targetConversationId) {
         const created = await createMutation.mutateAsync();
@@ -143,7 +144,7 @@ export function VerrailChat() {
         navigate(`/chat/${created.id}`, { replace: true });
       }
 
-      const controller = new AbortController();
+      controller = new AbortController();
       abortControllerRef.current = controller;
       const response = await fetch(
         `/api/workspaces/${encodeURIComponent(selectedCompanyId)}/conversations/${encodeURIComponent(targetConversationId)}/messages/stream`,
@@ -204,7 +205,7 @@ export function VerrailChat() {
         }
       }
     } finally {
-      abortControllerRef.current = null;
+      if (abortControllerRef.current === controller) abortControllerRef.current = null;
       if (targetConversationId) {
         await Promise.all([
           queryClient.invalidateQueries({
