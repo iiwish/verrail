@@ -28,6 +28,30 @@ export {
   type ParsedStoredTargetReadModelV1,
   type StoredTargetReadModelUpgrade,
 } from "./validators/target.js";
+export {
+  CONVERSATION_STATUSES,
+  CONVERSATION_MESSAGE_ROLES,
+  type Conversation,
+  type ConversationDetail,
+  type ConversationMessage,
+  type ConversationMessageRole,
+  type ConversationStatus,
+  type ConversationContextBinding,
+  type ConversationContextType,
+} from "./types/conversation.js";
+export {
+  conversationStatusSchema,
+  conversationMessageRoleSchema,
+  conversationContextTypeSchema,
+  conversationListQuerySchema,
+  createConversationSchema,
+  updateConversationSchema,
+  sendConversationMessageSchema,
+  type ConversationListQuery,
+  type CreateConversationInput,
+  type UpdateConversationInput,
+  type SendConversationMessageInput,
+} from "./validators/conversation.js";
 export { ADAPTER_AUTH_MISSING_CHECK_CODE } from "./adapter-auth-check-code.js";
 export {
   decisionEffectStalenessSchema,

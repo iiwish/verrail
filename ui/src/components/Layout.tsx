@@ -25,6 +25,7 @@ import { SidebarShell } from "./SidebarShell";
 import { SecondarySidebar } from "./SecondarySidebar";
 import { SidebarAccountMenu } from "./SidebarAccountMenu";
 import { VerrailManagementSidebar } from "./VerrailManagementSidebar";
+import { VerrailConversationSidebar } from "./VerrailConversationSidebar";
 import { VerrailProjectsSidebar } from "./VerrailProjectsSidebar";
 import { useDialogActions } from "../context/DialogContext";
 import { GeneralSettingsProvider } from "../context/GeneralSettingsContext";
@@ -129,6 +130,8 @@ export function Layout() {
   const verrailManagementSection = isVerrailNavigationEnabled(selectedCompany)
     ? resolveVerrailManagementSection(location.pathname, companyPrefix)
     : null;
+  const isVerrailChatRoute = isVerrailNavigationEnabled(selectedCompany)
+    && companyPathSegments[0]?.toLowerCase() === "chat";
   const isToolsRoute = companyPathSegments[0]?.toLowerCase() === "tools";
   const isAppsRoute = companyPathSegments[0]?.toLowerCase() === "apps";
   const appDetailConnectionId =
@@ -183,7 +186,9 @@ export function Layout() {
   // the app `<Sidebar/>`. Instead the host collapses it to its rail and renders
   // the contextual sidebar in a second pane (PAP-10695). One resolver drives
   // both desktop (SecondarySidebar) and mobile (off-canvas drawer).
-  const secondarySidebar = verrailManagementSection === "projects" ? (
+  const secondarySidebar = isVerrailChatRoute ? (
+    <VerrailConversationSidebar />
+  ) : verrailManagementSection === "projects" ? (
     <VerrailProjectsSidebar />
   ) : verrailManagementSection ? (
     <VerrailManagementSidebar section={verrailManagementSection} />

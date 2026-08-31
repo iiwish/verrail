@@ -1,0 +1,24 @@
+{
+  "id": "b2-7-scoped-commit-pr-validation",
+  "title": "B2.7 Scoped Commit & PR Validation",
+  "intent": "Turn the cumulative Verrail productization branch into a reviewable, dependency-ordered pull-request stack with truthful CI evidence and no merge action.",
+  "scope": "Create logical commits from the B2.6 ownership map, remove the prohibited lockfile delta from the unpublished history, split the cumulative branch into descriptive stacked branches with fewer than 100 changed files per pull request, create template-complete pull requests, inspect remote checks and review feedback, and record merge readiness.",
+  "non_goals": [
+    "Add or redesign product capability, navigation, domain entities, orchestration, agent behavior, Temporal workflows, or Go services",
+    "Merge any pull request, deploy, release, or create a ship record",
+    "Hide or waive failing CI, review comments, merge conflicts, or inherited baseline limitations",
+    "Force-push a branch in a way that discards work"
+  ],
+  "acceptance_criteria": [
+    "Every B2.6 working-tree path is committed once in a logical Navigation and IA, Conversation, Runtime and Bootstrap Hardening, Delivery Evidence, or retained historical-evidence commit.",
+    "The unpublished pnpm-lock.yaml delta is absent from the pull-request stack, and workflow changes remain only where they are explicitly part of acceptance and release verification.",
+    "Each public branch name is descriptive, uses the codex/ prefix, contains no private task identifier, and each pull request changes fewer than 100 files against its declared base.",
+    "Every pull request follows .github/PULL_REQUEST_TEMPLATE.md, uses Simplified Technical English, contains an in-PR issue description or public issue links, and records the exact AI model used.",
+    "The stack preserves dependency order and reports every pull-request URL, head, base, commit range, changed-file count, and merge-conflict state.",
+    "Required remote CI and automated review status are observed for every pull request; actionable failures are fixed within scope or recorded as precise blockers.",
+    "Repo-native receipt, evidence, stack manifest, timeline, and advisory review state whether the stack is ready for human merge decisions without merging it."
+  ],
+  "status": "needs_review",
+  "created_at": "2026-08-31T04:41:45Z",
+  "updated_at": "2026-08-31T07:00:09Z"
+}

@@ -9,6 +9,7 @@ if (!PAPERCLIP_HOME) {
 }
 const PAPERCLIP_INSTANCE_ID = "verrail-frontend-acceptance";
 const PAPERCLIP_CONFIG = path.join(PAPERCLIP_HOME, "instances", PAPERCLIP_INSTANCE_ID, "config.json");
+const FIXTURE_BIN = path.resolve("tests/verrail-acceptance/fixtures/bin");
 const DELIVERY_OUTPUT_ROOT = process.env.VERRAIL_ACCEPTANCE_OUTPUT_ROOT;
 const OUTPUT_ROOT = path.resolve(DELIVERY_OUTPUT_ROOT ?? "tests/verrail-acceptance");
 const RESULTS_DIRECTORY = DELIVERY_OUTPUT_ROOT ? "playwright-results" : "test-results";
@@ -69,6 +70,8 @@ export default defineConfig({
       PAPERCLIP_BIND: "loopback",
       PAPERCLIP_DEPLOYMENT_MODE: "local_trusted",
       PAPERCLIP_DEPLOYMENT_EXPOSURE: "private",
+      VERRAIL_CHAT_RUNTIME: "codex",
+      PATH: `${FIXTURE_BIN}${path.delimiter}${process.env.PATH ?? ""}`,
     },
   },
   outputDir: path.join(OUTPUT_ROOT, RESULTS_DIRECTORY),

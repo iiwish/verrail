@@ -4,6 +4,17 @@ export type {
   InteractionResolverGovernance,
   InteractionResolverKindGovernance,
 } from "./company.js";
+export {
+  CONVERSATION_STATUSES,
+  CONVERSATION_MESSAGE_ROLES,
+  type Conversation,
+  type ConversationDetail,
+  type ConversationMessage,
+  type ConversationMessageRole,
+  type ConversationStatus,
+  type ConversationContextBinding,
+  type ConversationContextType,
+} from "./conversation.js";
 export type {
   GenerateSummarySlotRequest,
   GenerateSummarySlotResponse,

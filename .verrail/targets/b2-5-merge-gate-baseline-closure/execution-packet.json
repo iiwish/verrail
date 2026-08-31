@@ -1,0 +1,47 @@
+{
+  "target_id": "b2-5-merge-gate-baseline-closure",
+  "spec_version": "1.0",
+  "repo_path": "/Users/iiwish/self/verrail",
+  "branch": "codex/verrail-brand-navigation-b1",
+  "base_commit": "6e523139fc901627e1825123f969315279a5a54c",
+  "agent": "codex",
+  "prompt": "Complete B2.5 Merge Gate Baseline Closure. Repair cross-platform runtime listener diagnosis and bound Skills Catalog remote reference resolution without weakening exposure or integrity checks. Add focused tests, run repository merge gates, fix only current-delta or confirmed baseline defects, and attach truthful evidence. Do not commit or create a pull request.",
+  "allowed_actions": [
+    "Inspect and edit runtime exposure listener diagnostics and their tests",
+    "Inspect and edit Skills Catalog reference fetching, cache validation, manifest build behavior, and their tests",
+    "Add narrowly scoped timeout, portability, and deterministic fallback helpers",
+    "Run focused tests, full tests, typecheck, builds, migration checks, UI gates, and diff checks",
+    "Create B2.5 delivery receipt, evidence, timeline, and advisory review records"
+  ],
+  "forbidden_actions": [
+    "Change Verrail product or domain behavior",
+    "Disable exposure checks, test files, or repository gates",
+    "Accept unpinned or integrity-unchecked remote catalog content",
+    "Rewrite unrelated inherited runtime, plugin, workspace, or skills behavior",
+    "Commit, push, create a pull request, merge, deploy, release, or create a ship record"
+  ],
+  "validation_commands": [
+    "pnpm exec vitest run server/src/services/runtime-exposure/loopback-listener.test.ts packages/skills-catalog/src/catalog-builder.test.ts",
+    "pnpm exec vitest run server/src/__tests__/conversation-service.test.ts server/src/__tests__/conversation-routes.test.ts server/src/__tests__/company-cloud-floor.test.ts server/src/__tests__/openapi-routes.test.ts ui/src/components/Layout.test.tsx ui/src/App.test.tsx ui/src/components/VerrailManagementSidebar.test.tsx ui/src/lib/company-routes.test.ts ui/src/lib/verrail-section-navigation.test.ts",
+    "pnpm -r typecheck",
+    "pnpm test:run",
+    "pnpm build",
+    "pnpm check:token-gates",
+    "pnpm check:ui-bundle-budget",
+    "git diff --check"
+  ],
+  "expected_evidence": [
+    "Cross-platform listener diagnosis focused test result",
+    "Skills Catalog timeout, fallback, and integrity focused test result",
+    "Focused Verrail productization regression result",
+    "Repository-wide typecheck, tests, and build result",
+    "Migration, UI token, bundle, and diff gate results",
+    "Advisory commit and pull-request readiness decision"
+  ],
+  "stop_conditions": [
+    "A proposed fix would weaken wildcard-listener exposure detection",
+    "A catalog fallback cannot prove pinned source identity and content integrity",
+    "A remaining failure cannot be isolated from active local services or reproduced against the base commit",
+    "Closure requires changing unrelated product behavior or discarding existing work"
+  ]
+}

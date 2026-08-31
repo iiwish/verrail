@@ -1,0 +1,97 @@
+{
+  "id": "run-001",
+  "target_id": "b2-6-merge-recovery-scope-split",
+  "agent": "codex",
+  "runner": "Codex desktop local worktree",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "6e523139fc901627e1825123f969315279a5a54c",
+  "output_commit": null,
+  "branch": "codex/verrail-brand-navigation-b1",
+  "working_tree": "uncommitted cumulative Verrail productization batch; no commit, push, pull request, merge, deployment, release, or ship record was created",
+  "changed_files": [
+    "server/src/routes/conversations.ts",
+    "server/src/__tests__/conversation-routes.test.ts",
+    "tests/verrail-acceptance/fixtures/bin/codex",
+    "tests/verrail-acceptance/playwright.config.ts",
+    "tests/verrail-acceptance/project-target-work.spec.ts",
+    "ui/src/components/Sidebar.test.tsx",
+    "ui/src/components/DecisionDateChips.tsx",
+    "ui/src/components/DecisionDateChips.test.tsx",
+    "ui/src/lib/attention.ts",
+    "ui/src/i18n/locales/en.json",
+    "ui/src/i18n/locales/zh-CN.json",
+    ".verrail/targets/b2-6-merge-recovery-scope-split/**"
+  ],
+  "commands": [
+    {
+      "command": "pnpm exec vitest run --project @paperclipai/ui ui/src/components/Sidebar.test.tsx ui/src/components/DecisionDateChips.test.tsx",
+      "status": "passed",
+      "summary": "Two UI files and 29 tests passed, covering seven primary destinations and Chinese governance date labels."
+    },
+    {
+      "command": "pnpm exec vitest run --project @paperclipai/server server/src/__tests__/conversation-routes.test.ts server/src/__tests__/conversation-service.test.ts",
+      "status": "passed",
+      "summary": "Conversation route and service tests passed, including empty zero-exit, empty nonzero-exit, timeout, and partial-response terminal outcomes."
+    },
+    {
+      "command": "pnpm exec vitest run --project @paperclipai/ui --exclude '**/dist/**'",
+      "status": "passed",
+      "summary": "The complete UI project passed 485 files and 4422 tests without an unhandled test error."
+    },
+    {
+      "command": "pnpm test:e2e:verrail-acceptance",
+      "status": "passed",
+      "summary": "Four browser projects passed at 1440x900 and 1024x768 in 1.4 minutes, covering the Project-to-Target object-list sidebar and deterministic Conversation lifecycle."
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "All workspace typechecks and migration safety checks passed."
+    },
+    {
+      "command": "pnpm test:run",
+      "status": "failed_inherited_baseline",
+      "summary": "The full runner completed with 401 passed, 9 failed, and 1 skipped files; 4711 passed, 23 failed, and 27 skipped tests, plus two failed suites or hooks. Residual failures remain in unchanged inherited company-skill path canonicalization, workspace runtime/cleanup/seed, execution conflict, plugin worker timing, and heartbeat environment classes."
+    },
+    {
+      "command": "pnpm build",
+      "status": "passed_with_existing_warnings",
+      "summary": "The production build completed with existing non-fatal CSS highlight, font resolution, mixed-import, and chunk-size warnings."
+    },
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "summary": "All four design-token gates passed across 809 files."
+    },
+    {
+      "command": "pnpm check:ui-bundle-budget",
+      "status": "passed",
+      "summary": "183 JavaScript files remained within budget at 11.53 MiB raw and 3.32 MiB gzip."
+    },
+    {
+      "command": "pnpm check:brand-assets",
+      "status": "passed",
+      "summary": "All 17 Verrail brand assets validated."
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "summary": "The working diff has no whitespace errors."
+    }
+  ],
+  "logs": [
+    "Complete UI result: 485 passed files and 4422 passed tests.",
+    "Verrail acceptance result: 4 passed projects in 1.4 minutes.",
+    "Current full test result: 401 passed / 9 failed / 1 skipped files; 4711 passed / 23 failed / 27 skipped tests; two failed suites or hooks; 2868.76 seconds.",
+    "B2.5 baseline result: 401 passed / 9 failed / 1 skipped files; 4666 passed / 20 failed / 75 skipped tests; inherited failure categories already isolated and recorded."
+  ],
+  "errors": [
+    {
+      "command": "pnpm test:run",
+      "status": "inherited_non_green_baseline",
+      "summary": "Repository-wide server tests are not globally green on this macOS host. No B2.6 implementation or test file appears in a failing stack; remote CI remains mandatory before merge."
+    }
+  ],
+  "summary": "Closed the confirmed navigation, browser acceptance, empty Conversation response, and governance i18n blockers; added credential-free end-to-end Conversation coverage; mapped every cumulative changed path into a review owner; and completed all merge gates with the inherited non-green server baseline disclosed."
+}

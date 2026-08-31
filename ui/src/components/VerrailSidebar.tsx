@@ -2,6 +2,7 @@ import {
   Bot,
   FolderKanban,
   House,
+  MessagesSquare,
   PanelLeftClose,
   PanelLeftOpen,
   Pin,
@@ -80,6 +81,7 @@ export function VerrailSidebar() {
       <nav className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 py-2 scrollbar-auto-hide pointer-coarse:gap-3">
         <div className="flex flex-col gap-0.5" data-testid="verrail-primary-navigation">
           <SidebarNavItem to="/home" label={t("nav.home")} icon={House} end />
+          <SidebarNavItem to="/chat" label={t("nav.chat")} icon={MessagesSquare} />
           <SidebarNavItem
             to="/projects"
             label={t("nav.projects")}

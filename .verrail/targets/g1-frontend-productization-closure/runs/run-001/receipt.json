@@ -1,0 +1,61 @@
+{
+  "id": "run-001",
+  "target_id": "g1-frontend-productization-closure",
+  "agent": "codex",
+  "runner": "local Codex desktop",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "6e523139fc901627e1825123f969315279a5a54c",
+  "output_commit": null,
+  "branch": "codex/verrail-brand-navigation-b1",
+  "working_tree": "uncommitted",
+  "changed_files": [
+    "docs/navigation-contract.md",
+    "tests/verrail-acceptance/project-target-work.spec.ts",
+    "ui/src/App.tsx",
+    "ui/src/App.test.tsx",
+    "ui/src/components/Layout.tsx",
+    "ui/src/components/VerrailManagementSidebar.tsx",
+    "ui/src/components/VerrailManagementSidebar.test.tsx",
+    "ui/src/components/CompanySettingsSidebar.tsx",
+    "ui/src/components/CompanySettingsSidebar.test.tsx",
+    "ui/src/components/DecisionQueueRail.tsx",
+    "ui/src/lib/verrail-section-navigation.ts",
+    "ui/src/lib/verrail-section-navigation.test.ts",
+    "ui/src/pages/AdapterManager.tsx",
+    "ui/src/pages/ApprovalDetail.tsx",
+    "ui/src/pages/Approvals.tsx",
+    "ui/src/pages/CompanyEnvironments.tsx",
+    "ui/src/pages/Costs.tsx",
+    "ui/src/pages/DecisionQueuePage.tsx",
+    "ui/src/pages/PluginManager.tsx",
+    "ui/src/pages/PluginSettings.tsx",
+    "ui/src/pages/Secrets.tsx",
+    "ui/src/pages/Secrets.render.test.tsx",
+    "ui/src/pages/WhatNeedsMe.tsx",
+    "ui/src/pages/audit/CompanyActivity.tsx",
+    "ui/src/pages/VerrailOperationsIndex.tsx",
+    "ui/src/i18n/locales/en.json",
+    "ui/src/i18n/locales/zh-CN.json"
+  ],
+  "commands": [
+    { "command": "pnpm --filter @paperclipai/ui typecheck", "status": "passed" },
+    { "command": "pnpm --filter @paperclipai/ui build", "status": "passed_with_existing_warnings" },
+    { "command": "pnpm check:token-gates", "status": "passed" },
+    { "command": "pnpm check:ui-bundle-budget", "status": "passed" },
+    { "command": "focused Vitest route, sidebar, locale, and Secrets tests", "status": "passed" },
+    { "command": "pnpm exec vitest run --project @paperclipai/ui", "status": "4410_passed_2_timed_out" },
+    { "command": "two timed-out UI tests rerun individually", "status": "passed" },
+    { "command": "selected in-app browser desktop and narrow-desktop journey", "status": "passed" },
+    { "command": "git diff --check", "status": "passed" }
+  ],
+  "logs": [
+    ".verrail/audits/g1-frontend-productization-closure-2026-08-28/report.md",
+    ".verrail/audits/g1-frontend-productization-closure-2026-08-28/screenshots/"
+  ],
+  "errors": [
+    "The full UI suite timed out in AgentToolsTab and WorkspaceFileMarkdownBody availability tests under parallel load; both passed on isolated rerun.",
+    "The dedicated Playwright acceptance suite was not executed in this run."
+  ],
+  "summary": "Replaced list-only Infrastructure and Governance landings with canonical, Paperclip-style contextual workspaces; preserved compatibility paths; closed representative interactions; and recorded browser, test, typecheck, build, token, bundle, and visual evidence."
+}

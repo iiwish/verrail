@@ -1,0 +1,11 @@
+ALTER TABLE "verrail_conversation_context_bindings" DROP CONSTRAINT IF EXISTS "verrail_conversation_context_bindings_conversation_id_verrail_conversations_id_fk";
+--> statement-breakpoint
+ALTER TABLE "verrail_conversation_messages" DROP CONSTRAINT IF EXISTS "verrail_conversation_messages_conversation_id_verrail_conversations_id_fk";
+--> statement-breakpoint
+ALTER TABLE "verrail_conversation_context_bindings" DROP CONSTRAINT IF EXISTS "verrail_conversation_context_bindings_conversation_workspace_fk";--> statement-breakpoint
+ALTER TABLE "verrail_conversation_messages" DROP CONSTRAINT IF EXISTS "verrail_conversation_messages_conversation_workspace_fk";--> statement-breakpoint
+ALTER TABLE "verrail_conversations" DROP CONSTRAINT IF EXISTS "verrail_conversations_id_workspace_uq";--> statement-breakpoint
+DROP INDEX IF EXISTS "verrail_conversations_id_workspace_uq";--> statement-breakpoint
+ALTER TABLE "verrail_conversations" ADD CONSTRAINT "verrail_conversations_id_workspace_uq" UNIQUE("id","workspace_id");--> statement-breakpoint
+ALTER TABLE "verrail_conversation_context_bindings" ADD CONSTRAINT "verrail_conversation_context_bindings_conversation_workspace_fk" FOREIGN KEY ("conversation_id","workspace_id") REFERENCES "public"."verrail_conversations"("id","workspace_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "verrail_conversation_messages" ADD CONSTRAINT "verrail_conversation_messages_conversation_workspace_fk" FOREIGN KEY ("conversation_id","workspace_id") REFERENCES "public"."verrail_conversations"("id","workspace_id") ON DELETE cascade ON UPDATE no action;

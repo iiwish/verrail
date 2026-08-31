@@ -1,0 +1,55 @@
+{
+  "target_id": "b2-6-merge-recovery-scope-split",
+  "spec_version": "1.0",
+  "repo_path": "/Users/iiwish/self/verrail",
+  "branch": "codex/verrail-brand-navigation-b1",
+  "base_commit": "6e523139fc901627e1825123f969315279a5a54c",
+  "agent": "codex",
+  "prompt": "Complete B2.6 Merge Recovery & Scope Split. Fix only the confirmed navigation, acceptance, Conversation terminal-response, and governance i18n blockers; add deterministic acceptance without real model credentials; create an exhaustive scope map; run merge gates; attach truthful evidence; do not commit or create a pull request.",
+  "allowed_actions": [
+    "Edit Verrail navigation and acceptance tests to match the accepted seven-destination and Project-Target object-list contracts",
+    "Edit Conversation runtime terminal handling and focused tests",
+    "Add a test-only executable fixture used exclusively by the Verrail acceptance web server",
+    "Edit governance date-range i18n labels and representative tests",
+    "Create B2.6 scope, receipt, evidence, timeline, and advisory review records",
+    "Run focused tests, complete UI tests, acceptance, typecheck, repository tests, builds, UI gates, and diff checks"
+  ],
+  "forbidden_actions": [
+    "Add product features or change the accepted information architecture",
+    "Use real model credentials or paid model execution in acceptance",
+    "Expose a production environment switch for arbitrary Conversation runtime commands",
+    "Disable tests, weaken workspace access, or suppress failures",
+    "Discard existing work or rewrite unrelated inherited behavior",
+    "Commit, push, create a pull request, merge, deploy, release, or create a ship record"
+  ],
+  "validation_commands": [
+    "pnpm exec vitest run --project @paperclipai/ui ui/src/components/Sidebar.test.tsx ui/src/components/DecisionDateChips.test.tsx",
+    "pnpm exec vitest run --project @paperclipai/server server/src/__tests__/conversation-routes.test.ts server/src/__tests__/conversation-service.test.ts",
+    "pnpm exec vitest run --project @paperclipai/ui --exclude '**/dist/**'",
+    "pnpm test:e2e:verrail-acceptance",
+    "pnpm -r typecheck",
+    "pnpm test:run",
+    "pnpm build",
+    "pnpm check:token-gates",
+    "pnpm check:ui-bundle-budget",
+    "pnpm check:brand-assets",
+    "git diff --check"
+  ],
+  "expected_evidence": [
+    "Seven-destination navigation unit result without unhandled errors",
+    "Conversation terminal-outcome focused test result",
+    "Deterministic Conversation browser acceptance result",
+    "Project-Target-Work browser acceptance result at both desktop widths",
+    "Governance date-range i18n test result",
+    "Exhaustive current-diff scope map",
+    "Repository typecheck, tests, builds, UI gates, and diff integrity results",
+    "Advisory commit and pull-request readiness decision"
+  ],
+  "stop_conditions": [
+    "A fix requires changing the accepted product or navigation contract",
+    "Acceptance would require real model credentials or external model spend",
+    "A test-only runtime hook could be enabled in production",
+    "A remaining failure cannot be attributed to the current delta or reproduced against the base",
+    "Closure requires discarding or overwriting unrelated existing work"
+  ]
+}

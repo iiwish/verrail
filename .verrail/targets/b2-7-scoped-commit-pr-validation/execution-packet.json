@@ -1,0 +1,50 @@
+{
+  "target_id": "b2-7-scoped-commit-pr-validation",
+  "spec_version": "1.0",
+  "repo_path": "/Users/iiwish/self/verrail",
+  "branch": "codex/verrail-brand-navigation-b1",
+  "base_commit": "6e523139fc901627e1825123f969315279a5a54c",
+  "agent": "codex",
+  "prompt": "Complete B2.7 Scoped Commit & PR Validation. Commit the B2.6 working tree by ownership, construct a clean under-100-file stacked PR series, remove the unpublished pnpm-lock delta, use the repository PR template, observe remote CI and review state, and do not merge or ship.",
+  "allowed_actions": [
+    "Create logical commits with the required co-author trailer",
+    "Create and rename descriptive codex/ branches",
+    "Replay unpublished commits without pnpm-lock.yaml while preserving all other work",
+    "Fetch, push, and create pull requests against iiwish/verrail",
+    "Fix in-scope CI or review failures and update the pull-request stack",
+    "Create B2.7 stack, receipt, evidence, timeline, and advisory review records"
+  ],
+  "forbidden_actions": [
+    "Add product functionality or broaden implementation scope",
+    "Commit pnpm-lock.yaml",
+    "Discard user or prior-stage work",
+    "Reference private task ids or localhost URLs in public pull requests",
+    "Merge, deploy, release, or create a ship record"
+  ],
+  "validation_commands": [
+    "git diff --check",
+    "pnpm -r typecheck",
+    "pnpm exec vitest run --project @paperclipai/ui --exclude '**/dist/**'",
+    "pnpm test:e2e:verrail-acceptance",
+    "pnpm build",
+    "pnpm check:token-gates",
+    "pnpm check:ui-bundle-budget",
+    "pnpm check:brand-assets",
+    "gh pr checks <number>",
+    "gh pr view <number> --json mergeable,mergeStateStatus,reviewDecision,statusCheckRollup"
+  ],
+  "expected_evidence": [
+    "Logical commit list and clean working tree",
+    "Stack manifest with pull-request bases, heads, file counts, and URLs",
+    "Proof that pnpm-lock.yaml is absent from every pull request",
+    "Template-complete pull-request bodies",
+    "Remote CI and automated review results",
+    "Advisory merge-readiness decision"
+  ],
+  "stop_conditions": [
+    "A pull request would exceed 99 changed files against its declared base",
+    "History replay would lose or silently change accepted implementation",
+    "A remote failure requires unrelated product work",
+    "A merge, deployment, release, or ship action would be required"
+  ]
+}

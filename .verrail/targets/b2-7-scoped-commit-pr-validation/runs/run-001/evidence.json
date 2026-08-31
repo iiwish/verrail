@@ -1,0 +1,143 @@
+{
+  "target_id": "b2-7-scoped-commit-pr-validation",
+  "run_id": "run-001",
+  "stack": {
+    "status": "passed",
+    "pull_request_count": 7,
+    "merge_order": [2, 3, 4, 5, 6, 7, 8],
+    "changed_file_counts": [78, 44, 84, 48, 77, 56, 68],
+    "all_under_100_files": true,
+    "pnpm_lock_present": false,
+    "template_complete": true,
+    "required_commit_trailer_present": true,
+    "manifest": ".verrail/targets/b2-7-scoped-commit-pr-validation/stack-manifest.json"
+  },
+  "remote_validation": {
+    "pr_2_full_ci": {
+      "status": "passed",
+      "run_id": 33363179644,
+      "url": "https://github.com/iiwish/verrail/actions/runs/33363179644"
+    },
+    "automated_review": {
+      "status": "passed",
+      "scores": {
+        "2": "5/5",
+        "3": "5/5",
+        "4": "5/5",
+        "5": "5/5",
+        "6": "5/5",
+        "7": "5/5",
+        "8": "5/5"
+      },
+      "unresolved_threads": 0
+    },
+    "mergeability": {
+      "status": "passed",
+      "mergeable_pull_requests": [2, 3, 4, 5, 6, 7, 8]
+    },
+    "downstream_full_ci": {
+      "status": "deferred_by_workflow_base_filter",
+      "affected_pull_requests": [3, 4, 5, 6, 7, 8],
+      "required_action": "After each parent PR merges, retarget the next PR to master and require its full workflow to pass before merging it."
+    }
+  },
+  "local_validation": [
+    {
+      "name": "workspace typecheck",
+      "status": "passed"
+    },
+    {
+      "name": "production build",
+      "status": "passed_with_existing_warnings"
+    },
+    {
+      "name": "Verrail browser acceptance",
+      "status": "passed",
+      "result": "4 projects passed"
+    },
+    {
+      "name": "final Conversation route and service regression",
+      "status": "passed",
+      "result": "Route suite: 8 passed. Service suite: 3 passed on isolated rerun after one transient embedded-database setup timeout."
+    },
+    {
+      "name": "complete UI project baseline",
+      "status": "passed",
+      "result": "B2.6 records 485 files and 4422 tests passed"
+    },
+    {
+      "name": "token, bundle, brand, and diff integrity",
+      "status": "passed"
+    }
+  ],
+  "review_feedback_closure": [
+    {
+      "area": "navigation route ownership and portability",
+      "status": "closed",
+      "result": "Import, creation, plugin readiness, and portable-manifest paths enforce reciprocal ownership and preserve backward compatibility."
+    },
+    {
+      "area": "Home stale summary behavior",
+      "status": "closed",
+      "result": "Unavailable and failed-refetch states no longer present stale operational totals as current truth."
+    },
+    {
+      "area": "Conversation lifecycle and runtime capacity",
+      "status": "closed",
+      "result": "Capacity is reserved before async setup, lifecycle mutation is row-locked, termination escalates across the runtime process group, the lease remains held until output streams close, and a post-install requestClosed check cancels disconnects during late runtime setup."
+    },
+    {
+      "area": "repository-native screenshot evidence",
+      "status": "closed",
+      "result": "Committed stable workspace artifacts remain directly inspectable in the PR and satisfy the documented artifact path."
+    }
+  ],
+  "acceptance_coverage": [
+    {
+      "criterion": 1,
+      "status": "covered",
+      "evidence": "Every B2.6 path was assigned and committed within the declared stack."
+    },
+    {
+      "criterion": 2,
+      "status": "covered",
+      "evidence": "No pull request changes pnpm-lock.yaml; workflow changes are confined to acceptance and release verification."
+    },
+    {
+      "criterion": 3,
+      "status": "covered",
+      "evidence": "All seven descriptive codex/ branches remain below the 100-file review limit."
+    },
+    {
+      "criterion": 4,
+      "status": "covered",
+      "evidence": "All pull-request bodies contain Thinking Path, What Changed, Verification, Risks, Model Used, and Checklist sections."
+    },
+    {
+      "criterion": 5,
+      "status": "covered",
+      "evidence": "The stack manifest records URL, base, head, verified commit, file count, and mergeability for each PR."
+    },
+    {
+      "criterion": 6,
+      "status": "covered_with_explicit_dependency",
+      "evidence": "PR 2 has a green full workflow; PRs 3-8 have 5/5 automated review and must receive full CI after sequential retargeting to master."
+    },
+    {
+      "criterion": 7,
+      "status": "covered",
+      "evidence": "Manifest, receipt, evidence, timeline, and advisory review are attached without any merge or ship action."
+    }
+  ],
+  "missing": [
+    "Human review and the merge decision for each pull request.",
+    "Full master-based CI for PRs 3 through 8 after their parent PRs merge and each PR is retargeted.",
+    "Merge, deployment, release, and ship records."
+  ],
+  "links": [
+    ".verrail/targets/b2-7-scoped-commit-pr-validation/stack-manifest.json",
+    ".verrail/targets/b2-6-merge-recovery-scope-split/runs/run-001/evidence.json",
+    "https://github.com/iiwish/verrail/pull/2",
+    "https://github.com/iiwish/verrail/pull/8"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "target_id": "b2-5-merge-gate-baseline-closure",
+  "run_id": "run-001",
+  "decision": "approve",
+  "readiness": "ready_for_commit_and_pr_preparation",
+  "authority": "advisory_non_final",
+  "reviewer": "Codex implementation self-review; independent human approval required",
+  "rationale": "B2.5 removes both deterministic merge-gate blockers without weakening runtime exposure or accepting unverified remote content. The final listener, exposure, and Skills Catalog suite passes 53/53; cumulative Verrail regression, typecheck, migration safety, builds, token gates, bundle budget, and diff integrity pass. The full server lane completes but remains non-green in inherited macOS path, workspace repair, seed, cleanup, and database-isolation classes. Exact-base and prior M0 comparisons reproduce those classes, while the transient heartbeat deadlock passes in isolation. The cumulative branch is therefore suitable for commit and pull-request preparation, but this self-review does not approve merge or shipping.",
+  "linked_evidence": [
+    ".verrail/targets/b2-5-merge-gate-baseline-closure/runs/run-001/receipt.json",
+    ".verrail/targets/b2-5-merge-gate-baseline-closure/runs/run-001/evidence.json",
+    ".verrail/targets/m0-integration-merge-closure/runs/run-001/evidence.json"
+  ],
+  "requested_changes": [],
+  "conditions": [
+    "A human reviewer confirms the cumulative diff and commit boundaries before any merge decision.",
+    "The pull request must disclose the inherited non-green macOS server baseline and require remote CI rather than presenting the local full suite as green.",
+    "Do not treat this advisory decision as permission to push, merge, deploy, release, or create a ship record.",
+    "Track inherited /tmp canonicalization, workspace repair, seed, cleanup, port allocation, and database teardown isolation as a separate baseline-hardening target."
+  ],
+  "created_at": "2026-08-28T06:52:56Z"
+}

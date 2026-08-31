@@ -33,6 +33,11 @@ export {
   verrailAuditEvents,
   verrailOutboxEvents,
 } from "./verrail_targets.js";
+export {
+  verrailConversations,
+  verrailConversationMessages,
+  verrailConversationContextBindings,
+} from "./verrail_conversations.js";
 export { projectMemberships } from "./project_memberships.js";
 export { documentMemberships } from "./document_memberships.js";
 export { projectWorkspaces } from "./project_workspaces.js";
