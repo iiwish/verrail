@@ -1,0 +1,27 @@
+{
+  "target_id": "m0-integration-merge-closure",
+  "run_id": "run-001",
+  "decision": "request_changes",
+  "readiness": "needs_human_decision",
+  "reviewer": "Codex implementation self-review; advisory only, independent approval required",
+  "rationale": "The two implementation commits satisfy the contracted Target, compatibility, migration, outbox, Temporal, restart, browser, typecheck, build, token, and Go quality gates. The repository-wide Vitest suite is not globally green, but every current failure class was reproduced against the unchanged base and no changed slice test failed. The candidate is technically merge-ready; this self-review deliberately withholds final approval and requests an independent human commit review before merge.",
+  "linked_evidence": [
+    ".verrail/targets/m0-integration-merge-closure/runs/run-001/evidence.json",
+    ".verrail/targets/m0-integration-merge-closure/runs/run-001/acceptance-mapping.md",
+    ".verrail/targets/m0-integration-merge-closure/runs/run-001/receipt.json",
+    ".verrail/targets/b2-1-target-projection-compatibility-merge-readiness/runs/run-001/evidence.json",
+    ".verrail/targets/b3-temporal-target-workflow/runs/run-001/evidence.json",
+    "b1447d90cfd48eb7609579e58e32e80a1c810e35",
+    "9023d786d36e9b09018c823cbd088727b5536def"
+  ],
+  "requested_changes": [
+    "An independent human reviewer confirms the commit boundaries, migration sequence, authority boundaries, and inherited-test baseline before merge."
+  ],
+  "conditions": [
+    "Do not treat this advisory record as permission to push, merge, deploy, release, or create a ship record.",
+    "Keep PostgreSQL and the Go Domain API authoritative; Temporal Workflow query state remains orchestration history, not product truth.",
+    "Keep Graph, Run, Execution Gateway, Submission, Evidence, Review, and Acceptance outside this merge candidate.",
+    "Track the inherited macOS path and port-sensitive test failures separately before claiming a release candidate."
+  ],
+  "created_at": "2026-08-27T04:55:17Z"
+}

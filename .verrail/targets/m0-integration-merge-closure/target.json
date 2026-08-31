@@ -1,0 +1,24 @@
+{
+  "id": "m0-integration-merge-closure",
+  "title": "M0 Integration & Merge Closure",
+  "intent": "Turn the cumulative Target read, native Go command, Temporal workflow, and projection compatibility work into an isolated, reproducible, reviewable merge candidate.",
+  "scope": "Establish a clean test baseline, verify fresh and upgraded databases, prove one-database TypeScript-to-Go-to-Temporal delivery and recovery, close integration defects, split the cumulative working tree into reviewable commits, and record a truthful merge decision.",
+  "non_goals": [
+    "Implement Graph Engine, RunWorkflow, Execution Gateway, Submission, Review, or Acceptance",
+    "Rewrite inherited TypeScript features that are unrelated to the Target vertical slice",
+    "Change Target authority or permit compatibility reads to mutate immutable snapshots",
+    "Push, merge, deploy, release, or create a ship record without separate explicit approval"
+  ],
+  "acceptance_criteria": [
+    "Target-focused TypeScript tests, Go tests, workspace typecheck, build, token gates, diff checks, and the repository-wide test suite pass in an isolated reproducible environment or every inherited failure is proven against the unchanged base commit and explicitly excluded from the merge delta.",
+    "A fresh PostgreSQL database and a representative pre-Target database both migrate through the current journal without schema or data loss errors.",
+    "One documented local entry point starts or connects the TypeScript compatibility edge, Go Domain API, PostgreSQL, Temporal service, and Go orchestration worker with explicit health signals and shared configuration.",
+    "On one PostgreSQL database, native Target creation commits TargetRevision, AuditEvent, and Outbox facts; the worker delivers the event to a stable TargetWorkflow; duplicate delivery is idempotent; and service or worker restart does not lose the workflow state.",
+    "Compatibility Target list, detail, immutable revision, corrupt projection isolation, bounded legacy upgrade, and operator reconciliation remain covered and usable after the unified-stack changes.",
+    "The cumulative work is organized into logical, reviewable commits with migration ordering preserved, no unrelated files included, and a clean working tree after evidence records are committed.",
+    "The final review record states ready, not ready, or needs human decision without self-approving merge or release."
+  ],
+  "status": "needs_review",
+  "created_at": "2026-08-27T03:29:07Z",
+  "updated_at": "2026-08-27T04:55:17Z"
+}

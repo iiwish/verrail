@@ -1,0 +1,47 @@
+{
+  "target_id": "m0-integration-merge-closure",
+  "spec_version": "1.0",
+  "repo_path": "/Users/iiwish/self/verrail",
+  "branch": "codex/verrail-brand-navigation-b1",
+  "base_commit": "3206490d5b7a1a0db7ff33c4a3b6e957973bafe9",
+  "agent": "codex",
+  "prompt": "Close the cumulative B2, B2.1, and B3 integration work into a reproducible merge candidate. Do not add Graph or Run capability. Establish an isolated test baseline, verify database migrations and one-database TypeScript-to-Go-to-Temporal behavior, fix only merge-delta defects, split logical commits, and attach truthful evidence.",
+  "allowed_actions": [
+    "Inspect and adjust files already belonging to the B2, B2.1, and B3 Target vertical slices",
+    "Add narrowly scoped integration scripts, tests, health checks, and development documentation required for a reproducible unified stack",
+    "Run isolated PostgreSQL, Temporal, TypeScript, Go, Vitest, build, typecheck, and browser checks",
+    "Create logical local Git commits for the accumulated approved work",
+    "Create M0 delivery receipts, evidence, timeline, and an advisory review decision"
+  ],
+  "forbidden_actions": [
+    "Implement Graph Engine, RunWorkflow, agent execution, Submission, Review, or Acceptance",
+    "Change unrelated inherited product behavior to make the suite green",
+    "Rewrite existing migration history or immutable Target revisions",
+    "Weaken Workspace authorization, outbox leases, idempotency, or workflow replay safety",
+    "Push, merge, deploy, release, or create a ship record without separate explicit approval"
+  ],
+  "validation_commands": [
+    "pnpm exec vitest run packages/shared/src/validators/target.test.ts server/src/__tests__/target-read-model.test.ts server/src/__tests__/target-routes.test.ts server/src/__tests__/verrail-domain-api.integration.test.ts ui/src/components/NewTargetDialog.test.tsx ui/src/components/TargetList.test.tsx ui/src/pages/TargetWorkbench.test.tsx ui/src/pages/VerrailHome.test.tsx ui/src/App.test.tsx",
+    "pnpm test:domain-api",
+    "pnpm -r typecheck",
+    "pnpm test:run",
+    "pnpm build",
+    "pnpm check:token-gates",
+    "git diff --check"
+  ],
+  "expected_evidence": [
+    "Isolated current-head and base-commit test comparison",
+    "Fresh and upgrade migration logs",
+    "Shared-database Target, outbox, Temporal workflow, duplicate-delivery, and restart-recovery proof",
+    "Compatibility projection regression results",
+    "Browser smoke for main navigation and all Target Workbench routes",
+    "Logical commit list and final clean-worktree status",
+    "Advisory merge-readiness decision"
+  ],
+  "stop_conditions": [
+    "A failing check cannot be isolated from unrelated local services or reproduced against the base commit",
+    "Closing the failure would require changing unrelated inherited behavior",
+    "Migration validation would require destructive access to the user's active database",
+    "The unified stack cannot prove that API, outbox, worker, and workflow use the same database and identity"
+  ]
+}

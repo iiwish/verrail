@@ -1,0 +1,7 @@
+{"type":"target.created","at":"2026-08-27T03:29:07Z","actor":"user","target_id":"m0-integration-merge-closure"}
+{"type":"execution.started","at":"2026-08-27T03:29:07Z","actor":"codex","target_id":"m0-integration-merge-closure","base_commit":"3206490d5b7a1a0db7ff33c4a3b6e957973bafe9"}
+{"type":"validation.completed","at":"2026-08-27T04:55:17Z","actor":"codex","target_id":"m0-integration-merge-closure","result":"focused checks passed; full-suite failures reproduced at base"}
+{"type":"commits.created","at":"2026-08-27T04:55:17Z","actor":"codex","target_id":"m0-integration-merge-closure","commits":["b1447d90cfd48eb7609579e58e32e80a1c810e35","9023d786d36e9b09018c823cbd088727b5536def"]}
+{"type":"run.attached","at":"2026-08-27T04:55:17Z","actor":"codex","target_id":"m0-integration-merge-closure","run_id":"run-001"}
+{"type":"evidence.scanned","at":"2026-08-27T04:55:17Z","actor":"codex","target_id":"m0-integration-merge-closure","run_id":"run-001","readiness":"needs_human_decision"}
+{"type":"review.drafted","at":"2026-08-27T04:55:17Z","actor":"codex","target_id":"m0-integration-merge-closure","review_id":"review-001","decision":"request_changes","readiness":"needs_human_decision"}

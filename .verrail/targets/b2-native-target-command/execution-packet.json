@@ -1,0 +1,49 @@
+{
+  "target_id": "b2-native-target-command",
+  "spec_version": "1.0",
+  "repo_path": "/Users/iiwish/self/verrail",
+  "branch": "codex/verrail-brand-navigation-b1",
+  "base_commit": "3206490d5b7a1a0db7ff33c4a3b6e957973bafe9",
+  "agent": "codex",
+  "prompt": "Implement the user-approved minimum Go slice for the governed native New Target command; keep Go as the sole native writer and preserve immutable revisions, idempotency, atomic audit/outbox facts, compatibility reads, and the confirmed UI command.",
+  "allowed_actions": [
+    "Implement Target and TargetRevision in the explicitly approved authoritative service",
+    "Add versioned command and read contracts",
+    "Add idempotency, authorization, audit, outbox, migration, and rollback tests",
+    "Add the flag-gated New Target form and create-to-Workbench flow",
+    "Integrate native and compatibility Target reads without dual write"
+  ],
+  "forbidden_actions": [
+    "Create a Case or Issue and label it a native Target",
+    "Use target_projection_sources or target_projection_revisions as native write tables",
+    "Introduce Temporal in this slice",
+    "Create long-term Go and TypeScript dual write",
+    "Commit, merge, deploy, or release without explicit approval"
+  ],
+  "validation_commands": [
+    "authoritative service unit and integration tests",
+    "cross-language or generated API contract tests",
+    "idempotency and transaction rollback tests",
+    "Workspace, Project, owner, and Principal authorization tests",
+    "pnpm -r typecheck",
+    "affected production builds",
+    "pnpm check:token-gates",
+    "browser create-to-Workbench verification",
+    "git diff --check"
+  ],
+  "expected_evidence": [
+    "Explicit write-owner decision",
+    "Schema and migration ownership proof",
+    "Idempotency replay and conflict results",
+    "Atomic Target, TargetRevision, AuditEvent, and outbox transaction tests",
+    "Authorization and enumeration-resistance tests",
+    "Desktop and mobile New Target screenshots",
+    "Successful create-to-Workbench browser receipt"
+  ],
+  "stop_conditions": [
+    "Go cannot remain the sole authoritative native Target writer",
+    "The implementation would make TypeScript a temporary native Target writer",
+    "The implementation would use Case, Issue, or projection rows as the native aggregate",
+    "Audit or outbox facts cannot commit atomically with TargetRevision"
+  ]
+}

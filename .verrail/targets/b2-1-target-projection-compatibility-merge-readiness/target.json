@@ -1,0 +1,28 @@
+{
+  "id": "b2-1-target-projection-compatibility-merge-readiness",
+  "title": "B2.1 Target Projection Compatibility & Merge Readiness",
+  "intent": "Make persisted compatibility Target projections safe across schema evolution and prove the combined B2/B3 working tree is ready for independent review without weakening Target authority or immutable revision semantics.",
+  "scope": "Add structured runtime validation and a bounded legacy projection upgrader, isolate corrupt list entries, preserve explicit 503 detail errors, prove operator reconciliation replaces legacy active snapshots with current projections, rerun the critical browser and service matrix, and record the remaining merge gates.",
+  "non_goals": [
+    "Change native Target or TargetRevision write authority",
+    "Mutate compatibility sources or rebuild projections during ordinary reads",
+    "Introduce an unversioned generic JSON repair mechanism",
+    "Implement Graph Engine, RunWorkflow, Submission, Review, or Acceptance",
+    "Resolve unrelated inherited test failures by changing their behavior",
+    "Commit, merge, deploy, release, or create a ship record without explicit approval"
+  ],
+  "acceptance_criteria": [
+    "Every stored Target projection is parsed through a strict shared runtime schema before route authorization or UI serialization.",
+    "The known pre-contract compatibility snapshot shape without authority and definition is upgraded in memory to the canonical schema with an inspectable warning and without mutating an immutable revision during reads.",
+    "Projection identity, Workspace, source, revision, schema, and policy metadata are checked against relational columns; unknown or corrupt detail snapshots return stable retryable TARGET_PROJECTION_UNAVAILABLE errors rather than TypeError failures.",
+    "A corrupt compatibility snapshot cannot make the Workspace or Project Target list return 500; it is isolated and logged while valid native and compatibility Targets remain discoverable.",
+    "Operator reconciliation of a legacy active projection creates or selects a canonical current snapshot and advances the active projection source without changing the stable Target identity.",
+    "Regression tests cover legacy upgrade, corrupt isolation, stable detail errors, and reconciliation to the current shape.",
+    "Home, Project Targets, native and compatibility Workbench deep links, New Target creation, and all eight Workbench tabs pass browser verification on one migrated local dataset.",
+    "The UI to Go command path and the Go outbox to Temporal handoff are either proven on one database or any remaining integration boundary is named as a merge or release gate.",
+    "Target-focused tests, Go tests, typecheck, build, token gates, diff checks, and the repository-wide test baseline are rerun and recorded truthfully."
+  ],
+  "status": "needs_review",
+  "created_at": "2026-08-27T02:07:33Z",
+  "updated_at": "2026-08-27T03:04:34Z"
+}

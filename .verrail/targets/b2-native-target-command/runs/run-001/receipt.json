@@ -1,0 +1,128 @@
+{
+  "id": "run-001",
+  "target_id": "b2-native-target-command",
+  "agent": "codex",
+  "runner": "Codex desktop local worktree",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "3206490d5b7a1a0db7ff33c4a3b6e957973bafe9",
+  "output_commit": "",
+  "branch": "codex/verrail-brand-navigation-b1",
+  "working_tree": "uncommitted",
+  "dependency": ".verrail/targets/b2-target-read-model-workbench",
+  "changed_files": [
+    "docs/architecture.md",
+    "docs/target-read-model.md",
+    "package.json",
+    "packages/db/src/schema/verrail_targets.ts",
+    "packages/db/src/schema/index.ts",
+    "packages/db/src/migrations/0229_deep_wither.sql",
+    "packages/db/src/migrations/meta/0229_snapshot.json",
+    "packages/db/src/migrations/meta/_journal.json",
+    "packages/shared/src/types/target.ts",
+    "packages/shared/src/validators/target.ts",
+    "packages/shared/src/validators/target.test.ts",
+    "packages/shared/src/index.ts",
+    "services/domain-api/**",
+    "scripts/dev-runner.ts",
+    "server/src/services/verrail-domain-api-runtime.ts",
+    "server/src/services/verrail-domain-api-client.ts",
+    "server/src/services/verrail-domain-api-client.test.ts",
+    "server/src/services/target-read-model.ts",
+    "server/src/services/index.ts",
+    "server/src/routes/targets.ts",
+    "server/src/routes/openapi.ts",
+    "server/src/app.ts",
+    "server/src/index.ts",
+    "server/src/middleware/private-json-etag.ts",
+    "server/src/__tests__/verrail-domain-api.integration.test.ts",
+    "server/src/__tests__/target-read-model.test.ts",
+    "server/src/__tests__/target-routes.test.ts",
+    "server/src/__tests__/openapi-routes.test.ts",
+    "ui/src/api/client.ts",
+    "ui/src/api/client.test.ts",
+    "ui/src/api/targets.ts",
+    "ui/src/context/DialogContext.tsx",
+    "ui/src/components/NewTargetDialog.tsx",
+    "ui/src/components/NewTargetDialog.test.tsx",
+    "ui/src/components/CommandPalette.tsx",
+    "ui/src/components/CommandPalette.test.tsx",
+    "ui/src/components/Layout.tsx",
+    "ui/src/components/Layout.test.tsx",
+    "ui/src/pages/ProjectDetail.tsx",
+    "ui/src/pages/TargetWorkbench.tsx",
+    "ui/src/pages/TargetWorkbench.test.tsx",
+    "ui/src/pages/VerrailHome.tsx",
+    "ui/src/pages/VerrailHome.test.tsx",
+    "ui/src/App.tsx",
+    "ui/src/App.test.tsx",
+    "ui/src/i18n/locales/en.json",
+    "ui/src/i18n/locales/zh-CN.json",
+    ".verrail/targets/b2-native-target-command/**"
+  ],
+  "commands": [
+    {
+      "command": "pnpm test:domain-api && pnpm build:domain-api",
+      "status": "passed",
+      "summary": "The Go Domain API unit suite and production compilation passed."
+    },
+    {
+      "command": "pnpm exec vitest run <14 Target slice files>",
+      "status": "passed",
+      "summary": "14 files and 92 shared-contract, real-Go integration, API, read-model, UI, and navigation tests passed."
+    },
+    {
+      "command": "pnpm --filter @paperclipai/server exec vitest run src/__tests__/server-startup-feedback-export.test.ts",
+      "status": "passed",
+      "summary": "All 16 server-startup tests passed after the sidecar shutdown wrapper was made compatible with the existing startup harness."
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "All 34 selected workspace projects passed, including migration safety."
+    },
+    {
+      "command": "pnpm test:run",
+      "status": "failed_then_remediated",
+      "summary": "The run reported 400 files passed, 1 skipped, 9 failed; 4697 tests passed, 19 skipped, 36 failed. Twelve failures in one startup file exposed a slice regression and were fixed, then that file passed 16/16. The remaining 24 observed failures are inherited runtime, skill-discovery, macOS path, seed, cleanup, port, and listener baseline gaps outside this slice; the full suite was not repeated after the focused remediation."
+    },
+    {
+      "command": "pnpm build",
+      "status": "passed",
+      "summary": "All 34 selected workspace projects built. Existing Vite CSS highlight and chunk-size warnings remain non-fatal."
+    },
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "summary": "All four UI token gates were clean across 802 scanned files."
+    },
+    {
+      "command": "English and Chinese locale parity check",
+      "status": "passed",
+      "summary": "Both locales contain 3097 leaf keys with no missing keys."
+    },
+    {
+      "command": "isolated API and in-app browser verification",
+      "status": "passed",
+      "summary": "Created a native Target through the product dialog and TypeScript edge into the real Go writer, then verified the native Workbench on desktop and mobile against an isolated data home."
+    }
+  ],
+  "artifacts": [
+    ".verrail/targets/b2-native-target-command/runs/run-001/screenshots/new-target-dialog-desktop.png",
+    ".verrail/targets/b2-native-target-command/runs/run-001/screenshots/native-target-workbench-desktop.png",
+    ".verrail/targets/b2-native-target-command/runs/run-001/screenshots/native-target-workbench-mobile.png",
+    ".verrail/targets/b2-native-target-command/runs/run-001/evidence.json"
+  ],
+  "logs": [
+    "Screenshots were captured at http://127.0.0.1:3230; the final working tree was revalidated at http://127.0.0.1:3260 against PAPERCLIP_HOME=/tmp/verrail-go-preview-20260826. Production data was not mutated.",
+    "Review found and fixed custom-header JSON requests losing Content-Type, detached go run child processes surviving restarts, Unicode limits counting bytes, and startup-test compatibility for the sidecar shutdown wrapper."
+  ],
+  "errors": [
+    {
+      "command": "pnpm test:run",
+      "status": "unresolved_baseline_gap",
+      "summary": "Twenty-four non-slice failures remained in the completed full-suite observation after excluding the startup regression that was fixed and retested."
+    }
+  ],
+  "summary": "Delivered the approved minimum Go vertical slice: Go is the sole native Target writer; one serializable idempotent transaction persists Target, immutable first TargetRevision, command receipt, AuditEvent, and outbox fact; TypeScript remains the authenticated edge and unified read layer; the enabled UI creates a native Target and opens its Workbench. Temporal remains deliberately outside this slice."
+}

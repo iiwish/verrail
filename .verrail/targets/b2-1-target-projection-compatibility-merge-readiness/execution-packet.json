@@ -1,0 +1,48 @@
+{
+  "target_id": "b2-1-target-projection-compatibility-merge-readiness",
+  "spec_version": "1.0",
+  "repo_path": "/Users/iiwish/self/verrail",
+  "branch": "codex/verrail-brand-navigation-b1",
+  "base_commit": "3206490d5b7a1a0db7ff33c4a3b6e957973bafe9",
+  "agent": "codex",
+  "prompt": "Repair persisted Target projection compatibility, prove list and Workbench availability across legacy and corrupt snapshots, verify the combined B2/B3 stack, and prepare an inspectable merge-readiness decision without committing or merging.",
+  "allowed_actions": [
+    "Add strict shared Target read-model schemas and a bounded legacy compatibility upgrader",
+    "Add projection integrity checks, corrupt-list isolation, stable detail errors, and operational logging",
+    "Extend service, route, UI, Go, and integration tests",
+    "Update canonical projection-evolution and development documentation",
+    "Run local services, Temporal, browser verification, and repository checks",
+    "Create B2.1 run receipts, evidence, timeline, and an advisory review decision"
+  ],
+  "forbidden_actions": [
+    "Mutate compatibility facts during reads",
+    "Treat malformed JSON as a native Target",
+    "Change Target authority, Acceptance, or Graph semantics",
+    "Hide missing evidence or inherited failures",
+    "Commit, merge, push, deploy, release, or create a ship record without explicit user approval"
+  ],
+  "validation_commands": [
+    "pnpm exec vitest run packages/shared/src/validators/target.test.ts server/src/__tests__/target-read-model.test.ts server/src/__tests__/target-routes.test.ts server/src/__tests__/verrail-domain-api.integration.test.ts ui/src/components/NewTargetDialog.test.tsx ui/src/components/TargetList.test.tsx ui/src/pages/TargetWorkbench.test.tsx ui/src/pages/VerrailHome.test.tsx ui/src/App.test.tsx",
+    "pnpm test:domain-api",
+    "pnpm -r typecheck",
+    "pnpm test:run",
+    "pnpm build",
+    "pnpm check:token-gates",
+    "git diff --check"
+  ],
+  "expected_evidence": [
+    "Legacy and corrupt projection database tests",
+    "Stable API error and list isolation tests",
+    "Operator reconciliation proof",
+    "Desktop and narrow browser interaction evidence",
+    "Same-database Target outbox and Temporal delivery evidence or an explicit remaining gate",
+    "Focused and repository-wide verification results",
+    "Advisory merge-readiness review with no self-approval"
+  ],
+  "stop_conditions": [
+    "Compatibility requires inventing business facts or weakening authorization",
+    "A read path would need to mutate an immutable snapshot",
+    "Native Target write authority would move outside Go",
+    "The observed failure is not bounded to a known legacy shape and cannot fail closed"
+  ]
+}

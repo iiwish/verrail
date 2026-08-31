@@ -1,0 +1,146 @@
+{
+  "target_id": "b2-1-target-projection-compatibility-merge-readiness",
+  "run_id": "run-001",
+  "projection_contract": {
+    "canonical_schema": "TargetReadModelV1 strict shared Zod schema",
+    "storage_input_type": "unknown",
+    "legacy_upgrade": "compatibility V1 missing only authority and definition",
+    "legacy_upgrade_behavior": "normalize in memory, append projection_schema_upgraded, do not mutate the stored immutable revision",
+    "invalid_detail_behavior": "503 TARGET_PROJECTION_UNAVAILABLE with retryable=true and a stable reason",
+    "invalid_list_behavior": "omit the invalid entry, log once per revision, continue returning valid native and compatibility Targets",
+    "durable_upgrade": "instance administrator reconcile selects or creates the canonical current snapshot and advances the active source row"
+  },
+  "integrity_checks": [
+    "Workspace ID",
+    "Target ID",
+    "active TargetRevision ID",
+    "stored revision row identity",
+    "schema version",
+    "projection policy version",
+    "source type and source ID",
+    "source revision key",
+    "native versus compatibility authority consistency"
+  ],
+  "database_proof": {
+    "legacy_target_id": "a6343de5-56a2-5c95-b92f-a0dddcf95a11",
+    "legacy_revision_id": "42faea57-ae29-5c36-bbb8-9d5558f040e7",
+    "canonical_revision_id": "06476226-e03a-590d-967e-c3bca06f5e18",
+    "legacy_read": "Workspace list and detail returned 200 with projection_schema_upgraded while the stored legacy JSON remained unchanged.",
+    "reconciliation": "The administrator reconcile command preserved the stable Target ID and advanced the active revision to 06476226-e03a-590d-967e-c3bca06f5e18; the warning disappeared after reload.",
+    "corrupt_isolation": "A deliberately malformed snapshot was omitted from a 200 Workspace and Project list while five valid Targets remained visible; its direct detail returned stable retryable 503.",
+    "fixture_cleanup": "The corrupt projection, revision, and source Issue fixture were deleted after proof."
+  },
+  "same_database_stack": {
+    "workspace_id": "1081b57b-22a5-4508-b12e-24f6ca1c0d6c",
+    "target_id": "96835862-ddd4-4adf-9847-a8e967e6af96",
+    "target_revision_id": "054885a3-9cf0-439d-b767-0a18504be270",
+    "outbox_event_id": "550885ae-60a5-4054-adbe-a0b941d8ba8a",
+    "outbox_event_type": "verrail.target.created.v1",
+    "outbox_status": "delivered",
+    "outbox_attempt_count": 1,
+    "workflow_id": "verrail-target-v1:1081b57b-22a5-4508-b12e-24f6ca1c0d6c:96835862-ddd4-4adf-9847-a8e967e6af96",
+    "workflow_run_id": "f57d8d1d-2530-42cd-9b26-e942f6c2443e",
+    "temporal_query": {
+      "accepted_event_count": 1,
+      "active_target_revision_id": "054885a3-9cf0-439d-b767-0a18504be270",
+      "phase": "awaiting_graph",
+      "last_event_id": "550885ae-60a5-4054-adbe-a0b941d8ba8a"
+    },
+    "assessment": "The Browser, TypeScript server, Go Domain API, Go dispatcher, PostgreSQL outbox, and Temporal worker used one database and preserved the same Target identity end to end."
+  },
+  "browser_matrix": [
+    {
+      "surface": "Home",
+      "status": "passed",
+      "result": "Target counts and valid legacy/native Targets rendered without list failure."
+    },
+    {
+      "surface": "Project Targets",
+      "status": "passed",
+      "result": "Valid Targets rendered and the corrupt projection was isolated without a 500."
+    },
+    {
+      "surface": "New Target",
+      "status": "passed",
+      "result": "The dialog submitted a native Target through the TypeScript edge and Go Domain API."
+    },
+    {
+      "surface": "Compatibility Workbench",
+      "status": "passed",
+      "result": "The bounded legacy warning and source link rendered; reconciliation removed the warning."
+    },
+    {
+      "surface": "Native Workbench",
+      "status": "passed",
+      "result": "Definition, constraints, acceptance criterion, policy, and all eight tabs rendered with correct deep-link URLs."
+    },
+    {
+      "surface": "Corrupt Target detail",
+      "status": "passed",
+      "result": "The UI displayed the localized stable projection-unavailable error after the API returned retryable 503."
+    },
+    {
+      "surface": "Fresh narrow viewport",
+      "status": "not_captured",
+      "result": "The selected browser did not expose viewport resizing; responsive component tests passed, but a fresh B2.1 narrow screenshot is missing."
+    }
+  ],
+  "tests": [
+    {
+      "scope": "Target-focused shared, server, integration, and UI suite",
+      "status": "passed",
+      "result": "9 files passed; 47 tests passed."
+    },
+    {
+      "scope": "Go Domain API and orchestration suite",
+      "status": "passed",
+      "result": "All Go packages passed."
+    },
+    {
+      "scope": "workspace typecheck",
+      "status": "passed",
+      "result": "34 selected projects passed."
+    },
+    {
+      "scope": "repository-wide Vitest suite",
+      "status": "failed_environment_baseline",
+      "result": "401 files passed, 1 skipped, 8 failed; 4705 tests passed, 19 skipped, 30 failed in 1222.25 seconds.",
+      "assessment": "No B2.1-focused file failed. The failed groups are the same inherited runtime, skill-discovery, macOS /tmp alias, seed, cleanup, conflict, and loopback groups. Six extra failures versus the recorded 24-failure baseline were port reservation or invalid high-port failures while many local services were active, so a clean-host rerun is required rather than treating this run as merge approval."
+    }
+  ],
+  "build": {
+    "status": "passed",
+    "result": "Workspace typecheck, Go tests, token gates, final root build, and git diff checks passed.",
+    "notes": "The first build observation was interrupted while a pinned catalog dependency was slow; the final complete build passed. Existing Vite warnings are non-fatal."
+  },
+  "artifacts": [
+    {
+      "path": ".verrail/targets/b2-1-target-projection-compatibility-merge-readiness/runs/run-001/evidence/native-target-workbench.png",
+      "sha256": "e65a2cdb2985226f85a492fac9f0f2f4dba372ce1f40eddca5d74548cd647b33",
+      "bytes": 28798,
+      "description": "Desktop full-page evidence of the native same-stack Target Workbench."
+    },
+    {
+      "path": "packages/shared/src/validators/target.ts",
+      "sha256": "92c4d3a05e3e82cb486178fc993c9dae2e68575affee2e0d2b4658be01015c83",
+      "description": "Strict canonical schema and bounded legacy parser."
+    },
+    {
+      "path": "server/src/services/target-read-model.ts",
+      "sha256": "14a764da3132f6cab434577a81b4088012645f3664fc2005f314570ea352f035",
+      "description": "Read-boundary parsing, relational integrity checks, list isolation, stable errors, and bounded operational logging."
+    },
+    {
+      "path": "docs/target-read-model.md",
+      "sha256": "b268a0e3da5361f88c6df35a570777a648a3c246d0e8b2d6036cc4d23f35796f",
+      "description": "Canonical projection schema-evolution and degradation contract."
+    }
+  ],
+  "missing": [
+    "Independent product and engineering review.",
+    "A clean-host repository-wide Vitest run that is green or returns to a formally accepted baseline.",
+    "A fresh B2.1 narrow-viewport browser screenshot.",
+    "A commit split that keeps B2, B2.1, and B3 independently reviewable.",
+    "Commit, pull request, final approval, merge, deployment, release, and ship record."
+  ]
+}

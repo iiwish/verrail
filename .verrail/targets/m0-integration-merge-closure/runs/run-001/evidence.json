@@ -1,0 +1,109 @@
+{
+  "target_id": "m0-integration-merge-closure",
+  "run_id": "run-001",
+  "implementation_commits": [
+    "b1447d90cfd48eb7609579e58e32e80a1c810e35",
+    "9023d786d36e9b09018c823cbd088727b5536def"
+  ],
+  "focused_validation": {
+    "target_tests": "passed: 9 files, 47 tests",
+    "go_tests": "passed",
+    "go_race": "passed",
+    "go_vet": "passed",
+    "go_build": "passed",
+    "workspace_typecheck": "passed",
+    "workspace_build": "passed",
+    "token_gates": "passed: 802 files",
+    "launcher_tests": "passed: 3 tests",
+    "compose_config": "passed"
+  },
+  "database_migrations": {
+    "fresh": {
+      "status": "passed",
+      "result": "229 migrations applied to an empty PostgreSQL database; projection, source, native Target, native revision, and outbox tables were present."
+    },
+    "upgrade": {
+      "status": "passed",
+      "result": "Base commit 3206490d applied 226 migrations, seeded company and project rows, then the current journal applied migrations 0228-0230. Both seeded rows and all Target tables remained present."
+    }
+  },
+  "unified_stack": {
+    "status": "passed",
+    "entry_point": "pnpm dev:verrail",
+    "components": [
+      "PostgreSQL 17",
+      "Temporal 1.8.2 development server",
+      "TypeScript compatibility edge and UI",
+      "managed Go Domain API",
+      "Go orchestration worker"
+    ],
+    "health": "PostgreSQL and Temporal Compose health checks passed; Domain API and TypeScript /api/health passed; the worker connected to namespace default and task queue verrail-target-v1.",
+    "shared_database": "postgres://verrail@127.0.0.1:55438/verrail",
+    "identities": {
+      "workspace_id": "dba03f6a-f31f-4e29-974d-a017d02e4647",
+      "project_id": "596ca3e4-0731-462d-a39c-5c0ad48cfbdc",
+      "target_id": "38a8ab62-b72d-4b6c-b7e4-c435c7c1f896",
+      "target_revision_id": "80bd6cba-98fb-4e11-a765-8a4d6d32a780",
+      "outbox_event_id": "d0d56d5f-04c4-49c6-b6d9-1a054cfaf195",
+      "workflow_id": "verrail-target-v1:dba03f6a-f31f-4e29-974d-a017d02e4647:38a8ab62-b72d-4b6c-b7e4-c435c7c1f896"
+    },
+    "delivery": "The initial outbox attempt delivered. Replaying the HTTP idempotency key returned replayed=true without another Target. Requeueing the same outbox event caused a second delivery attempt while the Workflow retained acceptedEventCount 1 and recorded ignoredEventCount 1.",
+    "restart": "After stopping and restarting the complete launcher against preserved volumes, the native Target detail, delivered outbox fact, Workflow ID, accepted count, ignored count, active revision, and awaiting_graph phase remained unchanged."
+  },
+  "browser": {
+    "status": "passed",
+    "base_url": "http://127.0.0.1:3220",
+    "routes": [
+      "overview",
+      "stages",
+      "work",
+      "submission",
+      "artifacts",
+      "evidence",
+      "runs",
+      "timeline"
+    ],
+    "result": "The native Target title, goal, constraints, tabs, and empty states rendered on every route without an application error."
+  },
+  "repository_suite": {
+    "status": "failed_baseline_only",
+    "current_result": "8 failed, 401 passed, 1 skipped test files; 29 failed, 4707 passed, 19 skipped tests; duration 2304.47 seconds.",
+    "failing_files": [
+      "server/src/__tests__/company-skills-service.test.ts: 9",
+      "server/src/__tests__/company-skills.test.ts: 2",
+      "server/src/__tests__/execution-workspace-runtime-control-conflict.test.ts: 4",
+      "server/src/__tests__/worktree-seed-server-spawn.test.ts: 1",
+      "server/src/__tests__/workspace-instance-cleanup.test.ts: 1",
+      "server/src/__tests__/workspace-runtime.test.ts: 3 in the full run",
+      "server/src/services/workspace-runtime-exposure.test.ts: 7",
+      "server/src/services/runtime-exposure/loopback-listener.test.ts: 2"
+    ],
+    "base_comparison": [
+      "The unchanged base commit reproduced the same skill-discovery, workspace seed, cleanup, execution conflict, and loopback-listener failures.",
+      "workspace-runtime-exposure reproduced exactly 7 failures and 21 passes on both current and base.",
+      "workspace-runtime isolated runs reproduced the same macOS /tmp-to-/private/tmp alias and bounded-port failures on both current and base; base had one additional bind-race failure, demonstrating environmental variance rather than a current-only regression.",
+      "No changed Target, Domain API, orchestration, launcher, migration, or UI test failed."
+    ],
+    "assessment": "No repository-suite failure is attributable to the M0 merge delta. The inherited suite is not globally green and remains a separate release-readiness gap."
+  },
+  "compatibility": {
+    "status": "passed",
+    "coverage": [
+      "workspace-scoped Target list and detail",
+      "immutable TargetRevision reads",
+      "native-over-projection precedence",
+      "invalid projection isolation",
+      "bounded legacy projection normalization",
+      "operator reconciliation",
+      "board and agent authorization",
+      "conditional ETag reads"
+    ]
+  },
+  "missing": [
+    "Independent human product and engineering review of the two implementation commits.",
+    "A globally green inherited Paperclip Vitest baseline on this macOS host.",
+    "Pull request, remote CI, push, merge, ship record, deployment, and release approval.",
+    "Production Temporal topology, worker packaging, SLOs, backup, recovery, and failed-event repair operations.",
+    "Graph Engine, RunWorkflow, Execution Gateway, Submission, Evidence, Review, and Acceptance capability."
+  ]
+}

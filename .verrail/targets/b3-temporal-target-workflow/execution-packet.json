@@ -1,0 +1,54 @@
+{
+  "target_id": "b3-temporal-target-workflow",
+  "spec_version": "1.0",
+  "repo_path": "/Users/iiwish/self/verrail",
+  "branch": "codex/verrail-brand-navigation-b1",
+  "base_commit": "3206490d5b7a1a0db7ff33c4a3b6e957973bafe9",
+  "agent": "codex",
+  "prompt": "Implement the user-approved next stage as a bounded Go Temporal slice: consume native Target outbox events with a reliable dispatcher and start or signal a minimal TargetWorkflow while preserving Postgres business authority.",
+  "allowed_actions": [
+    "Extend the native outbox schema with lease, fencing, delivery, and error metadata",
+    "Add a Go dispatcher, Temporal client adapter, and separate orchestration-worker command",
+    "Add versioned TargetWorkflow, signal, query, task-queue, and Workflow-ID contracts",
+    "Add pinned local Temporal development commands and runtime configuration",
+    "Add focused unit, replay, database, and real Temporal integration verification",
+    "Update canonical architecture and development documentation for this boundary"
+  ],
+  "forbidden_actions": [
+    "Make Temporal authoritative for Target or acceptance facts",
+    "Implement Graph Engine, RunWorkflow, execution, review, or acceptance logic",
+    "Add a TypeScript Temporal Workflow or another authoritative outbox consumer",
+    "Hold a database transaction open during a Temporal RPC",
+    "Claim exactly-once delivery",
+    "Enable automatic production deployment or broaden the Go replatform",
+    "Commit, merge, deploy, or release without explicit approval"
+  ],
+  "validation_commands": [
+    "Go workflow tests with Temporal test environment and replay coverage",
+    "Go dispatcher tests for claim fencing, ordering, retry, recovery, and failed delivery",
+    "Go package tests and builds",
+    "database migration and schema verification",
+    "real pinned Temporal SignalWithStart and query verification",
+    "pnpm -r typecheck",
+    "pnpm test:run",
+    "pnpm build",
+    "git diff --check"
+  ],
+  "expected_evidence": [
+    "Versioned orchestration contract inventory",
+    "Outbox claim and acknowledgement SQL proof",
+    "Duplicate delivery and Continue-As-New test results",
+    "Temporal outage and lease recovery result",
+    "Successful real Workflow start, signal, and query receipt",
+    "Outbox row transition from pending to delivered",
+    "Temporal UI or CLI inspection evidence",
+    "Acceptance-criteria mapping and advisory review"
+  ],
+  "stop_conditions": [
+    "The implementation requires a Workflow to become business truth",
+    "The dispatcher cannot fence stale claims or recover an expired lease",
+    "The Temporal call must occur inside the database claim transaction",
+    "The slice requires Graph Engine or execution semantics not yet contracted",
+    "A second native Target writer or outbox consumer becomes necessary"
+  ]
+}

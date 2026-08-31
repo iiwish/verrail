@@ -1,0 +1,48 @@
+{
+  "target_id": "b2-target-read-model-workbench",
+  "spec_version": "1.0",
+  "repo_path": "/Users/iiwish/self/verrail",
+  "branch": "codex/verrail-brand-navigation-b1",
+  "base_commit": "3206490d",
+  "agent": "codex",
+  "prompt": "Implement the first confirmed TargetReadModel and read-only Target Workbench over explicit Case and Issue mappings, preserve all existing write authority, prove authorization and replay behavior, and attach inspectable delivery evidence.",
+  "allowed_actions": [
+    "Add compatibility projection tables and migrations",
+    "Add shared Target read types and validators",
+    "Add TypeScript projection, mapping, reconciliation, authorization, pagination, and read API code",
+    "Add enabled-shell Target lists, Workbench routes, immutable revision views, and bilingual states",
+    "Add focused database, service, route, UI, and contract tests",
+    "Run local browser verification and record evidence"
+  ],
+  "forbidden_actions": [
+    "Create authoritative Target or TargetRevision write APIs in TypeScript",
+    "Automatically promote all inherited objects to Targets",
+    "Infer Acceptance from source completion or approval",
+    "Expose operator mapping controls in ordinary product UI",
+    "Introduce Temporal or Go runtime code in this slice",
+    "Enable the navigation flag globally",
+    "Commit, merge, deploy, or announce B2 without explicit approval"
+  ],
+  "validation_commands": [
+    "pnpm exec vitest run packages/shared/src/validators/target.test.ts server/src/__tests__/target-read-model.test.ts server/src/__tests__/target-routes.test.ts ui/src/components/TargetList.test.tsx ui/src/pages/TargetWorkbench.test.tsx ui/src/pages/VerrailHome.test.tsx ui/src/App.test.tsx",
+    "pnpm -r typecheck",
+    "pnpm test:run",
+    "pnpm build",
+    "pnpm check:token-gates",
+    "git diff --check"
+  ],
+  "expected_evidence": [
+    "Migration and projection persistence evidence",
+    "Stable UUID and immutable revision replay tests",
+    "Eligibility, status, permission, cursor, ETag, audit, stale, and historical read tests",
+    "Desktop and narrow-viewport Target list and Workbench screenshots",
+    "Typecheck, build, token, locale, and diff results",
+    "Acceptance-criterion mapping and advisory self-review"
+  ],
+  "stop_conditions": [
+    "The slice would require TypeScript to own the future native Target aggregate",
+    "Projection reads would mutate compatibility sources or create implicit mappings",
+    "Permission filtering cannot occur before counts and cursor pagination",
+    "Validation requires weakening confirmed domain or compatibility contracts"
+  ]
+}

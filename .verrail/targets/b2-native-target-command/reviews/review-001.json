@@ -1,0 +1,24 @@
+{
+  "target_id": "b2-native-target-command",
+  "run_id": "run-001",
+  "decision": "approve",
+  "reviewer": "Codex implementation self-review; advisory only, product-owner acceptance required",
+  "rationale": "The approved minimum Go slice establishes the intended authority boundary rather than a temporary TypeScript aggregate: Go alone writes native Target facts, TypeScript remains the authenticated edge and unified read layer, and no Case, Issue, or projection row impersonates the native object. The command is strict, Principal-bound, restart-idempotent, serializable, atomic across the aggregate, immutable revision, receipt, audit, and outbox, and fail-closed across transport, human membership, Viewer, Workspace, Project, and owner boundaries. The product dialog reaches the real Go writer and opens a useful native Workbench on desktop and mobile. Review remediation closed Unicode limit, JSON Content-Type, detached child-process, and server-startup harness defects. Focused tests, typecheck, root build, token gates, locale parity, and browser evidence pass. The inherited repository test baseline, independent review, production service packaging, Temporal handoff, and all ship actions remain explicit gates.",
+  "linked_evidence": [
+    ".verrail/targets/b2-native-target-command/runs/run-001/evidence.json",
+    ".verrail/targets/b2-native-target-command/runs/run-001/screenshots/new-target-dialog-desktop.png",
+    ".verrail/targets/b2-native-target-command/runs/run-001/screenshots/native-target-workbench-desktop.png",
+    ".verrail/targets/b2-native-target-command/runs/run-001/screenshots/native-target-workbench-mobile.png",
+    "docs/target-read-model.md",
+    "docs/architecture.md"
+  ],
+  "requested_changes": [],
+  "conditions": [
+    "Treat this as advisory approval for product-owner review, not permission to commit, merge, enable globally, ship, deploy, or announce.",
+    "Keep Go as the only native Target writer and keep TypeScript native writes absent.",
+    "Use verrail_outbox_events as the next boundary: add a durable dispatcher and minimal Temporal TargetWorkflow without moving domain truth into Workflow state.",
+    "Do not begin a broad Go rewrite until the Target command, outbox-to-Temporal handoff, operational packaging, and rollback path are proven in production-like conditions.",
+    "Resolve or formally baseline the inherited repository-wide runtime failures before claiming a release candidate."
+  ],
+  "created_at": "2026-08-26T16:09:20Z"
+}

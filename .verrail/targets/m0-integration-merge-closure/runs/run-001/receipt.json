@@ -1,0 +1,128 @@
+{
+  "id": "run-001",
+  "target_id": "m0-integration-merge-closure",
+  "agent": "codex",
+  "runner": "Codex desktop local worktree",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "3206490d5b7a1a0db7ff33c4a3b6e957973bafe9",
+  "output_commit": "9023d786d36e9b09018c823cbd088727b5536def",
+  "output_commits": [
+    {
+      "commit": "b1447d90cfd48eb7609579e58e32e80a1c810e35",
+      "subject": "feat(targets): add governed Target vertical slice"
+    },
+    {
+      "commit": "9023d786d36e9b09018c823cbd088727b5536def",
+      "subject": "feat(orchestration): add durable Target workflow stack"
+    }
+  ],
+  "branch": "codex/verrail-brand-navigation-b1",
+  "working_tree": "Only delivery records remained uncommitted when this receipt was written; they are committed separately after validation.",
+  "changed_files": [
+    "packages/db/src/migrations/0228_neat_black_queen.sql",
+    "packages/db/src/migrations/0229_deep_wither.sql",
+    "packages/db/src/migrations/0230_many_randall_flagg.sql",
+    "packages/db/src/schema/target_projections.ts",
+    "packages/db/src/schema/verrail_targets.ts",
+    "packages/shared/src/types/target.ts",
+    "packages/shared/src/validators/target.ts",
+    "server/src/routes/targets.ts",
+    "server/src/services/target-read-model.ts",
+    "server/src/services/verrail-domain-api-*.ts",
+    "services/domain-api/cmd/domain-api/main.go",
+    "services/domain-api/cmd/orchestration-worker/main.go",
+    "services/domain-api/internal/target/**",
+    "services/domain-api/internal/orchestration/**",
+    "ui/src/api/targets.ts",
+    "ui/src/components/NewTargetDialog.tsx",
+    "ui/src/components/TargetList.tsx",
+    "ui/src/pages/ProjectTargets.tsx",
+    "ui/src/pages/TargetWorkbench.tsx",
+    "docker/docker-compose.temporal.yml",
+    "docker/docker-compose.verrail-dev.yml",
+    "scripts/dev-verrail-stack.mjs",
+    "docs/target-read-model.md",
+    "docs/temporal-target-workflow.md",
+    ".verrail/targets/b2-*/**",
+    ".verrail/targets/b3-temporal-target-workflow/**",
+    ".verrail/targets/m0-integration-merge-closure/**"
+  ],
+  "commands": [
+    {
+      "command": "pnpm exec vitest run <9 Target/shared/server/ui test files>",
+      "status": "passed",
+      "summary": "Nine files and 47 focused Target tests passed."
+    },
+    {
+      "command": "pnpm test:domain-api",
+      "status": "passed",
+      "summary": "All Go Target and orchestration package tests passed."
+    },
+    {
+      "command": "go test -race ./... && go vet ./... && go build ./...",
+      "status": "passed",
+      "summary": "All Go packages passed the race detector and vet and compiled successfully."
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "All selected workspace projects passed typecheck."
+    },
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "summary": "All 802 checked UI source files complied with the token gate."
+    },
+    {
+      "command": "pnpm build",
+      "status": "passed",
+      "summary": "The workspace build passed; existing Vite CSS and chunk-size warnings remained non-fatal."
+    },
+    {
+      "command": "pnpm test:verrail-dev-stack",
+      "status": "passed",
+      "summary": "Three launcher configuration tests passed and Compose configuration validation succeeded."
+    },
+    {
+      "command": "fresh and pre-Target PostgreSQL migration probes",
+      "status": "passed",
+      "summary": "A fresh database applied 229 migrations; an upgrade database applied the base 226 then current 3 migrations while preserving seeded company and project rows."
+    },
+    {
+      "command": "pnpm dev:verrail and one-database API/outbox/Temporal recovery probe",
+      "status": "passed",
+      "summary": "The unified stack created a native Target, delivered its outbox event, ignored a duplicate signal, survived a full launcher restart, and retained PostgreSQL and Workflow state."
+    },
+    {
+      "command": "manual browser smoke across all eight Target Workbench routes",
+      "status": "passed",
+      "summary": "Overview, stages, work, submission, artifacts, evidence, runs, and timeline rendered the native Target without application errors."
+    },
+    {
+      "command": "pnpm test:run",
+      "status": "failed_baseline_only",
+      "summary": "401 files passed, 1 skipped, and 8 failed; 4707 tests passed, 19 skipped, and 29 failed. Every failure belongs to an inherited Paperclip test file and its failure class was reproduced at base commit 3206490d."
+    },
+    {
+      "command": "git diff --check and staged diff checks",
+      "status": "passed",
+      "summary": "The implementation commits contain no whitespace errors."
+    }
+  ],
+  "artifacts": [
+    ".verrail/targets/m0-integration-merge-closure/runs/run-001/evidence.json",
+    ".verrail/targets/m0-integration-merge-closure/runs/run-001/acceptance-mapping.md",
+    ".verrail/targets/b2-1-target-projection-compatibility-merge-readiness/runs/run-001/evidence/native-target-workbench.png",
+    ".verrail/targets/b3-temporal-target-workflow/runs/run-001/evidence/temporal-target-workflow.png",
+    "services/domain-api/internal/orchestration/testdata/target-workflow-v1-history.json"
+  ],
+  "errors": [
+    {
+      "command": "pnpm test:run",
+      "status": "inherited_baseline_gap",
+      "summary": "Twenty-nine failures remain in eight unchanged Paperclip runtime, skill-discovery, workspace-seed, cleanup, and listener test files; focused current/base comparison found no merge-delta failure."
+    }
+  ],
+  "summary": "Closed the cumulative Target slice into two dependency-ordered implementation commits, added a reproducible PostgreSQL/Temporal/TypeScript/Go development stack, proved migrations and durable one-database delivery with duplicate and restart recovery, and isolated the remaining full-suite failures to the unchanged base."
+}

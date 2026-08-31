@@ -1,0 +1,28 @@
+{
+  "id": "b2-target-read-model-workbench",
+  "title": "Target read model and workbench",
+  "intent": "Make Target a real, stable, authorized product object in the Verrail shell without assigning new domain write authority to the TypeScript compatibility service.",
+  "scope": "Implement the confirmed Case/Issue TargetReadModel projection contract, explicit operator mapping and reconciliation, canonical read APIs, project-scoped Target lists, Target Workbench and immutable revision views behind the existing Workspace navigation flag.",
+  "non_goals": [
+    "Authoritative Target or TargetRevision creation and mutation",
+    "Ordinary product UI for creating compatibility mappings",
+    "Automatic conversion of every Case, Issue, Goal, Pipeline, Approval, or Run into a Target",
+    "Acceptance, Submission, Evidence, Graph, Stage transition, or external Effect mutation",
+    "Temporal Workflow or Go Domain API implementation",
+    "Global navigation enablement, merge, deployment, or release"
+  ],
+  "acceptance_criteria": [
+    "Projection source and immutable revision tables preserve Workspace, source, policy, stable Target identity, revision identity, snapshot hash, freshness, disablement, and error facts.",
+    "RFC 4122 UUIDv5 Target and TargetRevision identities follow the confirmed namespaces and canonical inputs and remain idempotent across replay.",
+    "Only explicitly mapped eligible Cases and independent root Issues become Targets; child, system-derived, ambiguous, Case-owned, cross-Workspace, missing, or hidden sources fail closed.",
+    "Case and Issue status mapping never produces accepted, and done remains awaiting_acceptance with completionUnverified.",
+    "Canonical Workspace and Project Target list, detail, and immutable revision APIs enforce source and Project visibility, return 404 for inaccessible objects, bind cursors to principal and filters, and support private ETags.",
+    "Mapping and reconcile mutations are instance-admin-only and create local activity audit records without adding default outbound Telemetry.",
+    "The enabled Verrail shell exposes real Target lists and a read-only Workbench with explicit loading, error, empty, stale, source-missing, unverified-completion, and immutable-revision states.",
+    "The disabled navigation path and all existing Case, Issue, Project, CLI, Plugin, Adapter, runtime, and data write behavior remain compatible.",
+    "Focused tests, migration validation, typecheck, build, token gates, locale parity, and browser verification pass, or any inherited baseline gap is explicitly recorded."
+  ],
+  "status": "needs_review",
+  "created_at": "2026-08-26T11:24:07Z",
+  "updated_at": "2026-08-26T12:09:37Z"
+}
