@@ -195,4 +195,38 @@ describe("conversation routes", () => {
       vi.useRealTimers();
     }
   });
+
+  it("holds runtime capacity until inherited output streams close", async () => {
+    vi.useFakeTimers();
+    try {
+      const { createConversationRuntimeCleanupBarrier } = await import("../routes/conversations.js");
+      const release = vi.fn();
+      const removeRuntimeDirectory = vi.fn();
+      const forceStopTree = vi.fn();
+      const destroyOutputStreams = vi.fn();
+      const barrier = createConversationRuntimeCleanupBarrier({
+        release,
+        removeRuntimeDirectory,
+        forceStopTree,
+        destroyOutputStreams,
+        drainGraceMs: 100,
+      });
+
+      barrier.onExit();
+      expect(release).not.toHaveBeenCalled();
+      expect(removeRuntimeDirectory).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(forceStopTree).toHaveBeenCalledOnce();
+      expect(destroyOutputStreams).toHaveBeenCalledOnce();
+      expect(release).not.toHaveBeenCalled();
+
+      barrier.onClose();
+      barrier.onClose();
+      expect(release).toHaveBeenCalledOnce();
+      expect(removeRuntimeDirectory).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
