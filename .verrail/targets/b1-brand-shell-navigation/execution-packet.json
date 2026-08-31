@@ -1,0 +1,47 @@
+{
+  "target_id": "b1-brand-shell-navigation",
+  "spec_version": "1.0",
+  "repo_path": "/Users/iiwish/self/verrail",
+  "branch": "master",
+  "base_commit": "0cfa82a0d4d3f01f3b054e5cdcb0b0756298f0c6",
+  "agent": "codex",
+  "prompt": "Implement the approved Verrail B1 brand shell and primary navigation behind the Workspace flag, preserve compatibility identities, prove desktop and narrow browser behavior, and attach inspectable delivery evidence.",
+  "allowed_actions": [
+    "Create repo-native B1 delivery records",
+    "Add reusable Verrail UI brand components",
+    "Update user-visible application, authentication, onboarding, document, favicon, and PWA brand surfaces",
+    "Add canonical navigation routes and flag-aware redirects",
+    "Add Home, Infrastructure, and Governance read-only UI skeletons over existing APIs",
+    "Update focused tests and user-visible English and Chinese translations",
+    "Run a local development server and create browser screenshots"
+  ],
+  "forbidden_actions": [
+    "Global Paperclip string replacement",
+    "Rename compatibility identifiers, commands, packages, APIs, telemetry, database fields, persisted keys, or runtime sentinels",
+    "Create authoritative Target mutation behavior",
+    "Enable the new navigation by default or mutate production data",
+    "Introduce Temporal or Go runtime code",
+    "Ship, merge, deploy, or announce without explicit approval"
+  ],
+  "validation_commands": [
+    "pnpm check:brand-assets",
+    "pnpm check:token-gates",
+    "pnpm -r typecheck",
+    "pnpm test:run",
+    "pnpm build",
+    "git diff --check"
+  ],
+  "expected_evidence": [
+    "Focused brand, navigation, route, shell, and read-state tests",
+    "Desktop and narrow-viewport screenshots",
+    "Browser console and navigation observations",
+    "Typecheck, build, token, asset, translation, and diff results",
+    "Acceptance-criterion mapping and advisory self-review"
+  ],
+  "stop_conditions": [
+    "Implementation requires a compatibility-breaking rename",
+    "The navigation cannot remain Workspace-scoped and false by default",
+    "The UI would need to fabricate Target identity or write authority",
+    "Validation failure requires weakening existing contracts or tests"
+  ]
+}

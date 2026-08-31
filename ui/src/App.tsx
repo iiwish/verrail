@@ -15,7 +15,7 @@ import { Cases } from "./pages/Cases";
 import { CaseDetail } from "./pages/CaseDetail";
 import { OnboardingWizardVariant } from "./components/OnboardingWizardVariant";
 import { CloudAccessGate } from "./components/CloudAccessGate";
-import { PaperclipLoading } from "./components/AnimatedPaperclipIcon";
+import { VerrailLoading } from "./components/VerrailBrand";
 import { Dashboard } from "./pages/Dashboard";
 import { DashboardLive } from "./pages/DashboardLive";
 import { Timeline } from "./pages/Timeline";
@@ -98,6 +98,9 @@ import {
   shouldRedirectCompanylessRouteToOnboarding,
 } from "./lib/onboarding-route";
 import { filterHiddenInstanceSettingsPath, normalizeRememberedInstanceSettingsPath } from "./lib/instance-settings";
+import { isVerrailNavigationEnabled, workspaceLandingRoute } from "./lib/verrail-navigation";
+import { VerrailHome } from "./pages/VerrailHome";
+import { VerrailGovernance, VerrailInfrastructure } from "./pages/VerrailOperationsIndex";
 
 const CompanyExport = lazy(() =>
   import("./pages/CompanyExport").then((module) => ({ default: module.CompanyExport })),
@@ -106,9 +109,15 @@ const CompanyExport = lazy(() =>
 function boardRoutes() {
   return (
     <>
-      <Route index element={<Navigate to="dashboard" replace />} />
+      <Route index element={<WorkspaceIndexRedirect />} />
       <Route path="dashboard" element={<Dashboard />} />
       <Route path="dashboard/live" element={<DashboardLive />} />
+      <Route element={<VerrailNavigationGate />}>
+        <Route path="home" element={<VerrailHome />} />
+        <Route path="targets" element={<Navigate to="/projects" replace />} />
+        <Route path="infrastructure" element={<VerrailInfrastructure />} />
+        <Route path="governance" element={<VerrailGovernance />} />
+      </Route>
       <Route path="timeline" element={<Timeline />} />
       <Route path="onboarding" element={<OnboardingRoutePage />} />
       <Route path="companies" element={<Companies />} />
@@ -121,7 +130,7 @@ function boardRoutes() {
       <Route
         path="company/export/*"
         element={(
-          <Suspense fallback={<PaperclipLoading />}>
+          <Suspense fallback={<VerrailLoading />}>
             <CompanyExport />
           </Suspense>
         )}
@@ -334,6 +343,31 @@ function InboxRootRedirect() {
   return <Navigate to={`/inbox/${loadLastInboxTab()}`} replace />;
 }
 
+function routeWorkspace(
+  companies: ReturnType<typeof useCompany>["companies"],
+  companyPrefix: string | undefined,
+  selectedCompany: ReturnType<typeof useCompany>["selectedCompany"],
+) {
+  return (companyPrefix
+    ? companies.find((company) => company.issuePrefix.toUpperCase() === companyPrefix.toUpperCase())
+    : null) ?? selectedCompany ?? companies[0] ?? null;
+}
+
+function WorkspaceIndexRedirect() {
+  const { companies, selectedCompany, loading } = useCompany();
+  const { companyPrefix } = useParams<{ companyPrefix?: string }>();
+  if (loading) return <VerrailLoading />;
+  return <Navigate to={workspaceLandingRoute(routeWorkspace(companies, companyPrefix, selectedCompany))} replace />;
+}
+
+function VerrailNavigationGate() {
+  const { companies, selectedCompany, loading } = useCompany();
+  const { companyPrefix } = useParams<{ companyPrefix?: string }>();
+  if (loading) return <VerrailLoading />;
+  const workspace = routeWorkspace(companies, companyPrefix, selectedCompany);
+  return isVerrailNavigationEnabled(workspace) ? <Outlet /> : <Navigate to="/dashboard" replace />;
+}
+
 function LegacySkillStudioRedirect() {
   const location = useLocation();
   const { companies, selectedCompany, loading } = useCompany();
@@ -368,7 +402,7 @@ function LegacySettingsRedirect() {
   const { hidden: hiddenSettings } = useHiddenSettings();
 
   if (loading) {
-    return <PaperclipLoading />;
+    return <VerrailLoading />;
   }
 
   const targetCompany =
@@ -487,7 +521,7 @@ function CompanyRootRedirect() {
   const location = useLocation();
 
   if (loading) {
-    return <PaperclipLoading />;
+    return <VerrailLoading />;
   }
 
   const targetCompany = selectedCompany ?? companies[0] ?? null;
@@ -503,7 +537,7 @@ function CompanyRootRedirect() {
     return <NoCompaniesStartPage />;
   }
 
-  return <Navigate to={`/${targetCompany.issuePrefix}/dashboard`} replace />;
+  return <Navigate to={`/${targetCompany.issuePrefix}/${workspaceLandingRoute(targetCompany)}`} replace />;
 }
 
 function StatusCardsLegacyRedirect() {
@@ -518,7 +552,7 @@ function UnprefixedBoardRedirect() {
   const { companies, selectedCompany, loading } = useCompany();
 
   if (loading) {
-    return <PaperclipLoading />;
+    return <VerrailLoading />;
   }
 
   const targetCompany = selectedCompany ?? companies[0] ?? null;
@@ -585,6 +619,10 @@ export function App() {
           <Route path="instance/settings" element={<LegacySettingsRedirect />} />
           <Route path="instance/settings/*" element={<LegacySettingsRedirect />} />
           <Route path="companies" element={<UnprefixedBoardRedirect />} />
+          <Route path="home" element={<UnprefixedBoardRedirect />} />
+          <Route path="targets" element={<UnprefixedBoardRedirect />} />
+          <Route path="infrastructure" element={<UnprefixedBoardRedirect />} />
+          <Route path="governance" element={<UnprefixedBoardRedirect />} />
           <Route path="issues" element={<UnprefixedBoardRedirect />} />
           <Route path="issues/:issueId" element={<UnprefixedBoardRedirect />} />
           <Route path="routines" element={<UnprefixedBoardRedirect />} />

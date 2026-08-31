@@ -1,0 +1,158 @@
+{
+  "target_id": "b1-brand-shell-navigation",
+  "run_id": "run-001",
+  "tests": [
+    {
+      "scope": "B1 brand, shell, command palette, routes, Home states, authentication, onboarding, breadcrumb, navigation, and locale parity",
+      "status": "passed",
+      "result": "12 files, 104 tests passed"
+    },
+    {
+      "scope": "repository-wide Vitest suite",
+      "status": "failed",
+      "result": "397 files passed, 1 skipped, 9 failed; 4686 tests passed, 21 skipped, 32 failed; 1 additional suite hook timed out",
+      "assessment": "Every failure is in inherited server workspace-runtime, skill discovery, listener, seed, cleanup, or export-fixture suites outside B1 UI and navigation paths. Thirty test failures belong to the B0 macOS/runtime baseline cluster; this saturated run additionally observed two server test failures and one export fixture hook timeout. No B1-focused test failed."
+    }
+  ],
+  "build": {
+    "status": "passed",
+    "command": "pnpm build",
+    "notes": "All workspace builds completed. Existing Vite CSS highlight, font-resolution, dynamic-import, and bundle-size warnings remain."
+  },
+  "typecheck": {
+    "status": "passed",
+    "command": "pnpm -r typecheck",
+    "result": "All 34 selected workspace projects passed."
+  },
+  "lint": {
+    "status": "not_applicable",
+    "notes": "The execution packet defines token gates, focused tests, typecheck, build, and diff integrity rather than a separate lint command."
+  },
+  "integrity": [
+    {
+      "command": "pnpm check:brand-assets",
+      "status": "passed",
+      "result": "17 Verrail brand assets validated"
+    },
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "result": "795 files scanned; all four gates clean"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    },
+    {
+      "command": "delivery JSON and PWA manifest parse check",
+      "status": "passed"
+    }
+  ],
+  "browser": {
+    "status": "passed",
+    "server": "http://127.0.0.1:3210",
+    "workspace": {
+      "id": "c1614cb4-3632-4d99-b46f-4d48fa33bd0a",
+      "prefix": "VER",
+      "data_home": "/tmp/verrail-b1-preview",
+      "production_data_mutated": false
+    },
+    "observations": [
+      "With enableVerrailNavigation true, / resolved to /VER/home and the desktop primary navigation contained exactly Home, Projects, Agents, Infrastructure, Governance, and Settings.",
+      "At 1280x720, the document client and scroll widths were both 1280, the six primary link rectangles did not overlap, and the browser title was Home / workspace / Verrail.",
+      "At 390x844, the body client and scroll widths were both 382, the five persistent mobile destinations did not overlap, and the full six destinations remained reachable in the navigation drawer.",
+      "Infrastructure and Governance resolved through canonical workspace routes before the plugin wildcard and linked to supported existing operational surfaces.",
+      "With enableVerrailNavigation false, / resolved to /VER/dashboard and the inherited navigation remained available; the flag was restored after the check.",
+      "The onboarding route displayed the Verrail lockup. Local-trusted auth redirected to Home by design, so Auth branding was verified by focused unit tests rather than a misleading browser capture.",
+      "The browser warning and error log was empty after the final desktop and narrow checks."
+    ],
+    "screenshots": [
+      {
+        "path": ".verrail/targets/b1-brand-shell-navigation/runs/run-001/desktop-home.jpg",
+        "viewport": "1280x720",
+        "sha256": "c629e5e353b46d69a06c83a511cdf6fd4dea07b60cf7ba29b39f5e0db38447e3"
+      },
+      {
+        "path": ".verrail/targets/b1-brand-shell-navigation/runs/run-001/narrow-home.jpg",
+        "viewport": "390x844",
+        "sha256": "aac87703f1e833b83b4a75ebd2f409f9b973e5e54d940ee419111b3a435541ff"
+      },
+      {
+        "path": ".verrail/targets/b1-brand-shell-navigation/runs/run-001/narrow-navigation-drawer.jpg",
+        "viewport": "390x844",
+        "sha256": "388ba5abc1fce89e02749d9fcc65a801f5b1a8d2f9b0e0f866db9d1f269cbbf2"
+      },
+      {
+        "path": ".verrail/targets/b1-brand-shell-navigation/runs/run-001/desktop-onboarding.jpg",
+        "viewport": "1280x720",
+        "sha256": "3951ca002053f17cdd72cddfe80ec1c26da1f23f704428285a7ce036617c23cb"
+      }
+    ]
+  },
+  "acceptance_coverage": [
+    {
+      "criterion": 1,
+      "status": "covered",
+      "evidence": "VerrailBrand and VerrailLoading use the approved paired assets and are covered in the shell, Auth, onboarding, bootstrap, and cloud access paths."
+    },
+    {
+      "criterion": 2,
+      "status": "covered",
+      "evidence": "HTML, favicon, PWA manifest, service-worker cache, document titles, and visible English and Chinese identity use Verrail while PAPERCLIP runtime sentinels, storage keys, CLI terms, APIs, and other compatibility identities remain stable."
+    },
+    {
+      "criterion": 3,
+      "status": "covered",
+      "evidence": "Flag-aware routes, sidebar, mobile navigation, command palette, workspace switching, tests, and browser checks prove false-to-dashboard legacy behavior and true-to-home six-destination behavior."
+    },
+    {
+      "criterion": 4,
+      "status": "covered",
+      "evidence": "VerrailHome reads existing attention, live-run, and project APIs, reports honest totals, limits rendered lists, and tests loading, failure, empty, and populated states without Target writes."
+    },
+    {
+      "criterion": 5,
+      "status": "covered",
+      "evidence": "VerrailInfrastructure and VerrailGovernance are compact indexes over existing project, environment, secret, adapter, plugin, decision, approval, activity, cost, and member surfaces."
+    },
+    {
+      "criterion": 6,
+      "status": "covered",
+      "evidence": "App route tests and browser navigation cover prefixed and unprefixed Home, Targets compatibility, Infrastructure, and Governance routes before the plugin wildcard."
+    },
+    {
+      "criterion": 7,
+      "status": "covered",
+      "evidence": "Four inspected screenshots plus measured desktop and narrow layout observations show legible branding, no horizontal overflow, no overlapping navigation, and no stale primary Paperclip identity."
+    },
+    {
+      "criterion": 8,
+      "status": "covered_with_recorded_gap",
+      "evidence": "Focused tests, typecheck, build, brand assets, token gates, JSON parsing, browser checks, locale validation, and diff integrity passed. The unrelated repository-wide server/runtime baseline remains explicitly non-green."
+    }
+  ],
+  "links": [
+    ".verrail/targets/b1-brand-shell-navigation/spec.md",
+    ".verrail/targets/b1-brand-shell-navigation/runs/run-001/desktop-home.jpg",
+    ".verrail/targets/b1-brand-shell-navigation/runs/run-001/narrow-home.jpg",
+    ".verrail/targets/b1-brand-shell-navigation/runs/run-001/narrow-navigation-drawer.jpg",
+    ".verrail/targets/b1-brand-shell-navigation/runs/run-001/desktop-onboarding.jpg",
+    "ui/src/components/VerrailBrand.tsx",
+    "ui/src/components/VerrailSidebar.tsx",
+    "ui/src/pages/VerrailHome.tsx",
+    "ui/src/pages/VerrailOperationsIndex.tsx"
+  ],
+  "manual_notes": [
+    "The product owner confirmed verrail.ai as the canonical official domain.",
+    "B1 depends on the uncommitted G1/B0 foundation in the same working tree; no previous user changes were reverted.",
+    "The enabled browser fixture used an isolated temporary data home and did not enable the feature for production or existing user workspaces.",
+    "No authoritative Target mutation, Temporal service, Go runtime, commit, ship record, deployment, or public announcement was created."
+  ],
+  "missing": [
+    "Independent product-owner visual acceptance and professional trademark clearance before public launch.",
+    "A real authenticated-mode Auth browser capture; local-trusted mode redirects authenticated sessions and the B1 Auth surface is instead covered by focused tests.",
+    "The authoritative TargetReadModel and New Target workflow, which belong to the next domain slice.",
+    "A fully green repository-wide Vitest run on this macOS host; 32 inherited server/runtime tests and one suite fixture currently fail.",
+    "Final activation, commit, pull request, ship, and deployment decisions."
+  ]
+}

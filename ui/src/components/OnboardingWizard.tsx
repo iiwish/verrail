@@ -83,6 +83,7 @@ import { AGENT_ARC_WIZARD_STEPS, Stepper, agentArcStepFor } from "./onboarding/S
 import { AgentPreview } from "./onboarding/AgentPreview";
 import { FooterNav } from "./onboarding/FooterNav";
 import { OnboardingHeading } from "./onboarding/OnboardingPrimitives";
+import { VerrailBrand } from "./VerrailBrand";
 import { DEFAULT_AGENT_NAME, nextAgentNameForRole } from "../lib/onboarding-agent-role";
 import { capsuleHeroMotion } from "./onboarding/onboarding-motion";
 import { Badge } from "@/components/ui/badge";
@@ -1513,6 +1514,9 @@ function OnboardingWizardInner({
             scroll container. A plain div preserves the background without scroll-locking. */}
         <div className="fixed inset-0 z-50 bg-background" />
         <div className="fixed inset-0 z-50 flex" onKeyDown={handleKeyDown}>
+          {step !== 0 ? (
+            <VerrailBrand className="absolute left-1/2 top-4 z-10 h-5 -translate-x-1/2" decorative />
+          ) : null}
           {/* Close button */}
           <button
             onClick={handleClose}

@@ -20,7 +20,20 @@ const mockInstanceSettingsApi = vi.hoisted(() => ({
   getExperimental: vi.fn(),
 }));
 
+const mockCompanyContext = vi.hoisted(() => ({
+  selectedCompanyId: "company-1" as string | null,
+  selectedCompany: {
+    id: "company-1",
+    issuePrefix: "PAP",
+    name: "Paperclip",
+    enableVerrailNavigation: false,
+  },
+}));
+
 vi.mock("@/lib/router", () => ({
+  Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => (
+    <a href={to} {...props}>{children}</a>
+  ),
   NavLink: ({ to, children, className, ...props }: {
     to: string;
     children: ReactNode;
@@ -46,10 +59,7 @@ vi.mock("../context/DialogContext", () => ({
 }));
 
 vi.mock("../context/CompanyContext", () => ({
-  useCompany: () => ({
-    selectedCompanyId: "company-1",
-    selectedCompany: { id: "company-1", issuePrefix: "PAP", name: "Paperclip" },
-  }),
+  useCompany: () => mockCompanyContext,
 }));
 
 const mockSidebar = vi.hoisted(() => ({
@@ -151,6 +161,8 @@ describe("Sidebar", () => {
     mockSidebar.isMobile = false;
     mockSidebar.collapsed = false;
     mockSidebar.peeking = false;
+    mockCompanyContext.selectedCompanyId = "company-1";
+    mockCompanyContext.selectedCompany.enableVerrailNavigation = false;
   });
 
   afterEach(() => {
@@ -174,6 +186,33 @@ describe("Sidebar", () => {
     flushSync(() => {
       root.unmount();
     });
+  });
+
+  it("renders exactly the six confirmed primary destinations when Verrail navigation is enabled", async () => {
+    mockCompanyContext.selectedCompany.enableVerrailNavigation = true;
+    const root = await renderSidebar();
+
+    const primaryNav = container.querySelector('[data-testid="verrail-primary-navigation"]');
+    const links = [...(primaryNav?.querySelectorAll("a") ?? [])];
+    expect(links.map((link) => link.textContent?.trim())).toEqual([
+      "Home",
+      "Projects",
+      "Agents",
+      "Infrastructure",
+      "Governance",
+      "Settings",
+    ]);
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([
+      "/home",
+      "/projects",
+      "/agents",
+      "/infrastructure",
+      "/governance",
+      "/settings",
+    ]);
+    expect(container.textContent).not.toContain("New Task");
+
+    flushSync(() => root.unmount());
   });
 
   it("renders plugin sidebar launchers inside the Work section", async () => {

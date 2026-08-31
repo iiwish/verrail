@@ -141,6 +141,8 @@ describe("AuthPage", () => {
     // Programmatic labels.
     expect(container.querySelector('label[for="email"]')).not.toBeNull();
     expect(container.querySelector('label[for="password"]')).not.toBeNull();
+    expect(container.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe("Verrail");
+    expect(container.textContent).toContain("Sign in to Verrail");
 
     await act(async () => {
       root.unmount();

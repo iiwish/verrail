@@ -1,0 +1,112 @@
+{
+  "id": "run-001",
+  "target_id": "b1-brand-shell-navigation",
+  "agent": "codex",
+  "runner": "Codex desktop local worktree",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "0cfa82a0d4d3f01f3b054e5cdcb0b0756298f0c6",
+  "output_commit": "",
+  "branch": "master",
+  "working_tree": "uncommitted",
+  "dependency": ".verrail/targets/g1-brand-nav-foundation",
+  "changed_files": [
+    "ui/index.html",
+    "ui/public/site.webmanifest",
+    "ui/public/sw.js",
+    "ui/src/App.tsx",
+    "ui/src/App.test.tsx",
+    "ui/src/components/VerrailBrand.tsx",
+    "ui/src/components/VerrailBrand.test.tsx",
+    "ui/src/components/VerrailSidebar.tsx",
+    "ui/src/components/Sidebar.tsx",
+    "ui/src/components/Sidebar.test.tsx",
+    "ui/src/components/MobileBottomNav.tsx",
+    "ui/src/components/CommandPalette.tsx",
+    "ui/src/components/CommandPalette.test.tsx",
+    "ui/src/components/FrontDoor.tsx",
+    "ui/src/components/Layout.tsx",
+    "ui/src/components/OnboardingWizard.tsx",
+    "ui/src/components/BootstrapPendingPage.tsx",
+    "ui/src/components/CloudAccessGate.tsx",
+    "ui/src/components/SidebarAccountMenu.tsx",
+    "ui/src/components/SidebarAccountMenu.test.tsx",
+    "ui/src/components/SidebarCompanyMenu.tsx",
+    "ui/src/components/StandaloneBrowserControls.tsx",
+    "ui/src/context/BreadcrumbContext.tsx",
+    "ui/src/context/BreadcrumbContext.test.tsx",
+    "ui/src/lib/verrail-navigation.ts",
+    "ui/src/lib/verrail-navigation.test.ts",
+    "ui/src/lib/company-selection.ts",
+    "ui/src/pages/Auth.tsx",
+    "ui/src/pages/Auth.test.tsx",
+    "ui/src/pages/InviteLanding.test.tsx",
+    "ui/src/pages/VerrailHome.tsx",
+    "ui/src/pages/VerrailHome.test.tsx",
+    "ui/src/pages/VerrailOperationsIndex.tsx",
+    "ui/src/i18n/locales/en.json",
+    "ui/src/i18n/locales/zh-CN.json",
+    ".verrail/targets/b1-brand-shell-navigation/**"
+  ],
+  "commands": [
+    {
+      "command": "pnpm --filter @paperclipai/ui exec vitest run <B1 focused files>",
+      "status": "passed",
+      "summary": "12 files and 104 focused tests passed."
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "All 34 selected workspace projects passed."
+    },
+    {
+      "command": "pnpm test:run",
+      "status": "failed",
+      "summary": "397 files passed, 1 skipped, 9 failed; 4686 tests passed, 21 skipped, 32 failed; one export fixture hook timed out. All failures are inherited server/runtime/platform suites outside B1."
+    },
+    {
+      "command": "pnpm build",
+      "status": "passed",
+      "summary": "All workspace production builds completed with existing Vite warnings."
+    },
+    {
+      "command": "pnpm check:brand-assets",
+      "status": "passed",
+      "summary": "Validated all 17 Verrail brand assets."
+    },
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "summary": "All four token gates were clean across 795 scanned files."
+    },
+    {
+      "command": "git diff --check and delivery JSON parse",
+      "status": "passed",
+      "summary": "No whitespace or JSON integrity errors."
+    },
+    {
+      "command": "in-app browser desktop and narrow verification",
+      "status": "passed",
+      "summary": "Verified reversible landing routes, exactly six primary destinations, full narrow navigation reachability, layout integrity, onboarding brand, and an empty browser warning/error log."
+    }
+  ],
+  "artifacts": [
+    ".verrail/targets/b1-brand-shell-navigation/runs/run-001/desktop-home.jpg",
+    ".verrail/targets/b1-brand-shell-navigation/runs/run-001/narrow-home.jpg",
+    ".verrail/targets/b1-brand-shell-navigation/runs/run-001/narrow-navigation-drawer.jpg",
+    ".verrail/targets/b1-brand-shell-navigation/runs/run-001/desktop-onboarding.jpg",
+    ".verrail/targets/b1-brand-shell-navigation/runs/run-001/evidence.json"
+  ],
+  "logs": [
+    "The final browser warning and error log was empty.",
+    "The full Vitest summary and failure assessment are retained in evidence.json; no raw test log was added to the repository."
+  ],
+  "errors": [
+    {
+      "command": "pnpm test:run",
+      "status": "unresolved_baseline_gap",
+      "summary": "The repository-wide suite remains non-green in unrelated macOS path, runtime port/listener, skill discovery, worktree seed, cleanup, and export fixture tests; no B1 test failed."
+    }
+  ],
+  "summary": "Delivered the reversible B1 Verrail application identity and six-destination shell, operational Home, Infrastructure and Governance indexes, compatibility redirects, and browser-inspected desktop and narrow experiences without creating Target write authority."
+}

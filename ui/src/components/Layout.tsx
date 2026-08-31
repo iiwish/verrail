@@ -48,6 +48,7 @@ import { cn } from "../lib/utils";
 import { NotFoundPage } from "../pages/NotFound";
 import { PluginSlotMount, resolveRouteSidebarSlot, usePluginSlots } from "../plugins/slots";
 import { useTranslation } from "@/i18n";
+import { workspaceLandingRoute } from "../lib/verrail-navigation";
 
 function getCompanyRouteSegment(pathname: string, companyPrefix: string | undefined): string | null {
   return getCompanyPathSegments(pathname, companyPrefix)[0]?.toLowerCase() ?? null;
@@ -266,7 +267,7 @@ export function Layout() {
         dedupeKey: `archived-company-bounce:${matchedCompany.id}`,
       });
       setSelectedCompanyId(bounce.id, { source: "route_sync" });
-      navigate(`/${bounce.issuePrefix}/dashboard`, { replace: true });
+      navigate(`/${bounce.issuePrefix}/${workspaceLandingRoute(bounce)}`, { replace: true });
       return;
     }
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = "paperclip-v2";
+const CACHE_NAME = "verrail-v1";
 
 self.addEventListener("install", () => {
   self.skipWaiting();

@@ -1,0 +1,23 @@
+{
+  "target_id": "b1-brand-shell-navigation",
+  "run_id": "run-001",
+  "decision": "approve",
+  "reviewer": "Codex implementation self-review; advisory only, product-owner acceptance required",
+  "rationale": "B1 satisfies the approved brand and navigation contracts behind a disabled-by-default Workspace flag. The new shell is reversible, exposes exactly the six confirmed primary destinations, keeps compatibility identities intact, and uses existing read authorities without inventing Target writes. Focused tests, typecheck, build, brand and token gates, route checks, and inspected desktop and narrow browser evidence pass. The repository-wide Vitest suite remains non-green only in unrelated inherited server/runtime/platform suites, so B1 is ready for product-owner review but the repository must not be described as globally green.",
+  "linked_evidence": [
+    ".verrail/targets/b1-brand-shell-navigation/runs/run-001/evidence.json",
+    ".verrail/targets/b1-brand-shell-navigation/runs/run-001/desktop-home.jpg",
+    ".verrail/targets/b1-brand-shell-navigation/runs/run-001/narrow-home.jpg",
+    ".verrail/targets/b1-brand-shell-navigation/runs/run-001/narrow-navigation-drawer.jpg",
+    ".verrail/targets/b1-brand-shell-navigation/runs/run-001/desktop-onboarding.jpg"
+  ],
+  "requested_changes": [],
+  "conditions": [
+    "Treat this as B1 implementation approval for product-owner review, not permission to commit, enable globally, ship, deploy, or announce.",
+    "Keep enableVerrailNavigation false by default and activate it only for controlled evaluation workspaces until the next domain slice is accepted.",
+    "Implement the authoritative TargetReadModel and New Target flow before presenting Target creation as a supported product action.",
+    "Resolve or explicitly baseline the repository-wide macOS/runtime failures before claiming a globally green release candidate.",
+    "Obtain human visual approval and professional trademark clearance before public brand launch."
+  ],
+  "created_at": "2026-08-26T10:57:42Z"
+}

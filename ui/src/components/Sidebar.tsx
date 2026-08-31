@@ -48,8 +48,15 @@ import { PluginSlotOutlet } from "@/plugins/slots";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
 import { useTranslation } from "@/i18n";
+import { isVerrailNavigationEnabled } from "../lib/verrail-navigation";
+import { VerrailSidebar } from "./VerrailSidebar";
 
 export function Sidebar() {
+  const { selectedCompany } = useCompany();
+  return isVerrailNavigationEnabled(selectedCompany) ? <VerrailSidebar /> : <LegacySidebar />;
+}
+
+function LegacySidebar() {
   const { t } = useTranslation();
   const { openNewIssue } = useDialogActions();
   // Every labeled section is collapsible (session-scoped, default open) —
