@@ -1487,6 +1487,19 @@ export const WORKSPACE_OVERVIEW_MAX_LIMIT = 100;
 export const WORKSPACE_OVERVIEW_LINKED_ISSUE_LIMIT = 4;
 
 /**
+ * Workspace-scoped route roots introduced by the Verrail navigation contract.
+ * Keep this list shared by the host router and plugin manifest validation so
+ * prefix resolution and extension ownership cannot drift apart.
+ */
+export const VERRAIL_NAVIGATION_ROUTE_ROOTS = [
+  "home",
+  "targets",
+  "infrastructure",
+  "governance",
+] as const;
+export type VerrailNavigationRouteRoot = (typeof VERRAIL_NAVIGATION_ROUTE_ROOTS)[number];
+
+/**
  * Reserved company-scoped route segments that plugin page routes may not claim.
  *
  * These map to first-class host pages under `/:companyPrefix/...`.
@@ -1510,6 +1523,7 @@ export const PLUGIN_RESERVED_COMPANY_ROUTE_SEGMENTS = [
   "workspaces",
   "design-guide",
   "tests",
+  ...VERRAIL_NAVIGATION_ROUTE_ROOTS,
 ] as const;
 export type PluginReservedCompanyRouteSegment =
   (typeof PLUGIN_RESERVED_COMPANY_ROUTE_SEGMENTS)[number];

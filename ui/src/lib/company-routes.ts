@@ -1,3 +1,5 @@
+import { VERRAIL_NAVIGATION_ROUTE_ROOTS } from "@paperclipai/shared";
+
 const BOARD_ROUTE_ROOTS = new Set([
   "dashboard",
   "companies",
@@ -29,6 +31,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "search",
   "settings",
   "timeline",
+  ...VERRAIL_NAVIGATION_ROUTE_ROOTS,
 ]);
 
 const GLOBAL_ROUTE_ROOTS = new Set(["auth", "invite", "board-claim", "cli-auth", "docs", "instance"]);

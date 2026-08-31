@@ -103,6 +103,7 @@ export const companiesApi = {
         | "budgetMonthlyCents"
         | "attachmentMaxBytes"
         | "requireBoardApprovalForNewAgents"
+        | "enableVerrailNavigation"
         | "interactionResolverGovernance"
         | "feedbackDataSharingEnabled"
         | "brandColor"

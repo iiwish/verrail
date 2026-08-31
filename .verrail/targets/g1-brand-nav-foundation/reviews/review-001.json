@@ -1,0 +1,21 @@
+{
+  "target_id": "g1-brand-nav-foundation",
+  "run_id": "run-001",
+  "decision": "approve",
+  "reviewer": "Codex implementation self-review; advisory only, user acceptance required",
+  "rationale": "The implementation stays within the confirmed contracts, keeps compatibility identities intact, defaults the new Workspace flag off, prevents both new and persisted plugin route collisions, and provides a rebuildable TargetReadModel contract without creating write authority. Focused tests, typecheck, build, asset and documentation integrity gates pass. The repository-wide Vitest command remains non-green because of 30 inherited macOS/runtime failures outside the changed paths; this gap is explicit and does not block beginning the reversible B1 shell slice, but it prevents claiming a globally green baseline.",
+  "linked_evidence": [
+    ".verrail/targets/g1-brand-nav-foundation/runs/run-001/evidence.json",
+    ".verrail/targets/g1-brand-nav-foundation/brand-contact-sheet.png",
+    ".verrail/targets/g1-brand-nav-foundation/name-conflict-screen.md",
+    "docs/target-read-model.md"
+  ],
+  "requested_changes": [],
+  "conditions": [
+    "Treat this as approval to enter B1 implementation, not approval to ship or announce publicly.",
+    "Keep enableVerrailNavigation false until the B1 shell has browser evidence and the activation scan passes.",
+    "Obtain human brand approval and professional trademark clearance before public launch.",
+    "Track the inherited full-suite macOS/runtime failures as baseline quality debt rather than hiding them in this target."
+  ],
+  "created_at": "2026-08-26T09:34:00Z"
+}

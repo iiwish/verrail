@@ -1,6 +1,6 @@
 # Verrail Design Principles
 
-**Status:** v0.4 - implementation design-system contract. Governs structure,
+**Status:** v0.5 - implementation design-system contract. Governs structure,
 tokens, and verification while the Verrail product surfaces are rebuilt.
 
 ## What this document is for
@@ -36,7 +36,7 @@ Existing tiers already in index.css (~80+ tokens) — extraction maps to these o
 4. **Hierarchy through structure, not decoration.** Prefer position, size, and weight over borders, backgrounds, and dividers. Every border, divider, and background fill must justify itself; when in doubt, remove it. A screen should survive the removal of one visual layer.
 5. **Status is systematic.** States like running / paused / blocked / awaiting-approval / over-budget map to a single semantic status token set used identically everywhere (badge, row, chart, log). An operator learns the vocabulary once.
 6. **Machine values look machine-made.** IDs, costs, token counts, timestamps, and log output use the monospace token and consistent formatting helpers. Never format these ad hoc per screen.
-7. **Words are part of the system.** One name per concept across the entire UI — the canonical term is *task* (never *issue* or *ticket* in copy, labels, or empty states). Buttons name the action ("Approve hire," not "Submit"). Errors say what happened and what to do. Empty states say what to do first. **Note:** enforcing the task rename is a visible change and is explicitly OUT of the zero-visual-change extraction run; it happens in its own follow-up run.
+7. **Words are part of the system.** One name per concept across the entire UI. `Target` is the unit whose outcome is accepted, `Work` is the Target's coordinated work surface, and `Task` names a TaskNode inside the Work Graph. `Issue` and `ticket` are compatibility terms and do not appear in new product copy. Buttons name the actual action, such as `Create target`, `Start run`, `Submit review`, or `Accept submission`. Errors say what happened and what to do. Empty states say what to do first. Canonical terminology follows `docs/operational-ontology.md`; route and navigation labels follow `docs/navigation-contract.md`.
 8. **Agent-modifiable by design.** The system must be changeable via instructions: single token source, lint rules that enforce it, and this document kept current. A correct change should be expressible as "edit tokens + run checks," not "visit 40 files."
 
 ## Enforcement (what "compliant" means for the extraction run)
@@ -49,11 +49,11 @@ Existing tiers already in index.css (~80+ tokens) — extraction maps to these o
 - `pnpm build`, `pnpm typecheck`, and `pnpm build-storybook` pass.
 - AGENTS.md links here and states the token-only rule.
 
-Aspirational (NOT gating this run): no duplicate components; every component has exactly one story covering its variants; all UI copy says "task".
+Aspirational (NOT gating this run): no duplicate components; every component has exactly one story covering its variants; all new UI copy follows the Target/Work/Task vocabulary.
 
 ## Out of scope (do not do during simplification)
 
-No visual redesign, no new colors or typefaces, no layout restructuring, no new dependencies beyond snapshot tooling, no component consolidation/merges (audit + recommend only), no copy renames, no changes to server code or app logic. Simplification means fewer parts, same product.
+For token-only simplification runs: no visual redesign, no new colors or typefaces, no layout restructuring, no new dependencies beyond snapshot tooling, no component consolidation/merges, no copy renames, and no changes to server code or app logic. Approved brand and navigation work follows `docs/brand-migration.md` and `docs/navigation-contract.md` as separate governed delivery, never mixed into a zero-visual-change extraction run.
 
 ## Implementation guide
 

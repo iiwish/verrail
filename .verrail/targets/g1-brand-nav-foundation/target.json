@@ -1,0 +1,26 @@
+{
+  "id": "g1-brand-nav-foundation",
+  "title": "Brand and navigation foundation",
+  "intent": "Turn the confirmed brand and navigation contracts into a reversible, testable foundation for the first Verrail product slice.",
+  "scope": "Deliver B0 brand assets and conflict screening, implement the N0 workspace navigation flag and route protections, and confirm the TargetReadModel implementation contract.",
+  "non_goals": [
+    "App-wide visible Paperclip to Verrail copy replacement",
+    "Authoritative Target write model or target mutation APIs",
+    "Authentication, telemetry, package, environment variable, database, or API identifier renames",
+    "Production Temporal integration",
+    "Go control-plane implementation"
+  ],
+  "acceptance_criteria": [
+    "A documented Verrail mark, wordmark, light and dark lockups, favicon, app-icon raster set, and machine-verifiable asset manifest exist.",
+    "A dated basic screen records exact-name software, package, repository, domain, and trademark findings without claiming legal clearance.",
+    "Current brand surfaces are classified into migrate, preserve, and defer groups for the next implementation batch.",
+    "The workspace compatibility record exposes enableVerrailNavigation with a false default through database, shared contract, server service, and UI API layers.",
+    "The home, targets, infrastructure, and governance workspace route roots are registered without being mistaken for workspace prefixes.",
+    "New plugin manifests cannot claim Verrail navigation roots, and enabling the flag is blocked when an already-installed plugin conflicts.",
+    "TargetReadModel has a confirmed data, API, permission, freshness, and compatibility mapping contract that does not create an authoritative Target write model.",
+    "Targeted tests, typecheck, build, asset validation, and documentation integrity checks pass, or any gap is explicitly recorded."
+  ],
+  "status": "needs_review",
+  "created_at": "2026-08-26T08:32:21Z",
+  "updated_at": "2026-08-26T09:34:00Z"
+}

@@ -1,0 +1,120 @@
+{
+  "id": "run-001",
+  "target_id": "g1-brand-nav-foundation",
+  "agent": "codex",
+  "runner": "Codex desktop local worktree",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "0cfa82a0d4d3f01f3b054e5cdcb0b0756298f0c6",
+  "output_commit": "",
+  "branch": "master",
+  "working_tree": "uncommitted",
+  "changed_files": [
+    "DESIGN.md",
+    "docs/README.md",
+    "docs/product-goals.md",
+    "docs/constitution.md",
+    "docs/product-design.md",
+    "docs/operational-ontology.md",
+    "docs/architecture.md",
+    "docs/execution-runtime.md",
+    "docs/brand-migration.md",
+    "docs/navigation-contract.md",
+    "docs/target-read-model.md",
+    "docs/adrs/0001-typescript-foundation.md",
+    "docs/adrs/0002-control-and-execution-planes.md",
+    "docs/adrs/0003-temporal-durable-orchestration.md",
+    "docs/adrs/0004-go-control-plane-replatform.md",
+    "package.json",
+    "scripts/check-verrail-brand-assets.mjs",
+    "ui/public/brand/verrail/README.md",
+    "ui/public/brand/verrail/asset-manifest.json",
+    "ui/public/brand/verrail/*.{svg,png}",
+    "packages/db/src/schema/companies.ts",
+    "packages/db/src/migrations/0227_great_kitty_pryde.sql",
+    "packages/db/src/migrations/meta/0227_snapshot.json",
+    "packages/db/src/migrations/meta/_journal.json",
+    "packages/shared/src/constants.ts",
+    "packages/shared/src/index.ts",
+    "packages/shared/src/types/company.ts",
+    "packages/shared/src/validators/company.ts",
+    "packages/shared/src/validators/company.test.ts",
+    "packages/shared/src/validators/plugin.test.ts",
+    "server/src/services/companies.ts",
+    "server/src/services/verrail-navigation.ts",
+    "server/src/__tests__/companies-service.test.ts",
+    "server/src/__tests__/verrail-navigation.test.ts",
+    "ui/src/api/companies.ts",
+    "ui/src/lib/company-routes.ts",
+    "ui/src/lib/company-routes.test.ts",
+    "ui/src/lib/verrail-navigation.ts",
+    "ui/src/lib/verrail-navigation.test.ts",
+    "ui/src/context/CompanyContext.test.tsx",
+    "ui/storybook/fixtures/paperclipData.ts",
+    "cli/src/__tests__/company-delete.test.ts"
+  ],
+  "commands": [
+    {
+      "command": "pnpm db:generate",
+      "status": "passed",
+      "summary": "Generated migration 0227 and its Drizzle snapshot."
+    },
+    {
+      "command": "pnpm exec vitest run packages/shared/src/validators/company.test.ts packages/shared/src/validators/plugin.test.ts server/src/__tests__/verrail-navigation.test.ts server/src/__tests__/companies-service.test.ts ui/src/lib/company-routes.test.ts ui/src/lib/verrail-navigation.test.ts cli/src/__tests__/company-delete.test.ts",
+      "status": "passed",
+      "summary": "7 files and 77 focused tests passed."
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "All 34 selected workspace projects passed after synchronizing the CLI Company fixture."
+    },
+    {
+      "command": "pnpm test:run",
+      "status": "failed",
+      "summary": "398 files passed, 1 skipped, 8 failed; 4690 tests passed, 19 skipped, 30 failed. Failures are isolated to inherited macOS /tmp canonicalization, runtime port allocation/listener diagnosis, and workspace-runtime compatibility tests outside this target."
+    },
+    {
+      "command": "pnpm build",
+      "status": "passed",
+      "summary": "All workspace builds completed; Vite emitted existing CSS pseudo-element, font-resolution, and bundle-size warnings."
+    },
+    {
+      "command": "pnpm check:brand-assets",
+      "status": "passed",
+      "summary": "Validated the dimensions, hashes, and allowed SVG features for all 17 assets."
+    },
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "summary": "All four token gates were clean across 789 scanned files."
+    },
+    {
+      "command": "changed canonical documentation link check",
+      "status": "passed",
+      "summary": "Validated relative links in 14 changed canonical documents."
+    },
+    {
+      "command": "delivery JSON and JSONL parse check",
+      "status": "passed",
+      "summary": "Validated the delivery and brand manifest JSON plus the append-only timeline."
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "summary": "No whitespace errors."
+    }
+  ],
+  "logs": [
+    "The full Vitest summary is captured in evidence.json; no generated log file was retained.",
+    "The brand contact sheet was visually inspected at dark, light, app-icon, 48 px, and 16 px scales."
+  ],
+  "errors": [
+    {
+      "command": "pnpm test:run",
+      "status": "unresolved_baseline_gap",
+      "summary": "30 unrelated inherited server/runtime tests fail on this macOS host; this run does not weaken or modify those tests."
+    }
+  ],
+  "summary": "Delivered the Verrail B0 identity baseline and preliminary name screen, classified migration surfaces, implemented the disabled Workspace navigation flag and plugin route collision gate, registered new workspace roots, and confirmed the versioned TargetReadModel contract."
+}

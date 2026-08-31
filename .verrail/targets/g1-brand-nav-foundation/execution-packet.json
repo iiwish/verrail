@@ -1,0 +1,49 @@
+{
+  "target_id": "g1-brand-nav-foundation",
+  "spec_version": "1.0",
+  "repo_path": "/Users/iiwish/self/verrail",
+  "branch": "master",
+  "base_commit": "0cfa82a0d4d3f01f3b054e5cdcb0b0756298f0c6",
+  "agent": "codex",
+  "prompt": "Implement the approved Verrail G1 brand and navigation foundation end to end, preserve compatibility identifiers, and leave inspectable evidence.",
+  "allowed_actions": [
+    "Create repo-native delivery records",
+    "Create brand source and raster assets",
+    "Add deterministic brand validation tooling",
+    "Change company compatibility schema and synchronized contracts",
+    "Add route and plugin conflict protections",
+    "Add focused tests and generate a database migration",
+    "Create or update canonical Verrail documentation"
+  ],
+  "forbidden_actions": [
+    "Global Paperclip string replacement",
+    "Rename authentication, telemetry, package, CLI, database, or environment identifiers",
+    "Create authoritative Target mutation behavior",
+    "Enable the new navigation for existing workspaces",
+    "Claim trademark clearance",
+    "Ship or merge without explicit user approval"
+  ],
+  "validation_commands": [
+    "pnpm check:brand-assets",
+    "pnpm check:token-gates",
+    "pnpm -r typecheck",
+    "pnpm test:run",
+    "pnpm build",
+    "git diff --check"
+  ],
+  "expected_evidence": [
+    "Brand asset manifest and rendered contact sheet",
+    "Dated preliminary name-conflict screen",
+    "Brand surface inventory",
+    "Focused route, validator, conflict, schema, and UI helper tests",
+    "Generated database migration",
+    "Typecheck, test, build, and integrity command results",
+    "Spec-compliance and engineering review decision"
+  ],
+  "stop_conditions": [
+    "A compatibility-breaking rename becomes necessary",
+    "The flag cannot be kept Workspace-scoped",
+    "An installed-plugin collision cannot be detected before activation",
+    "Validation failure requires weakening existing tests or contracts"
+  ]
+}

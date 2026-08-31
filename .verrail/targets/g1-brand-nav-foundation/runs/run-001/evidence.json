@@ -1,0 +1,120 @@
+{
+  "target_id": "g1-brand-nav-foundation",
+  "run_id": "run-001",
+  "tests": [
+    {
+      "scope": "brand, navigation flag, route registry, plugin reservation, service conflict, and CLI compatibility",
+      "status": "passed",
+      "result": "7 files, 77 tests passed"
+    },
+    {
+      "scope": "repository-wide Vitest suite",
+      "status": "failed",
+      "result": "398 files passed, 1 skipped, 8 failed; 4690 tests passed, 19 skipped, 30 failed",
+      "assessment": "Failures are outside changed product paths and cluster around inherited macOS /tmp versus /private/tmp canonicalization, invalid high test ports, live listener diagnosis, and workspace-runtime fixtures."
+    }
+  ],
+  "build": {
+    "status": "passed",
+    "command": "pnpm build",
+    "notes": "Existing Vite CSS, font-resolution, and bundle-size warnings remain."
+  },
+  "typecheck": {
+    "status": "passed",
+    "command": "pnpm -r typecheck"
+  },
+  "lint": {
+    "status": "not_applicable",
+    "notes": "The repository has no target-specific lint gate in the execution packet; token gates and diff checks were used."
+  },
+  "integrity": [
+    {
+      "command": "pnpm check:brand-assets",
+      "status": "passed",
+      "result": "17 assets validated"
+    },
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "result": "789 files scanned; all gates clean"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    },
+    {
+      "command": "changed canonical documentation link check",
+      "status": "passed",
+      "result": "14 documents validated"
+    },
+    {
+      "command": "delivery JSON and JSONL parse check",
+      "status": "passed"
+    }
+  ],
+  "acceptance_coverage": [
+    {
+      "criterion": 1,
+      "status": "covered",
+      "evidence": "ui/public/brand/verrail/ contains the documented mark, wordmark, lockups, favicon, raster icons, README, and hashed asset manifest."
+    },
+    {
+      "criterion": 2,
+      "status": "covered_with_external_gate",
+      "evidence": ".verrail/targets/g1-brand-nav-foundation/name-conflict-screen.md records the 2026-08-26 preliminary screen and its legal boundary."
+    },
+    {
+      "criterion": 3,
+      "status": "covered",
+      "evidence": ".verrail/targets/g1-brand-nav-foundation/brand-surface-inventory.md classifies B1, B2, compatibility, and deferred surfaces."
+    },
+    {
+      "criterion": 4,
+      "status": "covered",
+      "evidence": "Migration 0227, the shared Company contract, company service selection/update path, and UI API expose enableVerrailNavigation with a false default."
+    },
+    {
+      "criterion": 5,
+      "status": "covered",
+      "evidence": "The shared root registry feeds company route prefix resolution and route tests cover home, targets, infrastructure, and governance."
+    },
+    {
+      "criterion": 6,
+      "status": "covered",
+      "evidence": "Plugin schema validation reserves every root; activation scans persisted installed manifests and returns a stable 409 conflict without enabling the flag."
+    },
+    {
+      "criterion": 7,
+      "status": "covered",
+      "evidence": "docs/target-read-model.md confirms source mapping, stable identity, projection schema, read APIs, authorization, freshness, rebuild, rollback, and non-goals."
+    },
+    {
+      "criterion": 8,
+      "status": "covered_with_recorded_gap",
+      "evidence": "Focused tests, typecheck, build, asset validation, token gates, links, JSON parsing, and diff checks pass; the unrelated repository-wide Vitest failures are explicitly recorded."
+    }
+  ],
+  "links": [
+    ".verrail/targets/g1-brand-nav-foundation/brand-contact-sheet.png",
+    ".verrail/targets/g1-brand-nav-foundation/name-conflict-screen.md",
+    ".verrail/targets/g1-brand-nav-foundation/brand-surface-inventory.md",
+    "ui/public/brand/verrail/asset-manifest.json",
+    "docs/brand-migration.md",
+    "docs/navigation-contract.md",
+    "docs/target-read-model.md",
+    "packages/db/src/migrations/0227_great_kitty_pryde.sql"
+  ],
+  "manual_notes": [
+    "The product owner confirmed control of verrail.ai and designated it as the canonical official domain.",
+    "The contact sheet was visually inspected and the selected Evidence Rail mark remained distinguishable at 16 px.",
+    "No production navigation was enabled and no compatibility, authentication, telemetry, package, CLI, or environment identifier was renamed.",
+    "No ship record was created because shipping requires explicit user approval."
+  ],
+  "missing": [
+    "Independent professional trademark clearance and image-mark search before public launch.",
+    "Human approval of the B0 mark and final outlined wordmark artwork.",
+    "A fully green repository-wide Vitest run on this macOS host; 30 inherited runtime/platform failures remain.",
+    "B1 application-shell and browser-journey screenshots, which are intentionally deferred to the next target.",
+    "Final user review decision and any PR or commit reference."
+  ]
+}

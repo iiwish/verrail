@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Verrail">
+  <rect width="512" height="512" fill="#0F4F45"/>
+  <g transform="translate(96 72) scale(5)">
+    <path fill="#F6FFFC" d="M7 8h13l12 31L44 8h13L38 56H26L7 8Z"/>
+    <path fill="#F6FFFC" d="M17 25h30v8H17z"/>
+  </g>
+</svg>

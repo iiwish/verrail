@@ -1,0 +1,1 @@
+ALTER TABLE "companies" ADD COLUMN "enable_verrail_navigation" boolean DEFAULT false NOT NULL;

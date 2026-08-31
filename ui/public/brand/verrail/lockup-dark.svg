@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 328 64" role="img" aria-label="Verrail">
+  <g transform="translate(0 4) scale(.875)">
+    <path fill="#16705F" d="M7 8h13l12 31L44 8h13L38 56H26L7 8Z"/>
+    <path fill="#16705F" d="M17 25h30v8H17z"/>
+  </g>
+  <text x="72" y="48" fill="#13221E" font-family="Inter, Arial, sans-serif" font-size="50" font-weight="680" letter-spacing="0">Verrail</text>
+</svg>

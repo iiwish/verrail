@@ -21,6 +21,9 @@ export const companies = pgTable(
     requireBoardApprovalForNewAgents: boolean("require_board_approval_for_new_agents")
       .notNull()
       .default(false),
+    enableVerrailNavigation: boolean("enable_verrail_navigation")
+      .notNull()
+      .default(false),
     interactionResolverGovernance: jsonb("interaction_resolver_governance")
       .$type<InteractionResolverGovernance>()
       .notNull()
