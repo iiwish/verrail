@@ -7,7 +7,7 @@ import {
 } from "./company-routes";
 
 describe("company routes", () => {
-  it.each(["home", "chat", "targets", "infrastructure", "governance"])(
+  it.each(["home", "targets", "infrastructure", "governance"])(
     "treats /%s as a workspace board route rather than a workspace prefix",
     (root) => {
       expect(isBoardPathWithoutPrefix(`/${root}`)).toBe(true);

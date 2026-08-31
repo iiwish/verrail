@@ -46,10 +46,6 @@ Verrail 的领域中心是可验收交付：Target 固定责任，Submission 固
 
 `AttentionItem`、`Timeline`、`StageProgress`、`DeliveryHealth`。这些对象由领域事实计算，不拥有独立业务真相。
 
-### 交互上下文层
-
-`Conversation`、`ConversationMessage`、`ConversationContextBinding`。这些对象保存用户与系统的交互连续性并引用领域对象，不拥有交付、执行、证明、批准或验收事实。
-
 ## 3. 核心实体
 
 ### Workspace
@@ -57,12 +53,6 @@ Verrail 的领域中心是可验收交付：Target 固定责任，Submission 固
 租户级安全、数据和配置边界。所有业务对象必须直接或间接属于且只属于一个 Workspace。
 
 默认 Workspace 由部署后端按用户或单租户实例幂等供给。产品可以在只有一个可访问 Workspace 时隐藏选择界面，但不得省略 Workspace ID、权限检查、数据隔离、审计归属或路由兼容语义。
-
-### Conversation、ConversationMessage 与 ContextBinding
-
-Conversation 是 Workspace 内的持久交互线程，记录创建主体、标题、活动或归档状态、置顶状态和最近活动时间。ConversationMessage 是追加式用户或系统消息；更正或重试产生新消息或明确状态，不静默改写已经形成领域决定的历史。
-
-ConversationContextBinding 把会话显式绑定到 Project、Target、TargetRevision、Stage、ArtifactRevision、Review、Run 或其他可检查对象。对话可以查询事实、形成建议或提出 Invocation 和 ActionRequest，但领域改变只由相应命令、权限和版本合同生效。Message 可以引用 Run、ActionRequest、Approval、ArtifactRevision、Evidence、Review 和 Acceptance，不能代替这些对象。
 
 ### Principal 与 RoleBinding
 
@@ -190,11 +180,7 @@ RunWorkflow(run_id)
 
 ```text
 Workspace
-  owns Project, AgentDefinition, Deployment, RuntimePool, Connector, Policy, Conversation
-
-Conversation
-  owns ConversationMessage
-  binds Project, Target, ArtifactRevision, Review, Run or ActionRequest context
+  owns Project, AgentDefinition, Deployment, RuntimePool, Connector, Policy
 
 Project
   owns Target
@@ -246,7 +232,6 @@ TargetRevision + ArtifactRevisions + VerificationResults
 16. `accepted` Target 必须可仅从 PostgreSQL 中的版本、Submission、证明、评审和验收事实重建；
 17. Timeline、AttentionItem、StageProgress 和 Outcome 是可重建投影，不是独立命令入口；
 18. 团队可信记忆只能来自已验收 Submission，并保留来源 Run、Artifact 和 Evidence 引用。
-19. Conversation 和 ConversationMessage 不是 Target、Run、Artifact、Evidence、Review、Approval 或 Acceptance 的事实源；所有对话触发的领域变化必须引用独立、可审计的命令或对象。
 
 ## 8. 兼容边界
 

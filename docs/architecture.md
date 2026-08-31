@@ -52,8 +52,8 @@ PostgreSQL 中的控制平面领域记录拥有业务事实。Temporal 拥有耐
 
 | 层 | 基座 | 当前责任 |
 | --- | --- | --- |
-| Web | React + Vite + TanStack Query | 操作台、对话、设置、运行与审计界面 |
-| Server | Node.js + TypeScript + Express | REST API、Conversation 兼容服务、Scheduler、Adapter 调用 |
+| Web | React + Vite + TanStack Query | 操作台、设置、运行与审计界面 |
+| Server | Node.js + TypeScript + Express | REST API、领域服务、Scheduler、Adapter 调用 |
 | Domain API | Go + pgx + net/http | 原生 Target/TargetRevision 创建、命令幂等、AuditEvent 与 transactional outbox；当前由 TypeScript 边缘代理 |
 | Database | PostgreSQL + Drizzle | 权威关系事实、迁移、事务与查询 |
 | Durable Orchestration | Go + Temporal SDK | 已接入 Target outbox Dispatcher 与最小 TargetWorkflow；Graph/Run 编排属于后续切片 |
@@ -87,12 +87,6 @@ PostgreSQL 中的控制平面领域记录拥有业务事实。Temporal 拥有耐
 
 负责 Project、Target、TargetRevision、StageProgress、HumanWorkResult、Outcome、AttentionItem 和 Timeline。这里定义用户可见的交付状态，不直接运行 Agent。
 
-### Conversational Interaction
-
-负责 Workspace-scoped Conversation、Message 和 ContextBinding。Conversation 是用户发起分析、澄清和规划的主要交互上下文，但不拥有 Target、Run、Artifact、Evidence、Approval、Review 或 Acceptance 事实。任何领域变更都必须通过结构化命令与治理控件完成，并在对话中返回可追踪的结果引用。
-
-当前 TypeScript Compatibility API 提供会话列表、创建、读取、重命名、置顶、归档、恢复和本地流式回复；消息与上下文绑定持久化到 PostgreSQL。仅 `local_trusted` 部署可调用本地 CLI 兼容运行时：默认使用临时会话、禁用工具、只读 Sandbox、受限环境变量和空工作目录中的 Codex CLI，可通过 `VERRAIL_CHAT_RUNTIME=claude` 切换到同样禁用工具的 Claude CLI，并通过 `VERRAIL_CHAT_MODEL` 固定模型。认证部署在配置受治理的模型执行路径前保持关闭。该兼容运行时不授予领域写入权限，也不继承数据库、Paperclip 或云厂商凭证。后续模型调用接入版本化 Agent Runtime Adapter，并在需要长时执行、重试、取消、预算和审计时通过 Run/Temporal 编排，而不是把 SSE 连接作为流程事实。
-
 ### Graph Engine
 
 负责 GraphProposal 校验、GraphRevision、TaskNode/GateNode、节点激活、角色解析、依赖、强制 Gate 和重规划。Director 是计划提议者，Graph Engine 是唯一业务状态裁决者。
@@ -125,7 +119,7 @@ PostgreSQL 中的控制平面领域记录拥有业务事实。Temporal 拥有耐
 
 ### PostgreSQL
 
-PostgreSQL 是唯一业务事实库。Conversation/Message/ContextBinding、TargetRevision、Graph 状态、Run/RunAttempt、IntegrationRun/IntegrationAttempt、HumanWorkResult、租约、授权、Artifact 元数据、Claim、Evidence、VerificationResult、Submission、Review、Acceptance 和 AuditEvent 必须在事务边界内保持一致。
+PostgreSQL 是唯一业务事实库。TargetRevision、Graph 状态、Run/RunAttempt、IntegrationRun/IntegrationAttempt、HumanWorkResult、租约、授权、Artifact 元数据、Claim、Evidence、VerificationResult、Submission、Review、Acceptance 和 AuditEvent 必须在事务边界内保持一致。
 
 领域命令使用 Transactional Outbox 发布后续工作。Outbox Dispatcher 使用稳定 Workflow ID 启动或 Signal Temporal；Temporal Activity 使用稳定命令 ID 调用领域服务。两个方向都必须容忍重复投递，不宣称跨 PostgreSQL 与 Temporal 的 exactly-once。长任务不依赖单个 API 或 Worker 进程的内存状态。
 

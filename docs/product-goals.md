@@ -110,15 +110,15 @@ GitHub 需求
 
 交付：
 
-- Workspace、Conversation、Project、Target、TargetRevision、Stage、Submission 和 Timeline 基础数据模型；
+- Workspace、Project、Target、TargetRevision、Stage、Submission 和 Timeline 基础数据模型；
 - AcceptanceCriterion、Claim、ArtifactRevision、Evidence 和 VerificationResult 最小合同；
 - PostgreSQL Transactional Outbox、Temporal Namespace、Worker、稳定 Workflow ID 和加密 Payload/Data Converter 基线；
 - Target Workbench 成为主工作面，包含 Overview、Stages、Work、Submission、Artifacts、Evidence、Runs、Timeline；
 - Attention Inbox 汇总待决定、待批准、待评审和待验收事项；
-- 以 [`navigation-contract.md`](./navigation-contract.md) 发布 Home、Chat、Projects、Agents、Infrastructure、Governance 和 Settings 新导航；
+- 以 [`navigation-contract.md`](./navigation-contract.md) 发布 Home、Projects、Agents、Infrastructure、Governance 和 Settings 新导航；
 - 现有 Company/Project/Issue 能通过兼容映射逐步迁移，不进行一次性破坏式换表。
 
-退出门槛：用户不需要理解 CEO、组织图、Heartbeat、Workspace 租户结构或 Temporal，就能通过持久对话进入工作、创建版本化 Target、看到阶段与责任人，并进入真实运行记录；对话不替代领域命令，服务重启不会丢失消息或 Workflow 唤醒。
+退出门槛：用户不需要理解 CEO、组织图、Heartbeat、Workspace 租户结构或 Temporal，就能创建版本化 Target、看到阶段与责任人，并进入真实运行记录；服务重启不会丢失 Workflow 唤醒。
 
 ### G2：可信交付闭环
 

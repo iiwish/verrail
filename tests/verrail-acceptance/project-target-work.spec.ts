@@ -105,7 +105,6 @@ test("Project -> Target -> Work remains coherent and error-free", async ({ page,
     const primaryNavigation = page.getByTestId("verrail-primary-navigation");
     await expect(primaryNavigation.getByRole("link")).toHaveText([
       "Home",
-      "Chat",
       "Projects",
       "Agents",
       "Infrastructure",
@@ -208,83 +207,6 @@ test("Project -> Target -> Work remains coherent and error-free", async ({ page,
     await expect(settingsSidebar.getByText("Adapters", { exact: true })).toHaveCount(0);
     await expect(settingsSidebar.getByText("Plugins", { exact: true })).toHaveCount(0);
 
-    expect(browserErrors, browserErrors.join("\n")).toEqual([]);
-  } finally {
-    await page.close();
-    await deleteWorkspace(request, seed.companyId);
-  }
-});
-
-test("Conversation management and runtime feedback remain coherent and error-free", async ({ page, request }, testInfo) => {
-  fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
-  const seed = await seedWorkspace(request, `Conversation ${testInfo.project.name}`);
-  const browserErrors = collectBrowserErrors(page);
-  const prompt = "Confirm the deterministic acceptance response";
-  const renamedTitle = `Acceptance conversation ${testInfo.project.name}`;
-
-  try {
-    await page.goto(`/${seed.companyPrefix}/chat`);
-    const chatSidebar = page.getByTestId("verrail-chat-sidebar");
-    await expect(chatSidebar).toBeVisible();
-
-    await page.getByRole("textbox", { name: "Ask Verrail...", exact: true }).fill(prompt);
-    await page.getByRole("button", { name: "Send message", exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/${seed.companyPrefix}/chat/[0-9a-f-]+$`));
-    await expect(page.getByText("Acceptance runtime response", { exact: true })).toBeVisible({ timeout: 30_000 });
-    await expect(page.locator("main article").getByText(prompt, { exact: true })).toBeVisible();
-
-    await page.reload();
-    await expect(page.getByText("Acceptance runtime response", { exact: true })).toBeVisible({ timeout: 30_000 });
-    await expect(page.locator("main article").getByText(prompt, { exact: true })).toBeVisible();
-
-    const conversationActions = chatSidebar.getByRole("button", { name: "Conversation actions", exact: true });
-    await conversationActions.click();
-    await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
-    const renameDialog = page.getByRole("dialog");
-    await renameDialog.getByRole("textbox").fill(renamedTitle);
-    await renameDialog.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(chatSidebar.getByText(renamedTitle, { exact: true })).toBeVisible();
-
-    await conversationActions.click();
-    await page.getByRole("menuitem", { name: "Pin", exact: true }).click();
-    await expect(chatSidebar.getByRole("heading", { name: "Pinned", exact: true })).toBeVisible();
-
-    await conversationActions.click();
-    await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/${seed.companyPrefix}/chat$`));
-    await chatSidebar.getByRole("button", { name: "Archived", exact: true }).click();
-    await expect(chatSidebar.getByText(renamedTitle, { exact: true })).toBeVisible();
-
-    await chatSidebar.getByRole("button", { name: "Conversation actions", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Restore", exact: true }).click();
-    await expect(chatSidebar.getByText("No archived conversations.", { exact: true })).toBeVisible();
-    await chatSidebar.getByRole("button", { name: "Active conversations", exact: true }).click();
-
-    const search = chatSidebar.getByRole("textbox", { name: "Search conversations", exact: true });
-    await search.fill("Acceptance conversation");
-    await expect(chatSidebar.getByText(renamedTitle, { exact: true })).toBeVisible();
-    await search.fill("No matching acceptance conversation");
-    await expect(chatSidebar.getByText("No matching conversations.", { exact: true })).toBeVisible();
-    await search.fill("");
-    await chatSidebar.getByText(renamedTitle, { exact: true }).click();
-
-    const composer = page.getByRole("textbox", { name: "Ask Verrail...", exact: true });
-    await composer.fill("[acceptance-empty]");
-    await page.getByRole("button", { name: "Send message", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("did not return a response", { timeout: 30_000 });
-    await page.getByRole("button", { name: "Return to draft", exact: true }).click();
-
-    await composer.fill("[acceptance-slow]");
-    await page.getByRole("button", { name: "Send message", exact: true }).click();
-    const stopButton = page.getByRole("button", { name: "Stop response", exact: true });
-    await expect(stopButton).toBeVisible();
-    await stopButton.click();
-    await expect(page.getByRole("alert")).toContainText("Response stopped", { timeout: 30_000 });
-
-    await page.screenshot({
-      path: path.join(SCREENSHOT_DIR, `${testInfo.project.name}-conversation.png`),
-      fullPage: true,
-    });
     expect(browserErrors, browserErrors.join("\n")).toEqual([]);
   } finally {
     await page.close();

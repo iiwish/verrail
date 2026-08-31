@@ -1493,7 +1493,6 @@ export const WORKSPACE_OVERVIEW_LINKED_ISSUE_LIMIT = 4;
  */
 export const VERRAIL_NAVIGATION_ROUTE_ROOTS = [
   "home",
-  "chat",
   "targets",
   "infrastructure",
   "governance",

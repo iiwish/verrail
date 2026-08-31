@@ -60,10 +60,6 @@ vi.mock("./CompanySettingsSidebar", () => ({
   CompanySettingsSidebar: () => <div>Company settings sidebar</div>,
 }));
 
-vi.mock("./VerrailConversationSidebar", () => ({
-  VerrailConversationSidebar: () => <div>Conversation sidebar</div>,
-}));
-
 vi.mock("./VerrailProjectsSidebar", () => ({
   VerrailProjectsSidebar: () => <div>Projects sidebar</div>,
 }));
@@ -449,37 +445,6 @@ describe("Layout", () => {
     expect(container.textContent).not.toContain("Instance sidebar");
     expect(container.textContent).not.toContain("Plugin route sidebar");
     // The route asks the host to collapse the app sidebar to its rail.
-    expect(mockSetForceCollapsed).toHaveBeenCalledWith(true);
-
-    await act(async () => {
-      root.unmount();
-    });
-  });
-
-  it("uses the conversation manager as the Chat secondary sidebar", async () => {
-    currentPathname = "/PAP/chat";
-    mockCompanyState.companies = [{
-      id: "company-1",
-      issuePrefix: "PAP",
-      name: "Paperclip",
-      enableVerrailNavigation: true,
-    }];
-    mockCompanyState.selectedCompany = mockCompanyState.companies[0]!;
-    const root = createRoot(container);
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <Layout />
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-    await flushReact();
-
-    expect(container.textContent).toContain("Conversation sidebar");
-    expect(container.textContent).toContain("Main company nav");
     expect(mockSetForceCollapsed).toHaveBeenCalledWith(true);
 
     await act(async () => {

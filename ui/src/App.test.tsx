@@ -270,8 +270,6 @@ describe("Verrail navigation routes", () => {
     expect(gateIndex).toBeGreaterThan(-1);
     expect(gateIndex).toBeLessThan(pluginWildcardIndex);
     expect(appSource).toContain('<Route path="home" element={<VerrailHome />} />');
-    expect(appSource).toContain('<Route path="chat" element={<VerrailChat />} />');
-    expect(appSource).toContain('<Route path="chat/:conversationId" element={<VerrailChat />} />');
     expect(appSource).toContain('<Route path="targets" element={<Navigate to="/projects" replace />} />');
     expect(appSource).toContain('<Route path="targets/:targetId" element={<TargetOverviewRedirect />} />');
     expect(appSource).toContain('<Route path="targets/:targetId/:tab" element={<TargetWorkbench />} />');

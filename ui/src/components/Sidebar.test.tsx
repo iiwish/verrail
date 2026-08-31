@@ -189,7 +189,7 @@ describe("Sidebar", () => {
     });
   });
 
-  it("renders exactly the seven confirmed primary destinations when Verrail navigation is enabled", async () => {
+  it("renders exactly the six confirmed primary destinations when Verrail navigation is enabled", async () => {
     mockCompanyContext.selectedCompany.enableVerrailNavigation = true;
     const root = await renderSidebar();
 
@@ -197,7 +197,6 @@ describe("Sidebar", () => {
     const links = [...(primaryNav?.querySelectorAll("a") ?? [])];
     expect(links.map((link) => link.textContent?.trim())).toEqual([
       "Home",
-      "Chat",
       "Projects",
       "Agents",
       "Infrastructure",
@@ -206,7 +205,6 @@ describe("Sidebar", () => {
     ]);
     expect(links.map((link) => link.getAttribute("href"))).toEqual([
       "/home",
-      "/chat",
       "/projects",
       "/agents",
       "/infrastructure",
