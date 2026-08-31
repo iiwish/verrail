@@ -18,6 +18,12 @@ function act(callback: () => void | Promise<void>) {
 
 const companyState = vi.hoisted(() => ({
   selectedCompanyId: "company-1",
+  selectedCompany: {
+    id: "company-1",
+    name: "Paperclip",
+    issuePrefix: "PAP",
+    enableVerrailNavigation: false,
+  },
 }));
 
 const dialogState = vi.hoisted(() => ({
@@ -208,6 +214,7 @@ describe("CommandPalette", () => {
     locationState.location.pathname = "/";
     locationState.location.search = "";
     locationState.location.hash = "";
+    companyState.selectedCompany.enableVerrailNavigation = false;
     mockIssuesApi.list.mockResolvedValue([]);
     mockIssuesApi.listLabels.mockResolvedValue([]);
     mockAgentsApi.list.mockResolvedValue([]);
@@ -216,6 +223,40 @@ describe("CommandPalette", () => {
       enableExperimentalFileViewer: false,
     });
     mockAuthApi.getSession.mockResolvedValue({ user: { id: "user-1" }, session: { userId: "user-1" } });
+  });
+
+  it("uses the six Verrail destinations and hides the legacy task action when enabled", async () => {
+    companyState.selectedCompany.enableVerrailNavigation = true;
+    const { root } = renderWithQueryClient(<CommandPalette />, container);
+
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
+    });
+
+    await waitForAssertion(() => {
+      const labels = Array.from(container.querySelectorAll("button")).map((button) =>
+        button.textContent?.trim(),
+      );
+      expect(labels).toEqual(expect.arrayContaining([
+        "Home",
+        "Projects",
+        "Agents",
+        "Infrastructure",
+        "Governance",
+        "Settings",
+      ]));
+    });
+
+    expect(container.textContent).not.toContain("Create new task");
+    expect(container.textContent).not.toContain("Dashboard");
+    expect(container.textContent).not.toContain("Inbox");
+    expect(container.textContent).not.toContain("Goals");
+    expect(container.textContent).not.toContain("Costs");
+    expect(container.textContent).not.toContain("Activity");
+
+    act(() => {
+      root.unmount();
+    });
   });
 
   afterEach(() => {

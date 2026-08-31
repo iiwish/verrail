@@ -1,6 +1,7 @@
 import { Rocket, Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "../lib/utils";
+import { VerrailBrand } from "./VerrailBrand";
 
 interface FrontDoorProps {
   onChoose: (path: "create" | "grow") => void;
@@ -11,6 +12,7 @@ export function FrontDoor({ onChoose }: FrontDoorProps) {
   return (
     <div className="flex flex-col items-center justify-center min-h-(--sz-60vh) px-8">
       <div className="text-center mb-10">
+        <VerrailBrand className="mb-8 h-6" />
         <h2 className="text-2xl font-bold tracking-tight">
           {t("onboarding.frontDoor.title")}
         </h2>

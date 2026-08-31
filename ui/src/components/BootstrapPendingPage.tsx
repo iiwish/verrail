@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { BOOTSTRAP_FALLBACK_COMMAND } from "@/bootstrapSetup";
 import type { AuthSession } from "@paperclipai/shared";
 import { Card } from "@/components/ui/card";
+import { VerrailBrand } from "./VerrailBrand";
 
 type BootstrapPendingPageProps = {
   claimAvailable: boolean;
@@ -24,8 +25,8 @@ function CliFallback({ hasActiveInvite = false }: { hasActiveInvite?: boolean })
       </div>
       <p className="mt-2 text-sm text-muted-foreground">
         {hasActiveInvite
-          ? "A bootstrap invite is already active. Check your Paperclip startup logs for the first-admin URL, or run this command on the host to rotate it:"
-          : "Run this command on the host that runs Paperclip to print a one-time first-admin invite URL:"}
+          ? "A bootstrap invite is already active. Check your Verrail startup logs for the first-admin URL, or run this command on the host to rotate it:"
+          : "Run this command on the host that runs Verrail to print a one-time first-admin invite URL:"}
       </p>
       <pre className="mt-3 overflow-x-auto rounded-md border border-border bg-muted/30 p-3 font-mono text-xs">
 {BOOTSTRAP_FALLBACK_COMMAND}
@@ -37,7 +38,10 @@ function CliFallback({ hasActiveInvite = false }: { hasActiveInvite?: boolean })
 function StateChrome({ children }: { children: ReactNode }) {
   return (
     <div className="mx-auto max-w-xl py-10">
-      <Card className="block p-6">{children}</Card>
+      <Card className="block p-6">
+        <VerrailBrand className="mb-6 h-5" />
+        {children}
+      </Card>
     </div>
   );
 }
@@ -76,7 +80,7 @@ export function BootstrapPendingPage({
   if (!claimAvailable) {
     return (
       <StateChrome>
-        <h1 className="text-xl font-semibold">This Paperclip is waiting on its first admin</h1>
+        <h1 className="text-xl font-semibold">This Verrail instance is waiting on its first admin</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           This instance runs in invite-only mode. The operator must generate a one-time first-admin invite URL
           from the host. Once you have the link, open it from this browser to finish setup.
@@ -120,9 +124,9 @@ export function BootstrapPendingPage({
   if (!session) {
     return (
       <StateChrome>
-        <h1 className="text-xl font-semibold">Finish setting up this Paperclip</h1>
+        <h1 className="text-xl font-semibold">Finish setting up Verrail</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          No admin has claimed this instance yet. Sign in or create your Paperclip account to become the first
+          No admin has claimed this instance yet. Sign in or create your Verrail account to become the first
           admin from this browser.
         </p>
         <div className="mt-5">
@@ -139,7 +143,7 @@ export function BootstrapPendingPage({
   const isClaiming = claimState === "claiming";
   return (
     <StateChrome>
-      <h1 className="text-xl font-semibold">Finish setting up this Paperclip</h1>
+      <h1 className="text-xl font-semibold">Finish setting up Verrail</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         No admin has claimed this instance yet. Claim it now to become the first admin and start onboarding.
       </p>

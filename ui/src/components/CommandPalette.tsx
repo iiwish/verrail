@@ -30,8 +30,13 @@ import {
   History,
   SquarePen,
   FileCode2,
+  FolderKanban,
+  House,
   Plus,
   Search,
+  ServerCog,
+  Settings,
+  ShieldCheck,
 } from "lucide-react";
 import { Identity } from "./Identity";
 import { agentUrl, projectUrl } from "../lib/utils";
@@ -42,6 +47,7 @@ import {
   type SearchQueryParserContext,
 } from "../lib/search-query-parser";
 import { useTranslation } from "@/i18n";
+import { isVerrailNavigationEnabled } from "../lib/verrail-navigation";
 
 const SEARCH_ALL_VALUE = "__paperclip-search-all__";
 
@@ -94,7 +100,8 @@ export function CommandPalette() {
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
   const location = useLocation();
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
+  const verrailNavigationEnabled = isVerrailNavigationEnabled(selectedCompany);
   const { openNewIssue, openNewAgent } = useDialogActions();
   const { isMobile, setSidebarOpen } = useSidebar();
   const searchQuery = query.trim();
@@ -321,16 +328,18 @@ export function CommandPalette() {
         )}
 
         <CommandGroup heading={t("commandPalette.actions")}>
-          <CommandItem
-            onSelect={() => {
-              setOpen(false);
-              openNewIssue();
-            }}
-          >
-            <SquarePen className="mr-2 h-4 w-4" />
-            {t("commandPalette.createTask")}
-            <span className="ml-auto text-xs text-muted-foreground">C</span>
-          </CommandItem>
+          {!verrailNavigationEnabled ? (
+            <CommandItem
+              onSelect={() => {
+                setOpen(false);
+                openNewIssue();
+              }}
+            >
+              <SquarePen className="mr-2 h-4 w-4" />
+              {t("commandPalette.createTask")}
+              <span className="ml-auto text-xs text-muted-foreground">C</span>
+            </CommandItem>
+          ) : null}
           {onIssueDetail && fileViewerEnabled && (
             <CommandItem
               onSelect={() => {
@@ -361,38 +370,69 @@ export function CommandPalette() {
         <CommandSeparator />
 
         <CommandGroup heading={t("commandPalette.pages")}>
-          <CommandItem onSelect={() => go("/dashboard")}>
-            <LayoutDashboard className="mr-2 h-4 w-4" />
-            {t("nav.dashboard")}
-          </CommandItem>
-          <CommandItem onSelect={() => go("/inbox")}>
-            <Inbox className="mr-2 h-4 w-4" />
-            {t("nav.inbox")}
-          </CommandItem>
-          <CommandItem onSelect={() => go("/issues")}>
-            <CircleDot className="mr-2 h-4 w-4" />
-            {t("nav.tasks")}
-          </CommandItem>
-          <CommandItem onSelect={() => go("/projects")}>
-            <Hexagon className="mr-2 h-4 w-4" />
-            {t("nav.projects")}
-          </CommandItem>
-          <CommandItem onSelect={() => go("/goals")}>
-            <Target className="mr-2 h-4 w-4" />
-            {t("nav.goals")}
-          </CommandItem>
-          <CommandItem onSelect={() => go("/agents")}>
-            <Bot className="mr-2 h-4 w-4" />
-            {t("nav.agents")}
-          </CommandItem>
-          <CommandItem onSelect={() => go("/costs")}>
-            <DollarSign className="mr-2 h-4 w-4" />
-            {t("nav.costs")}
-          </CommandItem>
-          <CommandItem onSelect={() => go("/activity")}>
-            <History className="mr-2 h-4 w-4" />
-            {t("nav.activity")}
-          </CommandItem>
+          {verrailNavigationEnabled ? (
+            <>
+              <CommandItem onSelect={() => go("/home")}>
+                <House className="mr-2 h-4 w-4" />
+                {t("nav.home")}
+              </CommandItem>
+              <CommandItem onSelect={() => go("/projects")}>
+                <FolderKanban className="mr-2 h-4 w-4" />
+                {t("nav.projects")}
+              </CommandItem>
+              <CommandItem onSelect={() => go("/agents")}>
+                <Bot className="mr-2 h-4 w-4" />
+                {t("nav.agents")}
+              </CommandItem>
+              <CommandItem onSelect={() => go("/infrastructure")}>
+                <ServerCog className="mr-2 h-4 w-4" />
+                {t("nav.infrastructure")}
+              </CommandItem>
+              <CommandItem onSelect={() => go("/governance")}>
+                <ShieldCheck className="mr-2 h-4 w-4" />
+                {t("nav.governance")}
+              </CommandItem>
+              <CommandItem onSelect={() => go("/settings")}>
+                <Settings className="mr-2 h-4 w-4" />
+                {t("nav.settings")}
+              </CommandItem>
+            </>
+          ) : (
+            <>
+              <CommandItem onSelect={() => go("/dashboard")}>
+                <LayoutDashboard className="mr-2 h-4 w-4" />
+                {t("nav.dashboard")}
+              </CommandItem>
+              <CommandItem onSelect={() => go("/inbox")}>
+                <Inbox className="mr-2 h-4 w-4" />
+                {t("nav.inbox")}
+              </CommandItem>
+              <CommandItem onSelect={() => go("/issues")}>
+                <CircleDot className="mr-2 h-4 w-4" />
+                {t("nav.tasks")}
+              </CommandItem>
+              <CommandItem onSelect={() => go("/projects")}>
+                <Hexagon className="mr-2 h-4 w-4" />
+                {t("nav.projects")}
+              </CommandItem>
+              <CommandItem onSelect={() => go("/goals")}>
+                <Target className="mr-2 h-4 w-4" />
+                {t("nav.goals")}
+              </CommandItem>
+              <CommandItem onSelect={() => go("/agents")}>
+                <Bot className="mr-2 h-4 w-4" />
+                {t("nav.agents")}
+              </CommandItem>
+              <CommandItem onSelect={() => go("/costs")}>
+                <DollarSign className="mr-2 h-4 w-4" />
+                {t("nav.costs")}
+              </CommandItem>
+              <CommandItem onSelect={() => go("/activity")}>
+                <History className="mr-2 h-4 w-4" />
+                {t("nav.activity")}
+              </CommandItem>
+            </>
+          )}
         </CommandGroup>
 
         {visibleIssues.length > 0 && (

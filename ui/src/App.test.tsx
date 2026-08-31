@@ -157,9 +157,9 @@ describe("CloudAccessGate", () => {
     mockAuthApi.getSession.mockResolvedValue(null);
 
     const root = renderGate(container);
-    await waitForText(container, "Finish setting up this Paperclip");
+    await waitForText(container, "Finish setting up Verrail");
 
-    expect(container.textContent).toContain("Finish setting up this Paperclip");
+    expect(container.textContent).toContain("Finish setting up Verrail");
     expect(container.textContent).toContain("Sign in / Create account");
     expect(container.textContent).toContain("npx paperclipai auth bootstrap-ceo");
     expect(mockAccessApi.getCurrentBoardAccess).not.toHaveBeenCalled();
@@ -218,9 +218,9 @@ describe("CloudAccessGate", () => {
     });
 
     const root = renderGate(container);
-    await waitForText(container, "This Paperclip is waiting on its first admin");
+    await waitForText(container, "This Verrail instance is waiting on its first admin");
 
-    expect(container.textContent).toContain("This Paperclip is waiting on its first admin");
+    expect(container.textContent).toContain("This Verrail instance is waiting on its first admin");
     expect(container.textContent).toContain("invite-only mode");
     expect(container.textContent).not.toContain("Claim this instance");
     expect(container.textContent).not.toContain("Sign in / Create account");
@@ -260,5 +260,18 @@ describe("Decisions routes", () => {
     expect(appSource).not.toContain('path="decisions/training/:id"');
     expect(appSource).not.toContain('path="training"');
     expect(appSource).not.toContain('path="training/:id"');
+  });
+});
+
+describe("Verrail navigation routes", () => {
+  it("registers every reserved route before the plugin wildcard and keeps them behind the workspace gate", () => {
+    const gateIndex = appSource.indexOf('<Route element={<VerrailNavigationGate />}>');
+    const pluginWildcardIndex = appSource.indexOf('<Route path=":pluginRoutePath/*" element={<PluginPage />} />');
+    expect(gateIndex).toBeGreaterThan(-1);
+    expect(gateIndex).toBeLessThan(pluginWildcardIndex);
+    expect(appSource).toContain('<Route path="home" element={<VerrailHome />} />');
+    expect(appSource).toContain('<Route path="targets" element={<Navigate to="/projects" replace />} />');
+    expect(appSource).toContain('<Route path="infrastructure" element={<VerrailInfrastructure />} />');
+    expect(appSource).toContain('<Route path="governance" element={<VerrailGovernance />} />');
   });
 });

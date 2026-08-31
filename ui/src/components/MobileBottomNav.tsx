@@ -2,10 +2,14 @@ import { useMemo } from "react";
 import { NavLink, useLocation } from "@/lib/router";
 import {
   House,
+  Bot,
+  FolderKanban,
   CircleDot,
   SquarePen,
   Users,
   Inbox,
+  Settings,
+  ShieldCheck,
 } from "lucide-react";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
@@ -14,6 +18,7 @@ import { cn } from "../lib/utils";
 import { useInboxBadge } from "../hooks/useInboxBadge";
 import { Badge } from "@/components/ui/badge";
 import { useTranslation } from "@/i18n";
+import { isVerrailNavigationEnabled } from "../lib/verrail-navigation";
 
 interface MobileBottomNavProps {
   visible: boolean;
@@ -39,12 +44,22 @@ type MobileNavItem = MobileNavLinkItem | MobileNavActionItem;
 export function MobileBottomNav({ visible }: MobileBottomNavProps) {
   const { t } = useTranslation();
   const location = useLocation();
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { openNewIssue } = useDialogActions();
   const inboxBadge = useInboxBadge(selectedCompanyId);
 
-  const items = useMemo<MobileNavItem[]>(
-    () => [
+  const items = useMemo<MobileNavItem[]>(() => {
+    if (isVerrailNavigationEnabled(selectedCompany)) {
+      return [
+        { type: "link", to: "/home", label: t("nav.home"), icon: House },
+        { type: "link", to: "/projects", label: t("nav.projects"), icon: FolderKanban },
+        { type: "link", to: "/agents", label: t("nav.agents"), icon: Bot },
+        { type: "link", to: "/governance", label: t("nav.governance"), icon: ShieldCheck },
+        { type: "link", to: "/settings", label: t("nav.settings"), icon: Settings },
+      ];
+    }
+
+    return [
       { type: "link", to: "/dashboard", label: t("nav.home"), icon: House },
       { type: "link", to: "/issues", label: t("nav.tasks"), icon: CircleDot },
       { type: "action", label: t("nav.create"), icon: SquarePen, onClick: () => openNewIssue() },
@@ -56,9 +71,8 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
         icon: Inbox,
         badge: inboxBadge.inbox,
       },
-    ],
-    [openNewIssue, inboxBadge.inbox, t],
-  );
+    ];
+  }, [inboxBadge.inbox, openNewIssue, selectedCompany, t]);
 
   return (
     <nav

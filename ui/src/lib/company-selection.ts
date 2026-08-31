@@ -5,6 +5,7 @@ interface BounceCandidateCompany {
   name: string;
   issuePrefix: string;
   status: string;
+  enableVerrailNavigation?: boolean;
 }
 
 /**

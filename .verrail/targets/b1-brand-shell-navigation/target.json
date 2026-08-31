@@ -1,0 +1,27 @@
+{
+  "id": "b1-brand-shell-navigation",
+  "title": "Brand shell and primary navigation",
+  "intent": "Turn the approved Verrail brand and navigation contracts into a reversible application shell that can be evaluated in a real browser without changing compatibility identities or domain write authority.",
+  "scope": "Under the disabled-by-default Workspace navigation flag, introduce the Verrail brand component, update the application identity surfaces, expose the six confirmed primary navigation destinations, and provide operational Home, Infrastructure, and Governance skeletons over existing read paths.",
+  "non_goals": [
+    "Authoritative Target creation or mutation APIs",
+    "Rename Paperclip compatibility identifiers, CLI commands, packages, telemetry contracts, database columns, environment variables, or persisted client keys",
+    "Implement the TargetReadModel projection",
+    "Introduce Temporal or Go production services",
+    "Enable the new navigation globally or for existing workspaces",
+    "Ship, merge, deploy, or publicly announce the brand"
+  ],
+  "acceptance_criteria": [
+    "A reusable Verrail brand component renders the approved mark or lockup with accessible fallback text and is used by the application shell, authentication, onboarding, and loading identity surfaces.",
+    "The HTML document, favicon set, install manifest, browser title, and user-visible English and Chinese brand copy identify the product as Verrail while compatibility keys and runtime injection sentinels remain unchanged.",
+    "A Workspace with enableVerrailNavigation false retains the inherited navigation and landing route, while a Workspace with the flag true lands on /home and sees exactly Home, Projects, Agents, Infrastructure, Governance, and Settings as primary navigation.",
+    "The Home route presents an operational, non-dashboard overview using existing attention, run, and project read paths with clear loading, failure, empty, and populated states and no fabricated Target authority.",
+    "Infrastructure and Governance routes provide compact aggregation pages that lead to existing supported operational surfaces instead of adding duplicate write behavior.",
+    "Canonical workspace routes work through prefixed and compatible unprefixed redirects and do not fall through to plugin routes.",
+    "Desktop and narrow-viewport browser evidence confirms the enabled shell is legible, non-overlapping, navigable, and free of stale primary Paperclip identity.",
+    "Focused tests, typecheck, production build, token gates, brand asset validation, i18n parity, and diff integrity pass, or any inherited baseline gap is explicitly recorded."
+  ],
+  "status": "needs_review",
+  "created_at": "2026-08-26T09:42:47Z",
+  "updated_at": "2026-08-26T10:57:42Z"
+}

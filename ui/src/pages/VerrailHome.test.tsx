@@ -1,0 +1,116 @@
+// @vitest-environment jsdom
+
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { VerrailHome } from "./VerrailHome";
+
+const attentionList = vi.hoisted(() => vi.fn());
+const liveRunsForCompany = vi.hoisted(() => vi.fn());
+const projectsList = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/router", () => ({
+  Link: ({ to, children, ...props }: { to: string; children: React.ReactNode }) => (
+    <a href={to} {...props}>{children}</a>
+  ),
+}));
+
+vi.mock("../api/attention", () => ({ attentionApi: { list: attentionList } }));
+vi.mock("../api/heartbeats", () => ({ heartbeatsApi: { liveRunsForCompany } }));
+vi.mock("../api/projects", () => ({ projectsApi: { list: projectsList } }));
+vi.mock("../context/CompanyContext", () => ({
+  useCompany: () => ({
+    selectedCompanyId: "company-1",
+    selectedCompany: { id: "company-1", name: "Delivery Lab", issuePrefix: "LAB" },
+  }),
+}));
+vi.mock("../context/BreadcrumbContext", () => ({
+  useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }),
+}));
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+
+async function flushReact() {
+  await act(async () => {
+    await Promise.resolve();
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+  });
+}
+
+describe("VerrailHome", () => {
+  let container: HTMLDivElement;
+  let root: ReturnType<typeof createRoot>;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    vi.clearAllMocks();
+  });
+
+  async function renderHome() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <VerrailHome />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+  }
+
+  it("shows existing attention, run, and project read models without inventing targets", async () => {
+    attentionList.mockResolvedValue({
+      totalCount: 1,
+      items: [{
+        id: "attention-1",
+        sourceKind: "review",
+        whyNow: "Review requested",
+        activityAt: new Date().toISOString(),
+        subject: { title: "Review release evidence", identifier: "LAB-12", href: "/issues/LAB-12" },
+      }],
+    });
+    liveRunsForCompany.mockResolvedValue([{
+      id: "run-1",
+      agentId: "agent-1",
+      agentName: "Release reviewer",
+      status: "running",
+    }]);
+    projectsList.mockResolvedValue([{
+      id: "project-1",
+      urlKey: "delivery-platform-12345678",
+      name: "Delivery platform",
+      taskCount: 3,
+    }]);
+
+    await renderHome();
+
+    expect(container.textContent).toContain("Delivery Lab");
+    expect(container.textContent).toContain("Review release evidence");
+    expect(container.textContent).toContain("Release reviewer");
+    expect(container.textContent).toContain("Delivery platform");
+    expect(container.textContent).not.toContain("New Target");
+    expect(container.querySelector('a[href="/issues/LAB-12"]')).not.toBeNull();
+  });
+
+  it("renders explicit empty states for every operational section", async () => {
+    attentionList.mockResolvedValue({ totalCount: 0, items: [] });
+    liveRunsForCompany.mockResolvedValue([]);
+    projectsList.mockResolvedValue([]);
+
+    await renderHome();
+
+    expect(container.textContent).toContain("Nothing needs attention.");
+    expect(container.textContent).toContain("No agents are running.");
+    expect(container.textContent).toContain("No projects yet.");
+  });
+});

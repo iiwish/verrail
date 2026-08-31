@@ -6,7 +6,7 @@ import { authApi } from "@/api/auth";
 import { healthApi } from "@/api/health";
 import { queryKeys } from "@/lib/queryKeys";
 import { BootstrapPendingPage } from "@/components/BootstrapPendingPage";
-import { PaperclipLoading } from "@/components/AnimatedPaperclipIcon";
+import { VerrailLoading } from "@/components/VerrailBrand";
 import { Card } from "@/components/ui/card";
 
 function NoBoardAccessPage() {
@@ -75,7 +75,7 @@ export function CloudAccessGate() {
     (isAuthenticatedMode && sessionQuery.isLoading) ||
     (isAuthenticatedMode && !isBootstrapPending && !!sessionQuery.data && boardAccessQuery.isLoading)
   ) {
-    return <PaperclipLoading />;
+    return <VerrailLoading />;
   }
 
   if (healthQuery.error || boardAccessQuery.error) {
@@ -93,7 +93,7 @@ export function CloudAccessGate() {
   if (isBootstrapPending) {
     const health = healthQuery.data;
     if (!health) {
-      return <PaperclipLoading />;
+      return <VerrailLoading />;
     }
     const claimError = claimMutation.error instanceof ApiError
       ? { status: claimMutation.error.status, message: claimMutation.error.message }

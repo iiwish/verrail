@@ -42,6 +42,7 @@ import { navigateTopLevel } from "@/lib/browserNavigation";
 import { cloudStackCreateUrl, cloudStackEnterUrl } from "@/lib/cloudLinks";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "@/lib/utils";
+import { workspaceLandingRoute } from "@/lib/verrail-navigation";
 import { useSidebar } from "../context/SidebarContext";
 import { CompanyPatternIcon } from "./CompanyPatternIcon";
 import { useTranslation } from "@/i18n";
@@ -285,7 +286,7 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
     setOpen(false);
     if (isMobile) setSidebarOpen(false);
     if (shouldLeaveCurrentRoute) {
-      navigate(`/${company.issuePrefix}/dashboard`);
+      navigate(`/${company.issuePrefix}/${workspaceLandingRoute(company)}`);
     }
   }
 
