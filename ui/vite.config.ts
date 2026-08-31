@@ -25,6 +25,9 @@ export default defineConfig(({ mode }) => ({
       lexical: path.resolve(__dirname, "./node_modules/lexical/dist/Lexical.mjs"),
     },
   },
+  optimizeDeps: {
+    entries: ["index.html"],
+  },
   server: {
     port: 5173,
     watch: createUiDevWatchOptions(process.cwd()),

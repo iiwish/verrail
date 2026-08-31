@@ -51,11 +51,14 @@ Home 支持 Project、Role、Stage、Status 和 Owner 筛选。没有真实数�
 
 ## 5. Project 与 Target 路由
 
+Project 的规范产品层级是 `Project -> Target -> Work`。Project 导航以 Overview 和 Targets 为主；Work 只在 Target Workbench 内作为正式执行表面。Project 可以提供跨 Target 的只读工作聚合，但必须按 Target 分组且创建 Work 时要求确定 Target。继承的 Project-scoped Issue 保留在 Legacy Work 兼容表面，不与 Targets 并列表达新的领域所有权。
+
 | 对象 | Canonical Route | 主要表面 |
 | --- | --- | --- |
 | Project 列表 | `/projects` | Project、活动 Target、健康和最近活动 |
 | Project 概览 | `/projects/:projectId` | Overview、Targets、Resources、Members、Configuration |
 | Project Targets | `/projects/:projectId/targets` | 目标列表、筛选、创建和批量查看 |
+| Project Legacy Work | `/projects/:projectId/legacy-work` | 继承的 Project-scoped Issue 兼容操作；不推断 Target 归属 |
 | Target Workbench | `/targets/:targetId` | 默认跳转 Overview |
 | Target Tab | `/targets/:targetId/:tab` | `overview`、`stages`、`work`、`submission`、`artifacts`、`evidence`、`runs`、`timeline` |
 | TargetRevision Snapshot | `/targets/:targetId/revisions/:targetRevisionId` | 不可变责任合同、适用 Graph、Criterion、Submission 和历史；非活动 Revision 默认只读 |
@@ -125,6 +128,9 @@ Target Workbench 始终显示 Target 标题、状态、Outcome Owner、当前 St
 13. 导航项、Badge 和聚合计数只显示当前 Principal 有权读取的范围；隐藏导航不是授权机制，直接访问 Canonical Route 仍由服务端权限校验并返回一致的 Permission Denied 或 Not Found。
 14. 需要审阅、决定、验收、审计或分享的链接必须指向固定 TargetRevision、Submission、ArtifactRevision、Evidence、Run 或 IntegrationRun，不得只链接到会随活动 Revision 变化的默认 Tab。
 15. 每个嵌套对象路由都校验 Workspace 和父对象关系。`workNodeId`、`submissionId`、`artifactRevisionId`、`evidenceId`、`runId` 和 `integrationRunId` 必须是不可变全局标识；ID 存在但不属于 URL 中 Target 的对象不得被渲染或泄露。
+16. Verrail 模式中的 Project 裸路由固定进入 Overview，不读取继承 Tasks Tab 缓存；Project 一级操作只创建 Target，`New Task` 不出现在 Project Overview 或 Targets。
+17. `/projects/:projectId/issues` 及其筛选深链继续打开同一兼容工作数据；Verrail 新链接使用 `/projects/:projectId/legacy-work`，经典导航继续使用原 Tasks 命名和路径。
+18. Project 列表中的 Target 数量、Attention 和健康摘要必须在服务端完成 Principal 授权过滤后计算，不从分页行数、隐藏对象或旧 `taskCount` 推断。
 
 ### Target 只读投影前提
 

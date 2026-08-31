@@ -1,0 +1,25 @@
+{
+  "id": "b2-3-frontend-acceptance-closure",
+  "title": "B2.3 Frontend Acceptance Closure",
+  "intent": "Turn the B2 frontend into a deterministic, reviewable acceptance candidate by closing Storybook, end-to-end journey, test-stability, accessibility, bundle-budget, and evidence gaps.",
+  "scope": "Align the Storybook toolchain, localize shared close controls, stabilize the known concurrency-sensitive UI tests, add an isolated Verrail acceptance journey and bundle baseline gate, and record complete verification evidence for the current B2 working tree.",
+  "non_goals": [
+    "Implement WorkGraph, WorkNode, Stage, Review, Acceptance, or Temporal capability",
+    "Migrate inherited Issue data or remove compatibility routes",
+    "Redesign the B2 information architecture or visual system",
+    "Perform broad frontend performance optimization beyond establishing an explicit baseline budget",
+    "Commit, merge, deploy, release, or create a ship record without explicit approval"
+  ],
+  "acceptance_criteria": [
+    "Storybook packages use one compatible exact version and the static Storybook build succeeds.",
+    "A deterministic Playwright journey proves Project to Target to Work navigation at desktop and narrow-desktop viewports without uncaught page or console errors.",
+    "Shared Dialog and Sheet close controls expose localized accessible names while retaining keyboard dismissal and focus behavior.",
+    "The previously observed CompanyEnvironments, IssuesList, and cron-fires concurrency-sensitive tests pass under representative grouped and stable-suite execution.",
+    "A checked frontend bundle baseline prevents accidental growth beyond an explicitly recorded acceptance budget.",
+    "UI tests, typecheck, production build, token gates, brand gates, locale parity, Storybook, end-to-end acceptance, and diff checks pass or any unresolved gap is recorded truthfully.",
+    "Delivery receipt, evidence, acceptance mapping, screenshots, and an advisory review decision make the merge-readiness conclusion independently inspectable."
+  ],
+  "status": "needs_review",
+  "created_at": "2026-08-27T07:43:14Z",
+  "updated_at": "2026-08-28T02:21:01Z"
+}

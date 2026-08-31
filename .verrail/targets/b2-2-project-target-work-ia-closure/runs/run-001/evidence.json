@@ -1,0 +1,91 @@
+{
+  "target_id": "b2-2-project-target-work-ia-closure",
+  "run_id": "run-001",
+  "domain_contract": {
+    "hierarchy": "Workspace -> Project -> Target -> TargetRevision -> WorkGraph -> WorkNode",
+    "project_role": "Long-lived delivery container and aggregation boundary",
+    "target_role": "Stable delivery identity and acceptance boundary",
+    "work_role": "TargetRevision and GraphRevision-owned execution or gate",
+    "legacy_issue_role": "Project-scoped compatibility work with no inferred Target relationship"
+  },
+  "api_contract": {
+    "response": "TargetListResponseV1.summary",
+    "calculation_order": "query filters -> Principal authorization -> summary -> cursor -> pagination",
+    "metrics": ["total", "open", "attention", "byProject"],
+    "project_list_source": "server-authorized Target summary requested with limit=1; never pagination length or Project.taskCount",
+    "failure_behavior": "Project data remains visible and a localized Target metric failure is shown"
+  },
+  "navigation_contract": {
+    "verrail_default": "/projects/:projectId/overview",
+    "primary_tabs": ["Overview", "Targets"],
+    "compatibility_route": "/projects/:projectId/legacy-work",
+    "preserved_routes": ["/projects/:projectId/issues", "/projects/:projectId/issues/:filter"],
+    "classic_default": "/projects/:projectId/issues with remembered classic tab behavior",
+    "creation_authority": "One Project-level New Target action; New Task remains inside Legacy Work"
+  },
+  "browser_matrix": [
+    {
+      "surface": "/MIN/projects",
+      "status": "passed",
+      "result": "Rows displayed open Target and attention metrics instead of inherited task counts."
+    },
+    {
+      "surface": "/MIN/projects/m0-integration-project",
+      "status": "passed",
+      "result": "The bare route resolved to Overview rather than the cached Tasks tab."
+    },
+    {
+      "surface": "/MIN/projects/m0-integration-project/overview",
+      "status": "passed",
+      "result": "Overview led the tab order and rendered a recent Target list with a View All command."
+    },
+    {
+      "surface": "/MIN/projects/m0-integration-project/targets",
+      "status": "passed",
+      "result": "Targets rendered inside the Project shell with Project and section breadcrumbs and one New Target command."
+    },
+    {
+      "surface": "New Target dialog",
+      "status": "passed",
+      "result": "The current Project was preselected and the dialog remained cancelable without mutation."
+    },
+    {
+      "surface": "/MIN/projects/m0-integration-project/legacy-work",
+      "status": "passed",
+      "result": "The page explicitly described inherited project tasks, made no Target assignment claim, and retained search, view, filter, New Task, and Create Task controls."
+    },
+    {
+      "surface": "approximately 900x900 browser viewport",
+      "status": "passed",
+      "result": "Targets and Legacy Work were visually inspected without incoherent overlap, clipped controls, or broken text."
+    }
+  ],
+  "tests": [
+    {
+      "scope": "B2.2-focused server, Project list, Target list, route, and locale suite",
+      "status": "passed",
+      "result": "5 files and 32 tests passed."
+    },
+    {
+      "scope": "workspace typecheck and final UI typecheck",
+      "status": "passed",
+      "result": "The full workspace typecheck passed before the final localized hardening and the final UI package typecheck passed afterward."
+    },
+    {
+      "scope": "root build and final UI build",
+      "status": "passed",
+      "result": "Both completed successfully with only inherited non-fatal Vite warnings."
+    },
+    {
+      "scope": "repository-wide Vitest suite",
+      "status": "failed_environment_baseline",
+      "result": "401 files passed, 1 skipped, 8 failed; 4706 tests passed, 19 skipped, 30 failed in 1978.34 seconds.",
+      "assessment": "No B2.2-focused file failed. The failed groups match the known environment-sensitive baseline recorded before this slice."
+    }
+  ],
+  "missing": [
+    "Independent product and engineering review.",
+    "A globally green clean-host repository-wide suite or explicit maintainer acceptance of the inherited 30-test baseline.",
+    "Commit, pull request, final approval, merge, deployment, release, and ship record."
+  ]
+}

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Project } from "@paperclipai/shared";
 import { projectsApi } from "../api/projects";
+import { targetsApi } from "../api/targets";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -25,6 +26,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ArrowUpDown, Check, Hexagon, Plus } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { useTranslation } from "@/i18n";
+import { isVerrailNavigationEnabled } from "../lib/verrail-navigation";
 
 type ProjectSortField = "name" | "updated" | "created" | "targetDate";
 type ProjectSortDir = "asc" | "desc";
@@ -74,7 +76,7 @@ function sortProjects(projects: Project[], sortField: ProjectSortField, sortDir:
 
 export function Projects() {
   const { t } = useTranslation();
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { openNewProject } = useDialogActions();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [sortField, setSortField] = useState<ProjectSortField>("name");
@@ -88,6 +90,12 @@ export function Projects() {
     queryKey: queryKeys.projects.list(selectedCompanyId!),
     queryFn: () => projectsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
+  });
+  const verrailNavigationEnabled = isVerrailNavigationEnabled(selectedCompany);
+  const targetSummaryQuery = useQuery({
+    queryKey: queryKeys.targets.list(selectedCompanyId!, null, { limit: 1 }),
+    queryFn: () => targetsApi.list(selectedCompanyId!, { limit: 1 }),
+    enabled: Boolean(selectedCompanyId && verrailNavigationEnabled),
   });
   const membershipsQuery = useResourceMemberships(selectedCompanyId);
   const membershipMutation = useResourceMembershipMutation(selectedCompanyId);
@@ -178,6 +186,9 @@ export function Projects() {
       </div>
 
       {error && <p className="text-sm text-destructive">{error.message}</p>}
+      {verrailNavigationEnabled && targetSummaryQuery.error ? (
+        <p className="text-sm text-destructive">{t("projects.targetMetricsUnavailable")}</p>
+      ) : null}
 
       {!isLoading && projects.length === 0 && (
         <EmptyState
@@ -213,6 +224,8 @@ export function Projects() {
                     const starPending = pending && membershipMutation.variables?.starred !== undefined;
                     const joinLeavePending = pending && membershipMutation.variables?.starred === undefined;
                     const starred = isStarred(membershipsQuery.data, "project", project.id);
+                    const targetSummary = targetSummaryQuery.data?.summary?.byProject[project.id]
+                      ?? (targetSummaryQuery.data?.summary ? { total: 0, open: 0, attention: 0 } : null);
                     return (
                       <EntityRow
                         key={project.id}
@@ -224,12 +237,30 @@ export function Projects() {
                         className={state === "left" ? "group text-foreground/55" : "group"}
                         trailing={
                           <div className="flex items-center gap-3">
-                            <span
-                              className="hidden text-xs text-muted-foreground tabular-nums sm:inline"
-                              title={t("projects.taskCount", { count: project.taskCount ?? 0 })}
-                            >
-                              {t("projects.taskCount", { count: project.taskCount ?? 0 })}
-                            </span>
+                            {verrailNavigationEnabled ? (
+                              targetSummary ? (
+                                <span
+                                  className="hidden text-xs text-muted-foreground tabular-nums sm:inline"
+                                  title={t("projects.openTargetCount", { count: targetSummary.open })}
+                                >
+                                  {t("projects.openTargetCount", { count: targetSummary.open })}
+                                  {targetSummary.attention > 0
+                                    ? ` · ${t("projects.attentionTargetCount", { count: targetSummary.attention })}`
+                                    : null}
+                                </span>
+                              ) : targetSummaryQuery.error ? (
+                                <span className="hidden text-xs text-destructive sm:inline">
+                                  {t("projects.targetMetricsUnavailableShort")}
+                                </span>
+                              ) : null
+                            ) : (
+                              <span
+                                className="hidden text-xs text-muted-foreground tabular-nums sm:inline"
+                                title={t("projects.taskCount", { count: project.taskCount ?? 0 })}
+                              >
+                                {t("projects.taskCount", { count: project.taskCount ?? 0 })}
+                              </span>
+                            )}
                             {project.budget && (
                               <span className="hidden text-xs text-muted-foreground tabular-nums sm:inline">
                                 {formatProjectBudget(project.budget)}

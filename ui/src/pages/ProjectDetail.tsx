@@ -27,6 +27,7 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { PageTabBar } from "../components/PageTabBar";
 import { ProjectWorkspacesContent } from "../components/ProjectWorkspacesContent";
 import { SummarySlotCard } from "../components/SummarySlotCard";
+import { TargetList } from "../components/TargetList";
 import { MembershipAction } from "../components/MembershipAction";
 import { StarToggle } from "../components/StarToggle";
 import { buildProjectWorkspaceSummaries } from "../lib/project-workspaces-tab";
@@ -53,7 +54,7 @@ import {
 
 /* ── Top-level tab types ── */
 
-type ProjectBaseTab = "overview" | "list" | "plugin-operations" | "workspaces" | "configuration" | "budget";
+type ProjectBaseTab = "overview" | "targets" | "list" | "plugin-operations" | "workspaces" | "configuration" | "budget";
 type ProjectPluginTab = `plugin:${string}`;
 type ProjectTab = ProjectBaseTab | ProjectPluginTab;
 
@@ -67,9 +68,11 @@ function resolveProjectTab(pathname: string, projectId: string): ProjectTab | nu
   if (projectsIdx === -1 || segments[projectsIdx + 1] !== projectId) return null;
   const tab = segments[projectsIdx + 2];
   if (tab === "overview") return "overview";
+  if (tab === "targets") return "targets";
   if (tab === "configuration") return "configuration";
   if (tab === "budget") return "budget";
   if (tab === "issues") return "list";
+  if (tab === "legacy-work") return "list";
   if (tab === "plugin-operations") return "plugin-operations";
   if (tab === "workspaces") return "workspaces";
   return null;
@@ -540,11 +543,21 @@ export function ProjectDetail() {
   });
 
   useEffect(() => {
-    setBreadcrumbs([
+    const section = activeTab === "targets"
+      ? t("projects.detail.tabs.targets")
+      : activeTab === "list" && verrailNavigationEnabled
+        ? t("projects.detail.tabs.legacyWork")
+        : null;
+    const breadcrumbs = [
       { label: t("projects.title"), href: "/projects" },
-      { label: project?.name ?? routeProjectRef ?? t("projects.detail.project") },
-    ]);
-  }, [setBreadcrumbs, project, routeProjectRef, t]);
+      {
+        label: project?.name ?? routeProjectRef ?? t("projects.detail.project"),
+        ...(section ? { href: `/projects/${canonicalProjectRef}/overview` } : {}),
+      },
+    ];
+    if (section) breadcrumbs.push({ label: section });
+    setBreadcrumbs(breadcrumbs);
+  }, [activeTab, canonicalProjectRef, project, routeProjectRef, setBreadcrumbs, t, verrailNavigationEnabled]);
 
   useEffect(() => {
     if (!project) return;
@@ -555,6 +568,10 @@ export function ProjectDetail() {
     }
     if (activeTab === "overview") {
       navigate(`/projects/${canonicalProjectRef}/overview`, { replace: true });
+      return;
+    }
+    if (activeTab === "targets") {
+      navigate(`/projects/${canonicalProjectRef}/targets`, { replace: true });
       return;
     }
     if (activeTab === "configuration") {
@@ -578,11 +595,11 @@ export function ProjectDetail() {
         navigate(`/projects/${canonicalProjectRef}/issues/${filter}`, { replace: true });
         return;
       }
-      navigate(`/projects/${canonicalProjectRef}/issues`, { replace: true });
+      navigate(`/projects/${canonicalProjectRef}/${verrailNavigationEnabled ? "legacy-work" : "issues"}`, { replace: true });
       return;
     }
     navigate(`/projects/${canonicalProjectRef}`, { replace: true });
-  }, [project, routeProjectRef, canonicalProjectRef, activeTab, filter, navigate]);
+  }, [project, routeProjectRef, canonicalProjectRef, activeTab, filter, navigate, verrailNavigationEnabled]);
 
   useEffect(() => {
     closePanel();
@@ -693,15 +710,18 @@ export function ProjectDetail() {
     if (!pluginTabDecisionLoaded) {
       return <PageSkeleton variant="detail" />;
     }
-    return <Navigate to={`/projects/${canonicalProjectRef}/issues`} replace />;
+    return <Navigate to={`/projects/${canonicalProjectRef}/${verrailNavigationEnabled ? "overview" : "issues"}`} replace />;
   }
 
   if (activeTab === "workspaces" && workspaceTabDecisionLoaded && !showWorkspacesTab) {
-    return <Navigate to={`/projects/${canonicalProjectRef}/issues`} replace />;
+    return <Navigate to={`/projects/${canonicalProjectRef}/${verrailNavigationEnabled ? "overview" : "issues"}`} replace />;
   }
 
-  // Redirect bare /projects/:id to cached tab or default /issues
+  // Verrail always opens the Project overview; classic mode preserves its cached tab behavior.
   if (routeProjectRef && activeTab === null) {
+    if (verrailNavigationEnabled) {
+      return <Navigate to={`/projects/${canonicalProjectRef}/overview`} replace />;
+    }
     let cachedTab: string | null = null;
     if (project?.id) {
       try { cachedTab = localStorage.getItem(`paperclip:project-tab:${project.id}`); } catch {}
@@ -754,6 +774,8 @@ export function ProjectDetail() {
     }
     if (tab === "overview") {
       navigate(`/projects/${canonicalProjectRef}/overview`);
+    } else if (tab === "targets") {
+      navigate(`/projects/${canonicalProjectRef}/targets`);
     } else if (tab === "workspaces") {
       navigate(`/projects/${canonicalProjectRef}/workspaces`);
     } else if (tab === "budget") {
@@ -763,7 +785,7 @@ export function ProjectDetail() {
     } else if (tab === "configuration") {
       navigate(`/projects/${canonicalProjectRef}/configuration`);
     } else {
-      navigate(`/projects/${canonicalProjectRef}/issues`);
+      navigate(`/projects/${canonicalProjectRef}/${verrailNavigationEnabled ? "legacy-work" : "issues"}`);
     }
   };
 
@@ -834,18 +856,10 @@ export function ProjectDetail() {
         </div>
         <div className="ml-auto flex items-center gap-2">
           {verrailNavigationEnabled ? (
-            <>
-              <Button variant="default" size="sm" onClick={() => openNewTarget({ projectId: project.id })}>
-                <Target className="h-4 w-4" />
-                {t("targets.create.submit")}
-              </Button>
-              <Button asChild variant="outline" size="sm">
-                <Link to={`/projects/${project.id}/targets`}>
-                  <Target className="h-4 w-4" />
-                  {t("targets.title")}
-                </Link>
-              </Button>
-            </>
+            <Button variant="default" size="sm" onClick={() => openNewTarget({ projectId: project.id })}>
+              <Target className="h-4 w-4" />
+              {t("targets.create.submit")}
+            </Button>
           ) : null}
           <StarToggle
             size="button"
@@ -901,39 +915,74 @@ export function ProjectDetail() {
         itemClassName="inline-flex"
       />
 
-      <Tabs value={activeTab ?? "list"} onValueChange={(value) => handleTabChange(value as ProjectTab)}>
+      <Tabs value={activeTab ?? (verrailNavigationEnabled ? "overview" : "list")} onValueChange={(value) => handleTabChange(value as ProjectTab)}>
         <PageTabBar
-          items={[
-            { value: "list", label: t("projects.detail.tabs.tasks") },
-            { value: "overview", label: t("projects.detail.tabs.overview") },
-            ...(project.managedByPlugin ? [{ value: "plugin-operations", label: t("projects.detail.tabs.pluginOperations") }] : []),
-            ...(showWorkspacesTab ? [{ value: "workspaces", label: t("projects.detail.tabs.workspaces") }] : []),
-            { value: "configuration", label: t("projects.detail.tabs.configuration") },
-            { value: "budget", label: t("projects.detail.tabs.budget") },
-            ...pluginTabItems.map((item) => ({
-              value: item.value,
-              label: item.label,
-            })),
-          ]}
+          items={verrailNavigationEnabled
+            ? [
+                { value: "overview", label: t("projects.detail.tabs.overview") },
+                { value: "targets", label: t("projects.detail.tabs.targets") },
+                ...(project.managedByPlugin ? [{ value: "plugin-operations", label: t("projects.detail.tabs.pluginOperations") }] : []),
+                ...(showWorkspacesTab ? [{ value: "workspaces", label: t("projects.detail.tabs.resources") }] : []),
+                { value: "configuration", label: t("projects.detail.tabs.settings") },
+                { value: "budget", label: t("projects.detail.tabs.budget") },
+                { value: "list", label: t("projects.detail.tabs.legacyWork") },
+                ...pluginTabItems.map((item) => ({ value: item.value, label: item.label })),
+              ]
+            : [
+                { value: "list", label: t("projects.detail.tabs.tasks") },
+                { value: "overview", label: t("projects.detail.tabs.overview") },
+                ...(project.managedByPlugin ? [{ value: "plugin-operations", label: t("projects.detail.tabs.pluginOperations") }] : []),
+                ...(showWorkspacesTab ? [{ value: "workspaces", label: t("projects.detail.tabs.workspaces") }] : []),
+                { value: "configuration", label: t("projects.detail.tabs.configuration") },
+                { value: "budget", label: t("projects.detail.tabs.budget") },
+                ...pluginTabItems.map((item) => ({ value: item.value, label: item.label })),
+              ]}
           align="start"
-          value={activeTab ?? "list"}
+          value={activeTab ?? (verrailNavigationEnabled ? "overview" : "list")}
           onValueChange={(value) => handleTabChange(value as ProjectTab)}
         />
       </Tabs>
 
       {activeTab === "overview" && (
-        <OverviewContent
-          project={project}
-          onUpdate={(data) => updateProject.mutate(data)}
-          imageUploadHandler={async (file) => {
-            const asset = await uploadImage.mutateAsync(file);
-            return asset.contentPath;
-          }}
-        />
+        <div className="space-y-8">
+          <OverviewContent
+            project={project}
+            onUpdate={(data) => updateProject.mutate(data)}
+            imageUploadHandler={async (file) => {
+              const asset = await uploadImage.mutateAsync(file);
+              return asset.contentPath;
+            }}
+          />
+          {verrailNavigationEnabled && resolvedCompanyId ? (
+            <section className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold">{t("projects.detail.recentTargets")}</h3>
+                <Button asChild variant="ghost" size="sm">
+                  <Link to={`/projects/${canonicalProjectRef}/targets`}>{t("projects.detail.viewAllTargets")}</Link>
+                </Button>
+              </div>
+              <TargetList workspaceId={resolvedCompanyId} projectId={project.id} limit={5} />
+            </section>
+          ) : null}
+        </div>
       )}
 
+      {activeTab === "targets" && resolvedCompanyId ? (
+        <TargetList workspaceId={resolvedCompanyId} projectId={project.id} />
+      ) : null}
+
       {activeTab === "list" && project?.id && resolvedCompanyId && (
-        <ProjectIssuesList projectId={project.id} companyId={resolvedCompanyId} />
+        <div className="space-y-4">
+          {verrailNavigationEnabled ? (
+            <div className="border-y border-border py-4">
+              <p className="text-sm font-medium">{t("projects.detail.legacyWorkTitle")}</p>
+              <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
+                {t("projects.detail.legacyWorkDescription")}
+              </p>
+            </div>
+          ) : null}
+          <ProjectIssuesList projectId={project.id} companyId={resolvedCompanyId} />
+        </div>
       )}
 
       {activeTab === "plugin-operations" && project?.id && resolvedCompanyId && project.managedByPlugin && (

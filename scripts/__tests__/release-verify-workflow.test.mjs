@@ -131,4 +131,13 @@ test("release verify workflow covers the same split test surface as stable PR ve
 
   assert.match(verifyWorkflow, /pnpm test:run:general -- --group/);
   assert.match(verifyWorkflow, /pnpm test:run:serialized -- --shard-index/);
+  assert.match(verifyWorkflow, /pnpm check:ui-bundle-budget/);
+  assert.match(verifyWorkflow, /pnpm test:e2e:verrail-acceptance/);
+});
+
+test("PR build enforces the Verrail frontend acceptance gates", () => {
+  const prWorkflow = readWorkflow("pr.yml");
+
+  assert.match(prWorkflow, /build:\n[\s\S]*?pnpm build[\s\S]*?pnpm check:ui-bundle-budget/);
+  assert.match(prWorkflow, /build:\n[\s\S]*?PAPERCLIP_PLAYWRIGHT_CHANNEL: chrome[\s\S]*?pnpm test:e2e:verrail-acceptance/);
 });

@@ -13,6 +13,15 @@ const mockProjectsApi = vi.hoisted(() => ({
   list: vi.fn(),
 }));
 
+const mockTargetsApi = vi.hoisted(() => ({
+  list: vi.fn(),
+}));
+
+const mockCompanyContext = vi.hoisted(() => ({
+  selectedCompanyId: "company-1",
+  selectedCompany: null as { enableVerrailNavigation?: boolean } | null,
+}));
+
 const mockResourceMembershipsApi = vi.hoisted(() => ({
   listMine: vi.fn(),
   updateProject: vi.fn(),
@@ -28,7 +37,7 @@ vi.mock("@/lib/router", () => ({
 }));
 
 vi.mock("../context/CompanyContext", () => ({
-  useCompany: () => ({ selectedCompanyId: "company-1" }),
+  useCompany: () => mockCompanyContext,
 }));
 
 vi.mock("../context/DialogContext", () => ({
@@ -41,6 +50,10 @@ vi.mock("../context/BreadcrumbContext", () => ({
 
 vi.mock("../api/projects", () => ({
   projectsApi: mockProjectsApi,
+}));
+
+vi.mock("../api/targets", () => ({
+  targetsApi: mockTargetsApi,
 }));
 
 vi.mock("../api/resourceMemberships", () => ({
@@ -142,6 +155,15 @@ describe("Projects", () => {
         updatedAt: new Date("2026-01-01T00:00:00Z"),
       }),
     ]);
+    mockCompanyContext.selectedCompany = null;
+    mockTargetsApi.list.mockResolvedValue({
+      schemaVersion: "target-read-model.v1",
+      projectionPolicyVersion: "target-projection.v1",
+      asOf: "2026-01-10T00:00:00.000Z",
+      items: [],
+      summary: { total: 0, open: 0, attention: 0, byProject: {} },
+      nextCursor: null,
+    });
     mockResourceMembershipsApi.listMine.mockResolvedValue({
       projectMemberships: { "project-b": "left" },
       agentMemberships: {},
@@ -240,5 +262,40 @@ describe("Projects", () => {
 
     expect(hiddenDescriptionLine).not.toBeNull();
     expect(hiddenDescriptionLine?.className).toContain("min-h-4");
+  });
+
+  it("shows authorization-filtered Target delivery metrics in Verrail navigation", async () => {
+    mockCompanyContext.selectedCompany = { enableVerrailNavigation: true };
+    mockTargetsApi.list.mockResolvedValue({
+      schemaVersion: "target-read-model.v1",
+      projectionPolicyVersion: "target-projection.v1",
+      asOf: "2026-01-10T00:00:00.000Z",
+      items: [],
+      summary: {
+        total: 3,
+        open: 2,
+        attention: 1,
+        byProject: {
+          "project-a": { total: 3, open: 2, attention: 1 },
+        },
+      },
+      nextCursor: null,
+    });
+
+    await renderProjects();
+
+    expect(mockTargetsApi.list).toHaveBeenCalledWith("company-1", { limit: 1 });
+    expect(container.textContent).toContain("2 open targets · 1 needs attention");
+    expect(container.textContent).not.toContain("0 tasks");
+  });
+
+  it("surfaces Target metric failures without hiding Project data", async () => {
+    mockCompanyContext.selectedCompany = { enableVerrailNavigation: true };
+    mockTargetsApi.list.mockRejectedValue(new Error("Target API unavailable"));
+
+    await renderProjects();
+
+    expect(container.textContent).toContain("Target delivery metrics are unavailable");
+    expect(container.textContent).toContain("Alpha");
   });
 });

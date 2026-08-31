@@ -1,0 +1,132 @@
+{
+  "target_id": "b2-3-frontend-acceptance-closure",
+  "run_id": "run-001",
+  "storybook": {
+    "version": "10.5.8",
+    "aligned_packages": [
+      "storybook",
+      "@storybook/react-vite",
+      "@storybook/addon-a11y",
+      "@storybook/addon-docs",
+      "@storybook/addon-vitest"
+    ],
+    "static_build": "passed",
+    "output": "ui/storybook-static"
+  },
+  "browser_acceptance": {
+    "isolation": "The package runner creates one disposable PAPERCLIP_HOME for the complete Playwright process and removes it in a finally block after Playwright exits; existing developer data is never reused and seeded companies are deleted.",
+    "output_contract": "Normal local and CI runs write to ignored tests/verrail-acceptance output directories. VERRAIL_ACCEPTANCE_OUTPUT_ROOT is required to write an explicit frozen delivery-evidence run, so repeatable acceptance cannot overwrite accepted screenshots or reports by default.",
+    "dev_server_dependency_scan": "Vite optimizeDeps discovery is scoped to ui/index.html, so generated ui/storybook-static HTML cannot introduce unresolved Storybook-only dependencies into the application dev server.",
+    "projects": [
+      {
+        "name": "desktop-1440",
+        "viewport": "1440x900",
+        "status": "passed"
+      },
+      {
+        "name": "narrow-desktop-1024",
+        "viewport": "1024x768",
+        "status": "passed"
+      }
+    ],
+    "journey": [
+      "Projects list",
+      "Project Overview",
+      "New Target dialog keyboard dismissal",
+      "Project Targets",
+      "Target Overview",
+      "Target Work",
+      "Project breadcrumb return",
+      "Legacy Work"
+    ],
+    "browser_errors": 0,
+    "screenshots": [
+      {
+        "path": ".verrail/targets/b2-3-frontend-acceptance-closure/runs/run-001/screenshots/desktop-1440-project-targets.png",
+        "sha256": "86baf5d17fc384efa2a9201f09cfca6800b7cac1f98cdbced8673dadfbc38043"
+      },
+      {
+        "path": ".verrail/targets/b2-3-frontend-acceptance-closure/runs/run-001/screenshots/desktop-1440-legacy-work.png",
+        "sha256": "c13d7731183a15312ea9eeeb03aa315bd20855ad0dfbc27d4ae74a720fa7988d"
+      },
+      {
+        "path": ".verrail/targets/b2-3-frontend-acceptance-closure/runs/run-001/screenshots/narrow-desktop-1024-project-targets.png",
+        "sha256": "546347ff181b35c32fd69bc4ebce37ade0063746c8667007ecc20eb723646e07"
+      },
+      {
+        "path": ".verrail/targets/b2-3-frontend-acceptance-closure/runs/run-001/screenshots/narrow-desktop-1024-legacy-work.png",
+        "sha256": "40520ee489174456d36fd0047c6fc4b31e1a17d714b6c1c35a9335ffa72811f1"
+      }
+    ],
+    "report_sha256": "689bdcd7565719d48f767ce7d51f8800da9f13f126ae59ac9ef039aff08942e2",
+    "visual_review": "Passed; inspected all four screenshots without incoherent overlap, clipped controls, broken text, or missing primary navigation."
+  },
+  "accessibility": {
+    "localized_controls": [
+      "Dialog icon close",
+      "Dialog footer close",
+      "Sheet icon close"
+    ],
+    "keyboard_dismissal": "Dialog Escape callback passed focused coverage and the Playwright New Target dialog step.",
+    "locale_parity": "Passed as part of the full UI suite and the final focused acceptance set."
+  },
+  "test_stability": {
+    "changes": [
+      "CompanyEnvironments waits for dialog teardown after save.",
+      "IssuesList high-volume local batching tests retain assertions with explicit performance timeouts.",
+      "cron-fires reuses one Intl.DateTimeFormat per scan instead of constructing one per candidate minute."
+    ],
+    "full_ui_suite": "481 files and 4406 tests passed.",
+    "final_focused_suite": "5 files and 96 tests passed."
+  },
+  "bundle": {
+    "javascript_files": 183,
+    "largest_raw_bytes_budget": 7750000,
+    "largest_gzip_bytes_budget": 2150000,
+    "aggregate_raw_bytes_budget": 12700000,
+    "aggregate_gzip_bytes_budget": 3650000,
+    "largest_actual": "7.03 MiB raw / 1.94 MiB gzip",
+    "aggregate_actual": "11.50 MiB raw / 3.31 MiB gzip",
+    "status": "passed",
+    "ci_enforcement": "The budget and two-viewport browser journey run in both PR build verification and release verification, with Playwright reports, results, and screenshots uploaded as CI artifacts.",
+    "follow_up": "The large application entry remains visible technical debt; route-level splitting is intentionally outside B2.3."
+  },
+  "verification": [
+    {
+      "scope": "workspace typecheck",
+      "status": "passed"
+    },
+    {
+      "scope": "workspace production build",
+      "status": "passed_with_inherited_warnings"
+    },
+    {
+      "scope": "token gates",
+      "status": "passed"
+    },
+    {
+      "scope": "brand asset gate",
+      "status": "passed"
+    },
+    {
+      "scope": "diff whitespace check",
+      "status": "passed"
+    },
+    {
+      "scope": "PR and release workflow contract tests",
+      "status": "passed",
+      "result": "11 workflow and bundle contract tests passed."
+    },
+    {
+      "scope": "repository-wide Vitest suite",
+      "status": "failed_environment_baseline",
+      "result": "398 files passed, 1 skipped, 11 failed; 4629 tests passed, 99 skipped, 27 failed.",
+      "assessment": "No B2.3 frontend test failed. The failures are unrelated environment-sensitive server/runtime groups and do not establish a frontend regression."
+    }
+  ],
+  "missing": [
+    "Independent product and engineering approval.",
+    "Maintainer acceptance or repair of the unrelated repository-wide 27-test environment baseline.",
+    "Commit, pull request, final approval, merge, deployment, release, and ship record."
+  ]
+}

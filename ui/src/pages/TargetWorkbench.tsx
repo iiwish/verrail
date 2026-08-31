@@ -59,12 +59,19 @@ export function TargetWorkbench() {
   });
 
   useEffect(() => {
-    setBreadcrumbs([
+    const breadcrumbs: Array<{ label: string; href?: string }> = [
       { label: t("nav.projects"), href: "/projects" },
-      { label: query.data?.title ?? t("targets.target") },
-      ...(isRevision ? [{ label: t("targets.revision") }] : []),
-    ]);
-  }, [isRevision, query.data?.title, setBreadcrumbs, t]);
+    ];
+    if (query.data?.project) {
+      breadcrumbs.push({
+        label: query.data.project.name,
+        href: `/projects/${query.data.project.id}/overview`,
+      });
+    }
+    breadcrumbs.push({ label: query.data?.title ?? t("targets.target") });
+    if (isRevision) breadcrumbs.push({ label: t("targets.revision") });
+    setBreadcrumbs(breadcrumbs);
+  }, [isRevision, query.data?.project, query.data?.title, setBreadcrumbs, t]);
 
   if (query.isLoading) return <PageSkeleton variant="detail" />;
   if (query.error) {

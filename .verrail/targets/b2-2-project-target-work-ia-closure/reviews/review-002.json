@@ -1,0 +1,27 @@
+{
+  "target_id": "b2-2-project-target-work-ia-closure",
+  "run_id": "run-001",
+  "decision": "ready_for_independent_review",
+  "readiness": "combined_b2_merge_candidate",
+  "reviewer": "Codex maintainer preflight self-review; advisory only, independent reviewer and product-owner acceptance required",
+  "rationale": "A second-pass review of the combined B2.2 and B2.3 working tree found no surviving correctness, authorization, compatibility, navigation, accessibility, or scoped regression blocker. Target summaries remain authorization-filtered before aggregation, classic navigation and bookmarked Issue routes remain available, the two-viewport Project-to-Target-to-Legacy-Work journey passes without browser errors, and the acceptance and bundle contracts are enforced in PR and release verification. The initial B2.2 frontend acceptance gaps are closed by B2.3. Final approval remains withheld because this is a self-review and the unrelated repository-wide environment-sensitive baseline is not globally green.",
+  "linked_evidence": [
+    ".verrail/targets/b2-2-project-target-work-ia-closure/runs/run-001/receipt.json",
+    ".verrail/targets/b2-2-project-target-work-ia-closure/runs/run-001/evidence.json",
+    ".verrail/targets/b2-3-frontend-acceptance-closure/runs/run-001/receipt.json",
+    ".verrail/targets/b2-3-frontend-acceptance-closure/runs/run-001/evidence.json",
+    ".verrail/targets/b2-3-frontend-acceptance-closure/runs/run-001/playwright-report/index.html",
+    ".github/workflows/pr.yml",
+    ".github/workflows/release-verify.yml"
+  ],
+  "requested_changes": [
+    "Obtain independent product and engineering approval before commit or merge authority is exercised.",
+    "Let required Linux CI adjudicate the repository-wide environment-sensitive baseline before merge."
+  ],
+  "conditions": [
+    "Preserve the explicit Legacy Work compatibility boundary and do not infer Target membership for inherited Issues.",
+    "Keep the acceptance E2E and UI bundle budget in both PR and release verification.",
+    "Do not treat this advisory record as permission to commit, merge, deploy, release, or create a ship record."
+  ],
+  "created_at": "2026-08-28T02:21:01Z"
+}

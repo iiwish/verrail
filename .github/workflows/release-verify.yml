@@ -184,3 +184,22 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Enforce UI bundle budget
+        run: pnpm check:ui-bundle-budget
+
+      - name: Verify Verrail frontend acceptance
+        env:
+          PAPERCLIP_PLAYWRIGHT_CHANNEL: chrome
+        run: pnpm test:e2e:verrail-acceptance
+
+      - name: Upload Verrail frontend acceptance report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-verrail-frontend-acceptance
+          path: |
+            tests/verrail-acceptance/playwright-report/
+            tests/verrail-acceptance/test-results/
+            tests/verrail-acceptance/screenshots/
+          retention-days: 14

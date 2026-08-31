@@ -1,0 +1,28 @@
+{
+  "target_id": "b2-3-frontend-acceptance-closure",
+  "run_id": "run-001",
+  "decision": "ready_for_independent_review",
+  "readiness": "frontend_acceptance_complete_ci_enforced_merge_candidate",
+  "reviewer": "Codex maintainer preflight self-review; advisory only, independent reviewer and product-owner acceptance required",
+  "rationale": "The second-pass merge preflight found and resolved two acceptance-infrastructure gaps: normal Playwright reruns could overwrite frozen delivery evidence, and the bundle and browser checks were not enforced by PR or release workflows. Reusable runs now write only to ignored test output, an explicit environment variable is required to freeze evidence, one outer runner owns and removes the disposable test home, and both checks run in PR and release verification with artifacts uploaded. The frozen evidence was regenerated, all four screenshots were visually inspected, a normal rerun passed without changing their hashes, UI typecheck and production build pass, all token and brand gates pass, and 11 workflow and bundle contract tests pass. No scoped merge blocker survives this preflight.",
+  "linked_evidence": [
+    ".verrail/targets/b2-3-frontend-acceptance-closure/runs/run-001/receipt.json",
+    ".verrail/targets/b2-3-frontend-acceptance-closure/runs/run-001/evidence.json",
+    ".verrail/targets/b2-3-frontend-acceptance-closure/runs/run-001/playwright-report/index.html",
+    "scripts/run-verrail-acceptance.mjs",
+    "tests/verrail-acceptance/playwright.config.ts",
+    ".github/workflows/pr.yml",
+    ".github/workflows/release-verify.yml"
+  ],
+  "requested_changes": [
+    "Obtain independent product and engineering approval before commit or merge authority is exercised.",
+    "Let required Linux CI adjudicate the repository-wide environment-sensitive baseline before merge."
+  ],
+  "conditions": [
+    "Keep normal test output separate from explicitly frozen delivery evidence.",
+    "Keep the acceptance E2E and bundle budget in both PR and release verification.",
+    "Track route-level code splitting separately; the current large application entry is within the accepted baseline but remains material performance debt.",
+    "Do not treat this advisory record as permission to commit, merge, deploy, release, or create a ship record."
+  ],
+  "created_at": "2026-08-28T02:21:01Z"
+}
