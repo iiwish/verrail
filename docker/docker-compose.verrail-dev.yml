@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: verrail
+      POSTGRES_PASSWORD: verrail
+      POSTGRES_DB: verrail
+    ports:
+      - "127.0.0.1:${VERRAIL_DEV_POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - verrail-dev-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U verrail -d verrail"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  temporal:
+    image: temporalio/temporal:1.8.2
+    command:
+      - server
+      - start-dev
+      - --ip
+      - 0.0.0.0
+      - --db-filename
+      - /home/temporal/temporal.db
+    ports:
+      - "127.0.0.1:${VERRAIL_DEV_TEMPORAL_GRPC_PORT:-57233}:7233"
+      - "127.0.0.1:${VERRAIL_DEV_TEMPORAL_UI_PORT:-58233}:8233"
+    volumes:
+      - verrail-dev-temporal-data:/home/temporal
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "127.0.0.1:7233"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  verrail-dev-postgres-data:
+  verrail-dev-temporal-data:

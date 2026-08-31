@@ -23,6 +23,7 @@
 | [`brand-migration.md`](./brand-migration.md) | Verrail 品牌表达、资产、兼容标识边界与迁移批次 |
 | [`navigation-contract.md`](./navigation-contract.md) | 一级信息架构、Canonical Route、旧深链兼容与首个导航切片 |
 | [`target-read-model.md`](./target-read-model.md) | 首个 Target 只读投影的来源映射、标识、字段、API、权限和重建合同 |
+| [`temporal-target-workflow.md`](./temporal-target-workflow.md) | Target outbox、可靠投递、版本化 TargetWorkflow、幂等和恢复合同 |
 | [`architecture.md`](./architecture.md) | 当前兼容控制平面、Temporal、Go 目标内核、执行平面、云与企业部署架构 |
 | [`execution-runtime.md`](./execution-runtime.md) | Runner、Sandbox、CubeSandbox、租约与数据出站合同 |
 | [`adrs/0001-typescript-foundation.md`](./adrs/0001-typescript-foundation.md) | 采用 Paperclip TypeScript 基座并硬分叉的决策 |
@@ -38,7 +39,7 @@
 2. `product-goals.md` 中的产品目标、阶段边界和退出门槛；
 3. `product-design.md` 中的用户价值与产品范围；
 4. `operational-ontology.md` 中的对象语义和系统不变量；
-5. `brand-migration.md`、`navigation-contract.md` 与 `target-read-model.md` 中的公开品牌、产品表面和首个 Target 投影合同；
+5. `brand-migration.md`、`navigation-contract.md`、`target-read-model.md` 与 `temporal-target-workflow.md` 中的公开品牌、产品表面和首个 Target 纵向合同；
 6. `architecture.md` 与 `execution-runtime.md` 中的实现边界；
 7. `adrs/` 中已接受的单项技术决策。
 
@@ -61,6 +62,7 @@
 | 运行本体 | `Confirmed` | TargetRevision、Submission、四类节点完成事实、Temporal 与五类授权已确认 |
 | 品牌与导航合同 | `Confirmed` | 品牌资产、身份兼容、主导航、稳定深链、路由映射与首个切片已确认 |
 | TargetReadModel 合同 | `Confirmed` | 来源资格、稳定标识、状态映射、权限、API、降级和重建规则已确认 |
+| TargetWorkflow 合同 | `Confirmed` | outbox fencing、at-least-once 投递、版本标识、去重、Continue-As-New 与恢复边界已确认 |
 | 架构与执行运行时 | `Confirmed` | Go 迁移边界、Temporal、Runner、Sandbox 候选和 Cloud 扩展边界已确认 |
 | ADR-0001/0002/0003 | `Accepted` | 基座、执行平面和 Temporal 决策已确认，后续变更需新 ADR |
 | ADR-0004 | `Accepted` | Go 目标内核、兼容服务、工作量、迁移方法和停止条件已确认 |

@@ -4,7 +4,7 @@
 
 状态：`Confirmed`
 
-最后更新：2026-08-26
+最后更新：2026-08-27
 
 ## 1. 架构目标
 
@@ -54,8 +54,9 @@ PostgreSQL 中的控制平面领域记录拥有业务事实。Temporal 拥有耐
 | --- | --- | --- |
 | Web | React + Vite + TanStack Query | 操作台、设置、运行与审计界面 |
 | Server | Node.js + TypeScript + Express | REST API、领域服务、Scheduler、Adapter 调用 |
+| Domain API | Go + pgx + net/http | 原生 Target/TargetRevision 创建、命令幂等、AuditEvent 与 transactional outbox；当前由 TypeScript 边缘代理 |
 | Database | PostgreSQL + Drizzle | 权威关系事实、迁移、事务与查询 |
-| Durable Orchestration | 当前未接入；目标采用 Temporal | Target/Run Workflow、Timer、Retry、Signal、等待、取消与恢复 |
+| Durable Orchestration | Go + Temporal SDK | 已接入 Target outbox Dispatcher 与最小 TargetWorkflow；Graph/Run 编排属于后续切片 |
 | Object Storage | Local/S3-compatible | Artifact、附件、日志和大对象 |
 | Adapters | TypeScript packages | Codex、Claude、Cursor、Process、HTTP 等 Harness 接入 |
 | Plugins | Plugin SDK | Provider、Sandbox、运行时服务和扩展能力 |
@@ -178,7 +179,7 @@ Verrail Cloud Plane
 
 ### Open-source self-hosted
 
-单机或小团队使用 Domain API、PostgreSQL、对象存储、Temporal 开发/自托管服务和一个或多个 Worker/Runner。Docker Compose 是首选入口。即使组件同机，也使用不同身份和协议边界。生产级自托管 Temporal 的支持等级必须明确，不能把开发服务器包装成高可用承诺。
+单机或小团队使用 Domain API、PostgreSQL、对象存储、Temporal 开发/自托管服务和一个或多个 Worker/Runner。`pnpm dev:verrail` 是当前完整本地集成入口，以一个共享 PostgreSQL 和 Task Queue 启动 TypeScript 兼容边界、Go Domain API、Temporal 开发服务与 Go Worker；聚焦组件开发仍可分别启动。即使组件同机，也使用不同身份和协议边界。生产级自托管 Temporal 的支持等级必须明确，不能把开发服务器包装成高可用承诺。
 
 ### Managed Cloud
 
@@ -213,6 +214,10 @@ Cloud Plane 管理账户、计费、配额、区域与租户单元生命周期�
 ## 10. Go 目标内核与重构边界
 
 TypeScript Server 是当前兼容基座。Go 是新 Verrail 领域与编排内核的目标语言，范围为 Domain API、Temporal Worker、Execution Gateway、Runner 和适合独立部署的后台 Worker。
+
+当前 Go 垂直切片位于 `services/domain-api`。Domain API 是 `verrail_targets`、`verrail_target_revisions`、`verrail_command_receipts`、`verrail_audit_events` 与创建时 outbox 事实的唯一写入者。TypeScript Server 保留 Session/Board 鉴权边缘，以内部 bearer credential 和 Principal context 调用 Go HTTP API，并从原生表与兼容投影合并统一 Target 读取结果。本地源码运行时由 Server 管理 loopback Go sidecar；外部部署通过成对的 `VERRAIL_DOMAIN_API_URL` 与 `VERRAIL_DOMAIN_API_TOKEN` 配置独立服务。
+
+独立的 Go `orchestration-worker` 领取已提交的 Target outbox 事件，并通过稳定 Workflow ID 和版本化 Signal 启动或通知 `TargetWorkflow`。Dispatcher 的 claim token、lease、per-aggregate ordering、退避和 failed 状态保存在 PostgreSQL；Temporal Workflow 只维护有界编排状态与事件去重。该切片不激活 Graph、不启动 Run、不改变现有 Issue、Case、Heartbeat 或 Recovery 写路径。完整合同见 [`temporal-target-workflow.md`](./temporal-target-workflow.md)。
 
 Go 重构遵守以下边界：
 
