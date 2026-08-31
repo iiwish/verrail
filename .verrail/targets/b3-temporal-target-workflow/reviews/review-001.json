@@ -1,0 +1,25 @@
+{
+  "target_id": "b3-temporal-target-workflow",
+  "run_id": "run-001",
+  "decision": "approve_with_followups",
+  "reviewer": "Codex implementation self-review; advisory only, product-owner acceptance required",
+  "rationale": "The slice preserves the intended authority boundary: Go remains the only native Target and outbox writer, PostgreSQL remains authoritative for business and delivery facts, and Temporal stores only bounded orchestration history. The dispatcher claims without spanning a Temporal RPC, fences every acknowledgement, preserves per-aggregate order, retries availability failures, recovers expired leases, and quarantines unsupported or exhausted events. The Workflow uses stable versioned contracts, deduplicates at-least-once delivery, rejects cross-aggregate signals, exposes an operational query, and continues as new with carried bounded state. A real Target commit survived a live Temporal outage and delivered after recovery; duplicate delivery, captured-history replay, container recreation, real PostgreSQL fencing, race tests, vet, typecheck, and build all passed. Review remediation also made API-key authentication TLS-only and bound the local Temporal ports to loopback. Independent review, production operations, failed-event repair, the inherited 24-test baseline, Graph/Run work, and every ship action remain explicit gates.",
+  "linked_evidence": [
+    ".verrail/targets/b3-temporal-target-workflow/runs/run-001/evidence.json",
+    ".verrail/targets/b3-temporal-target-workflow/runs/run-001/acceptance-mapping.md",
+    ".verrail/targets/b3-temporal-target-workflow/runs/run-001/evidence/temporal-target-workflow.png",
+    "services/domain-api/internal/orchestration/testdata/target-workflow-v1-history.json",
+    "docs/temporal-target-workflow.md",
+    "docs/architecture.md"
+  ],
+  "requested_changes": [],
+  "conditions": [
+    "Treat this as advisory acceptance for product-owner review, not permission to commit, merge, deploy, release, or announce.",
+    "Keep PostgreSQL and the Go Domain API authoritative; do not let Workflow query state become product truth.",
+    "Add an audited failed-event inspection and repair path before production operations rely on this dispatcher.",
+    "Define production Temporal topology, worker packaging, readiness, metrics, backup, and recovery before enabling the worker outside controlled environments.",
+    "Resolve or formally baseline the inherited repository-wide runtime failures before claiming a release candidate.",
+    "Start Graph activation and Run execution only through a separately contracted vertical slice."
+  ],
+  "created_at": "2026-08-26T23:31:00Z"
+}

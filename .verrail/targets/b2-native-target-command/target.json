@@ -1,0 +1,28 @@
+{
+  "id": "b2-native-target-command",
+  "title": "Governed native New Target command",
+  "intent": "Complete the active B2 objective with a real create-to-Workbench path whose Target and immutable TargetRevision have one explicit authoritative writer.",
+  "scope": "Add native Target and TargetRevision persistence, a versioned idempotent create command, Workspace and Project authorization, atomic audit and outbox facts, generated API contracts, and the flag-gated New Target experience without starting Temporal orchestration.",
+  "non_goals": [
+    "Represent a native Target by silently creating a Case or Issue",
+    "Write native Target facts into compatibility projection tables",
+    "Introduce long-term dual write between Go and TypeScript",
+    "Start TargetWorkflow, RunWorkflow, Execution Gateway, or Runner migration",
+    "Enable the Verrail navigation flag globally",
+    "Commit, merge, deploy, or release without explicit approval"
+  ],
+  "acceptance_criteria": [
+    "One implementation is named as the sole authoritative writer for Target and TargetRevision and the choice is consistent with accepted ADRs.",
+    "A Workspace member with Project create authority can submit a strict New Target command with title, outcome owner, goal, constraints, acceptance criteria, risk, deadline, and applicable policy summary.",
+    "The command requires a bounded idempotency key and atomically persists the stable Target, immutable first TargetRevision, AuditEvent, and local outbox event.",
+    "Replaying the same key and payload returns the original result; reusing the key with a different payload fails with a stable conflict.",
+    "Workspace, Project, outcome-owner, and Principal boundaries fail closed without revealing inaccessible objects.",
+    "The create response returns opaque Target and TargetRevision IDs and the canonical Workbench can read the new native Target without using a Case or Issue surrogate.",
+    "The enabled shell exposes New Target from the confirmed global command and Project context, with accessible validation, pending, success, conflict, permission, and retryable failure states.",
+    "Compatibility projections and native Targets appear through one authorized read contract with unambiguous source and authority metadata.",
+    "Schema, API, idempotency, transaction rollback, authorization, audit, outbox, compatibility, UI, and browser tests pass with inspectable delivery evidence."
+  ],
+  "status": "needs_review",
+  "created_at": "2026-08-26T12:12:35Z",
+  "updated_at": "2026-08-26T16:09:20Z"
+}

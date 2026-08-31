@@ -1,0 +1,125 @@
+{
+  "id": "run-001",
+  "target_id": "b2-target-read-model-workbench",
+  "agent": "codex",
+  "runner": "Codex desktop local worktree",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "3206490d5b7a1a0db7ff33c4a3b6e957973bafe9",
+  "output_commit": "",
+  "branch": "codex/verrail-brand-navigation-b1",
+  "working_tree": "uncommitted",
+  "dependency": ".verrail/targets/b1-brand-shell-navigation",
+  "changed_files": [
+    "docs/target-read-model.md",
+    "packages/db/src/schema/target_projections.ts",
+    "packages/db/src/schema/index.ts",
+    "packages/db/src/migrations/0228_neat_black_queen.sql",
+    "packages/db/src/migrations/meta/0228_snapshot.json",
+    "packages/db/src/migrations/meta/_journal.json",
+    "packages/shared/src/types/target.ts",
+    "packages/shared/src/validators/target.ts",
+    "packages/shared/src/validators/target.test.ts",
+    "packages/shared/src/index.ts",
+    "server/src/services/target-read-model.ts",
+    "server/src/services/index.ts",
+    "server/src/routes/targets.ts",
+    "server/src/routes/openapi.ts",
+    "server/src/app.ts",
+    "server/src/middleware/private-json-etag.ts",
+    "server/src/__tests__/target-read-model.test.ts",
+    "server/src/__tests__/target-routes.test.ts",
+    "server/src/__tests__/openapi-routes.test.ts",
+    "ui/src/api/targets.ts",
+    "ui/src/lib/queryKeys.ts",
+    "ui/src/components/TargetList.tsx",
+    "ui/src/components/TargetList.test.tsx",
+    "ui/src/pages/TargetWorkbench.tsx",
+    "ui/src/pages/TargetWorkbench.test.tsx",
+    "ui/src/pages/ProjectTargets.tsx",
+    "ui/src/pages/ProjectDetail.tsx",
+    "ui/src/pages/VerrailHome.tsx",
+    "ui/src/pages/VerrailHome.test.tsx",
+    "ui/src/App.tsx",
+    "ui/src/App.test.tsx",
+    "ui/src/i18n/locales/en.json",
+    "ui/src/i18n/locales/zh-CN.json",
+    ".verrail/targets/b2-target-read-model-workbench/**"
+  ],
+  "commands": [
+    {
+      "command": "pnpm db:generate",
+      "status": "passed",
+      "summary": "Generated migration 0228 and its Drizzle snapshot."
+    },
+    {
+      "command": "pnpm exec vitest run <B2 focused files>",
+      "status": "passed",
+      "summary": "8 files and 38 Target, API, OpenAPI, ETag, route, Home, list, and Workbench tests passed."
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "All 34 selected workspace projects passed, including migration safety checks."
+    },
+    {
+      "command": "pnpm test:run",
+      "status": "failed",
+      "summary": "399 files passed, 1 skipped, 8 failed; 4695 tests passed, 19 skipped, 30 failed. Every failure is in inherited server runtime, macOS path, port/listener, skill discovery, seed, or cleanup suites outside B2."
+    },
+    {
+      "command": "pnpm --filter @paperclipai/shared --filter @paperclipai/db --filter @paperclipai/server --filter @paperclipai/ui build",
+      "status": "passed",
+      "summary": "All four affected packages built; existing Vite CSS, font, import, and chunk-size warnings remain."
+    },
+    {
+      "command": "pnpm build",
+      "status": "blocked",
+      "summary": "The repository root build did not complete because the inherited skills-catalog manifest step remained blocked on pinned external GitHub raw fetches. It was stopped; affected-package builds passed separately."
+    },
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "summary": "All four token gates were clean across 800 scanned files."
+    },
+    {
+      "command": "English and Chinese locale parity check",
+      "status": "passed",
+      "summary": "Both locales contain 3063 leaf keys with no missing keys."
+    },
+    {
+      "command": "git diff --check and delivery JSON parse",
+      "status": "passed",
+      "summary": "No whitespace or delivery-record integrity errors."
+    },
+    {
+      "command": "isolated API and in-app browser verification",
+      "status": "passed",
+      "summary": "Verified Target list, active detail, immutable revision route, Project list, source fallback, flag-off compatibility, idempotent reconciliation, and desktop/mobile Workbench layouts against an isolated data home."
+    }
+  ],
+  "artifacts": [
+    ".verrail/targets/b2-target-read-model-workbench/runs/run-001/home-desktop.png",
+    ".verrail/targets/b2-target-read-model-workbench/runs/run-001/target-workbench-desktop.png",
+    ".verrail/targets/b2-target-read-model-workbench/runs/run-001/project-targets-mobile.png",
+    ".verrail/targets/b2-target-read-model-workbench/runs/run-001/target-workbench-mobile.png",
+    ".verrail/targets/b2-target-read-model-workbench/runs/run-001/evidence.json"
+  ],
+  "logs": [
+    "Focused validation, repository-wide typecheck, affected-package build, migration safety, token gates, locale parity, diff integrity, API revalidation, and browser observations are summarized in evidence.json.",
+    "The repository-wide Vitest result and root-build external-fetch blocker are recorded without treating them as B2 regressions."
+  ],
+  "errors": [
+    {
+      "command": "pnpm test:run",
+      "status": "unresolved_baseline_gap",
+      "summary": "Thirty inherited server/runtime/platform tests fail on this macOS host; no B2-focused test failed."
+    },
+    {
+      "command": "pnpm build",
+      "status": "external_dependency_blocker",
+      "summary": "The skills-catalog build remained waiting on external GitHub raw content; the modified shared, db, server, and UI packages all built successfully."
+    }
+  ],
+  "summary": "Delivered the B2 read-only compatibility Target slice: stable UUIDv5 identities, immutable revisions, fail-closed source eligibility, current-source authorization, private principal-scoped ETags, admin-only audited mapping and reconciliation, canonical read APIs, Project Target lists, and a bilingual Target Workbench. Native New Target remains intentionally outside TypeScript authority."
+}

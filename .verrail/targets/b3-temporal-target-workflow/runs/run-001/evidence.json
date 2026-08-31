@@ -1,0 +1,123 @@
+{
+  "target_id": "b3-temporal-target-workflow",
+  "run_id": "run-001",
+  "authority": {
+    "business_truth": "PostgreSQL tables owned by the Go Domain API",
+    "delivery_truth": "verrail_outbox_events",
+    "orchestration_history": "Temporal TargetWorkflow",
+    "typescript_role": "authenticated compatibility edge and read layer; no Target outbox consumer",
+    "workflow_business_writes": false,
+    "dual_write": false
+  },
+  "contracts": {
+    "schema_version": 1,
+    "event_type": "verrail.target.created.v1",
+    "workflow_type": "verrail.target.workflow.v1",
+    "workflow_id": "verrail-target-v1:{workspaceId}:{targetId}",
+    "task_queue": "verrail-target-v1",
+    "signal": "verrail.target.event.v1",
+    "query": "verrail.target.state.v1",
+    "continue_as_new_after_accepted_events": 256,
+    "remembered_event_id_limit": 512
+  },
+  "database": {
+    "migration": "packages/db/src/migrations/0230_many_randall_flagg.sql",
+    "migration_sha256": "60f4e8d2ca2c3f7c0c2ac48e2b2fbb866169519addab503fadf15a2efe94f8fe",
+    "claim": [
+      "One candidate is selected with FOR UPDATE SKIP LOCKED inside the claim statement.",
+      "A unique claim_token and bounded lease fence every attempt.",
+      "The claim transaction completes before any Temporal RPC.",
+      "A pending, delivering, or failed predecessor blocks newer events for the same aggregate."
+    ],
+    "acknowledgement": [
+      "Delivered, retry, and failed updates require the current event ID, delivering status, and claim_token.",
+      "A stale token affects zero rows and returns ErrClaimLost.",
+      "Successful delivery records Workflow ID, Run ID, and published_at in PostgreSQL."
+    ]
+  },
+  "real_temporal": {
+    "runtime": "temporalio/temporal:1.8.2 development server with persistent SQLite",
+    "ports": [
+      "127.0.0.1:7233",
+      "127.0.0.1:8233"
+    ],
+    "first_target": {
+      "workspace_id": "1081b57b-22a5-4508-b12e-24f6ca1c0d6c",
+      "target_id": "e32bd5d9-ca60-4720-91b5-fdc35b64167d",
+      "target_revision_id": "7ef4cf42-788a-47f6-bb59-6aa76262f569",
+      "event_id": "84d748c3-ed29-447d-a8e7-bafbdbd3adae",
+      "workflow_id": "verrail-target-v1:1081b57b-22a5-4508-b12e-24f6ca1c0d6c:e32bd5d9-ca60-4720-91b5-fdc35b64167d",
+      "run_id": "f78c3c41-37d5-4f3d-8b62-bb1416ab3376",
+      "before_temporal": "outbox pending, attempt_count 0, no claim, Workflow ID, or published_at",
+      "after_recovery": "outbox delivered at attempt 1 with Workflow ID, Run ID, and published_at",
+      "query_after_duplicate": "acceptedEventCount 1, ignoredEventCount 1, phase awaiting_graph, original event and TargetRevision remain active"
+    },
+    "live_outage_target": {
+      "target_id": "75e7b2d9-1fbc-4a7c-a6e5-3077f18ed3b1",
+      "target_revision_id": "f108e445-0722-4b3b-aa09-06fc635c21b6",
+      "event_id": "b86fbabe-89a9-4ae7-94b6-8aa67a7f6fa6",
+      "workflow_id": "verrail-target-v1:1081b57b-22a5-4508-b12e-24f6ca1c0d6c:75e7b2d9-1fbc-4a7c-a6e5-3077f18ed3b1",
+      "run_id": "04363b66-8d61-4d97-9fda-adb782cf73f0",
+      "during_outage": "The Target command returned 201 while Temporal was stopped; the outbox returned to pending at attempt 2 with a bounded context-deadline error and no Workflow ID.",
+      "after_recovery": "The same event reached delivered at attempt 4 with the stable Workflow ID and published_at.",
+      "query": "acceptedEventCount 1, ignoredEventCount 0, phase awaiting_graph, active TargetRevision f108e445-0722-4b3b-aa09-06fc635c21b6"
+    },
+    "restart_recovery": "Both running Workflow queries returned the same state after the pinned Temporal container was force-recreated from its persistent development volume."
+  },
+  "tests": [
+    {
+      "scope": "Workflow state, duplicate and cross-aggregate signals, Continue-As-New queue draining, stable ID, SignalWithStart options, contract validation, configuration, and replay",
+      "status": "passed",
+      "result": "Go orchestration unit and captured-history replay tests passed."
+    },
+    {
+      "scope": "PostgreSQL store",
+      "status": "passed",
+      "result": "Real Postgres proved claim ordering, concurrent aggregate progress, lease reclaim, fresh-token fencing, stale-token rejection, and failed predecessor quarantine."
+    },
+    {
+      "scope": "Go race, vet, and build",
+      "status": "passed",
+      "result": "go test -race ./..., go vet ./..., and go build ./... passed."
+    },
+    {
+      "scope": "repository-wide Vitest suite",
+      "status": "failed_baseline_only",
+      "result": "401 files passed, 1 skipped, 8 failed; 4709 tests passed, 19 skipped, 24 failed in 801.48 seconds.",
+      "assessment": "The exact 24 failures match the B2 inherited baseline: workspace-runtime 2, workspace-runtime-exposure 3, company-skills-service 9, worktree-seed-server-spawn 1, execution-workspace-runtime-control-conflict 4, company-skills 2, workspace-instance-cleanup 1, and loopback-listener 2. No changed B3 path or B3 test failed."
+    }
+  ],
+  "build": {
+    "status": "passed",
+    "result": "Database generation, database typecheck, Go compilation, workspace typecheck, and root build passed.",
+    "notes": "Existing Vite CSS highlight and chunk-size warnings remain non-fatal."
+  },
+  "security": [
+    "The local Temporal gRPC and UI ports bind only to 127.0.0.1.",
+    "Configuring TEMPORAL_API_KEY always enables TLS 1.2 or newer; an optional server name pins certificate identity.",
+    "Workflow payloads contain only schema version, opaque IDs, event type, and event time.",
+    "The dispatcher never logs the Domain API token or Temporal API key."
+  ],
+  "artifacts": [
+    {
+      "path": ".verrail/targets/b3-temporal-target-workflow/runs/run-001/evidence/temporal-target-workflow.png",
+      "sha256": "bda1c84eb51560984171fb43fc1f1bbe0ef5276e7e03c313355778f520090078",
+      "bytes": 44219,
+      "description": "Temporal UI detail showing the stable running Workflow, Go SDK 1.48, versioned task queue, and two delivered signal events."
+    },
+    {
+      "path": "services/domain-api/internal/orchestration/testdata/target-workflow-v1-history.json",
+      "sha256": "3a9a2b56211deb0d9e1eb82cc322aa4d6f06aaff95d08695405de8d5898b4fa1",
+      "bytes": 6883,
+      "description": "Captured real TargetWorkflow history used by the replay test."
+    }
+  ],
+  "missing": [
+    "Independent product-owner, security, and operations review.",
+    "A fully green inherited repository-wide Vitest baseline.",
+    "Production Temporal topology, worker packaging, health/SLO dashboards, and disaster-recovery validation.",
+    "An audited operator repair command for failed outbox events.",
+    "Graph Engine activation, RunWorkflow, activities, Execution Gateway, Submission, Evidence, Review, and Acceptance.",
+    "Commit, pull request, final approval, ship record, deployment, release, and global activation."
+  ]
+}

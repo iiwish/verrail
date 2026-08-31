@@ -1,0 +1,178 @@
+{
+  "target_id": "b2-target-read-model-workbench",
+  "run_id": "run-001",
+  "tests": [
+    {
+      "scope": "B2 shared contracts, UUIDv5 projection persistence, eligibility, immutable replay, outage semantics, current-source authorization, pagination, private ETag, OpenAPI parity, routes, Home, Target list, Workbench, and flag-gated routing",
+      "status": "passed",
+      "result": "8 files, 38 tests passed"
+    },
+    {
+      "scope": "repository-wide Vitest suite",
+      "status": "failed",
+      "result": "399 files passed, 1 skipped, 8 failed; 4695 tests passed, 19 skipped, 30 failed",
+      "assessment": "All failures are in inherited company-skill discovery, workspace runtime/control, worktree seed, instance cleanup, runtime exposure, and loopback-listener suites. The observed failures are macOS /private/tmp canonicalization, saturated port allocation, listener diagnosis, or inherited runtime-fixture behavior outside B2. No Target file or focused B2 test failed."
+    }
+  ],
+  "build": {
+    "status": "passed_with_root_blocker",
+    "command": "pnpm --filter @paperclipai/shared --filter @paperclipai/db --filter @paperclipai/server --filter @paperclipai/ui build",
+    "result": "All affected packages built successfully.",
+    "notes": "The root pnpm build was also attempted but the inherited skills-catalog manifest step remained blocked on pinned external GitHub raw fetches and was stopped. Existing Vite CSS highlight, font-resolution, mixed-import, and bundle-size warnings remain."
+  },
+  "typecheck": {
+    "status": "passed",
+    "command": "pnpm -r typecheck",
+    "result": "All 34 selected workspace projects passed; the database migration safety check passed."
+  },
+  "lint": {
+    "status": "not_applicable",
+    "notes": "The execution packet defines focused tests, migration safety, typecheck, affected builds, token gates, locale parity, and diff integrity rather than a separate lint command."
+  },
+  "integrity": [
+    {
+      "command": "pnpm db:generate",
+      "status": "passed",
+      "result": "Migration 0228 and the Drizzle snapshot were generated from the schema."
+    },
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "result": "800 files scanned; all four gates clean"
+    },
+    {
+      "command": "locale parity",
+      "status": "passed",
+      "result": "English 3063 keys; Chinese 3063 keys; no missing keys"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    },
+    {
+      "command": "delivery JSON parse check",
+      "status": "passed"
+    }
+  ],
+  "browser": {
+    "status": "passed",
+    "server": "http://127.0.0.1:3220",
+    "workspace": {
+      "id": "1081b57b-22a5-4508-b12e-24f6ca1c0d6c",
+      "prefix": "VER",
+      "data_home": "/tmp/verrail-b2-preview-20260826",
+      "production_data_mutated": false
+    },
+    "fixture": {
+      "project_id": "f74bfcd7-e107-4ab3-9e88-0ce69e99ed07",
+      "issue_id": "db5e1414-23e4-4204-82f2-22348b286ac3",
+      "target_id": "5549037f-68d1-5c0e-86c1-5a658606f84f",
+      "active_target_revision_id": "96fb974f-f64b-5d6a-a44d-287c314fea26"
+    },
+    "observations": [
+      "Enabled Home reads the canonical Target API and links to the server-issued Target UUID.",
+      "The Target Workbench renders title, summary, status, stage, Project, outcome owner, risk, proof counts, compatibility source, and the explicit read-only authority notice.",
+      "All Workbench tabs are routable and show honest empty projection states rather than fabricated domain facts.",
+      "The Project Target list uses the Project-scoped endpoint and remains legible at 390x844.",
+      "The Workbench remains usable at 390x844 with compact tab selection and no horizontal overflow or text overlap.",
+      "The source fallback resolves through the canonical VER-1 compatibility route.",
+      "Disabling enableVerrailNavigation redirects Home to the inherited dashboard; the flag was restored after verification.",
+      "Two unchanged reconciliation calls returned the same TargetRevision ID and persisted projectedAt value, proving the browser fixture follows immutable replay semantics."
+    ],
+    "screenshots": [
+      {
+        "path": ".verrail/targets/b2-target-read-model-workbench/runs/run-001/home-desktop.png",
+        "viewport": "1280x720",
+        "sha256": "611d2436635bf3aff9303177cd3d8e760d249537b2422f5488e86e17d6de8f59"
+      },
+      {
+        "path": ".verrail/targets/b2-target-read-model-workbench/runs/run-001/target-workbench-desktop.png",
+        "viewport": "1280x720",
+        "sha256": "9bd01a0150d6349b0488fdac020cebc50f3ad336f8a2217999f837d4f41fda7d"
+      },
+      {
+        "path": ".verrail/targets/b2-target-read-model-workbench/runs/run-001/project-targets-mobile.png",
+        "viewport": "390x844",
+        "sha256": "1c788e22444cc7545c5826bbe30234c321641006b251bc49b405dc71681c2c99"
+      },
+      {
+        "path": ".verrail/targets/b2-target-read-model-workbench/runs/run-001/target-workbench-mobile.png",
+        "viewport": "390x844",
+        "sha256": "a4b8156297b11859576a9d18db95397c574b171853c434c7d0f0ff5715fcae2b"
+      }
+    ]
+  },
+  "acceptance_coverage": [
+    {
+      "criterion": 1,
+      "status": "covered",
+      "evidence": "The migration adds unique Workspace/source and Workspace/Target mappings plus immutable revision snapshots, source/policy/hash/freshness/disablement/error fields, and migration safety passed."
+    },
+    {
+      "criterion": 2,
+      "status": "covered",
+      "evidence": "Cross-language UUIDv5 vectors, canonical JSON hashing, repeat registration, persisted response equality, changed-source revision creation, and historical reads are covered by integration tests."
+    },
+    {
+      "criterion": 3,
+      "status": "covered",
+      "evidence": "The service rejects child, known system-derived, plugin-operation, Case-owned, unscoped, unowned, and cross-Workspace-owner Issue mappings, validates Case memberships, and hides deleted or newly ineligible active sources."
+    },
+    {
+      "criterion": 4,
+      "status": "covered",
+      "evidence": "Case approved/done and Issue done map only to awaiting_acceptance; compatibility projections never generate accepted and completionUnverified remains explicit."
+    },
+    {
+      "criterion": 5,
+      "status": "covered",
+      "evidence": "Workspace and Project list, active detail, and immutable revision routes filter authorization before pagination, use current source Project facts for active access, bind cursors to Principal and filters, return 404 without enumeration, expose retryable 503 for a missing active snapshot, and emit principal-scoped private ETags."
+    },
+    {
+      "criterion": 6,
+      "status": "covered",
+      "evidence": "Mapping and reconcile routes require instance-admin plus Workspace access, revalidate source eligibility server-side, write local Activity records, and add no Target-specific outbound Telemetry."
+    },
+    {
+      "criterion": 7,
+      "status": "covered",
+      "evidence": "Flag-gated Home, Project Target lists, active and immutable Workbench routes, loading/error/empty/stale/source-missing/completion-unverified/outage states, bilingual copy, and desktop/mobile evidence are present."
+    },
+    {
+      "criterion": 8,
+      "status": "covered",
+      "evidence": "Existing Case, Issue, Project, CLI, plugin, adapter, runtime, and write authorities are unchanged; disabling the navigation flag retains the inherited landing path and B2 adds no read-triggered writes."
+    },
+    {
+      "criterion": 9,
+      "status": "covered_with_recorded_gaps",
+      "evidence": "Focused tests, migration generation and safety, full workspace typecheck, affected-package builds, token gates, locale parity, diff integrity, API checks, and browser verification passed. The unrelated repository test baseline and root skills-catalog external-fetch blocker are recorded."
+    }
+  ],
+  "links": [
+    ".verrail/targets/b2-target-read-model-workbench/spec.md",
+    "docs/target-read-model.md",
+    "packages/db/src/schema/target_projections.ts",
+    "packages/shared/src/types/target.ts",
+    "server/src/services/target-read-model.ts",
+    "server/src/routes/targets.ts",
+    "ui/src/components/TargetList.tsx",
+    "ui/src/pages/TargetWorkbench.tsx",
+    ".verrail/targets/b2-target-read-model-workbench/runs/run-001/target-workbench-desktop.png",
+    ".verrail/targets/b2-target-read-model-workbench/runs/run-001/project-targets-mobile.png"
+  ],
+  "manual_notes": [
+    "B2 starts from the committed G1/B1 base at 3206490d and remains uncommitted pending product-owner review.",
+    "The browser fixture uses an isolated temporary data home. Reconciliation and feature-flag changes affected only that fixture.",
+    "The self-review fixed OpenAPI route discovery, immutable replay response drift, stale-source Project authorization, owner Workspace validation, plugin-operation eligibility, retryable projection-outage semantics, source-link canonicalization, and simultaneous warning presentation before attaching this run.",
+    "No authoritative Target mutation, native New Target, Temporal Workflow, Go service, ship record, deployment, or public announcement was created."
+  ],
+  "missing": [
+    "Independent product-owner and security review of the B2 read-only slice.",
+    "A fully green repository-wide Vitest run on this macOS host; 30 inherited server/runtime tests remain non-green.",
+    "A completed root build while the inherited skills-catalog manifest depends on unavailable external GitHub raw fetches; all modified packages build successfully.",
+    "Automatic outbox projection, hourly reconciliation, shadow-table rebuild, and rollback automation, reserved for the Go/Temporal compatibility bridge.",
+    "Native New Target command authority, immutable native TargetRevision persistence, idempotency, outbox, authorization, and audit in the Go Domain API.",
+    "Commit, pull request, final approval, ship record, global activation, deployment, and release."
+  ]
+}

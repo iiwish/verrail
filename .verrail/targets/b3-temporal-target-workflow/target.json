@@ -1,0 +1,29 @@
+{
+  "id": "b3-temporal-target-workflow",
+  "title": "Durable Target orchestration handoff",
+  "intent": "Turn the committed native Target outbox fact into a durable, inspectable Temporal TargetWorkflow handoff without moving business truth or Graph Engine authority into Temporal.",
+  "scope": "Add a Go outbox dispatcher, a versioned minimal TargetWorkflow, safe delivery leases and retries, a pinned local Temporal runtime, tests, operational documentation, and inspectable evidence for the Target-created event path.",
+  "non_goals": [
+    "Implement Graph Engine node activation, RunWorkflow, Execution Gateway, or Runner execution",
+    "Write Target business state from a Temporal Workflow",
+    "Create a TypeScript Workflow or a second outbox consumer",
+    "Expose orchestration status as a product-facing source of truth",
+    "Design production Temporal topology, multi-region failover, or managed-cloud provisioning",
+    "Broaden the Go replatform beyond the approved Target orchestration slice",
+    "Commit, merge, deploy, or release without explicit approval"
+  ],
+  "acceptance_criteria": [
+    "The Go worker registers explicitly versioned Workflow, signal, query, and task-queue names and uses a stable Workflow ID derived from Workspace and Target IDs.",
+    "The dispatcher claims committed outbox events with a fencing claim token, bounded lease, per-aggregate ordering, and skip-locked concurrency without holding a database transaction across a Temporal call.",
+    "SignalWithStart delivers the outbox event ID and stable aggregate identifiers, and the dispatcher marks delivery only when the matching claim still owns the row.",
+    "Retryable delivery failures return the event to pending with bounded exponential backoff; expired leases are recoverable; unsupported or exhausted events become inspectable failed rows.",
+    "TargetWorkflow keeps only orchestration state, deduplicates redelivery, exposes a versioned query, and uses Continue-As-New at a bounded history threshold.",
+    "Postgres remains authoritative for Target facts and outbox delivery state; Temporal downtime leaves committed events recoverable rather than rolling back or mutating Target facts.",
+    "Local development uses an explicitly pinned Temporal dev-server image and separate Domain API and orchestration-worker processes.",
+    "Workflow, dispatcher, lease recovery, retry, dead-letter, duplicate delivery, replay, configuration, and real Temporal handoff checks produce inspectable evidence.",
+    "Canonical architecture and development documentation state the implemented boundary without claiming Graph Engine or Run execution is complete."
+  ],
+  "status": "needs_review",
+  "created_at": "2026-08-26T22:46:33Z",
+  "updated_at": "2026-08-26T23:31:00Z"
+}

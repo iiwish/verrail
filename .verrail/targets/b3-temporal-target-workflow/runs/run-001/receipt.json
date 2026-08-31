@@ -1,0 +1,98 @@
+{
+  "id": "run-001",
+  "target_id": "b3-temporal-target-workflow",
+  "agent": "codex",
+  "runner": "Codex desktop local worktree",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "3206490d5b7a1a0db7ff33c4a3b6e957973bafe9",
+  "output_commit": "",
+  "branch": "codex/verrail-brand-navigation-b1",
+  "working_tree": "uncommitted",
+  "dependency": ".verrail/targets/b2-native-target-command",
+  "changed_files": [
+    ".env.example",
+    "doc/DEVELOPING.md",
+    "docs/README.md",
+    "docs/architecture.md",
+    "docs/target-read-model.md",
+    "docs/temporal-target-workflow.md",
+    "docker/docker-compose.temporal.yml",
+    "package.json",
+    "packages/db/src/schema/verrail_targets.ts",
+    "packages/db/src/migrations/0230_many_randall_flagg.sql",
+    "packages/db/src/migrations/meta/0230_snapshot.json",
+    "packages/db/src/migrations/meta/_journal.json",
+    "services/domain-api/go.mod",
+    "services/domain-api/go.sum",
+    "services/domain-api/cmd/orchestration-worker/main.go",
+    "services/domain-api/internal/orchestration/**",
+    ".verrail/targets/b3-temporal-target-workflow/**"
+  ],
+  "commands": [
+    {
+      "command": "pnpm db:generate && pnpm --filter @paperclipai/db typecheck",
+      "status": "passed",
+      "summary": "Generated migration 0230 and its snapshot, then passed the database package typecheck and migration-safety checks."
+    },
+    {
+      "command": "pnpm test:domain-api && pnpm build:domain-api",
+      "status": "passed",
+      "summary": "The Go Domain API, dispatcher, Workflow, configuration, and replay tests passed and both Go commands compiled."
+    },
+    {
+      "command": "VERRAIL_TEST_DATABASE_URL=<isolated-postgres> go test ./internal/orchestration -run <store-and-replay-tests> -count=1 -v",
+      "status": "passed",
+      "summary": "Real PostgreSQL lease recovery, fencing, aggregate ordering, failed-event quarantine, and captured Temporal history replay passed."
+    },
+    {
+      "command": "go test -race ./... && go vet ./... && go build ./...",
+      "status": "passed",
+      "summary": "All Go packages passed the race detector and vet, and compiled successfully."
+    },
+    {
+      "command": "pnpm temporal:dev:up",
+      "status": "passed",
+      "summary": "The pinned Temporal development service became healthy with gRPC and UI ports bound to loopback only."
+    },
+    {
+      "command": "real Domain API -> outbox -> Temporal SignalWithStart -> query verification",
+      "status": "passed",
+      "summary": "A committed native Target event reached a stable versioned Workflow; duplicate delivery was ignored and a live Temporal outage retried before recovery."
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "All selected workspace projects passed typecheck."
+    },
+    {
+      "command": "pnpm test:run",
+      "status": "failed_baseline_only",
+      "summary": "401 files passed, 1 skipped, and 8 failed; 4709 tests passed, 19 skipped, and 24 failed. The 24 failures exactly match the inherited B2 runtime, skill-discovery, macOS path, seed, cleanup, and listener baseline; no B3 test failed."
+    },
+    {
+      "command": "pnpm build",
+      "status": "passed",
+      "summary": "All selected workspace projects built; existing Vite CSS highlight and chunk-size warnings remain non-fatal."
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "summary": "The final working-tree diff contains no whitespace errors."
+    }
+  ],
+  "artifacts": [
+    ".verrail/targets/b3-temporal-target-workflow/runs/run-001/evidence.json",
+    ".verrail/targets/b3-temporal-target-workflow/runs/run-001/acceptance-mapping.md",
+    ".verrail/targets/b3-temporal-target-workflow/runs/run-001/evidence/temporal-target-workflow.png",
+    "services/domain-api/internal/orchestration/testdata/target-workflow-v1-history.json"
+  ],
+  "errors": [
+    {
+      "command": "pnpm test:run",
+      "status": "unresolved_baseline_gap",
+      "summary": "Twenty-four inherited non-slice failures remain; the exact count and files are recorded in evidence.json."
+    }
+  ],
+  "summary": "Delivered the bounded Temporal Target handoff: a fenced Go dispatcher consumes committed Target outbox facts, uses versioned SignalWithStart to a stable TargetWorkflow, retries and recovers without changing Target truth, deduplicates at-least-once delivery, bounds Workflow history, and exposes inspectable local runtime evidence. Graph and Run execution remain outside this slice."
+}

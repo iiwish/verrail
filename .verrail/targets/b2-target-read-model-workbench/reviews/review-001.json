@@ -1,0 +1,22 @@
+{
+  "target_id": "b2-target-read-model-workbench",
+  "run_id": "run-001",
+  "decision": "approve",
+  "reviewer": "Codex implementation self-review; advisory only, product-owner acceptance required",
+  "rationale": "B2 satisfies the confirmed TypeScript compatibility boundary and makes Target a stable, authorized, immutable read object without creating a counterfeit native write model. The projection fails closed on ineligible or missing current sources, preserves replay identity, authorizes active reads from current source facts, exposes a stable retryable outage when an active snapshot is missing, and keeps completion separate from Acceptance. The enabled shell now has real Project Target lists and a useful read-only Workbench. Focused tests, migration safety, workspace typecheck, affected-package builds, token and locale gates, API checks, and inspected desktop/mobile evidence pass. The root test baseline and external skills-catalog build blocker remain unrelated and explicitly recorded, so this is ready for product-owner review but not for a global green or ship claim.",
+  "linked_evidence": [
+    ".verrail/targets/b2-target-read-model-workbench/runs/run-001/evidence.json",
+    ".verrail/targets/b2-target-read-model-workbench/runs/run-001/target-workbench-desktop.png",
+    ".verrail/targets/b2-target-read-model-workbench/runs/run-001/project-targets-mobile.png",
+    "docs/target-read-model.md"
+  ],
+  "requested_changes": [],
+  "conditions": [
+    "Treat this as advisory approval of the B2 read-only compatibility slice, not permission to commit, merge, enable globally, ship, deploy, or announce.",
+    "Keep authoritative Target and TargetRevision commands out of TypeScript; native New Target begins in the Go Domain API.",
+    "Make the next architecture goal establish the Go domain kernel, command idempotency and outbox boundary, then connect Temporal without moving business truth into Workflow state.",
+    "Keep enableVerrailNavigation controlled until B2 receives product-owner acceptance and the next native Target command path is ready.",
+    "Resolve or formally baseline the inherited repository-wide macOS/runtime failures and skills-catalog external-fetch build dependency before claiming a release candidate."
+  ],
+  "created_at": "2026-08-26T12:09:37Z"
+}

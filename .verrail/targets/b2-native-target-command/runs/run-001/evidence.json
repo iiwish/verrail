@@ -1,0 +1,189 @@
+{
+  "target_id": "b2-native-target-command",
+  "run_id": "run-001",
+  "tests": [
+    {
+      "scope": "Go validation and compilation",
+      "status": "passed",
+      "result": "go test ./... and go build ./... passed"
+    },
+    {
+      "scope": "Shared command contracts, real Go/Postgres command integration, idempotent restart replay, atomic rollback, authorization boundaries, TypeScript edge and read model, OpenAPI, dialog, navigation, list, and Workbench",
+      "status": "passed",
+      "result": "14 files, 92 tests passed"
+    },
+    {
+      "scope": "server startup integration after shutdown-wrapper remediation",
+      "status": "passed",
+      "result": "1 file, 16 tests passed"
+    },
+    {
+      "scope": "repository-wide Vitest suite",
+      "status": "failed_with_slice_regression_remediated",
+      "result": "Observed 400 files passed, 1 skipped, 9 failed; 4697 tests passed, 19 skipped, 36 failed",
+      "assessment": "Twelve failures in server-startup-feedback-export were caused by the first sidecar shutdown wrapper, then fixed and retested at 16/16. The other 24 observed failures are inherited company-skill discovery, workspace runtime/control, worktree seed, instance cleanup, runtime exposure, macOS /private/tmp canonicalization, port allocation, and loopback-listener baseline gaps. The entire 13-minute suite was not repeated after the focused fix, so no exact final repository-wide failure count is claimed. No Go-slice focused test failed."
+    }
+  ],
+  "build": {
+    "status": "passed",
+    "command": "pnpm build",
+    "result": "All 34 selected workspace projects built successfully.",
+    "notes": "The skills catalog completed its pinned-source fetch. Existing Vite CSS highlight and bundle-size warnings remain non-fatal."
+  },
+  "typecheck": {
+    "status": "passed",
+    "command": "pnpm -r typecheck",
+    "result": "All 34 selected workspace projects passed; database migration safety passed."
+  },
+  "integrity": [
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "result": "802 files scanned; all four gates clean"
+    },
+    {
+      "command": "locale parity",
+      "status": "passed",
+      "result": "English 3097 keys; Chinese 3097 keys; no missing keys"
+    },
+    {
+      "command": "generated migration safety",
+      "status": "passed",
+      "result": "Migration 0229 and its Drizzle snapshot compile and pass the repository migration checks"
+    }
+  ],
+  "authority": {
+    "native_writer": "services/domain-api (Go)",
+    "typescript_role": "authenticated public edge, internal client, unified native and compatibility reads",
+    "workflow_role": "No Temporal Workflow starts in this slice; the local outbox event is the durable handoff fact for the next slice.",
+    "dual_write": false
+  },
+  "transaction": {
+    "isolation": "serializable",
+    "idempotency_scope": "Workspace + Principal type + Principal ID + command type + Idempotency-Key",
+    "facts": [
+      "verrail_targets",
+      "verrail_target_revisions",
+      "verrail_command_receipts",
+      "verrail_audit_events",
+      "verrail_outbox_events"
+    ],
+    "proof": [
+      "Same key and canonical payload returned the original opaque Target and TargetRevision IDs after the Go process restarted.",
+      "The same key with different content returned 409 TARGET_IDEMPOTENCY_CONFLICT.",
+      "A forced AuditEvent insert failure left all five fact tables at their pre-command counts.",
+      "Invalid service token, agent Principal, non-member, Viewer, cross-Workspace Project, and cross-Workspace owner requests failed closed."
+    ]
+  },
+  "browser": {
+    "status": "passed",
+    "capture_server": "http://127.0.0.1:3230",
+    "final_revalidation_server": "http://127.0.0.1:3260",
+    "workspace": {
+      "id": "1ba17b89-3950-498f-9e24-cd1e7fcd5aaf",
+      "prefix": "VER",
+      "data_home": "/tmp/verrail-go-preview-20260826",
+      "production_data_mutated": false
+    },
+    "fixture": {
+      "project_id": "b728ad05-2cb8-40e8-be43-c86868fa5636",
+      "target_id": "2a566ff9-08ca-4942-b5c2-ede0baf5e094"
+    },
+    "observations": [
+      "The feature-enabled global command and Project context expose New Target while the disabled shell remains compatible.",
+      "The dialog validates and submits Project, owner, risk, title, summary, goal, constraints, acceptance criteria, deadline, and policy summary with a retry-stable idempotency key.",
+      "The public TypeScript POST preserved JSON Content-Type and Idempotency-Key, and the real Go service returned the opaque native Target identity.",
+      "Success navigated directly to the canonical native Workbench.",
+      "The Workbench rendered the Go-owned authority, goal, constraints, acceptance criterion, risk, deadline, and policy without a Case or Issue surrogate.",
+      "Desktop and 390x844 mobile views remained legible without horizontal overflow or text overlap."
+    ],
+    "screenshots": [
+      {
+        "path": ".verrail/targets/b2-native-target-command/runs/run-001/screenshots/new-target-dialog-desktop.png",
+        "viewport": "1280x720",
+        "sha256": "bd70b505629b1384855f6f4aa90b531eaf0c453268edbdb90b66d229b069c84c"
+      },
+      {
+        "path": ".verrail/targets/b2-native-target-command/runs/run-001/screenshots/native-target-workbench-desktop.png",
+        "viewport": "1280x720",
+        "sha256": "e1bedda7ad07fe13400b2d0522541c8319bc2f3df9c6cb65243374d0fe4daa69"
+      },
+      {
+        "path": ".verrail/targets/b2-native-target-command/runs/run-001/screenshots/native-target-workbench-mobile.png",
+        "viewport": "390x844",
+        "sha256": "1c3beedf1eff32ffd1eda8ebaa59dc1cb9a0d4e0fdb1e4feb56f01756ec759f6"
+      }
+    ]
+  },
+  "acceptance_coverage": [
+    {
+      "criterion": 1,
+      "status": "covered",
+      "evidence": "The contract, migration, runtime, read metadata, and code name Go Domain API as the sole native Target and TargetRevision writer; TypeScript has no native table write path."
+    },
+    {
+      "criterion": 2,
+      "status": "covered",
+      "evidence": "Strict shared and Go validators plus the bilingual New Target dialog cover Project, title, owner, goal, constraints, criteria, risk, deadline, and policy summary."
+    },
+    {
+      "criterion": 3,
+      "status": "covered",
+      "evidence": "The Go service requires an 8-128 character safe key and commits the aggregate, immutable revision, receipt, audit, and outbox under one serializable transaction."
+    },
+    {
+      "criterion": 4,
+      "status": "covered",
+      "evidence": "Real Go/Postgres integration proves replay after process restart and stable 409 conflict for changed content."
+    },
+    {
+      "criterion": 5,
+      "status": "covered",
+      "evidence": "Edge and Go checks cover Workspace access, Project visibility and ownership, human active membership, non-Viewer create authority, and active same-Workspace outcome owners without object enumeration."
+    },
+    {
+      "criterion": 6,
+      "status": "covered",
+      "evidence": "The create response returns opaque IDs; the unified read model loads the native aggregate and the browser opens the resulting Workbench without Case, Issue, or projection-table writes."
+    },
+    {
+      "criterion": 7,
+      "status": "covered",
+      "evidence": "Flag-gated global and Project commands, accessible validation, pending/error/retry behavior, idempotency preservation, success invalidation, navigation, bilingual copy, tests, and screenshots are present."
+    },
+    {
+      "criterion": 8,
+      "status": "covered",
+      "evidence": "Native and compatibility Targets share one authorized read contract with explicit authority.kind and authority.writer metadata; native IDs win any collision."
+    },
+    {
+      "criterion": 9,
+      "status": "covered_with_recorded_gap",
+      "evidence": "Schema, migration, Go build/test, command restart replay, rollback, authorization, API, read, UI, browser, typecheck, root build, token, locale, and integrity checks pass. The unrelated repository-wide runtime baseline is explicitly retained as a release gap."
+    }
+  ],
+  "links": [
+    ".verrail/targets/b2-native-target-command/spec.md",
+    "docs/target-read-model.md",
+    "docs/architecture.md",
+    "packages/db/src/schema/verrail_targets.ts",
+    "services/domain-api/internal/target/store.go",
+    "server/src/routes/targets.ts",
+    "server/src/services/verrail-domain-api-runtime.ts",
+    "ui/src/components/NewTargetDialog.tsx",
+    "ui/src/pages/TargetWorkbench.tsx"
+  ],
+  "manual_notes": [
+    "The implementation remains uncommitted on the accepted G1/B1 base pending product-owner review.",
+    "Development can auto-start the loopback Go service; production requires an explicit paired URL and token. Shutdown terminates the complete go run process group on Unix so hot restarts do not leak the compiled child.",
+    "The browser fixture uses an isolated temporary data home. No production Workspace, Project, Target, feature flag, or domain fact was changed.",
+    "No Temporal dispatcher, Workflow, broad Go replatform, ship record, deployment, release, or public announcement was created."
+  ],
+  "missing": [
+    "Independent product-owner and security review of the new internal service boundary, bearer secret handling, and command authorization.",
+    "A fully green repository-wide Vitest run; 24 inherited non-slice failures remained in the observed run after the slice startup regression was fixed and retested.",
+    "Production packaging and supervision for the Go service beyond the explicit paired URL/token contract.",
+    "Temporal outbox dispatcher and the first minimal TargetWorkflow, reserved for the next architecture slice.",
+    "Commit, pull request, final approval, ship record, global activation, deployment, and release."
+  ]
+}

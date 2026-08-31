@@ -1,0 +1,27 @@
+{
+  "target_id": "b2-1-target-projection-compatibility-merge-readiness",
+  "run_id": "run-001",
+  "decision": "request_changes",
+  "reviewer": "Codex implementation self-review; advisory only, independent reviewer and product-owner acceptance required",
+  "rationale": "The compatibility repair is technically complete and preserves the authority contract. Persisted JSON is fail-closed, the only accepted legacy shape is explicit, immutable reads do not write, corrupt rows no longer take lists down, detail errors are stable, reconciliation preserves Target identity, and the focused tests plus the real one-database Browser-to-Temporal path passed. The combined branch is still too broad for direct merge without independent review. In addition, the repository-wide suite finished with 30 failures rather than the previously recorded 24-failure baseline. The same inherited file groups failed and the six extra failures are consistent with ambient port pressure from active local services, but this run cannot by itself prove merge safety. A clean-host rerun and a reviewable commit split are required before merge approval.",
+  "linked_evidence": [
+    ".verrail/targets/b2-1-target-projection-compatibility-merge-readiness/runs/run-001/evidence.json",
+    ".verrail/targets/b2-1-target-projection-compatibility-merge-readiness/runs/run-001/acceptance-mapping.md",
+    ".verrail/targets/b2-1-target-projection-compatibility-merge-readiness/runs/run-001/evidence/native-target-workbench.png",
+    "docs/target-read-model.md",
+    "packages/shared/src/validators/target.ts",
+    "server/src/services/target-read-model.ts"
+  ],
+  "requested_changes": [
+    "Rerun pnpm test:run on a clean host or isolated CI worker and confirm the suite is green or no worse than a formally accepted baseline.",
+    "Split the accumulated B2, B2.1, and B3 working tree into reviewable commits with B2.1 tests and documentation adjacent to the compatibility fix.",
+    "Obtain an independent engineering review before merge approval."
+  ],
+  "conditions": [
+    "Treat the current B2.1 result as implementation complete and needs_review, not permission to merge, deploy, release, or announce.",
+    "Keep Go as the only native Target writer and keep compatibility projection repair explicit and administrator-controlled.",
+    "Do not weaken invalid-snapshot isolation or turn list omission into silent success without the bounded per-revision operational log.",
+    "Keep the existing Target and Temporal development services local-only while collecting review evidence."
+  ],
+  "created_at": "2026-08-27T03:00:47Z"
+}

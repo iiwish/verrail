@@ -1,0 +1,91 @@
+{
+  "id": "run-001",
+  "target_id": "b2-1-target-projection-compatibility-merge-readiness",
+  "agent": "codex",
+  "runner": "Codex desktop local worktree",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "3206490d5b7a1a0db7ff33c4a3b6e957973bafe9",
+  "output_commit": "",
+  "branch": "codex/verrail-brand-navigation-b1",
+  "working_tree": "uncommitted combined B2, B2.1, and B3 change set",
+  "dependencies": [
+    ".verrail/targets/b2-target-read-model-workbench",
+    ".verrail/targets/b2-native-target-command",
+    ".verrail/targets/b3-temporal-target-workflow"
+  ],
+  "changed_files": [
+    "packages/shared/src/validators/target.ts",
+    "packages/shared/src/validators/target.test.ts",
+    "packages/shared/src/index.ts",
+    "packages/db/src/schema/target_projections.ts",
+    "server/src/services/target-read-model.ts",
+    "server/src/__tests__/target-read-model.test.ts",
+    "ui/src/pages/TargetWorkbench.tsx",
+    "ui/src/pages/TargetWorkbench.test.tsx",
+    "ui/src/i18n/locales/en.json",
+    "ui/src/i18n/locales/zh-CN.json",
+    "docs/target-read-model.md",
+    ".verrail/targets/b2-1-target-projection-compatibility-merge-readiness/**"
+  ],
+  "commands": [
+    {
+      "command": "pnpm exec vitest run packages/shared/src/validators/target.test.ts server/src/__tests__/target-read-model.test.ts server/src/__tests__/target-routes.test.ts server/src/__tests__/verrail-domain-api.integration.test.ts ui/src/components/NewTargetDialog.test.tsx ui/src/components/TargetList.test.tsx ui/src/pages/TargetWorkbench.test.tsx ui/src/pages/VerrailHome.test.tsx ui/src/App.test.tsx",
+      "status": "passed",
+      "summary": "Nine files and 47 tests passed, including legacy normalization, corrupt snapshot isolation, historical source-identity mismatch rejection, stable 503 detail errors, reconciliation, creation, list, Workbench, Home, and route behavior."
+    },
+    {
+      "command": "pnpm test:domain-api",
+      "status": "passed",
+      "summary": "All Go Domain API and orchestration packages passed."
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "All 34 selected workspace projects passed typecheck; the server package typecheck also passed again after the final historical source-identity hardening."
+    },
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "summary": "All UI token gates passed across 802 files with no new violation."
+    },
+    {
+      "command": "pnpm build",
+      "status": "passed",
+      "summary": "The final full workspace build passed; existing Vite CSS, font, dynamic-import, and chunk-size warnings remain non-fatal."
+    },
+    {
+      "command": "Browser UI -> TypeScript edge -> Go Domain API -> PostgreSQL outbox -> Go worker -> Temporal query",
+      "status": "passed",
+      "summary": "One native Target created in the browser was committed, delivered once from the outbox, and observed in the stable Temporal Workflow query on the same database."
+    },
+    {
+      "command": "pnpm test:run",
+      "status": "failed_environment_baseline",
+      "summary": "401 files passed, 1 skipped, and 8 failed; 4705 tests passed, 19 skipped, and 30 failed. No B2.1-focused test failed. The same eight inherited file groups failed, with six additional port-allocation failures versus the prior 24-failure baseline while multiple local runtime services were active."
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "summary": "The final working-tree diff contains no whitespace errors."
+    }
+  ],
+  "artifacts": [
+    ".verrail/targets/b2-1-target-projection-compatibility-merge-readiness/runs/run-001/evidence.json",
+    ".verrail/targets/b2-1-target-projection-compatibility-merge-readiness/runs/run-001/acceptance-mapping.md",
+    ".verrail/targets/b2-1-target-projection-compatibility-merge-readiness/runs/run-001/evidence/native-target-workbench.png"
+  ],
+  "errors": [
+    {
+      "command": "pnpm test:run",
+      "status": "merge_gate",
+      "summary": "The inherited repository suite is not green and the observed 30 failures exceed the previously recorded 24-failure baseline; rerun on a clean host before merge."
+    },
+    {
+      "command": "fresh narrow-viewport browser capture",
+      "status": "evidence_gap",
+      "summary": "The selected in-app browser did not expose viewport resizing. B2 responsive component coverage remains green, but B2.1 did not create a fresh narrow screenshot."
+    }
+  ],
+  "summary": "Completed the B2.1 compatibility repair and integrated proof. Stored projections are validated as unknown data, one known legacy shape is normalized without mutation, corrupt rows cannot take lists down, detail failures are stable and retryable, and administrator reconciliation advances the stable Target to a canonical snapshot. Direct merge is not yet recommended because independent review and a clean-host full-suite rerun remain open."
+}
