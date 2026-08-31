@@ -4,6 +4,7 @@ import {
   createDb,
   verrailConversations,
 } from "@paperclipai/db";
+import { eq } from "drizzle-orm";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -130,5 +131,54 @@ describeEmbeddedPostgres("conversationService", () => {
       body: "Continue after restore",
       actor: { principalType: "user", principalId: "user-1" },
     })).resolves.toMatchObject({ body: "Continue after restore" });
+  });
+
+  it("serializes archival ahead of a waiting message append", async () => {
+    const [workspace] = await db
+      .insert(companies)
+      .values({ name: "Concurrent Lifecycle Workspace", issuePrefix: "CLW" })
+      .returning();
+    const service = conversationService(db);
+    const created = await service.create(
+      workspace!.id,
+      { contextBindings: [] },
+      { principalType: "user", principalId: "user-1" },
+    );
+
+    let releaseBlocker = () => {};
+    let reportLocked = () => {};
+    const blockerReleased = new Promise<void>((resolve) => {
+      releaseBlocker = resolve;
+    });
+    const rowLocked = new Promise<void>((resolve) => {
+      reportLocked = resolve;
+    });
+    const blocker = db.transaction(async (tx) => {
+      await tx
+        .select({ id: verrailConversations.id })
+        .from(verrailConversations)
+        .where(eq(verrailConversations.id, created.id))
+        .for("update");
+      reportLocked();
+      await blockerReleased;
+    });
+
+    await rowLocked;
+    const archive = service.update(workspace!.id, created.id, { status: "archived" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const append = service.appendMessage(workspace!.id, created.id, {
+      role: "user",
+      body: "Must wait behind archival",
+      actor: { principalType: "user", principalId: "user-1" },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    releaseBlocker();
+
+    await blocker;
+    await expect(archive).resolves.toMatchObject({ status: "archived" });
+    await expect(append).rejects.toMatchObject({
+      status: 409,
+      details: { code: "CONVERSATION_ARCHIVED" },
+    });
   });
 });

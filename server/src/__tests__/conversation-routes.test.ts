@@ -161,4 +161,38 @@ describe("conversation routes", () => {
       status: "failed",
     });
   });
+
+  it("reserves run capacity before asynchronous setup and releases each slot once", async () => {
+    const { createConversationRunLimiter } = await import("../routes/conversations.js");
+    const limiter = createConversationRunLimiter(3);
+    const releases = [limiter.tryAcquire(), limiter.tryAcquire(), limiter.tryAcquire()];
+
+    expect(releases.every(Boolean)).toBe(true);
+    expect(limiter.activeCount()).toBe(3);
+    expect(limiter.tryAcquire()).toBeNull();
+
+    releases[0]!();
+    releases[0]!();
+    expect(limiter.activeCount()).toBe(2);
+    expect(limiter.tryAcquire()).toBeTypeOf("function");
+    expect(limiter.activeCount()).toBe(3);
+  });
+
+  it("escalates runtime termination and forces cleanup after the grace period", async () => {
+    vi.useFakeTimers();
+    try {
+      const { scheduleConversationRuntimeTermination } = await import("../routes/conversations.js");
+      const proc = { exitCode: null, kill: vi.fn(() => true) };
+      const cleanup = vi.fn();
+
+      scheduleConversationRuntimeTermination(proc, cleanup, 100);
+      expect(proc.kill).toHaveBeenCalledWith("SIGTERM");
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(proc.kill).toHaveBeenCalledWith("SIGKILL");
+      expect(cleanup).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

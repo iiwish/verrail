@@ -18,6 +18,7 @@ import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 
 const MAX_CONCURRENT_CHAT_RUNS = 3;
 const CHAT_TIMEOUT_MS = 120_000;
+const CHAT_TERMINATION_GRACE_MS = 5_000;
 const CHAT_RUNTIME_ENV_KEYS = [
   "PATH",
   "HOME",
@@ -47,6 +48,38 @@ const CHAT_RUNTIME_ENV_KEYS = [
 ] as const;
 
 type LocalChatRuntime = "codex" | "claude";
+
+export function createConversationRunLimiter(maxConcurrentRuns: number) {
+  let activeRuns = 0;
+  return {
+    tryAcquire() {
+      if (activeRuns >= maxConcurrentRuns) return null;
+      activeRuns += 1;
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        activeRuns -= 1;
+      };
+    },
+    activeCount() {
+      return activeRuns;
+    },
+  };
+}
+
+export function scheduleConversationRuntimeTermination(
+  proc: { exitCode: number | null; kill: (signal: NodeJS.Signals) => boolean },
+  onGraceExpired: () => void,
+  graceMs = CHAT_TERMINATION_GRACE_MS,
+) {
+  if (proc.exitCode !== null) return null;
+  proc.kill("SIGTERM");
+  return setTimeout(() => {
+    if (proc.exitCode === null) proc.kill("SIGKILL");
+    onGraceExpired();
+  }, graceMs);
+}
 
 function resolveLocalChatRuntime(): LocalChatRuntime {
   return process.env.VERRAIL_CHAT_RUNTIME?.trim().toLowerCase() === "claude" ? "claude" : "codex";
@@ -99,7 +132,7 @@ export function classifyConversationRuntimeOutcome(
 export function conversationRoutes(db: Db, opts: { deploymentMode: DeploymentMode }) {
   const router = Router();
   const conversations = conversationService(db);
-  let liveRuns = 0;
+  const runLimiter = createConversationRunLimiter(MAX_CONCURRENT_CHAT_RUNS);
 
   router.get("/workspaces/:workspaceId/conversations", async (req, res) => {
     assertBoard(req);
@@ -182,21 +215,45 @@ export function conversationRoutes(db: Db, opts: { deploymentMode: DeploymentMod
         });
         return;
       }
-      if (liveRuns >= MAX_CONCURRENT_CHAT_RUNS) {
+      const input = sendConversationMessageSchema.parse(req.body);
+      const releaseRun = runLimiter.tryAcquire();
+      if (!releaseRun) {
         res.status(429).json({ error: "Too many active conversations", code: "CONVERSATION_BUSY" });
         return;
       }
 
-      const input = sendConversationMessageSchema.parse(req.body);
-      const actor = getActorInfo(req);
-      const userMessage = await conversations.appendMessage(workspaceId, conversationId, {
-        role: "user",
-        body: input.body,
-        actor: actorIdentity(actor),
+      let runtimeCwd: string | null = null;
+      let requestClosed = false;
+      let terminateRuntime: (() => void) | null = null;
+      res.on("close", () => {
+        requestClosed = true;
+        terminateRuntime?.();
       });
-      if (!userMessage) throw notFound("Conversation not found");
-      const conversation = await conversations.get(workspaceId, conversationId);
-      if (!conversation) throw notFound("Conversation not found");
+
+      let userMessage;
+      let conversation;
+      try {
+        const actor = getActorInfo(req);
+        userMessage = await conversations.appendMessage(workspaceId, conversationId, {
+          role: "user",
+          body: input.body,
+          actor: actorIdentity(actor),
+        });
+        if (!userMessage) throw notFound("Conversation not found");
+        conversation = await conversations.get(workspaceId, conversationId);
+        if (!conversation) throw notFound("Conversation not found");
+        runtimeCwd = await mkdtemp(join(tmpdir(), "verrail-chat-"));
+      } catch (error) {
+        releaseRun();
+        if (runtimeCwd) void rm(runtimeCwd, { recursive: true, force: true });
+        throw error;
+      }
+
+      if (requestClosed) {
+        releaseRun();
+        void rm(runtimeCwd, { recursive: true, force: true });
+        return;
+      }
 
       const recent = conversation.messages.slice(-30);
       const history = recent
@@ -225,7 +282,6 @@ export function conversationRoutes(db: Db, opts: { deploymentMode: DeploymentMod
         "Respond to the latest user turn.",
       ].join("\n\n");
       const runtime = resolveLocalChatRuntime();
-      const runtimeCwd = await mkdtemp(join(tmpdir(), "verrail-chat-"));
       const configuredModel = process.env.VERRAIL_CHAT_MODEL?.trim();
 
       res.writeHead(200, {
@@ -284,31 +340,60 @@ export function conversationRoutes(db: Db, opts: { deploymentMode: DeploymentMod
             ...(configuredModel ? ["--model", configuredModel] : []),
             "-",
           ];
-      const proc = spawn(command, args, {
-        stdio: ["pipe", "pipe", "pipe"],
-        cwd: runtimeCwd,
-        env: buildConversationRuntimeEnv(process.env),
-      });
+      let proc;
+      try {
+        proc = spawn(command, args, {
+          stdio: ["pipe", "pipe", "pipe"],
+          cwd: runtimeCwd,
+          env: buildConversationRuntimeEnv(process.env),
+        });
+      } catch (error) {
+        releaseRun();
+        void rm(runtimeCwd, { recursive: true, force: true });
+        if (!res.writableEnded && !res.destroyed) {
+          res.write(`data: ${JSON.stringify({
+            type: "error",
+            message: "The local conversational runtime is unavailable.",
+          })}\n\n`);
+          res.end();
+        }
+        logger.error({ err: error, workspaceId, conversationId }, "Conversation runtime failed to start");
+        return;
+      }
 
-      liveRuns += 1;
-      let released = false;
       let responseText = "";
       let streamedViaDelta = false;
       let timedOut = false;
       let stderrBytes = 0;
-      const release = () => {
-        if (released) return;
-        released = true;
-        liveRuns -= 1;
+      let cleanedUp = false;
+      let forceKillTimer: ReturnType<typeof setTimeout> | null = null;
+      const cleanupResources = () => {
+        if (cleanedUp) return;
+        cleanedUp = true;
+        releaseRun();
+        void rm(runtimeCwd, { recursive: true, force: true });
+      };
+      const forceCleanup = () => {
+        clearTimeout(timeout);
+        cleanupResources();
+        if (!res.writableEnded && !res.destroyed) {
+          res.write(`data: ${JSON.stringify({
+            type: "error",
+            message: timedOut
+              ? "The conversational runtime timed out."
+              : "The local conversational runtime could not be stopped.",
+          })}\n\n`);
+          res.end();
+        }
+      };
+      terminateRuntime = () => {
+        if (forceKillTimer || proc.exitCode !== null) return;
+        forceKillTimer = scheduleConversationRuntimeTermination(proc, forceCleanup);
       };
       const timeout = setTimeout(() => {
         timedOut = true;
-        proc.kill("SIGTERM");
+        terminateRuntime?.();
       }, CHAT_TIMEOUT_MS);
-
-      res.on("close", () => {
-        if (proc.exitCode === null && !proc.killed) proc.kill("SIGTERM");
-      });
 
       proc.stderr.on("data", (data: Buffer) => {
         stderrBytes += data.length;
@@ -359,8 +444,8 @@ export function conversationRoutes(db: Db, opts: { deploymentMode: DeploymentMod
 
       proc.on("close", async (exitCode) => {
         clearTimeout(timeout);
-        release();
-        void rm(runtimeCwd, { recursive: true, force: true });
+        if (forceKillTimer) clearTimeout(forceKillTimer);
+        cleanupResources();
         try {
           const outcome = classifyConversationRuntimeOutcome(responseText, exitCode, timedOut);
           if (outcome.kind === "error") {
@@ -409,9 +494,9 @@ export function conversationRoutes(db: Db, opts: { deploymentMode: DeploymentMod
 
       proc.on("error", (error) => {
         clearTimeout(timeout);
-        release();
-        void rm(runtimeCwd, { recursive: true, force: true });
-        if (!res.writableEnded) {
+        if (forceKillTimer) clearTimeout(forceKillTimer);
+        cleanupResources();
+        if (!res.writableEnded && !res.destroyed) {
           res.write(`data: ${JSON.stringify({
             type: "error",
             message: "The local conversational runtime is unavailable.",

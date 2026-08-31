@@ -190,6 +190,7 @@ export function conversationService(db: Db) {
             eq(verrailConversations.id, conversationId),
             eq(verrailConversations.workspaceId, workspaceId),
           ))
+          .for("update")
           .then((rows) => rows[0] ?? null);
         if (!conversation) return null;
         if (conversation.status === "archived") {
