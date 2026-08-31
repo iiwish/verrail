@@ -1,0 +1,51 @@
+{
+  "target_id": "g1-brand-nav-foundation",
+  "run_id": "run-003",
+  "head_commit": "d56dfe97471d828bd4f582a0fe3e82fdf4d7850e",
+  "pull_request": "https://github.com/iiwish/verrail/pull/2",
+  "ci": {
+    "status": "passed",
+    "workflow_run": "https://github.com/iiwish/verrail/actions/runs/33372880855",
+    "observed_gates": [
+      "policy",
+      "Typecheck + Release Registry, including token and i18n gates",
+      "General tests: all workspace and server shards",
+      "Verify serialized server suites: all shards",
+      "Build",
+      "Canary Dry Run",
+      "e2e: all shards",
+      "aggregate verify and CI"
+    ]
+  },
+  "focused_validation": {
+    "status": "passed",
+    "results": [
+      "18 navigation ownership tests passed",
+      "84 company portability tests passed",
+      "workspace typecheck passed",
+      "brand asset and UI token gates passed"
+    ]
+  },
+  "acceptance_coverage": [
+    {
+      "criterion": 4,
+      "status": "covered",
+      "evidence": "New bundles emit an explicit navigation flag, legacy bundles omit it without mutating existing workspace state, and false-to-true activation paths are validated."
+    },
+    {
+      "criterion": 6,
+      "status": "covered",
+      "evidence": "Workspace and plugin route claims are serialized in the database. Archived workspaces release claims, while reactivation and ready plugin transitions recheck conflicts."
+    },
+    {
+      "criterion": 8,
+      "status": "covered",
+      "evidence": "The complete pull-request workflow passed at implementation commit d56dfe97471d828bd4f582a0fe3e82fdf4d7850e. This follow-up contains evidence records only and does not alter runtime behavior."
+    }
+  ],
+  "remaining_gaps": [
+    "Human brand acceptance and professional trademark clearance remain external product-launch gates.",
+    "A final independent merge decision remains required; this implementation agent does not self-approve a review decision.",
+    "Deployment, release, and public announcement remain outside this review."
+  ]
+}

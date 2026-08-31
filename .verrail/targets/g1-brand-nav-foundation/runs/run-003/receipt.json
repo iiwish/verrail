@@ -1,0 +1,53 @@
+{
+  "id": "run-003",
+  "target_id": "g1-brand-nav-foundation",
+  "agent": "codex",
+  "runner": "Codex review plus GitHub Actions pull-request workflow",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "7229c4d5c62a5ea1b394121dbc9b4100a27697bc",
+  "output_commit": "d56dfe97471d828bd4f582a0fe3e82fdf4d7850e",
+  "branch": "codex/verrail-brand-foundation",
+  "working_tree": "clean before this evidence-only record",
+  "changed_files": [
+    "packages/shared/src/validators/company-portability.ts",
+    "server/src/services/companies.ts",
+    "server/src/services/company-portability.ts",
+    "server/src/services/plugin-registry.ts",
+    "server/src/services/verrail-navigation.ts",
+    "server/src/__tests__/companies-service.test.ts",
+    "server/src/__tests__/company-portability.test.ts"
+  ],
+  "commands": [
+    {
+      "command": "GitHub Actions PR workflow run 33372880855",
+      "status": "passed",
+      "summary": "Policy, typecheck, token and i18n gates, all general and serialized server shards, build, canary dry run, all browser shards, and aggregate gates passed. One external package-source fetch failure passed on a single job rerun."
+    },
+    {
+      "command": "pnpm exec vitest run server/src/__tests__/companies-service.test.ts server/src/__tests__/verrail-navigation.test.ts",
+      "status": "passed",
+      "summary": "18 focused navigation ownership tests passed."
+    },
+    {
+      "command": "pnpm exec vitest run server/src/__tests__/company-portability.test.ts",
+      "status": "passed",
+      "summary": "All 84 company portability tests passed."
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "Workspace TypeScript validation passed."
+    },
+    {
+      "command": "pnpm check:brand-assets && pnpm check:token-gates && git diff --check",
+      "status": "passed",
+      "summary": "Brand assets, UI token usage, and diff integrity passed."
+    }
+  ],
+  "errors": [
+    "The local repository-wide Vitest run remains unsuitable as a merge gate on this macOS host because inherited temporary-directory and listener failures prevent clean completion.",
+    "The local skills-catalog production build could not fetch a pinned GitHub source (HTTP 400); the remote Build and Canary jobs passed, and the one affected test shard passed on rerun."
+  ],
+  "summary": "Reviewed and hardened route ownership and portability behavior: transitions are serialized, archived workspaces release reserved routes, reactivation rechecks conflicts, and legacy bundles preserve existing navigation state. The current implementation head passed the complete pull-request workflow."
+}

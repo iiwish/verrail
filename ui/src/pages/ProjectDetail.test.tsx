@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DialogProvider } from "../context/DialogContext";
 import { ProjectDetail } from "./ProjectDetail";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -250,7 +251,9 @@ describe("ProjectDetail", () => {
       root = createRoot(container);
       root.render(
         <QueryClientProvider client={queryClient}>
-          <ProjectDetail />
+          <DialogProvider>
+            <ProjectDetail />
+          </DialogProvider>
         </QueryClientProvider>,
       );
     });
@@ -286,7 +289,9 @@ describe("ProjectDetail", () => {
       root = createRoot(container);
       root.render(
         <QueryClientProvider client={queryClient}>
-          <ProjectDetail />
+          <DialogProvider>
+            <ProjectDetail />
+          </DialogProvider>
         </QueryClientProvider>,
       );
     });
@@ -371,7 +376,9 @@ describe("ProjectDetail", () => {
         root = createRoot(container);
         root.render(
           <QueryClientProvider client={queryClient}>
-            <ProjectDetail />
+            <DialogProvider>
+              <ProjectDetail />
+            </DialogProvider>
           </QueryClientProvider>,
         );
       });
