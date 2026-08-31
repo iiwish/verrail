@@ -1,7 +1,9 @@
 import { companies, plugins, type Db } from "@paperclipai/db";
 import { VERRAIL_NAVIGATION_ROUTE_ROOTS } from "@paperclipai/shared";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { conflict } from "../errors.js";
+
+const VERRAIL_NAVIGATION_ROUTE_OWNERSHIP_LOCK = "verrail:navigation-route-ownership";
 
 export interface VerrailNavigationRouteConflict {
   pluginKey: string;
@@ -17,6 +19,16 @@ interface PersistedPluginManifestRecord {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+export async function lockVerrailNavigationRouteOwnership(
+  db: Pick<Db, "execute">,
+): Promise<void> {
+  await db.execute(sql`
+    select pg_advisory_xact_lock(
+      hashtextextended(${VERRAIL_NAVIGATION_ROUTE_OWNERSHIP_LOCK}, 0)
+    )
+  `);
 }
 
 export function findVerrailNavigationRouteConflicts(
@@ -80,7 +92,10 @@ export async function assertPluginCanActivateWithVerrailNavigation(
   const enabledWorkspace = await db
     .select({ id: companies.id })
     .from(companies)
-    .where(eq(companies.enableVerrailNavigation, true))
+    .where(and(
+      eq(companies.enableVerrailNavigation, true),
+      ne(companies.status, "archived"),
+    ))
     .limit(1)
     .then((rows) => rows[0] ?? null);
   if (!enabledWorkspace) return;
