@@ -38,7 +38,8 @@ export interface CompanyPortabilityCompanyManifestEntry {
   logoPath: string | null;
   attachmentMaxBytes: number | null;
   requireBoardApprovalForNewAgents: boolean;
-  enableVerrailNavigation: boolean;
+  /** Absent in bundles created before the Verrail navigation capability. */
+  enableVerrailNavigation?: boolean;
   feedbackDataSharingEnabled: boolean;
   feedbackDataSharingConsentAt: string | null;
   feedbackDataSharingConsentByUserId: string | null;
