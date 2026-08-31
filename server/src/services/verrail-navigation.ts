@@ -1,6 +1,6 @@
 import { companies, plugins, type Db } from "@paperclipai/db";
 import { VERRAIL_NAVIGATION_ROUTE_ROOTS } from "@paperclipai/shared";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { conflict } from "../errors.js";
 
 const VERRAIL_NAVIGATION_ROUTE_OWNERSHIP_LOCK = "verrail:navigation-route-ownership";
@@ -92,7 +92,10 @@ export async function assertPluginCanActivateWithVerrailNavigation(
   const enabledWorkspace = await db
     .select({ id: companies.id })
     .from(companies)
-    .where(eq(companies.enableVerrailNavigation, true))
+    .where(and(
+      eq(companies.enableVerrailNavigation, true),
+      ne(companies.status, "archived"),
+    ))
     .limit(1)
     .then((rows) => rows[0] ?? null);
   if (!enabledWorkspace) return;
