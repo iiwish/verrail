@@ -1,4 +1,33 @@
 export { agentAdapterTypeSchema, optionalAgentAdapterTypeSchema } from "./adapter-type.js";
+export {
+  TARGET_READ_MODEL_SCHEMA_VERSION,
+  TARGET_PROJECTION_POLICY_VERSION,
+  TARGET_STATUSES,
+  type TargetStatus,
+  type TargetSourceType,
+  type TargetStageKey,
+  type TargetRiskLevel,
+  type TargetAcceptanceCriterionV1,
+  type CreateTargetInputV1,
+  type CreateTargetResponseV1,
+  type TargetReadModelV1,
+  type TargetListResponseV1,
+  type TargetProjectionSource,
+} from "./types/target.js";
+export {
+  registerTargetProjectionSchema,
+  targetListQuerySchema,
+  targetSourceTypeSchema,
+  createTargetSchema,
+  targetIdempotencyKeySchema,
+  targetReadModelV1Schema,
+  parseStoredTargetReadModelV1,
+  type RegisterTargetProjectionInput,
+  type TargetListQuery,
+  type CreateTargetInput,
+  type ParsedStoredTargetReadModelV1,
+  type StoredTargetReadModelUpgrade,
+} from "./validators/target.js";
 export { ADAPTER_AUTH_MISSING_CHECK_CODE } from "./adapter-auth-check-code.js";
 export {
   decisionEffectStalenessSchema,

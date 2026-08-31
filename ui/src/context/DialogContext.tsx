@@ -24,6 +24,10 @@ interface NewGoalDefaults {
   parentId?: string;
 }
 
+interface NewTargetDefaults {
+  projectId?: string;
+}
+
 interface OnboardingOptions {
   initialStep?: 1 | 2 | 3 | 4;
   companyId?: string;
@@ -37,6 +41,10 @@ interface DialogContextValue {
   newProjectOpen: boolean;
   openNewProject: () => void;
   closeNewProject: () => void;
+  newTargetOpen: boolean;
+  newTargetDefaults: NewTargetDefaults;
+  openNewTarget: (defaults?: NewTargetDefaults) => void;
+  closeNewTarget: () => void;
   newGoalOpen: boolean;
   newGoalDefaults: NewGoalDefaults;
   openNewGoal: (defaults?: NewGoalDefaults) => void;
@@ -60,6 +68,8 @@ type DialogStateValue = Pick<
   | "newIssueOpen"
   | "newIssueDefaults"
   | "newProjectOpen"
+  | "newTargetOpen"
+  | "newTargetDefaults"
   | "newGoalOpen"
   | "newGoalDefaults"
   | "newAgentOpen"
@@ -77,6 +87,8 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   const [newIssueOpen, setNewIssueOpen] = useState(false);
   const [newIssueDefaults, setNewIssueDefaults] = useState<NewIssueDefaults>({});
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [newTargetOpen, setNewTargetOpen] = useState(false);
+  const [newTargetDefaults, setNewTargetDefaults] = useState<NewTargetDefaults>({});
   const [newGoalOpen, setNewGoalOpen] = useState(false);
   const [newGoalDefaults, setNewGoalDefaults] = useState<NewGoalDefaults>({});
   const [newAgentOpen, setNewAgentOpen] = useState(false);
@@ -100,6 +112,16 @@ export function DialogProvider({ children }: { children: ReactNode }) {
 
   const closeNewProject = useCallback(() => {
     setNewProjectOpen(false);
+  }, []);
+
+  const openNewTarget = useCallback((defaults: NewTargetDefaults = {}) => {
+    setNewTargetDefaults(defaults);
+    setNewTargetOpen(true);
+  }, []);
+
+  const closeNewTarget = useCallback(() => {
+    setNewTargetOpen(false);
+    setNewTargetDefaults({});
   }, []);
 
   const openNewGoal = useCallback((defaults: NewGoalDefaults = {}) => {
@@ -135,6 +157,8 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       newIssueOpen,
       newIssueDefaults,
       newProjectOpen,
+      newTargetOpen,
+      newTargetDefaults,
       newGoalOpen,
       newGoalDefaults,
       newAgentOpen,
@@ -146,6 +170,8 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       newIssueOpen,
       newIssueDefaults,
       newProjectOpen,
+      newTargetOpen,
+      newTargetDefaults,
       newGoalOpen,
       newGoalDefaults,
       newAgentOpen,
@@ -161,6 +187,8 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       closeNewIssue,
       openNewProject,
       closeNewProject,
+      openNewTarget,
+      closeNewTarget,
       openNewGoal,
       closeNewGoal,
       openNewAgent,
@@ -174,6 +202,8 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       closeNewIssue,
       openNewProject,
       closeNewProject,
+      openNewTarget,
+      closeNewTarget,
       openNewGoal,
       closeNewGoal,
       openNewAgent,

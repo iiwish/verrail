@@ -1,4 +1,15 @@
 export const queryKeys = {
+  targets: {
+    list: (
+      workspaceId: string,
+      projectId?: string | null,
+      options: Record<string, unknown> = {},
+    ) => ["targets", workspaceId, "list", projectId ?? "__all-projects__", options] as const,
+    detail: (workspaceId: string, targetId: string) =>
+      ["targets", workspaceId, "detail", targetId] as const,
+    revision: (workspaceId: string, targetId: string, targetRevisionId: string) =>
+      ["targets", workspaceId, "detail", targetId, "revision", targetRevisionId] as const,
+  },
   companies: {
     /**
      * Prefix for everything company-shaped. Matches the list, details and stats

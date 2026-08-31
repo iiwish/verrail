@@ -34,6 +34,12 @@ export {
   refreshIssueContinuationSummary,
 } from "./issue-continuation-summary.js";
 export { projectService } from "./projects.js";
+export { targetReadModelService, targetProjectionUuidV5 } from "./target-read-model.js";
+export {
+  createVerrailDomainApiClient,
+  type VerrailDomainApiClient,
+  type CreateNativeTargetCommand,
+} from "./verrail-domain-api-client.js";
 export {
   clampIssueListLimit,
   ISSUE_LIST_DEFAULT_LIMIT,

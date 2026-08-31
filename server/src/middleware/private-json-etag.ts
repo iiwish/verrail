@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { RequestHandler } from "express";
+import type { Request, RequestHandler } from "express";
 
 function matchesEtag(header: string | undefined, etag: string) {
   if (!header) return false;
@@ -9,7 +9,7 @@ function matchesEtag(header: string | undefined, etag: string) {
   });
 }
 
-export function privateJsonEtag(): RequestHandler {
+export function privateJsonEtag(scopeKey?: (req: Request) => string): RequestHandler {
   return (req, res, next) => {
     if (req.method !== "GET") {
       next();
@@ -26,7 +26,9 @@ export function privateJsonEtag(): RequestHandler {
         || !contentType.includes("application/json")
       ) return originalSend(body);
       const serialized = typeof body === "string" ? body : JSON.stringify(body);
-      const etag = `"${createHash("sha256").update(serialized).digest("base64url")}"`;
+      const hash = createHash("sha256");
+      if (scopeKey) hash.update(scopeKey(req)).update("\n");
+      const etag = `"${hash.update(serialized).digest("base64url")}"`;
       res.setHeader("Cache-Control", "private, must-revalidate");
       res.setHeader("ETag", etag);
       if (matchesEtag(req.header("if-none-match"), etag)) {

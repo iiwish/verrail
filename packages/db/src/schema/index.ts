@@ -25,6 +25,14 @@ export { agentRuntimeState } from "./agent_runtime_state.js";
 export { agentTaskSessions } from "./agent_task_sessions.js";
 export { agentWakeupRequests } from "./agent_wakeup_requests.js";
 export { projects } from "./projects.js";
+export { targetProjectionSources, targetProjectionRevisions } from "./target_projections.js";
+export {
+  verrailTargets,
+  verrailTargetRevisions,
+  verrailCommandReceipts,
+  verrailAuditEvents,
+  verrailOutboxEvents,
+} from "./verrail_targets.js";
 export { projectMemberships } from "./project_memberships.js";
 export { documentMemberships } from "./document_memberships.js";
 export { projectWorkspaces } from "./project_workspaces.js";

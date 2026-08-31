@@ -193,6 +193,11 @@ import {
   workspaceFileAvailabilityResponseSchema,
   workspaceFileListQuerySchema,
   workspaceFileResourceQuerySchema,
+  // Target domain and compatibility read model
+  createTargetSchema,
+  registerTargetProjectionSchema,
+  targetIdempotencyKeySchema,
+  targetListQuerySchema,
   // Tool access
   connectToolAppSchema,
   createToolApplicationSchema,
@@ -246,6 +251,7 @@ type OpenApiPathRegistration = {
   request?: {
     params?: z.ZodTypeAny;
     query?: z.ZodTypeAny;
+    headers?: z.ZodTypeAny;
     body?: {
       content: Record<string, { schema: unknown }>;
       required?: boolean;
@@ -478,7 +484,7 @@ function normalizeResponses(responses: Record<string, OpenApiResponse> = {}) {
   );
 }
 
-function parametersFromSchema(schema: z.ZodTypeAny, location: "path" | "query") {
+function parametersFromSchema(schema: z.ZodTypeAny, location: "path" | "query" | "header") {
   const objectSchema = unwrapSchema(schema);
   if (zodTypeName(objectSchema) !== "object") return [];
   const shape = zodDef(objectSchema).shape as Record<string, z.ZodTypeAny>;
@@ -517,6 +523,12 @@ class OpenAPIRegistry {
         normalizedOperation.parameters = [
           ...((normalizedOperation.parameters as unknown[]) ?? []),
           ...parametersFromSchema(request.query, "query"),
+        ];
+      }
+      if (request?.headers) {
+        normalizedOperation.parameters = [
+          ...((normalizedOperation.parameters as unknown[]) ?? []),
+          ...parametersFromSchema(request.headers, "header"),
         ];
       }
       if (request?.body) {
@@ -585,6 +597,10 @@ const responses = {
   },
   serverError: {
     description: "Internal server error",
+    content: { "application/json": { schema: ErrorSchema } },
+  },
+  serviceUnavailable: {
+    description: "Service unavailable",
     content: { "application/json": { schema: ErrorSchema } },
   },
   tooManyRequests: {
@@ -2798,6 +2814,129 @@ registry.registerPath({
   summary: "Delete a project",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+// ─── Target domain and compatibility read model ─────────────────────────────
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/targets",
+  tags: ["targets"],
+  summary: "Create a native Target through the Go Domain API",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(createTargetSchema),
+  },
+  responses: {
+    200: r.ok(),
+    201: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+    422: r.unprocessable,
+    503: r.serviceUnavailable,
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/targets",
+  tags: ["targets"],
+  summary: "List native and compatibility Targets in a workspace",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    query: targetListQuerySchema,
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    404: r.notFound,
+    503: r.serviceUnavailable,
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/projects/{projectId}/targets",
+  tags: ["targets"],
+  summary: "List native and compatibility Targets in a project",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), projectId: z.string().uuid() }),
+    query: targetListQuerySchema.omit({ projectId: true }),
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    404: r.notFound,
+    503: r.serviceUnavailable,
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/targets/{targetId}",
+  tags: ["targets"],
+  summary: "Get the active native or compatibility Target",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid() }),
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/targets/{targetId}/revisions/{targetRevisionId}",
+  tags: ["targets"],
+  summary: "Get an immutable native or compatibility Target revision",
+  request: {
+    params: z.object({
+      workspaceId: z.string().uuid(),
+      targetId: z.string().uuid(),
+      targetRevisionId: z.string().uuid(),
+    }),
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/target-projections",
+  tags: ["targets"],
+  summary: "Register an admin-approved Target compatibility projection",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    body: jsonBody(registerTargetProjectionSchema),
+  },
+  responses: {
+    201: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/targets/{targetId}/reconcile",
+  tags: ["targets"],
+  summary: "Reconcile an admin-approved Target compatibility projection",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid() }),
+  },
+  responses: {
+    200: r.ok(),
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+  },
 });
 
 registry.registerPath({

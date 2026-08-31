@@ -11,6 +11,7 @@ import { PropertiesPanel } from "./PropertiesPanel";
 import { CommandPalette } from "./CommandPalette";
 import { NewIssueDialog } from "./NewIssueDialog";
 import { NewProjectDialog } from "./NewProjectDialog";
+import { NewTargetDialog } from "./NewTargetDialog";
 import { NewGoalDialog } from "./NewGoalDialog";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { KeyboardShortcutsCheatsheet } from "./KeyboardShortcutsCheatsheet";
@@ -712,6 +713,7 @@ export function Layout() {
       <CommandPalette />
       <NewIssueDialog />
       <NewProjectDialog />
+      <NewTargetDialog />
       <NewGoalDialog />
       <NewAgentDialog />
       <KeyboardShortcutsCheatsheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />

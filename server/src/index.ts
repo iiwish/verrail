@@ -105,6 +105,7 @@ import {
 } from "./shutdown.js";
 import { systemdNotify } from "./services/systemd-notify.js";
 import { flushInFlightRunLogMirrors } from "./services/run-log-store.js";
+import { startVerrailDomainApiRuntime } from "./services/verrail-domain-api-runtime.js";
 import {
   createEmbeddedPostgresSupervisor,
   type EmbeddedPostgresSupervisor,
@@ -820,43 +821,63 @@ export async function startServer(): Promise<StartedServer> {
   // document parsed fail-closed above (`plugins.autoInstall`). Absent env means
   // self-hosted: createApp falls back to its built-in kubernetes-only default.
   const managedPluginAutoInstall = managedConfig?.plugins.autoInstall ?? null;
-  const app = await createApp(db as any, {
-    uiMode,
-    serverPort: listenPort,
-    storageService,
-    feedbackExportService: feedback,
-    databaseBackupService: {
-      runManualBackup: async () => {
-        const result = await runServerDatabaseBackup("manual");
-        if (!result) {
-          throw conflict("Database backup already in progress");
-        }
-        return result;
-      },
-    },
-    databaseBackupHealth: config.databaseBackupEnabled
-      ? {
-          enabled: config.databaseBackupEnabled,
-          backupDir: config.databaseBackupDir,
-          maxAgeHours: databaseBackupMaxAgeHours,
-          alertFile: databaseBackupAlertFile,
-          alertFiles: databaseBackupAlertFiles,
-        }
-      : undefined,
-    deploymentMode: config.deploymentMode,
-    deploymentExposure: config.deploymentExposure,
-    allowedHostnames: config.allowedHostnames,
-    bindHost: config.host,
-    authPublicBaseUrl: config.authPublicBaseUrl,
-    authReady,
-    companyDeletionEnabled: config.companyDeletionEnabled,
-    pluginMigrationDb: pluginMigrationDb as any,
-    betterAuthHandler,
-    resolveSession,
-    pluginWorkerManager,
-    decisionServiceOptions,
-    managedPluginAutoInstall,
+  const domainApiRuntime = await startVerrailDomainApiRuntime({
+    databaseUrl: activeDatabaseConnectionString,
+    preferredPort: listenPort + 101,
   });
+  let app;
+  try {
+    app = await createApp(db as any, {
+      uiMode,
+      serverPort: listenPort,
+      storageService,
+      feedbackExportService: feedback,
+      databaseBackupService: {
+        runManualBackup: async () => {
+          const result = await runServerDatabaseBackup("manual");
+          if (!result) {
+            throw conflict("Database backup already in progress");
+          }
+          return result;
+        },
+      },
+      databaseBackupHealth: config.databaseBackupEnabled
+        ? {
+            enabled: config.databaseBackupEnabled,
+            backupDir: config.databaseBackupDir,
+            maxAgeHours: databaseBackupMaxAgeHours,
+            alertFile: databaseBackupAlertFile,
+            alertFiles: databaseBackupAlertFiles,
+          }
+        : undefined,
+      deploymentMode: config.deploymentMode,
+      deploymentExposure: config.deploymentExposure,
+      allowedHostnames: config.allowedHostnames,
+      bindHost: config.host,
+      authPublicBaseUrl: config.authPublicBaseUrl,
+      authReady,
+      companyDeletionEnabled: config.companyDeletionEnabled,
+      pluginMigrationDb: pluginMigrationDb as any,
+      betterAuthHandler,
+      resolveSession,
+      pluginWorkerManager,
+      decisionServiceOptions,
+      managedPluginAutoInstall,
+    });
+  } catch (error) {
+    await domainApiRuntime?.stop();
+    throw error;
+  }
+  const appWithShutdown = app as {
+    locals?: { paperclipShutdown?: () => Promise<void> };
+  };
+  if (appWithShutdown.locals) {
+    const shutdownAppServices = appWithShutdown.locals.paperclipShutdown;
+    appWithShutdown.locals.paperclipShutdown = async () => {
+      await shutdownAppServices?.();
+      await domainApiRuntime?.stop();
+    };
+  }
   const server = createServer(app as unknown as Parameters<typeof createServer>[0]);
 
   // Increase keep-alive timeouts to safely outlive default idle timeouts
