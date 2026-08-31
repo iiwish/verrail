@@ -1,4 +1,4 @@
-import { plugins, type Db } from "@paperclipai/db";
+import { companies, plugins, type Db } from "@paperclipai/db";
 import { VERRAIL_NAVIGATION_ROUTE_ROOTS } from "@paperclipai/shared";
 import { asc, eq } from "drizzle-orm";
 import { conflict } from "../errors.js";
@@ -66,6 +66,31 @@ export async function assertVerrailNavigationCanEnable(
     {
       code: "VERRAIL_NAVIGATION_ROUTE_CONFLICT",
       conflicts,
+    },
+  );
+}
+
+export async function assertPluginCanActivateWithVerrailNavigation(
+  db: Pick<Db, "select">,
+  plugin: PersistedPluginManifestRecord,
+): Promise<void> {
+  const conflicts = findVerrailNavigationRouteConflicts([plugin]);
+  if (conflicts.length === 0) return;
+
+  const enabledWorkspace = await db
+    .select({ id: companies.id })
+    .from(companies)
+    .where(eq(companies.enableVerrailNavigation, true))
+    .limit(1)
+    .then((rows) => rows[0] ?? null);
+  if (!enabledWorkspace) return;
+
+  throw conflict(
+    "Plugin cannot be activated while Verrail navigation owns a reserved route root",
+    {
+      code: "VERRAIL_NAVIGATION_ROUTE_CONFLICT",
+      conflicts,
+      workspaceId: enabledWorkspace.id,
     },
   );
 }

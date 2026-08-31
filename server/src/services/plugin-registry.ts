@@ -28,6 +28,7 @@ import type {
   PluginWebhookDeliveryStatus,
 } from "@paperclipai/shared";
 import { conflict, notFound } from "../errors.js";
+import { assertPluginCanActivateWithVerrailNavigation } from "./verrail-navigation.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -212,6 +213,12 @@ export function pluginRegistryService(db: Db) {
       if (data.packageName !== undefined) setClause.packageName = data.packageName;
       if (data.version !== undefined) setClause.version = data.version;
       if (data.manifest !== undefined) {
+        if (plugin.status === "ready") {
+          await assertPluginCanActivateWithVerrailNavigation(db, {
+            pluginKey: plugin.pluginKey,
+            manifestJson: data.manifest,
+          });
+        }
         setClause.manifestJson = data.manifest;
         setClause.apiVersion = data.manifest.apiVersion;
         setClause.categories = data.manifest.categories;
@@ -231,6 +238,9 @@ export function pluginRegistryService(db: Db) {
     updateStatus: async (id: string, input: UpdatePluginStatus) => {
       const plugin = await getById(id);
       if (!plugin) throw notFound("Plugin not found");
+      if (plugin.status !== "ready" && input.status === "ready") {
+        await assertPluginCanActivateWithVerrailNavigation(db, plugin);
+      }
 
       return db
         .update(plugins)

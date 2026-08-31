@@ -277,6 +277,9 @@ export function companyService(db: Db) {
     },
 
     create: async (data: typeof companies.$inferInsert) => {
+      if (data.enableVerrailNavigation === true) {
+        await assertVerrailNavigationCanEnable(db);
+      }
       const created = await createCompanyWithUniquePrefix(data);
       await environmentsSvc.ensureLocalEnvironment(created.id);
       await builtInAgents.autoProvisionBundledAgents(created.id);
