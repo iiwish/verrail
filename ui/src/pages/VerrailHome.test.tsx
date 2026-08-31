@@ -66,6 +66,7 @@ describe("VerrailHome", () => {
     });
     await flushReact();
     await flushReact();
+    return queryClient;
   }
 
   it("shows existing attention, run, and project read models without inventing targets", async () => {
@@ -120,6 +121,33 @@ describe("VerrailHome", () => {
     projectsList.mockRejectedValue(new Error("projects unavailable"));
 
     await renderHome();
+
+    expect([...container.querySelectorAll("dl dd")].map((node) => node.textContent)).toEqual([
+      "--",
+      "--",
+      "--",
+    ]);
+  });
+
+  it("does not present cached totals as current after a failed refetch", async () => {
+    attentionList.mockResolvedValue({ totalCount: 2, items: [] });
+    liveRunsForCompany.mockResolvedValue([{ id: "run-1" }]);
+    projectsList.mockResolvedValue([{ id: "project-1" }]);
+    const queryClient = await renderHome();
+
+    expect([...container.querySelectorAll("dl dd")].map((node) => node.textContent)).toEqual([
+      "2",
+      "1",
+      "1",
+    ]);
+
+    attentionList.mockRejectedValue(new Error("attention refetch unavailable"));
+    liveRunsForCompany.mockRejectedValue(new Error("runs refetch unavailable"));
+    projectsList.mockRejectedValue(new Error("projects refetch unavailable"));
+    await act(async () => {
+      await queryClient.refetchQueries({ type: "active" });
+    });
+    await flushReact();
 
     expect([...container.querySelectorAll("dl dd")].map((node) => node.textContent)).toEqual([
       "--",

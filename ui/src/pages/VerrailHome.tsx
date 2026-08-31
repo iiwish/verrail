@@ -45,9 +45,11 @@ export function VerrailHome() {
   const attentionItems = attentionQuery.data?.items ?? [];
   const liveRuns = runsQuery.data ?? [];
   const projects = projectsQuery.data ?? [];
-  const attentionCount = attentionQuery.data ? attentionQuery.data.totalCount : "--";
-  const liveRunCount = runsQuery.data ? liveRuns.length : "--";
-  const projectCount = projectsQuery.data ? projects.length : "--";
+  const attentionCount = attentionQuery.data && !attentionQuery.error
+    ? attentionQuery.data.totalCount
+    : "--";
+  const liveRunCount = runsQuery.data && !runsQuery.error ? liveRuns.length : "--";
+  const projectCount = projectsQuery.data && !projectsQuery.error ? projects.length : "--";
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
