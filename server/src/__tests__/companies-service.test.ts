@@ -24,6 +24,7 @@ import {
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
 import { companyService } from "../services/companies.js";
+import { pluginRegistryService } from "../services/plugin-registry.js";
 import { readBuiltInAgentMarker } from "../services/built-in-agent-metadata.js";
 import { builtInAgentService, reconcileBuiltInAgentsOnStartup } from "../services/built-in-agents.js";
 
@@ -135,6 +136,14 @@ describeEmbeddedPostgres("companyService", () => {
 
     const company = await companyService(db).getById(created!.id);
     expect(company?.enableVerrailNavigation).toBe(false);
+
+    await expect(companyService(db).create({
+      name: "Imported Navigation Conflict",
+      enableVerrailNavigation: true,
+    })).rejects.toMatchObject({
+      status: 409,
+      details: { code: "VERRAIL_NAVIGATION_ROUTE_CONFLICT" },
+    });
   });
 
   it("ignores reserved roots from plugins that cannot mount UI", async () => {
@@ -172,6 +181,52 @@ describeEmbeddedPostgres("companyService", () => {
     const updated = await companyService(db).update(created!.id, { enableVerrailNavigation: true });
 
     expect(updated?.enableVerrailNavigation).toBe(true);
+  });
+
+  it("blocks a conflicting inactive plugin from becoming ready after navigation activation", async () => {
+    const created = await companyService(db).create({ name: "Ready Transition Guard" });
+    await companyService(db).update(created.id, { enableVerrailNavigation: true });
+    const [plugin] = await db.insert(plugins).values({
+      pluginKey: "paperclip.deferred-home",
+      packageName: "@paperclipai/deferred-home",
+      version: "1.0.0",
+      apiVersion: 1,
+      categories: ["ui"],
+      manifestJson: {
+        id: "paperclip.deferred-home",
+        apiVersion: 1,
+        version: "1.0.0",
+        displayName: "Deferred Home",
+        description: "A disabled plugin that claims a reserved route.",
+        author: "Paperclip",
+        categories: ["ui"],
+        capabilities: [],
+        entrypoints: { ui: "./dist/ui" },
+        ui: {
+          slots: [{
+            type: "page",
+            id: "deferred-home-page",
+            displayName: "Deferred Home",
+            exportName: "DeferredHome",
+            routePath: "home",
+          }],
+        },
+      },
+      status: "disabled",
+      installOrder: 1,
+    }).returning();
+
+    await expect(
+      pluginRegistryService(db).updateStatus(plugin!.id, { status: "ready" }),
+    ).rejects.toMatchObject({
+      status: 409,
+      details: {
+        code: "VERRAIL_NAVIGATION_ROUTE_CONFLICT",
+        workspaceId: created.id,
+      },
+    });
+
+    expect(await pluginRegistryService(db).getById(plugin!.id)).toMatchObject({ status: "disabled" });
   });
 
   it("does not auto-provision bundled built-in agents for a freshly created company", async () => {
