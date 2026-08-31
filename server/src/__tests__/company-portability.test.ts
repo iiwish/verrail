@@ -687,6 +687,53 @@ describe("company portability", () => {
     }));
   });
 
+  it("preserves existing navigation when importing a bundle that predates the flag", async () => {
+    const portability = companyPortabilityService({} as any);
+    const exported = await portability.exportBundle("company-1", {
+      include: {
+        company: true,
+        agents: false,
+        projects: false,
+        issues: false,
+      },
+    });
+    const currentYaml = asTextFile(exported.files[".paperclip.yaml"]);
+    expect(currentYaml).toContain("enableVerrailNavigation: false");
+
+    const legacyFiles = {
+      ...exported.files,
+      ".paperclip.yaml": currentYaml
+        .split("\n")
+        .filter((line) => !line.includes("enableVerrailNavigation:"))
+        .join("\n"),
+    };
+    companySvc.getById.mockResolvedValueOnce({
+      id: "company-1",
+      name: "Existing Verrail Workspace",
+      requireBoardApprovalForNewAgents: false,
+      enableVerrailNavigation: true,
+    });
+    companySvc.update.mockResolvedValue({
+      id: "company-1",
+      name: "Paperclip",
+      requireBoardApprovalForNewAgents: false,
+      enableVerrailNavigation: true,
+    });
+
+    await portability.importBundle({
+      source: { type: "inline", rootPath: exported.rootPath, files: legacyFiles },
+      include: { company: true, agents: false, projects: false, issues: false },
+      target: { mode: "existing_company", companyId: "company-1" },
+      agents: "all",
+      collisionStrategy: "rename",
+    }, "user-1");
+
+    expect(companySvc.update).toHaveBeenCalledWith(
+      "company-1",
+      expect.not.objectContaining({ enableVerrailNavigation: expect.anything() }),
+    );
+  });
+
   it("exports legacy inline sensitive env values as declarations without values", async () => {
     const portability = companyPortabilityService({} as any);
     agentSvc.list.mockResolvedValue([
