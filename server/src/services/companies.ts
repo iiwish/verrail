@@ -38,7 +38,10 @@ import { environmentService } from "./environments.js";
 import { heartbeatService } from "./heartbeat.js";
 import { logActivity } from "./activity-log.js";
 import { builtInAgentService } from "./built-in-agents.js";
-import { assertVerrailNavigationCanEnable } from "./verrail-navigation.js";
+import {
+  assertVerrailNavigationCanEnable,
+  lockVerrailNavigationRouteOwnership,
+} from "./verrail-navigation.js";
 
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -236,13 +239,16 @@ export function companyService(db: Db) {
     return false;
   }
 
-  async function createCompanyWithUniquePrefix(data: typeof companies.$inferInsert) {
+  async function createCompanyWithUniquePrefix(
+    data: typeof companies.$inferInsert,
+    database: Pick<Db, "insert"> = db,
+  ) {
     const base = deriveIssuePrefixBase(data.name);
     let suffix = 1;
     while (suffix < 10000) {
       const candidate = `${base}${suffixForAttempt(suffix)}`;
       try {
-        const rows = await db
+        const rows = await database
           .insert(companies)
           .values({ ...data, issuePrefix: candidate })
           .returning();
@@ -277,10 +283,14 @@ export function companyService(db: Db) {
     },
 
     create: async (data: typeof companies.$inferInsert) => {
-      if (data.enableVerrailNavigation === true) {
-        await assertVerrailNavigationCanEnable(db);
-      }
-      const created = await createCompanyWithUniquePrefix(data);
+      const created = data.enableVerrailNavigation === true
+        ? await db.transaction(async (tx) => {
+            const txDb = tx as unknown as Db;
+            await lockVerrailNavigationRouteOwnership(txDb);
+            await assertVerrailNavigationCanEnable(txDb);
+            return createCompanyWithUniquePrefix(data, txDb);
+          })
+        : await createCompanyWithUniquePrefix(data);
       await environmentsSvc.ensureLocalEnvironment(created.id);
       await builtInAgents.autoProvisionBundledAgents(created.id);
       const row = await getCompanyQuery(db)
@@ -303,7 +313,9 @@ export function companyService(db: Db) {
         if (!existing) return null;
 
         if (data.enableVerrailNavigation === true && !existing.enableVerrailNavigation) {
-          await assertVerrailNavigationCanEnable(tx);
+          const txDb = tx as unknown as Db;
+          await lockVerrailNavigationRouteOwnership(txDb);
+          await assertVerrailNavigationCanEnable(txDb);
         }
 
         const { logoAssetId, ...companyPatch } = data;
