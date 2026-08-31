@@ -21,6 +21,7 @@ import { DashboardLive } from "./pages/DashboardLive";
 import { Timeline } from "./pages/Timeline";
 import { Companies } from "./pages/Companies";
 import { AGENT_FILTER_TABS, Agents } from "./pages/Agents";
+import { AgentDeployments } from "./pages/AgentDeployments";
 import { AgentDetail } from "./pages/AgentDetail";
 import { Projects } from "./pages/Projects";
 import { ProjectDetail } from "./pages/ProjectDetail";
@@ -100,7 +101,7 @@ import {
 import { filterHiddenInstanceSettingsPath, normalizeRememberedInstanceSettingsPath } from "./lib/instance-settings";
 import { isVerrailNavigationEnabled, workspaceLandingRoute } from "./lib/verrail-navigation";
 import { VerrailHome } from "./pages/VerrailHome";
-import { VerrailGovernance, VerrailInfrastructure } from "./pages/VerrailOperationsIndex";
+import { VerrailChat } from "./pages/VerrailChat";
 import { TargetWorkbench } from "./pages/TargetWorkbench";
 
 const CompanyExport = lazy(() =>
@@ -115,14 +116,64 @@ function boardRoutes() {
       <Route path="dashboard/live" element={<DashboardLive />} />
       <Route element={<VerrailNavigationGate />}>
         <Route path="home" element={<VerrailHome />} />
+        <Route path="chat" element={<VerrailChat />} />
+        <Route path="chat/:conversationId" element={<VerrailChat />} />
         <Route path="targets" element={<Navigate to="/projects" replace />} />
         <Route path="targets/:targetId" element={<TargetOverviewRedirect />} />
         <Route path="targets/:targetId/:tab" element={<TargetWorkbench />} />
         <Route path="targets/:targetId/revisions/:targetRevisionId" element={<TargetWorkbench />} />
         <Route path="projects/:projectId/targets" element={<ProjectDetail />} />
         <Route path="projects/:projectId/legacy-work" element={<ProjectDetail />} />
-        <Route path="infrastructure" element={<VerrailInfrastructure />} />
-        <Route path="governance" element={<VerrailGovernance />} />
+        <Route path="infrastructure" element={<Navigate to="/infrastructure/secrets" replace />} />
+        <Route
+          path="infrastructure/environments"
+          element={<CompanyEnvironments basePath="/infrastructure/environments" />}
+        />
+        <Route
+          path="infrastructure/environments/new"
+          element={<CompanyEnvironments mode="create" basePath="/infrastructure/environments" />}
+        />
+        <Route
+          path="infrastructure/environments/:environmentId/edit"
+          element={<CompanyEnvironments mode="edit" basePath="/infrastructure/environments" />}
+        />
+        <Route path="infrastructure/secrets" element={<Secrets section="infrastructure" />} />
+        <Route path="infrastructure/adapters" element={<AdapterManager section="infrastructure" />} />
+        <Route
+          path="infrastructure/plugins"
+          element={<PluginManager basePath="/infrastructure/plugins" />}
+        />
+        <Route
+          path="infrastructure/plugins/:pluginId"
+          element={<PluginSettings basePath="/infrastructure/plugins" />}
+        />
+        <Route path="governance" element={<Navigate to="/governance/attention" replace />} />
+        <Route
+          path="governance/attention"
+          element={<WhatNeedsMe basePath="/governance/attention" />}
+        />
+        <Route
+          path="governance/attention/queues/:key"
+          element={<DecisionQueuePage basePath="/governance/attention" />}
+        />
+        <Route
+          path="governance/approvals"
+          element={<Navigate to="/governance/approvals/pending" replace />}
+        />
+        <Route
+          path="governance/approvals/pending"
+          element={<Approvals basePath="/governance/approvals" />}
+        />
+        <Route
+          path="governance/approvals/all"
+          element={<Approvals basePath="/governance/approvals" />}
+        />
+        <Route
+          path="governance/approvals/:approvalId"
+          element={<ApprovalDetail basePath="/governance/approvals" costsPath="/governance/costs" />}
+        />
+        <Route path="governance/audit" element={<CompanyActivity section="governance" />} />
+        <Route path="governance/costs" element={<Costs section="governance" />} />
       </Route>
       <Route path="timeline" element={<Timeline />} />
       <Route path="onboarding" element={<OnboardingRoutePage />} />
@@ -206,7 +257,9 @@ function boardRoutes() {
       <Route path="settings/*" element={<LegacySettingsRedirect />} />
       <Route path="plugins/:pluginId" element={<PluginPage />} />
       <Route path="org" element={<OrgChart />} />
-      <Route path="agents" element={<Navigate to="/agents/all" replace />} />
+      <Route path="agents" element={<Navigate to="/agents/definitions" replace />} />
+      <Route path="agents/definitions" element={<Agents />} />
+      <Route path="agents/deployments" element={<AgentDeployments />} />
       {AGENT_FILTER_TABS.map((tab) => (
         <Route key={tab} path={`agents/${tab}`} element={<Agents />} />
       ))}
@@ -219,6 +272,7 @@ function boardRoutes() {
       <Route path="projects/:projectId/overview" element={<ProjectDetail />} />
       <Route path="projects/:projectId/issues" element={<ProjectDetail />} />
       <Route path="projects/:projectId/issues/:filter" element={<ProjectDetail />} />
+      <Route path="projects/:projectId/plugin-operations" element={<ProjectDetail />} />
       <Route path="projects/:projectId/workspaces/:workspaceId" element={<ProjectWorkspaceDetail />} />
       <Route path="projects/:projectId/workspaces" element={<ProjectDetail />} />
       <Route path="projects/:projectId/configuration" element={<ProjectDetail />} />
@@ -631,6 +685,8 @@ export function App() {
           <Route path="instance/settings/*" element={<LegacySettingsRedirect />} />
           <Route path="companies" element={<UnprefixedBoardRedirect />} />
           <Route path="home" element={<UnprefixedBoardRedirect />} />
+          <Route path="chat" element={<UnprefixedBoardRedirect />} />
+          <Route path="chat/:conversationId" element={<UnprefixedBoardRedirect />} />
           <Route path="targets" element={<UnprefixedBoardRedirect />} />
           <Route path="targets/:targetId" element={<UnprefixedBoardRedirect />} />
           <Route path="targets/:targetId/*" element={<UnprefixedBoardRedirect />} />
@@ -666,6 +722,8 @@ export function App() {
           <Route path="settings" element={<LegacySettingsRedirect />} />
           <Route path="settings/*" element={<LegacySettingsRedirect />} />
           <Route path="agents" element={<UnprefixedBoardRedirect />} />
+          <Route path="agents/definitions" element={<UnprefixedBoardRedirect />} />
+          <Route path="agents/deployments" element={<UnprefixedBoardRedirect />} />
           {AGENT_FILTER_TABS.map((tab) => (
             <Route key={tab} path={`agents/${tab}`} element={<UnprefixedBoardRedirect />} />
           ))}
@@ -680,6 +738,7 @@ export function App() {
           <Route path="projects/:projectId/overview" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/issues" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/issues/:filter" element={<UnprefixedBoardRedirect />} />
+          <Route path="projects/:projectId/plugin-operations" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/workspaces" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/workspaces/:workspaceId" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/configuration" element={<UnprefixedBoardRedirect />} />

@@ -24,6 +24,9 @@ import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { SidebarShell } from "./SidebarShell";
 import { SecondarySidebar } from "./SecondarySidebar";
 import { SidebarAccountMenu } from "./SidebarAccountMenu";
+import { VerrailManagementSidebar } from "./VerrailManagementSidebar";
+import { VerrailConversationSidebar } from "./VerrailConversationSidebar";
+import { VerrailProjectsSidebar } from "./VerrailProjectsSidebar";
 import { useDialogActions } from "../context/DialogContext";
 import { GeneralSettingsProvider } from "../context/GeneralSettingsContext";
 import { usePanel } from "../context/PanelContext";
@@ -49,7 +52,8 @@ import { cn } from "../lib/utils";
 import { NotFoundPage } from "../pages/NotFound";
 import { PluginSlotMount, resolveRouteSidebarSlot, usePluginSlots } from "../plugins/slots";
 import { useTranslation } from "@/i18n";
-import { workspaceLandingRoute } from "../lib/verrail-navigation";
+import { isVerrailNavigationEnabled, workspaceLandingRoute } from "../lib/verrail-navigation";
+import { resolveVerrailManagementSection } from "../lib/verrail-section-navigation";
 
 function getCompanyRouteSegment(pathname: string, companyPrefix: string | undefined): string | null {
   return getCompanyPathSegments(pathname, companyPrefix)[0]?.toLowerCase() ?? null;
@@ -123,6 +127,11 @@ export function Layout() {
     "/company/import",
   ].some((settingsPath) => location.pathname.includes(settingsPath));
   const companyPathSegments = getCompanyPathSegments(location.pathname, companyPrefix);
+  const verrailManagementSection = isVerrailNavigationEnabled(selectedCompany)
+    ? resolveVerrailManagementSection(location.pathname, companyPrefix)
+    : null;
+  const isVerrailChatRoute = isVerrailNavigationEnabled(selectedCompany)
+    && companyPathSegments[0]?.toLowerCase() === "chat";
   const isToolsRoute = companyPathSegments[0]?.toLowerCase() === "tools";
   const isAppsRoute = companyPathSegments[0]?.toLowerCase() === "apps";
   const appDetailConnectionId =
@@ -177,7 +186,13 @@ export function Layout() {
   // the app `<Sidebar/>`. Instead the host collapses it to its rail and renders
   // the contextual sidebar in a second pane (PAP-10695). One resolver drives
   // both desktop (SecondarySidebar) and mobile (off-canvas drawer).
-  const secondarySidebar = isCompanySettingsRoute ? (
+  const secondarySidebar = isVerrailChatRoute ? (
+    <VerrailConversationSidebar />
+  ) : verrailManagementSection === "projects" ? (
+    <VerrailProjectsSidebar />
+  ) : verrailManagementSection ? (
+    <VerrailManagementSidebar section={verrailManagementSection} />
+  ) : isCompanySettingsRoute ? (
     <CompanySettingsSidebar />
   ) : appsEnabled && appDetailConnectionId ? (
     <AppDetailSidebar kind="connection" connectionId={appDetailConnectionId} />
@@ -659,7 +674,7 @@ export function Layout() {
           >
             <StandaloneBrowserControls mobile={isMobile} />
             <BreadcrumbBar />
-            {isMobile && isCompanySettingsRoute ? (
+            {isMobile && isCompanySettingsRoute && !verrailManagementSection ? (
               <div className="border-b border-border px-4 pb-3">
                 <CompanySettingsNav />
               </div>

@@ -6,7 +6,7 @@ import {
   useState,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, Link2, Lock, Play, Plus, RefreshCw, RotateCcw, Terminal, Trash2, X } from "lucide-react";
+import { ArrowLeft, Check, Link2, Lock, Play, Plus, RefreshCw, RotateCcw, Settings2, Terminal, Trash2, X } from "lucide-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTermTerminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -86,12 +86,13 @@ type CompanyEnvironmentsMode = "list" | "create" | "edit";
 
 type CompanyEnvironmentsProps = {
   mode?: CompanyEnvironmentsMode;
+  basePath?: string;
 };
 
-const ENVIRONMENTS_PATH = "/company/settings/instance/environments";
+const DEFAULT_ENVIRONMENTS_PATH = "/company/settings/instance/environments";
 
-function environmentEditPath(environmentId: string) {
-  return `${ENVIRONMENTS_PATH}/${encodeURIComponent(environmentId)}/edit`;
+function environmentEditPath(basePath: string, environmentId: string) {
+  return `${basePath}/${encodeURIComponent(environmentId)}/edit`;
 }
 
 // Keep in sync with environmentDeleteBlockMessage in server/src/routes/environments.ts —
@@ -1292,7 +1293,10 @@ function EnvironmentImageTemplatePanel({
   );
 }
 
-export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps) {
+export function CompanyEnvironments({
+  mode = "list",
+  basePath = DEFAULT_ENVIRONMENTS_PATH,
+}: CompanyEnvironmentsProps) {
   const { environmentId: routeEnvironmentId } = useParams<{ environmentId?: string }>();
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
@@ -1301,6 +1305,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
   const queryClient = useQueryClient();
   const { t } = useTranslation();
   const isEnvironmentFormPage = mode === "create" || mode === "edit";
+  const inInfrastructure = basePath.startsWith("/infrastructure");
   const editingEnvironmentId = mode === "edit" ? routeEnvironmentId ?? null : null;
   const [environmentForm, setEnvironmentForm] = useState<EnvironmentFormState>(createEmptyEnvironmentForm);
   const environmentVariablesEditorRef = useRef<EnvironmentVariablesEditorHandle | null>(null);
@@ -1321,15 +1326,17 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
 
   useEffect(() => {
     const crumbs = [
-      { label: t("settings.title"), href: "/company/settings" },
+      inInfrastructure
+        ? { label: t("nav.infrastructure"), href: "/infrastructure" }
+        : { label: t("settings.title"), href: "/company/settings" },
       isEnvironmentFormPage
-        ? { label: t("environments.title"), href: ENVIRONMENTS_PATH }
+        ? { label: t("environments.title"), href: basePath }
         : { label: t("environments.title") },
     ];
     if (mode === "create") crumbs.push({ label: t("environments.add") });
     if (mode === "edit") crumbs.push({ label: t("environments.edit") });
     setBreadcrumbs(crumbs);
-  }, [isEnvironmentFormPage, mode, setBreadcrumbs, t]);
+  }, [basePath, inInfrastructure, isEnvironmentFormPage, mode, setBreadcrumbs, t]);
 
   const { data: instanceSettings } = useQuery({
     queryKey: queryKeys.instance.settings,
@@ -1439,7 +1446,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
       setEnvironmentForm(createEmptyEnvironmentForm());
       setEnvironmentFormBaselineKey(null);
       setEnvironmentVariablesDirty(false);
-      navigate(ENVIRONMENTS_PATH, { replace: true });
+      navigate(basePath, { replace: true });
       pushToast({
         title: "Environment variables updated",
         body: `${environment.name} will inject the updated variables into future runs.`,
@@ -1482,7 +1489,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
       setEnvironmentVariablesDirty(false);
       environmentMutation.reset();
       draftEnvironmentProbeMutation.reset();
-      navigate(ENVIRONMENTS_PATH, { replace: true });
+      navigate(basePath, { replace: true });
       pushToast({
         title: wasEditing ? "Environment updated" : "Environment created",
         body: `${environment.name} is ready.`,
@@ -1566,7 +1573,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
       setEnvironmentForm(createEmptyEnvironmentForm());
       setEnvironmentFormBaselineKey(null);
       setEnvironmentVariablesDirty(false);
-      navigate(ENVIRONMENTS_PATH, { replace: true });
+      navigate(basePath, { replace: true });
       const destroyedCount = environment.destroyedReusableSandboxLeaseCount ?? 0;
       pushToast({
         title: "Environment deleted",
@@ -1780,7 +1787,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
     setEnvironmentVariablesDirty(false);
     environmentMutation.reset();
     draftEnvironmentProbeMutation.reset();
-    navigate(ENVIRONMENTS_PATH);
+    navigate(basePath);
   }
 
   function flushEnvironmentForm(): EnvironmentFormState {
@@ -1951,6 +1958,12 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
         <div className="text-sm text-muted-foreground">
           {t("environments.disabled")}
         </div>
+        <Button variant="outline" size="sm" asChild>
+          <Link to="/company/settings/instance/experimental">
+            <Settings2 className="h-4 w-4" />
+            {t("settingsNav.experimental")}
+          </Link>
+        </Button>
       </div>
     );
   }
@@ -1992,7 +2005,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
             </span>
           </label>
           <Button size="icon-sm" variant="ghost" asChild>
-            <Link to={`${ENVIRONMENTS_PATH}/new`} aria-label={t("environments.add")} title={t("environments.add")}>
+            <Link to={`${basePath}/new`} aria-label={t("environments.add")} title={t("environments.add")}>
               <Plus className="h-4 w-4" />
             </Link>
           </Button>
@@ -2070,7 +2083,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
                       </Button>
                     ) : null}
                     <Button size="sm" variant="ghost" asChild>
-                      <Link to={environmentEditPath(environment.id)}>{t("common.edit")}</Link>
+                      <Link to={environmentEditPath(basePath, environment.id)}>{t("common.edit")}</Link>
                     </Button>
                   </div>
                 </div>
@@ -2106,7 +2119,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
           <div className="font-medium">{t("environments.notFound")}</div>
           <div className="text-muted-foreground">{t("environments.notFoundDescription")}</div>
           <Button size="sm" variant="outline" asChild>
-            <Link to={ENVIRONMENTS_PATH}>{t("environments.back")}</Link>
+            <Link to={basePath}>{t("environments.back")}</Link>
           </Button>
         </div>
       ) : null}
@@ -2117,7 +2130,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
           <div className="pb-4">
             <div className="mb-4">
               <Button size="sm" variant="ghost" asChild>
-                <Link to={ENVIRONMENTS_PATH}>
+                <Link to={basePath}>
                   <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
                   {t("environments.title")}
                 </Link>
@@ -2186,7 +2199,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
           <div className="pb-4">
             <div className="mb-4 flex items-center justify-between gap-2">
               <Button size="sm" variant="ghost" asChild>
-                <Link to={ENVIRONMENTS_PATH}>
+                <Link to={basePath}>
                   <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
                   {t("environments.title")}
                 </Link>

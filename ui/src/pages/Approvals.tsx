@@ -17,7 +17,7 @@ import { useTranslation } from "@/i18n";
 
 type StatusFilter = "pending" | "all";
 
-export function Approvals() {
+export function Approvals({ basePath = "/approvals" }: { basePath?: string }) {
   const { t } = useTranslation();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -29,8 +29,12 @@ export function Approvals() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
-    setBreadcrumbs([{ label: t("approvals.title") }]);
-  }, [setBreadcrumbs, t]);
+    setBreadcrumbs(
+      basePath.startsWith("/governance")
+        ? [{ label: t("nav.governance"), href: "/governance" }, { label: t("approvals.title") }]
+        : [{ label: t("approvals.title") }],
+    );
+  }, [basePath, setBreadcrumbs, t]);
 
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.approvals.list(selectedCompanyId!),
@@ -49,7 +53,7 @@ export function Approvals() {
     onSuccess: (_approval, id) => {
       setActionError(null);
       queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
-      navigate(`/approvals/${id}?resolved=approved`);
+      navigate(`${basePath}/${id}?resolved=approved`);
     },
     onError: (err) => {
       setActionError(err instanceof Error ? err.message : t("approvals.approveFailed"));
@@ -88,7 +92,7 @@ export function Approvals() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <Tabs value={statusFilter} onValueChange={(v) => navigate(`/approvals/${v}`)}>
+        <Tabs value={statusFilter} onValueChange={(v) => navigate(`${basePath}/${v}`)}>
           <PageTabBar items={[
             { value: "pending", label: <>{t("approvals.pending")}{pendingCount > 0 && (
               <Badge variant="ghost" className={cn(
@@ -124,7 +128,7 @@ export function Approvals() {
               requesterAgent={approval.requestedByAgentId ? (agents ?? []).find((a) => a.id === approval.requestedByAgentId) ?? null : null}
               onApprove={() => approveMutation.mutate(approval.id)}
               onReject={() => rejectMutation.mutate(approval.id)}
-              detailLink={`/approvals/${approval.id}`}
+              detailLink={`${basePath}/${approval.id}`}
               isPending={approveMutation.isPending || rejectMutation.isPending}
               pendingAction={
                 approveMutation.isPending ? "approve" : rejectMutation.isPending ? "reject" : null

@@ -12,6 +12,14 @@ import {
   Star,
   Users,
   AlertTriangle,
+  Activity,
+  CircleDollarSign,
+  FileText,
+  KeyRound,
+  LayoutDashboard,
+  Settings2,
+  Sparkles,
+  Wrench,
 } from "lucide-react";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
@@ -116,6 +124,7 @@ function SidebarAgentItem({
   starred = false,
   onToggleStar,
   starPending = false,
+  showDetailNavigation = false,
 }: {
   activeAgentId: string | null;
   activeTab: string | null;
@@ -132,12 +141,13 @@ function SidebarAgentItem({
   starred?: boolean;
   onToggleStar?: (agent: Agent, starred: boolean) => void;
   starPending?: boolean;
+  showDetailNavigation?: boolean;
 }) {
   const { t } = useTranslation();
   const routeRef = agentRouteRef(agent);
   const href = activeTab ? `${agentUrl(agent)}/${activeTab}` : agentUrl(agent);
   const editHref = `${agentUrl(agent)}/configuration`;
-  const isActive = activeAgentId === routeRef;
+  const isActive = activeAgentId === routeRef || activeAgentId === agent.id;
   const isPaused = agent.status === "paused";
   const isBudgetPaused = isPaused && agent.pauseReason === "budget";
   const hasInvalidOrgChain = agent.orgChainHealth?.status === "invalid_org_chain";
@@ -167,9 +177,12 @@ function SidebarAgentItem({
       to={href}
       label={agent.name}
       iconNode={<AgentIcon icon={agent.icon} className="shrink-0 h-4 w-4" />}
-      active={isActive}
+      active={isActive && !showDetailNavigation}
       liveCount={runCount}
-      labelClassName={showBuiltInLifecycle ? "min-w-(--sz-4_5rem) flex-initial" : undefined}
+      labelClassName={cn(
+        showBuiltInLifecycle && "min-w-(--sz-4_5rem) flex-initial",
+        isActive && showDetailNavigation && "font-semibold text-foreground",
+      )}
       className={cn(
         "min-w-0 flex-1",
         // Reserve room for the hover ⋯ menu; starred rows widen it for the
@@ -203,7 +216,7 @@ function SidebarAgentItem({
   // rail row.
   if (rail) return navItem;
 
-  return (
+  const row = (
     <div className="group/agent relative flex items-center">
       {navItem}
 
@@ -298,9 +311,48 @@ function SidebarAgentItem({
       </DropdownMenu>
     </div>
   );
+
+  if (!showDetailNavigation || !isActive) return row;
+
+  const detailItems = [
+    { value: "dashboard", icon: LayoutDashboard },
+    { value: "instructions", icon: FileText },
+    { value: "skills", icon: Sparkles },
+    { value: "configuration", icon: Settings2 },
+    { value: "secrets", icon: KeyRound },
+    { value: "tools", icon: Wrench },
+    { value: "runs", icon: PlayCircle },
+    { value: "audit", icon: Activity },
+    { value: "budget", icon: CircleDollarSign },
+  ] as const;
+  const selectedDetail = activeTab ?? "dashboard";
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      {row}
+      <div className="ml-5 flex flex-col gap-0.5 border-l border-border pl-1">
+        {detailItems.map((item) => (
+          <SidebarNavItem
+            key={item.value}
+            to={`${agentUrl(agent)}/${item.value}`}
+            label={t(`agents.detail.tabs.${item.value}`)}
+            icon={item.icon}
+            end
+            active={selectedDetail === item.value}
+          />
+        ))}
+      </div>
+    </div>
+  );
 }
 
-export function SidebarAgents({ streamlined = false }: { streamlined?: boolean } = {}) {
+export function SidebarAgents({
+  streamlined = false,
+  appearance = "section",
+}: {
+  streamlined?: boolean;
+  appearance?: "section" | "list";
+} = {}) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(true);
   const [pendingAgentIds, setPendingAgentIds] = useState<Set<string>>(() => new Set());
@@ -632,37 +684,19 @@ export function SidebarAgents({ streamlined = false }: { streamlined?: boolean }
       leaving={agentLeaving(agent)}
       onLeaveAgent={leaveAgent}
       onPauseResume={(targetAgent, action) => pauseResumeAgent.mutate({ agent: targetAgent, action })}
-      rail={rail}
+      rail={appearance === "list" ? false : rail}
       runCount={liveCountByAgent.get(agent.id) ?? 0}
       setSidebarOpen={setSidebarOpen}
       builtInStatus={builtInStatusByAgentId.get(agent.id)}
       starred={isStarredRow || isStarred(membershipsQuery.data, "agent", agent.id)}
       onToggleStar={toggleStarAgent}
       starPending={agentStarPending(agent)}
+      showDetailNavigation={appearance === "list"}
     />
   );
 
-  return (
-    <SidebarSection
-      label={t("nav.agents")}
-      collapsible={{ open, onOpenChange: setOpen }}
-      headerAction={{
-        ariaLabel: t("sidebarAgents.newAgent"),
-        icon: Plus,
-        onClick: openNewAgent,
-      }}
-      menu={{
-        ariaLabel: t("sidebarAgents.sectionActions"),
-        actions: [
-          { type: "item", label: t("sidebarAgents.browseAgents"), icon: Users, href: "/agents/all" },
-          { type: "separator" },
-        ],
-        radioLabel: t("sidebarAgents.sort"),
-        radioChoices: agentSortChoices,
-        radioValue: sortMode,
-        onRadioValueChange: persistSortMode,
-      }}
-    >
+  const rows = (
+    <>
       {starredAgents.map((agent: Agent) => renderAgentRow(agent, true))}
       {dedupedDisplayedAgents.map((agent: Agent) => renderAgentRow(agent, false))}
       {showSeeAllLink && (() => {
@@ -693,6 +727,35 @@ export function SidebarAgents({ streamlined = false }: { streamlined?: boolean }
           seeAllLink
         );
       })()}
+    </>
+  );
+
+  if (appearance === "list") {
+    return <div className="flex flex-col gap-0.5" data-testid="verrail-agent-list">{rows}</div>;
+  }
+
+  return (
+    <SidebarSection
+      label={t("nav.agents")}
+      collapsible={{ open, onOpenChange: setOpen }}
+      headerAction={{
+        ariaLabel: t("sidebarAgents.newAgent"),
+        icon: Plus,
+        onClick: openNewAgent,
+      }}
+      menu={{
+        ariaLabel: t("sidebarAgents.sectionActions"),
+        actions: [
+          { type: "item", label: t("sidebarAgents.browseAgents"), icon: Users, href: "/agents/all" },
+          { type: "separator" },
+        ],
+        radioLabel: t("sidebarAgents.sort"),
+        radioChoices: agentSortChoices,
+        radioValue: sortMode,
+        onRadioValueChange: persistSortMode,
+      }}
+    >
+      {rows}
     </SidebarSection>
   );
 }

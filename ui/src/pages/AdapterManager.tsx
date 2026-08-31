@@ -254,7 +254,11 @@ function ReinstallDialog({
   );
 }
 
-export function AdapterManager() {
+export function AdapterManager({
+  section = "settings",
+}: {
+  section?: "settings" | "infrastructure";
+}) {
   const { selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
@@ -270,11 +274,16 @@ export function AdapterManager() {
 
   useEffect(() => {
     setBreadcrumbs([
-      { label: selectedCompany?.name ?? t("settings.company.fallbackName"), href: "/dashboard" },
-      { label: t("settings.title"), href: "/company/settings" },
+      {
+        label: selectedCompany?.name ?? t("settings.company.fallbackName"),
+        href: section === "infrastructure" ? "/home" : "/dashboard",
+      },
+      section === "infrastructure"
+        ? { label: t("nav.infrastructure"), href: "/infrastructure" }
+        : { label: t("settings.title"), href: "/company/settings" },
       { label: t("adapters.title") },
     ]);
-  }, [selectedCompany?.name, setBreadcrumbs, t]);
+  }, [section, selectedCompany?.name, setBreadcrumbs, t]);
 
   const { data: adapters, isLoading } = useQuery({
     queryKey: queryKeys.adapters.all,

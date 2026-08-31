@@ -20,8 +20,8 @@ const mockSetSelectedCompanyId = vi.hoisted(() => vi.fn());
 const mockSetSidebarOpen = vi.hoisted(() => vi.fn());
 const mockSetForceCollapsed = vi.hoisted(() => vi.fn());
 const mockCompanyState = vi.hoisted(() => ({
-  companies: [{ id: "company-1", issuePrefix: "PAP", name: "Paperclip" }],
-  selectedCompany: { id: "company-1", issuePrefix: "PAP", name: "Paperclip" },
+  companies: [{ id: "company-1", issuePrefix: "PAP", name: "Paperclip", enableVerrailNavigation: false }],
+  selectedCompany: { id: "company-1", issuePrefix: "PAP", name: "Paperclip", enableVerrailNavigation: false },
   selectedCompanyId: "company-1",
 }));
 const mockPluginSlots = vi.hoisted(() => ({
@@ -58,6 +58,18 @@ vi.mock("./Sidebar", () => ({
 
 vi.mock("./CompanySettingsSidebar", () => ({
   CompanySettingsSidebar: () => <div>Company settings sidebar</div>,
+}));
+
+vi.mock("./VerrailConversationSidebar", () => ({
+  VerrailConversationSidebar: () => <div>Conversation sidebar</div>,
+}));
+
+vi.mock("./VerrailProjectsSidebar", () => ({
+  VerrailProjectsSidebar: () => <div>Projects sidebar</div>,
+}));
+
+vi.mock("./VerrailManagementSidebar", () => ({
+  VerrailManagementSidebar: ({ section }: { section: string }) => <div>{section} sidebar</div>,
 }));
 
 vi.mock("./AppsSidebar", () => ({
@@ -256,8 +268,8 @@ describe("Layout", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     currentPathname = "/PAP/dashboard";
-    mockCompanyState.companies = [{ id: "company-1", issuePrefix: "PAP", name: "Paperclip" }];
-    mockCompanyState.selectedCompany = { id: "company-1", issuePrefix: "PAP", name: "Paperclip" };
+    mockCompanyState.companies = [{ id: "company-1", issuePrefix: "PAP", name: "Paperclip", enableVerrailNavigation: false }];
+    mockCompanyState.selectedCompany = { id: "company-1", issuePrefix: "PAP", name: "Paperclip", enableVerrailNavigation: false };
     mockCompanyState.selectedCompanyId = "company-1";
     mockHealthApi.get.mockResolvedValue({
       status: "ok",
@@ -438,6 +450,87 @@ describe("Layout", () => {
     expect(container.textContent).not.toContain("Plugin route sidebar");
     // The route asks the host to collapse the app sidebar to its rail.
     expect(mockSetForceCollapsed).toHaveBeenCalledWith(true);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("uses the conversation manager as the Chat secondary sidebar", async () => {
+    currentPathname = "/PAP/chat";
+    mockCompanyState.companies = [{
+      id: "company-1",
+      issuePrefix: "PAP",
+      name: "Paperclip",
+      enableVerrailNavigation: true,
+    }];
+    mockCompanyState.selectedCompany = mockCompanyState.companies[0]!;
+    const root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Layout />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+
+    expect(container.textContent).toContain("Conversation sidebar");
+    expect(container.textContent).toContain("Main company nav");
+    expect(mockSetForceCollapsed).toHaveBeenCalledWith(true);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("uses object-list secondary sidebars for Projects and Agents", async () => {
+    currentPathname = "/PAP/projects";
+    mockCompanyState.companies = [{
+      id: "company-1",
+      issuePrefix: "PAP",
+      name: "Paperclip",
+      enableVerrailNavigation: true,
+    }];
+    mockCompanyState.selectedCompany = mockCompanyState.companies[0]!;
+    const root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Layout />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    expect(container.textContent).toContain("Projects sidebar");
+    expect(mockSetForceCollapsed).toHaveBeenCalledWith(true);
+
+    currentPathname = "/PAP/targets/target-1/stages";
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Layout />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    expect(container.textContent).toContain("Projects sidebar");
+
+    currentPathname = "/PAP/agents/definitions";
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Layout />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    expect(container.textContent).toContain("agents sidebar");
 
     await act(async () => {
       root.unmount();
@@ -903,10 +996,15 @@ describe("Layout", () => {
   it("uses the route company context for plugin route sidebars on the first render", async () => {
     currentPathname = "/ALT/wiki";
     mockCompanyState.companies = [
-      { id: "company-1", issuePrefix: "PAP", name: "Paperclip" },
-      { id: "company-2", issuePrefix: "ALT", name: "Alternate" },
+      { id: "company-1", issuePrefix: "PAP", name: "Paperclip", enableVerrailNavigation: false },
+      { id: "company-2", issuePrefix: "ALT", name: "Alternate", enableVerrailNavigation: false },
     ];
-    mockCompanyState.selectedCompany = { id: "company-1", issuePrefix: "PAP", name: "Paperclip" };
+    mockCompanyState.selectedCompany = {
+      id: "company-1",
+      issuePrefix: "PAP",
+      name: "Paperclip",
+      enableVerrailNavigation: false,
+    };
     mockCompanyState.selectedCompanyId = "company-1";
     mockPluginSlots.slots = [
       {

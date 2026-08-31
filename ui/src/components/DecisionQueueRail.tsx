@@ -6,15 +6,16 @@ import { cn } from "../lib/utils";
 
 const RECENT_ACTIVITY_MS = 24 * 60 * 60 * 1000;
 
-/** Href for a queue page under the current company prefix, or `/decisions` for All. */
-export function decisionsHref(queueKey?: string | null): string {
-  return queueKey ? `/decisions/queues/${encodeURIComponent(queueKey)}` : "/decisions";
+/** Href for a queue page under the current company prefix, or the queue desk for All. */
+export function decisionsHref(queueKey?: string | null, basePath = "/decisions"): string {
+  return queueKey ? `${basePath}/queues/${encodeURIComponent(queueKey)}` : basePath;
 }
 
 interface DecisionQueueRailProps {
   companyId: string;
   /** The active queue key, or null when the desk (All) is active. */
   activeQueueKey?: string | null;
+  basePath?: string;
 }
 
 /**
@@ -24,7 +25,11 @@ interface DecisionQueueRailProps {
  * the only fixed chip. A dot marks a queue with recent activity; the count is
  * the queue's pending items.
  */
-export function DecisionQueueRail({ companyId, activeQueueKey = null }: DecisionQueueRailProps) {
+export function DecisionQueueRail({
+  companyId,
+  activeQueueKey = null,
+  basePath = "/decisions",
+}: DecisionQueueRailProps) {
   const { data: queues } = useQuery({
     queryKey: queryKeys.decisionQueues.list(companyId),
     queryFn: () => decisionQueuesApi.list(companyId),
@@ -41,13 +46,13 @@ export function DecisionQueueRail({ companyId, activeQueueKey = null }: Decision
 
   return (
     <nav className="flex flex-wrap items-center gap-1.5" aria-label="Decision queues" data-decision-queue-rail>
-      <Chip href={decisionsHref(null)} active={activeQueueKey == null} label="All" />
+      <Chip href={decisionsHref(null, basePath)} active={activeQueueKey == null} label="All" />
       {queues.map((queue) => {
         const recent = now - new Date(queue.updatedAt).getTime() < RECENT_ACTIVITY_MS;
         return (
           <Chip
             key={queue.key}
-            href={decisionsHref(queue.key)}
+            href={decisionsHref(queue.key, basePath)}
             active={activeQueueKey === queue.key}
             label={queue.title}
             count={queue.itemCount}

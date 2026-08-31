@@ -23,6 +23,7 @@ import { Link, NavLink } from "@/lib/router";
 import { INSTANCE_SETTINGS_PATH_PREFIX } from "@/lib/instance-settings";
 import { SIDEBAR_SCROLL_RESET_STATE } from "@/lib/navigation-scroll";
 import { queryKeys } from "@/lib/queryKeys";
+import { isVerrailNavigationEnabled } from "@/lib/verrail-navigation";
 import { useCompany } from "@/context/CompanyContext";
 import { useSidebar } from "@/context/SidebarContext";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
@@ -45,10 +46,11 @@ function isSandboxProviderOnly(plugin: PluginRecord): boolean {
 export function CompanySettingsSidebar() {
   const { t } = useTranslation();
   const { selectedCompany, selectedCompanyId } = useCompany();
+  const verrailNavigation = isVerrailNavigationEnabled(selectedCompany);
   const { isMobile, setSidebarOpen } = useSidebar();
   const { hidden: hiddenSettings } = useHiddenSettings();
   const showPage = (pageKey: string) => !hiddenSettings.has(pageKey);
-  const showPlugins = showPage("instance.plugins");
+  const showPlugins = !verrailNavigation && showPage("instance.plugins");
   const { slots: companySettingsPluginSlots } = usePluginSlots({
     slotTypes: ["companySettingsPage"],
     companyId: selectedCompanyId,
@@ -82,10 +84,13 @@ export function CompanySettingsSidebar() {
   const sidebarPlugins = (plugins ?? []).filter((plugin) => !isSandboxProviderOnly(plugin));
 
   return (
-    <aside className="w-full h-full min-h-0 border-r border-border bg-background flex flex-col">
+    <aside
+      className="w-full h-full min-h-0 border-r border-border bg-background flex flex-col"
+      data-testid="company-settings-sidebar"
+    >
       <div className="flex flex-col gap-1 px-3 py-3 shrink-0">
         <Link
-          to="/dashboard"
+          to={verrailNavigation ? "/home" : "/dashboard"}
           onClick={() => {
             if (isMobile) setSidebarOpen(false);
           }}
@@ -126,8 +131,10 @@ export function CompanySettingsSidebar() {
               />
             ))}
           <SidebarNavItem to="/company/settings/invites" label={t("settingsNav.invites")} icon={MailPlus} end />
-          <SidebarNavItem to="/company/settings/secrets" label={t("settingsNav.secrets")} icon={KeyRound} end />
-          {showPage("instance.environments") && (
+          {!verrailNavigation && (
+            <SidebarNavItem to="/company/settings/secrets" label={t("settingsNav.secrets")} icon={KeyRound} end />
+          )}
+          {!verrailNavigation && showPage("instance.environments") && (
             <SidebarNavItem
               to={`${INSTANCE_SETTINGS_PATH_PREFIX}/environments`}
               label={t("settingsNav.environments")}
@@ -188,7 +195,7 @@ export function CompanySettingsSidebar() {
               ))}
             </div>
           ) : null}
-          {showPage("instance.adapters") && (
+          {!verrailNavigation && showPage("instance.adapters") && (
             <SidebarNavItem
               to={`${INSTANCE_SETTINGS_PATH_PREFIX}/adapters`}
               label={t("settingsNav.adapters")}

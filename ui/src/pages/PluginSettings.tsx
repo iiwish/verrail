@@ -21,6 +21,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { PageTabBar } from "@/components/PageTabBar";
+import { useTranslation } from "@/i18n";
 import {
   JsonSchemaForm,
   validateJsonSchemaForm,
@@ -59,10 +60,16 @@ import {
  * @see doc/plugins/PLUGIN_SPEC.md §13 — Plugin Health Checks.
  * @see doc/plugins/PLUGIN_SPEC.md §19.8 — Plugin Settings UI.
  */
-export function PluginSettings() {
+export function PluginSettings({
+  basePath = "/company/settings/instance/plugins",
+}: {
+  basePath?: string;
+}) {
   const { selectedCompany, selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { companyPrefix, pluginId } = useParams<{ companyPrefix?: string; pluginId: string }>();
+  const { t } = useTranslation();
+  const inInfrastructure = basePath.startsWith("/infrastructure");
   const [activeTab, setActiveTab] = useState<"configuration" | "status">("configuration");
 
   const { data: plugin, isLoading: pluginLoading } = useQuery({
@@ -120,12 +127,17 @@ export function PluginSettings() {
 
   useEffect(() => {
     setBreadcrumbs([
-      { label: selectedCompany?.name ?? "Company", href: "/dashboard" },
-      { label: "Settings", href: "/company/settings" },
-      { label: "Plugins", href: "/company/settings/instance/plugins" },
+      {
+        label: selectedCompany?.name ?? t("settings.company.fallbackName"),
+        href: inInfrastructure ? "/home" : "/dashboard",
+      },
+      inInfrastructure
+        ? { label: t("nav.infrastructure"), href: "/infrastructure" }
+        : { label: t("settings.title"), href: "/company/settings" },
+      { label: t("settingsNav.plugins"), href: basePath },
       { label: plugin?.manifestJson?.displayName ?? plugin?.packageName ?? "Plugin Details" },
     ]);
-  }, [selectedCompany?.name, setBreadcrumbs, companyPrefix, plugin]);
+  }, [basePath, companyPrefix, inInfrastructure, plugin, selectedCompany?.name, setBreadcrumbs, t]);
 
   useEffect(() => {
     setActiveTab("configuration");
@@ -136,7 +148,7 @@ export function PluginSettings() {
   }
 
   if (!plugin) {
-    return <Navigate to="/company/settings/instance/plugins" replace />;
+    return <Navigate to={basePath} replace />;
   }
 
   const displayStatus = plugin.status;
@@ -159,7 +171,7 @@ export function PluginSettings() {
   return (
     <div className="max-w-6xl space-y-6">
       <div className="flex items-center gap-4">
-        <Link to="/company/settings/instance/plugins">
+        <Link to={basePath}>
           <Button variant="outline" size="icon" className="h-8 w-8">
             <ArrowLeft className="h-4 w-4" />
           </Button>

@@ -1,10 +1,10 @@
 # Verrail 产品契约
 
-版本：0.2
+版本：0.3
 
 状态：`Confirmed`
 
-最后更新：2026-08-26
+最后更新：2026-08-28
 
 审核要求：确认产品对象、标志性旅程、MVP 范围和验收标准
 
@@ -63,6 +63,14 @@ AgentDefinition -> AgentVersion -> Deployment -> Run
 ### Workspace
 
 租户级安全与数据边界，拥有身份、策略、Project、Agent、Connector、RuntimePool 和审计记录。当前继承实现中的 `company` 可以作为过渡存储边界，但产品界面统一使用 Workspace。
+
+Workspace 采用环境化租户体验。首次进入时，部署后端为用户或单租户实例幂等提供一个默认 Workspace；仅有一个可访问 Workspace 时，日常工作台不展示切换器，也不要求用户先理解租户结构。拥有多个 Workspace 时才展示切换入口。隐藏切换器不改变 Workspace 的权限、隔离、审计、计费和 URL 兼容边界。
+
+### Conversation
+
+Conversation 是用户与 Verrail 协作的持久交互上下文，属于一个 Workspace，并可绑定 Project、Target、Stage、ArtifactRevision 或其他可审阅对象。Conversation 与 Message 保存对话连续性、用户意图和系统回复，但不拥有 Target、Run、Artifact、Evidence、Review、Approval 或 Acceptance 的业务真相。
+
+对话提出的执行、修改、外部 Effect、批准和验收必须转化为相应的版本化领域命令或对象，并在界面中显示可检查的目标、参数、权限、状态和结果引用。聊天文本本身不能直接推进 Target、伪造 Evidence、批准 ActionRequest 或替代 Acceptance。
 
 ### Project
 
@@ -151,6 +159,7 @@ AgentTask 产生 Run/RunAttempt，IntegrationTask 产生 IntegrationRun/Integrat
 正式工作台以桌面端、高信息密度和重复操作效率为目标。
 
 - `Home`：跨 Project 的 Attention、风险、运行健康和最近交付；
+- `Chat`：持久会话、上下文绑定和面向领域对象的自然语言协作入口；
 - `Projects`：Project 与 Target 列表、筛选和状态；
 - `Target Workbench`：Overview、Stages、Work、Submission、Artifacts、Evidence、Runs、Timeline；Graph 作为高级视图；
 - `Agents`：AgentDefinition、Version、Evaluation、Deployment 和质量趋势；
@@ -160,11 +169,14 @@ AgentTask 产生 Run/RunAttempt，IntegrationTask 产生 IntegrationRun/Integrat
 
 Target Workbench 是标志性界面。它必须让用户不离开 Target 就能回答：目标是什么、谁在负责、卡在哪里、产物是什么、证据是否充分、当前需要我做什么。
 
+Home 与 Chat 分工明确：Home 回答“什么需要我”，Chat 回答“我要让系统做什么”。Chat 是一级工作入口，不取代 Target Workbench；进入绑定 Target、Artifact 或 Review 的长工作流时，界面保持对应工作对象可见，并把 Agent Run、建议、Diff、Evidence 和决定渲染为可检查对象，而不是普通聊天气泡。
+
 ## 8. MVP 范围
 
 ### 必须具备
 
 - Workspace、Project、Target、TargetRevision、Stage 和 Target Workbench；
+- Workspace 默认供给、单 Workspace 环境化体验、持久 Conversation 与基础会话管理；
 - AgentDefinition、AgentVersion、Deployment 与基础 EvaluationRun；
 - 版本化 GraphRevision、TaskNode/GateNode 与 Temporal 耐久编排；
 - Codex Adapter 的固定版本执行与事件归一化；
@@ -211,7 +223,7 @@ MVP 通过以下端到端验收：
 
 ## 11. 非目标
 
-- 通用聊天产品、通用项目管理排期和工时系统；
+- 脱离 Project、Target、Artifact、Run 和治理对象的通用聊天产品，以及通用项目管理排期和工时系统；
 - AI 公司 CEO、组织图和雇员隐喻；
 - 通用 Agent Loop、IDE、代码托管或专业文档编辑器；
 - 任意 DAG/低代码工作流设计器；

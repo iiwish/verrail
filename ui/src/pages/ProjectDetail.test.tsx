@@ -313,14 +313,34 @@ describe("ProjectDetail", () => {
       workspaceId: "company-1",
       projectId: "project-1",
     }));
-    expect(container.textContent).toContain("Targets");
-    expect(container.textContent).toContain("Legacy work");
+    expect(container.textContent).not.toContain("Legacy work");
 
     const newTargetButtons = Array.from(container.querySelectorAll("button"))
       .filter((button) => button.textContent?.trim() === "New Target");
     expect(newTargetButtons).toHaveLength(1);
     act(() => newTargetButtons[0]?.click());
     expect(mockOpenNewTarget).toHaveBeenCalledWith({ projectId: "project-1" });
+  });
+
+  it("keeps Project management navigation inside the Project detail page", async () => {
+    mockCompanyContext.companies = [{
+      id: "company-1",
+      issuePrefix: "PAP",
+      enableVerrailNavigation: true,
+    }];
+    mockLocation.pathname = "/projects/project-1/overview";
+
+    await renderCurrentRoute();
+
+    const tabLabels = Array.from(container.querySelectorAll("button"))
+      .map((button) => button.textContent?.trim())
+      .filter(Boolean);
+    expect(tabLabels).toContain("Overview");
+    expect(tabLabels).toContain("Plugin operations");
+    expect(tabLabels).toContain("Settings");
+    expect(tabLabels).toContain("Budget");
+    expect(tabLabels).toContain("Legacy work");
+    expect(tabLabels).not.toContain("Targets");
   });
 
   it("keeps inherited Issues explicit on the Verrail Legacy work route", async () => {

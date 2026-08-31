@@ -17,7 +17,13 @@ import { CheckCircle2, ChevronRight, Sparkles } from "lucide-react";
 import type { ApprovalComment } from "@paperclipai/shared";
 import { MarkdownBody } from "../components/MarkdownBody";
 
-export function ApprovalDetail() {
+export function ApprovalDetail({
+  basePath = "/approvals",
+  costsPath = "/costs",
+}: {
+  basePath?: string;
+  costsPath?: string;
+}) {
   const { t } = useTranslation();
   const { approvalId } = useParams<{ approvalId: string }>();
   const { selectedCompanyId, setSelectedCompanyId } = useCompany();
@@ -66,11 +72,15 @@ export function ApprovalDetail() {
   }, [agents]);
 
   useEffect(() => {
-    setBreadcrumbs([
-      { label: t("approvals.title"), href: "/approvals" },
+    const breadcrumbs = [
+      { label: t("approvals.title"), href: basePath },
       { label: approval?.id?.slice(0, 8) ?? approvalId ?? t("approvals.detail.approval") },
-    ]);
-  }, [setBreadcrumbs, approval, approvalId, t]);
+    ];
+    if (basePath.startsWith("/governance")) {
+      breadcrumbs.unshift({ label: t("nav.governance"), href: "/governance" });
+    }
+    setBreadcrumbs(breadcrumbs);
+  }, [approval, approvalId, basePath, setBreadcrumbs, t]);
 
   const refresh = () => {
     if (!approvalId) return;
@@ -91,7 +101,7 @@ export function ApprovalDetail() {
     onSuccess: () => {
       setError(null);
       refresh();
-      navigate(`/approvals/${approvalId}?resolved=approved`, { replace: true });
+      navigate(`${basePath}/${approvalId}?resolved=approved`, { replace: true });
     },
     onError: (err) => setError(err instanceof Error ? err.message : t("approvals.detail.errors.approve")),
   });
@@ -138,7 +148,7 @@ export function ApprovalDetail() {
     onSuccess: () => {
       setError(null);
       refresh();
-      navigate("/approvals");
+      navigate(basePath);
     },
     onError: (err) => setError(err instanceof Error ? err.message : t("approvals.detail.errors.delete")),
   });
@@ -169,7 +179,7 @@ export function ApprovalDetail() {
           }
         : {
             label: t("approvals.detail.back"),
-            to: "/approvals",
+            to: basePath,
           };
 
   return (
@@ -285,7 +295,7 @@ export function ApprovalDetail() {
           )}
           {isBudgetApproval && approval.status === "pending" && (
             <p className="text-sm text-muted-foreground">
-              {t("approvals.detail.resolveBudgetPrefix")} <Link to="/costs" className="underline underline-offset-2">/costs</Link>{t("approvals.detail.resolveBudgetSuffix")}
+              {t("approvals.detail.resolveBudgetPrefix")} <Link to={costsPath} className="underline underline-offset-2">{costsPath}</Link>{t("approvals.detail.resolveBudgetSuffix")}
             </p>
           )}
           {approval.status === "pending" && (
