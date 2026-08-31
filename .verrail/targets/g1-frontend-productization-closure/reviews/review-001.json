@@ -1,0 +1,18 @@
+{
+  "target_id": "g1-frontend-productization-closure",
+  "run_id": "run-001",
+  "decision": "approve",
+  "authority": "advisory_non_final",
+  "reviewer": "codex implementation review",
+  "rationale": "The implementation replaces the list-only management indexes with existing product primitives, exposes only real capabilities, preserves compatibility routes, passes focused regression, typecheck, build, token and bundle checks, and completes the representative browser journey without console errors. The recommendation is advisory because the implementer cannot provide final human approval.",
+  "linked_evidence": [
+    ".verrail/targets/g1-frontend-productization-closure/runs/run-001/evidence.json",
+    ".verrail/audits/g1-frontend-productization-closure-2026-08-28/report.md"
+  ],
+  "requested_changes": [],
+  "conditions": [
+    "Human review confirms the section ownership and visual result before commit or PR creation.",
+    "Run the dedicated acceptance suite in CI or an approved local Playwright session before merge."
+  ],
+  "created_at": "2026-08-28T03:48:17Z"
+}

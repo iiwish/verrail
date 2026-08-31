@@ -1,0 +1,190 @@
+{
+  "target_id": "b2-6-merge-recovery-scope-split",
+  "generated_from": {
+    "branch": "codex/verrail-brand-navigation-b1",
+    "base_commit": "6e523139fc901627e1825123f969315279a5a54c",
+    "working_tree": "uncommitted cumulative Verrail productization batch"
+  },
+  "ownership_rule": "Every changed or untracked path is assigned to exactly one ownership slice. Cross-slice files are assigned to the slice responsible for their review and require hunk-aware commit preparation.",
+  "slices": [
+    {
+      "id": "navigation-and-ia",
+      "title": "Navigation and IA",
+      "review_focus": "Product shell, primary and secondary navigation, Project-Target object-list hierarchy, management surfaces, governance localization, and responsive acceptance.",
+      "paths": [
+        "docs/architecture.md",
+        "docs/navigation-contract.md",
+        "docs/operational-ontology.md",
+        "docs/product-design.md",
+        "docs/product-goals.md",
+        "packages/shared/src/constants.ts",
+        "tests/verrail-acceptance/project-target-work.spec.ts",
+        "ui/src/App.test.tsx",
+        "ui/src/App.tsx",
+        "ui/src/components/CompanySettingsSidebar.test.tsx",
+        "ui/src/components/CompanySettingsSidebar.tsx",
+        "ui/src/components/DecisionDateChips.test.tsx",
+        "ui/src/components/DecisionDateChips.tsx",
+        "ui/src/components/DecisionQueueRail.tsx",
+        "ui/src/components/Layout.test.tsx",
+        "ui/src/components/Layout.tsx",
+        "ui/src/components/Sidebar.test.tsx",
+        "ui/src/components/SidebarAgents.test.tsx",
+        "ui/src/components/SidebarAgents.tsx",
+        "ui/src/components/VerrailManagementSidebar.test.tsx",
+        "ui/src/components/VerrailManagementSidebar.tsx",
+        "ui/src/components/VerrailProjectsSidebar.test.tsx",
+        "ui/src/components/VerrailProjectsSidebar.tsx",
+        "ui/src/components/VerrailSidebar.tsx",
+        "ui/src/hooks/useProjectWorkspaceNavigation.ts",
+        "ui/src/i18n/locales/en.json",
+        "ui/src/i18n/locales/zh-CN.json",
+        "ui/src/index.css",
+        "ui/src/lib/attention.ts",
+        "ui/src/lib/company-routes.test.ts",
+        "ui/src/lib/verrail-section-navigation.test.ts",
+        "ui/src/lib/verrail-section-navigation.ts",
+        "ui/src/pages/AdapterManager.tsx",
+        "ui/src/pages/AgentDeployments.tsx",
+        "ui/src/pages/AgentDetail.tsx",
+        "ui/src/pages/ApprovalDetail.tsx",
+        "ui/src/pages/Approvals.tsx",
+        "ui/src/pages/CompanyEnvironments.tsx",
+        "ui/src/pages/Costs.tsx",
+        "ui/src/pages/DecisionQueuePage.tsx",
+        "ui/src/pages/PluginManager.tsx",
+        "ui/src/pages/PluginSettings.tsx",
+        "ui/src/pages/ProjectDetail.test.tsx",
+        "ui/src/pages/ProjectDetail.tsx",
+        "ui/src/pages/Secrets.render.test.tsx",
+        "ui/src/pages/Secrets.tsx",
+        "ui/src/pages/VerrailOperationsIndex.tsx",
+        "ui/src/pages/WhatNeedsMe.tsx",
+        "ui/src/pages/audit/CompanyActivity.tsx"
+      ]
+    },
+    {
+      "id": "conversation",
+      "title": "Conversation",
+      "review_focus": "Conversation persistence, API and runtime outcome contracts, UI session management, and credential-free browser acceptance.",
+      "paths": [
+        "packages/db/src/migrations/0231_goofy_tigra.sql",
+        "packages/db/src/migrations/0232_flippant_forge.sql",
+        "packages/db/src/migrations/meta/0231_snapshot.json",
+        "packages/db/src/migrations/meta/0232_snapshot.json",
+        "packages/db/src/migrations/meta/_journal.json",
+        "packages/db/src/schema/index.ts",
+        "packages/db/src/schema/verrail_conversations.ts",
+        "packages/shared/src/index.ts",
+        "packages/shared/src/types/conversation.ts",
+        "packages/shared/src/types/index.ts",
+        "packages/shared/src/validators/conversation.ts",
+        "packages/shared/src/validators/index.ts",
+        "server/src/__tests__/conversation-routes.test.ts",
+        "server/src/__tests__/conversation-service.test.ts",
+        "server/src/__tests__/openapi-routes.test.ts",
+        "server/src/app.ts",
+        "server/src/routes/conversations.ts",
+        "server/src/routes/openapi.ts",
+        "server/src/services/conversations.ts",
+        "server/src/services/index.ts",
+        "tests/verrail-acceptance/fixtures/bin/codex",
+        "tests/verrail-acceptance/playwright.config.ts",
+        "ui/src/api/conversations.ts",
+        "ui/src/components/VerrailConversationSidebar.tsx",
+        "ui/src/lib/queryKeys.ts",
+        "ui/src/pages/VerrailChat.tsx"
+      ]
+    },
+    {
+      "id": "runtime-and-bootstrap-hardening",
+      "title": "Runtime and Bootstrap Hardening",
+      "review_focus": "Bounded catalog loading, default workspace bootstrap, and portable loopback/runtime exposure checks inherited from B2.5.",
+      "paths": [
+        "packages/skills-catalog/src/catalog-builder.test.ts",
+        "packages/skills-catalog/src/catalog-builder.ts",
+        "server/src/__tests__/company-cloud-floor.test.ts",
+        "server/src/routes/companies.ts",
+        "server/src/services/companies.ts",
+        "server/src/services/runtime-exposure/loopback-listener.test.ts",
+        "server/src/services/runtime-exposure/loopback-listener.ts",
+        "server/src/services/workspace-runtime-exposure.test.ts"
+      ]
+    },
+    {
+      "id": "delivery-evidence",
+      "title": "Delivery Evidence",
+      "review_focus": "B2.6 specification, exhaustive ownership map, run receipt, observed evidence, advisory review, and append-only timeline.",
+      "paths": [
+        ".verrail/targets/b2-6-merge-recovery-scope-split/execution-packet.json",
+        ".verrail/targets/b2-6-merge-recovery-scope-split/reviews/review-001.json",
+        ".verrail/targets/b2-6-merge-recovery-scope-split/runs/run-001/evidence.json",
+        ".verrail/targets/b2-6-merge-recovery-scope-split/runs/run-001/receipt.json",
+        ".verrail/targets/b2-6-merge-recovery-scope-split/scope-map.json",
+        ".verrail/targets/b2-6-merge-recovery-scope-split/spec.md",
+        ".verrail/targets/b2-6-merge-recovery-scope-split/target.json",
+        ".verrail/targets/b2-6-merge-recovery-scope-split/timeline.jsonl"
+      ]
+    },
+    {
+      "id": "pre-existing-branch-history",
+      "title": "Pre-existing Branch History",
+      "review_focus": "Prior completed-stage audit and delivery records retained as historical context, not re-authored by B2.6.",
+      "paths": [
+        ".verrail/audits/g1-frontend-productization-closure-2026-08-28/report.md",
+        ".verrail/audits/g1-frontend-productization-closure-2026-08-28/screenshots/01-governance-before.png",
+        ".verrail/audits/g1-frontend-productization-closure-2026-08-28/screenshots/02-paperclip-settings-reference.png",
+        ".verrail/audits/g1-frontend-productization-closure-2026-08-28/screenshots/03-paperclip-settings-secondary-nav.png",
+        ".verrail/audits/g1-frontend-productization-closure-2026-08-28/screenshots/04-governance-index-before.png",
+        ".verrail/audits/g1-frontend-productization-closure-2026-08-28/screenshots/05-infrastructure-index-before.png",
+        ".verrail/audits/g1-frontend-productization-closure-2026-08-28/screenshots/06-infrastructure-secondary-nav.png",
+        ".verrail/audits/g1-frontend-productization-closure-2026-08-28/screenshots/07-infrastructure-secrets.png",
+        ".verrail/audits/g1-frontend-productization-closure-2026-08-28/screenshots/08-infrastructure-plugins-1440.png",
+        ".verrail/audits/g1-frontend-productization-closure-2026-08-28/screenshots/09-governance-costs-1440.png",
+        ".verrail/audits/g1-frontend-productization-closure-2026-08-28/screenshots/10-settings-ownership-1024.png",
+        ".verrail/audits/g1-frontend-productization-closure-2026-08-28/screenshots/12-infrastructure-final-1440.png",
+        ".verrail/targets/b2-5-merge-gate-baseline-closure/execution-packet.json",
+        ".verrail/targets/b2-5-merge-gate-baseline-closure/reviews/review-001.json",
+        ".verrail/targets/b2-5-merge-gate-baseline-closure/runs/run-001/evidence.json",
+        ".verrail/targets/b2-5-merge-gate-baseline-closure/runs/run-001/receipt.json",
+        ".verrail/targets/b2-5-merge-gate-baseline-closure/spec.md",
+        ".verrail/targets/b2-5-merge-gate-baseline-closure/target.json",
+        ".verrail/targets/b2-5-merge-gate-baseline-closure/timeline.jsonl",
+        ".verrail/targets/g1-frontend-productization-closure/execution-packet.json",
+        ".verrail/targets/g1-frontend-productization-closure/reviews/review-001.json",
+        ".verrail/targets/g1-frontend-productization-closure/runs/run-001/evidence.json",
+        ".verrail/targets/g1-frontend-productization-closure/runs/run-001/receipt.json",
+        ".verrail/targets/g1-frontend-productization-closure/spec.md",
+        ".verrail/targets/g1-frontend-productization-closure/target.json",
+        ".verrail/targets/g1-frontend-productization-closure/timeline.jsonl"
+      ]
+    }
+  ],
+  "recommended_commit_order": [
+    {
+      "order": 1,
+      "slice": "runtime-and-bootstrap-hardening",
+      "reason": "Independent operational hardening from the already evidenced B2.5 stage."
+    },
+    {
+      "order": 2,
+      "slice": "navigation-and-ia",
+      "reason": "Establishes the accepted product shell and Project-Target object-list hierarchy before the Conversation vertical slice."
+    },
+    {
+      "order": 3,
+      "slice": "conversation",
+      "reason": "Adds the full persistence/API/runtime/UI vertical slice and its deterministic acceptance harness."
+    },
+    {
+      "order": 4,
+      "slice": "delivery-evidence",
+      "reason": "Attaches the B2.6 proof and retains prior-stage records after implementation commits are prepared."
+    }
+  ],
+  "commit_preparation_notes": [
+    "Pre-existing Branch History is retained with Delivery Evidence rather than treated as a new product implementation commit.",
+    "ui/src/App.tsx and tests/verrail-acceptance/project-target-work.spec.ts contain cross-slice behavior; their declared owner is Navigation and IA, and Conversation-dependent hunks must remain dependency-aware during physical staging.",
+    "No commit, push, pull request, merge, deployment, release, or ship record is authorized by this map."
+  ]
+}

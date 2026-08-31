@@ -1,0 +1,78 @@
+{
+  "target_id": "g1-frontend-productization-closure",
+  "run_id": "run-001",
+  "tests": [
+    {
+      "name": "route, contextual-sidebar, Settings ownership, and locale validation",
+      "status": "passed",
+      "result": "27 tests passed"
+    },
+    {
+      "name": "localized Secrets usage surface",
+      "status": "passed",
+      "result": "1 targeted test passed; 30 unrelated cases skipped"
+    },
+    {
+      "name": "full UI Vitest suite",
+      "status": "passed_with_reruns",
+      "result": "4410 tests passed in the full run; 2 load-sensitive five-second timeouts passed on isolated rerun"
+    }
+  ],
+  "build": {
+    "status": "passed",
+    "command": "pnpm --filter @paperclipai/ui build",
+    "notes": "Vite production build completed; existing CSS highlight, font resolution, dynamic import, and chunk-size warnings remain."
+  },
+  "typecheck": {
+    "status": "passed",
+    "command": "pnpm --filter @paperclipai/ui typecheck"
+  },
+  "lint": {
+    "status": "skipped",
+    "notes": "No separate lint command was required for this UI slice; token gates and TypeScript checks ran."
+  },
+  "design_tokens": {
+    "status": "passed",
+    "command": "pnpm check:token-gates",
+    "result": "All four token gates clean across 803 files."
+  },
+  "bundle_budget": {
+    "status": "passed",
+    "command": "pnpm check:ui-bundle-budget",
+    "result": "183 JavaScript files; 11.51 MiB raw / 3.31 MiB gzip total."
+  },
+  "browser": {
+    "status": "passed",
+    "surface": "Codex in-app browser",
+    "viewports": ["1440x900", "1024x768"],
+    "routes": [
+      "/GFR/infrastructure",
+      "/GFR/infrastructure/environments",
+      "/GFR/infrastructure/adapters",
+      "/GFR/infrastructure/plugins",
+      "/GFR/governance",
+      "/GFR/governance/approvals",
+      "/GFR/governance/audit",
+      "/GFR/governance/costs",
+      "/GFR/settings",
+      "/GFR/company/settings/instance/plugins"
+    ],
+    "result": "Canonical redirects, section sidebars, Settings ownership, New Secret dialog, Environment settings link, install commands, breadcrumbs, loading completion, and zero console errors verified."
+  },
+  "links": [
+    ".verrail/audits/g1-frontend-productization-closure-2026-08-28/report.md",
+    ".verrail/audits/g1-frontend-productization-closure-2026-08-28/screenshots/03-paperclip-settings-secondary-nav.png",
+    ".verrail/audits/g1-frontend-productization-closure-2026-08-28/screenshots/12-infrastructure-final-1440.png",
+    ".verrail/audits/g1-frontend-productization-closure-2026-08-28/screenshots/09-governance-costs-1440.png",
+    ".verrail/audits/g1-frontend-productization-closure-2026-08-28/screenshots/10-settings-ownership-1024.png"
+  ],
+  "manual_notes": [
+    "Visual comparison confirms the final management shell follows the inherited Settings rail and secondary-sidebar rhythm.",
+    "No placeholder Runner, Runtime Pool, Connector, Storage, or Policy pages were published.",
+    "No pull request, push, merge, deploy, release, or ship record was created."
+  ],
+  "missing": [
+    "The updated dedicated Playwright acceptance suite was not executed in this run; equivalent routes and actions were verified through the selected in-app browser.",
+    "A human final reviewer has not approved the working tree."
+  ]
+}

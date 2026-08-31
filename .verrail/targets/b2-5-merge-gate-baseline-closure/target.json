@@ -1,0 +1,23 @@
+{
+  "id": "b2-5-merge-gate-baseline-closure",
+  "title": "B2.5 Merge Gate Baseline Closure",
+  "intent": "Remove deterministic repository-level test and build blockers so the cumulative Verrail brand, navigation, domain, and conversational productization batch can be judged as a reproducible merge candidate.",
+  "scope": "Make runtime listener diagnostics portable on supported development platforms, make Skills Catalog reference resolution bounded and reproducible during builds, rerun the repository merge gates, fix only failures attributable to the current merge delta or the two confirmed baseline defects, and attach truthful evidence and an advisory merge decision.",
+  "non_goals": [
+    "Add new Verrail product, domain, orchestration, or conversational capability",
+    "Rewrite unrelated inherited Paperclip runtime, plugin, workspace, or skills behavior merely to force a green suite",
+    "Change the accepted brand, navigation, Project-Target-Work, Workspace, Agent, or Conversation contracts",
+    "Commit, push, create a pull request, merge, deploy, release, or create a ship record without separate explicit approval"
+  ],
+  "acceptance_criteria": [
+    "Runtime listener bind diagnostics detect wildcard and loopback listeners on macOS and Linux without weakening the production exposure check, and their focused tests pass.",
+    "Skills Catalog remote reference reads have an explicit timeout and deterministic fallback or cache behavior that prevents a repository build from hanging indefinitely while preserving source integrity checks.",
+    "Focused regression tests cover both repaired merge gates and pass without relying on the user's active development server state.",
+    "The B2/G1/Conversation focused suite, workspace typecheck, migration safety, affected package builds, token gates, UI bundle budget, and diff checks pass.",
+    "The repository-wide test and build gates complete with a passing result, or each remaining failure is reproduced on the unchanged base commit and explicitly excluded from the merge delta with evidence.",
+    "A repo-native run receipt, evidence bundle, timeline, and advisory review decision state whether the cumulative branch is ready for commit and pull-request preparation without self-approving merge."
+  ],
+  "status": "needs_review",
+  "created_at": "2026-08-28T05:45:49Z",
+  "updated_at": "2026-08-28T06:52:56Z"
+}

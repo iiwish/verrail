@@ -1,0 +1,25 @@
+{
+  "id": "b2-6-merge-recovery-scope-split",
+  "title": "B2.6 Merge Recovery & Scope Split",
+  "intent": "Restore a trustworthy merge path for the cumulative Verrail frontend productization work by repairing red acceptance gates, closing the conversational response contract, and separating the current working diff into reviewable ownership slices without adding product scope.",
+  "scope": "Repair the Verrail primary-navigation unit contract, update Project-Target-Work browser acceptance for the accepted object-list sidebar IA, add deterministic Conversation acceptance with a fake local runtime, fail visibly on empty runtime responses, close the remaining governance date-filter i18n gap, define explicit change-slice ownership, and rerun focused plus repository merge gates.",
+  "non_goals": [
+    "Add new navigation destinations, domain entities, agent capabilities, Temporal workflows, or Go services",
+    "Redesign the accepted Project, Target, Work, Agent, Infrastructure, Governance, Settings, or Conversation information architecture",
+    "Rewrite unrelated inherited Paperclip failures merely to force a green local suite",
+    "Commit, push, create a pull request, merge, deploy, release, or create a ship record without separate explicit approval"
+  ],
+  "acceptance_criteria": [
+    "The complete UI Vitest project passes with the seven-destination Verrail primary-navigation contract and no unhandled test error.",
+    "The Verrail Playwright acceptance suite passes at 1440x900 and 1024x768 using the Project-to-Target object-list sidebar rather than the removed project Targets tab.",
+    "Conversation acceptance deterministically covers create-by-send, streamed assistant response, persistence after reload, rename, pin, archive, restore, search, stop, and visible empty-runtime failure without using real model credentials.",
+    "A local conversational runtime that exits without response text always produces a visible error and never reports a successful empty answer.",
+    "Governance date-range controls render through i18n and do not leak English labels in the Chinese locale.",
+    "A scope map assigns every current changed path to Navigation and IA, Conversation, Runtime and Bootstrap Hardening, Delivery Evidence, or Pre-existing Branch History, with no path silently left unowned.",
+    "Focused tests, workspace typecheck, repository tests, production build, token gates, bundle budget, brand assets, acceptance, and diff integrity pass, or any remaining baseline-only failure is reproduced and recorded truthfully.",
+    "A repo-native receipt, evidence bundle, timeline, and advisory review decision state whether the work is ready for commit preparation without self-approving merge."
+  ],
+  "status": "needs_review",
+  "created_at": "2026-08-31T03:20:33Z",
+  "updated_at": "2026-08-31T04:36:10Z"
+}

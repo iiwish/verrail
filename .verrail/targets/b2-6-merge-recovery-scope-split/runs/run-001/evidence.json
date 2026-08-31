@@ -1,0 +1,167 @@
+{
+  "target_id": "b2-6-merge-recovery-scope-split",
+  "run_id": "run-001",
+  "tests": [
+    {
+      "name": "seven-destination navigation and governance i18n",
+      "status": "passed",
+      "result": "2 files, 29 tests passed"
+    },
+    {
+      "name": "Conversation terminal outcome and persistence services",
+      "status": "passed",
+      "result": "Focused route and service suites passed; empty successful exits, failed exits, timeouts, and partial responses are covered"
+    },
+    {
+      "name": "complete UI Vitest project",
+      "status": "passed",
+      "result": "485 files and 4422 tests passed; no unhandled test error"
+    },
+    {
+      "name": "Verrail browser acceptance",
+      "status": "passed",
+      "result": "4 projects passed at 1440x900 and 1024x768 in 1.4 minutes"
+    },
+    {
+      "name": "repository-wide stable runner",
+      "status": "failed_inherited_baseline",
+      "result": "401 passed, 9 failed, and 1 skipped files; 4711 passed, 23 failed, and 27 skipped tests; two failed suites or hooks; 2868.76 seconds",
+      "assessment": "Residual failures remain in unchanged inherited company-skill macOS path canonicalization, workspace runtime/cleanup/seed, execution conflict, plugin worker timing, and heartbeat environment classes. The prior B2.5 record documents the same baseline families. No B2.6 changed implementation or test file is named by a failing stack."
+    }
+  ],
+  "implementation": {
+    "navigation_contract": {
+      "status": "passed",
+      "result": "The unit contract expects all seven Verrail destinations, and browser acceptance follows projects to an expanded list of delivery targets rather than the removed project submenu."
+    },
+    "conversation_terminal_contract": {
+      "status": "passed",
+      "result": "A runtime completion without response text emits a visible error regardless of exit code. Timeout, nonzero exit, and partial-response behavior remains explicit."
+    },
+    "deterministic_conversation_acceptance": {
+      "status": "passed",
+      "result": "A test-only fake Codex executable exercises create-by-send, streamed response, reload persistence, rename, pin, archive, restore, search, stop, and empty-response failure without model credentials."
+    },
+    "governance_i18n": {
+      "status": "passed",
+      "result": "Date-range labels resolve through locale resources and the Chinese test asserts that English labels do not leak."
+    },
+    "scope_ownership": {
+      "status": "passed",
+      "result": "117 changed or expected delivery paths are assigned exactly once across five ownership slices with no duplicate or unowned path."
+    }
+  },
+  "visual_acceptance": [
+    {
+      "status": "passed",
+      "viewport": "1440x900",
+      "artifacts": [
+        "tests/verrail-acceptance/screenshots/desktop-1440-project-target-sidebar.png",
+        "tests/verrail-acceptance/screenshots/desktop-1440-conversation.png"
+      ],
+      "result": "Project targets remain scannable in the secondary sidebar and Conversation session controls are coherent without overlap."
+    },
+    {
+      "status": "passed",
+      "viewport": "1024x768",
+      "artifacts": [
+        "tests/verrail-acceptance/screenshots/narrow-desktop-1024-project-target-sidebar.png",
+        "tests/verrail-acceptance/screenshots/narrow-desktop-1024-conversation.png"
+      ],
+      "result": "The narrower desktop layout preserves hierarchy, readable labels, stable controls, and non-overlapping content."
+    }
+  ],
+  "build": {
+    "status": "passed",
+    "command": "pnpm build",
+    "result": "Production build completed.",
+    "notes": "Existing non-fatal CSS highlight, font resolution, mixed-import, and chunk-size warnings remain."
+  },
+  "typecheck": {
+    "status": "passed",
+    "command": "pnpm -r typecheck",
+    "result": "Workspace typecheck and migration safety passed."
+  },
+  "integrity": [
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "result": "809 files scanned; all four gates clean"
+    },
+    {
+      "command": "pnpm check:ui-bundle-budget",
+      "status": "passed",
+      "result": "183 JavaScript files; 11.53 MiB raw / 3.32 MiB gzip total"
+    },
+    {
+      "command": "pnpm check:brand-assets",
+      "status": "passed",
+      "result": "17 Verrail assets validated"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    }
+  ],
+  "acceptance_coverage": [
+    {
+      "criterion": 1,
+      "status": "covered",
+      "evidence": "The complete UI project passes 485 files and 4422 tests with the seven-destination contract and no unhandled error."
+    },
+    {
+      "criterion": 2,
+      "status": "covered",
+      "evidence": "All four browser projects pass at both required viewport sizes using the Project-to-Target object-list sidebar."
+    },
+    {
+      "criterion": 3,
+      "status": "covered",
+      "evidence": "Credential-free browser acceptance covers the complete requested Conversation lifecycle and terminal failure cases."
+    },
+    {
+      "criterion": 4,
+      "status": "covered",
+      "evidence": "Focused server tests prove every empty runtime completion produces an error rather than a successful empty answer."
+    },
+    {
+      "criterion": 5,
+      "status": "covered",
+      "evidence": "Governance date-range labels use i18n and the Chinese test excludes English leakage."
+    },
+    {
+      "criterion": 6,
+      "status": "covered",
+      "evidence": "scope-map.json assigns 117 paths exactly once across the five required ownership slices."
+    },
+    {
+      "criterion": 7,
+      "status": "covered_with_recorded_baseline",
+      "evidence": "Focused tests, complete UI, acceptance, typecheck, build, token gates, bundle budget, brand assets, and diff integrity pass. The inherited non-green server runner is recorded rather than suppressed."
+    },
+    {
+      "criterion": 8,
+      "status": "covered",
+      "evidence": "Receipt, evidence, scope map, timeline, and advisory review are attached without a self-approved merge or ship record."
+    }
+  ],
+  "links": [
+    ".verrail/targets/b2-6-merge-recovery-scope-split/scope-map.json",
+    ".verrail/targets/b2-5-merge-gate-baseline-closure/runs/run-001/evidence.json",
+    "server/src/routes/conversations.ts",
+    "tests/verrail-acceptance/project-target-work.spec.ts",
+    "ui/src/components/Sidebar.test.tsx",
+    "ui/src/components/DecisionDateChips.test.tsx"
+  ],
+  "manual_notes": [
+    "The B2.6 delta is ready for commit preparation under the declared scope boundaries, but this record is not merge approval.",
+    "The acceptance runtime is injected only through the Playwright-owned test server PATH and is not a production configuration surface.",
+    "No Telemetry path, commit, push, pull request, merge, deployment, release, or ship record was created."
+  ],
+  "missing": [
+    "A globally green inherited Paperclip server suite on this macOS host.",
+    "Independent human review of the cumulative diff and physical commit boundaries.",
+    "Remote CI confirmation after commits and pull-request creation.",
+    "Push, pull request, merge approval, ship record, deployment, and release."
+  ]
+}

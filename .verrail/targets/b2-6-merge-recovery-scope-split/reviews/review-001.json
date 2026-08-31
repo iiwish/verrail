@@ -1,0 +1,23 @@
+{
+  "target_id": "b2-6-merge-recovery-scope-split",
+  "run_id": "run-001",
+  "decision": "approve",
+  "readiness": "ready_for_scoped_commit_preparation",
+  "authority": "advisory_non_final",
+  "reviewer": "Codex implementation self-review; independent human approval required",
+  "rationale": "B2.6 closes the confirmed merge blockers without adding product scope: the complete UI project passes, deterministic browser acceptance passes at both widths, empty Conversation responses fail visibly, governance date labels are localized, and every cumulative changed path has one review owner. Typecheck, build, design-token, bundle, brand, and diff gates pass. The repository-wide server lane remains non-green only in inherited macOS path, workspace, timing, and teardown classes already represented in B2.5 evidence. The work is suitable for dependency-aware commit preparation, but this self-review neither approves merge nor authorizes shipping.",
+  "linked_evidence": [
+    ".verrail/targets/b2-6-merge-recovery-scope-split/runs/run-001/receipt.json",
+    ".verrail/targets/b2-6-merge-recovery-scope-split/runs/run-001/evidence.json",
+    ".verrail/targets/b2-6-merge-recovery-scope-split/scope-map.json",
+    ".verrail/targets/b2-5-merge-gate-baseline-closure/runs/run-001/evidence.json"
+  ],
+  "requested_changes": [],
+  "conditions": [
+    "Prepare physical commits in the scope-map order and inspect cross-slice hunks rather than staging the entire working tree as one commit.",
+    "A human reviewer must confirm the cumulative diff, migration sequence, fake-runtime isolation, and commit boundaries before any merge decision.",
+    "The pull request must disclose the inherited non-green local server baseline and require remote CI rather than presenting pnpm test:run as green.",
+    "Do not treat this advisory decision as permission to push, merge, deploy, release, or create a ship record."
+  ],
+  "created_at": "2026-08-31T04:36:10Z"
+}

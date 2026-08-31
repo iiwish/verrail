@@ -1,0 +1,27 @@
+{
+  "id": "g1-frontend-productization-closure",
+  "title": "G1 Frontend Productization Closure",
+  "intent": "Turn the current Verrail shell from a route index into a coherent operational product by restoring Paperclip-style contextual navigation and proving that every visible primary and secondary path reaches a usable workflow.",
+  "scope": "Replace the Infrastructure and Governance landing lists with persistent contextual sidebars, publish canonical child routes backed by real inherited capabilities, preserve compatible deep links and Settings behavior, close navigation and interaction discontinuities, and record desktop and narrow-desktop browser evidence before any pull request is created.",
+  "non_goals": [
+    "Implement WorkGraph, RunWorkflow, Submission, Review, Acceptance, or new backend capability",
+    "Invent placeholder Runners, Runtime Pools, Policies, Storage, or Connector pages without working capability",
+    "Delete classic Paperclip navigation or compatibility routes",
+    "Restyle every inherited feature page or perform a broad visual redesign",
+    "Push, create a pull request, merge, deploy, release, or create a ship record"
+  ],
+  "acceptance_criteria": [
+    "Infrastructure and Governance use the established collapsed primary rail plus persistent secondary sidebar pattern used by Settings, rather than rendering a list of links as the page body.",
+    "Infrastructure and Governance roots redirect to their first usable child, and every visible secondary item opens an implemented working page through a canonical section route.",
+    "Infrastructure keeps Environments, Secrets, Adapters, and Plugins in one contextual workflow; create, edit, detail, and back navigation preserve the Infrastructure context where those routes exist.",
+    "Governance keeps Attention, Approvals, Audit, and Costs in one contextual workflow; approval filters and details preserve the Governance context where data exists.",
+    "Settings retains its own contextual navigation, and Members, Access, Import, Export, and experimental settings are not incorrectly presented as Governance or Infrastructure capabilities.",
+    "Classic navigation and existing company/settings, decisions, approvals, activity, and costs deep links remain addressable.",
+    "Desktop and narrow-desktop browser journeys traverse primary navigation, all new secondary routes, Settings, and representative interactions without uncaught browser errors, stuck loading states, incoherent overlap, or clipped controls.",
+    "English and Simplified Chinese labels remain in parity; relevant tests, UI typecheck, production build, token gates, bundle budget, and diff checks pass or any gap is recorded truthfully.",
+    "A repo-native receipt, evidence bundle, screenshots, acceptance mapping, and advisory review state whether the frontend is a PR candidate without self-approving merge."
+  ],
+  "status": "needs_review",
+  "created_at": "2026-08-28T03:01:27Z",
+  "updated_at": "2026-08-28T03:48:17Z"
+}

@@ -1,0 +1,44 @@
+{
+  "target_id": "g1-frontend-productization-closure",
+  "spec_version": "1.0",
+  "repo_path": "/Users/iiwish/self/verrail",
+  "branch": "codex/verrail-brand-navigation-b1",
+  "base_commit": "6e523139fc901627e1825123f969315279a5a54c",
+  "agent": "codex",
+  "prompt": "Productize the Verrail frontend by replacing Infrastructure and Governance route indexes with Paperclip-style contextual navigation, retaining real functionality and proving end-to-end usability before PR creation.",
+  "allowed_actions": [
+    "Audit the current local frontend and Paperclip Settings reference",
+    "Edit canonical documentation, routes, layout, navigation components, localized copy, and focused tests",
+    "Reuse existing functional pages behind canonical Verrail section routes",
+    "Run local UI, browser, typecheck, build, design-token, bundle, and focused regression checks",
+    "Create repo-native delivery records and screenshots"
+  ],
+  "forbidden_actions": [
+    "Add fake or nonfunctional management pages",
+    "Change backend data authority or implement deferred domain capability",
+    "Delete classic or compatibility routes",
+    "Push, create a pull request, merge, deploy, release, self-approve, or create a ship record"
+  ],
+  "validation_commands": [
+    "pnpm exec vitest run <focused frontend tests>",
+    "pnpm --filter @paperclipai/ui typecheck",
+    "pnpm --filter @paperclipai/ui build",
+    "pnpm check:token-gates",
+    "pnpm check:ui-bundle-budget",
+    "PAPERCLIP_PLAYWRIGHT_CHANNEL=chrome pnpm test:e2e:verrail-acceptance",
+    "git diff --check"
+  ],
+  "expected_evidence": [
+    "Before and after screenshots for Governance, Infrastructure, and Settings reference",
+    "Canonical-route and contextual-sidebar regression tests",
+    "Desktop and narrow-desktop browser journey with zero page and console errors",
+    "Typecheck, build, token, bundle, locale parity, and diff results",
+    "Acceptance mapping and advisory review"
+  ],
+  "stop_conditions": [
+    "A required page has no real implementation behind it",
+    "The change would require deleting compatibility routes or changing backend authority",
+    "Persistent browser or server failure prevents current-run visual verification",
+    "A scoped regression cannot be resolved without expanding beyond the target"
+  ]
+}

@@ -1,0 +1,143 @@
+{
+  "target_id": "b2-5-merge-gate-baseline-closure",
+  "run_id": "run-001",
+  "tests": [
+    {
+      "name": "B2.5 listener, exposure, and Skills Catalog focused suite",
+      "status": "passed",
+      "result": "3 files, 53 tests passed"
+    },
+    {
+      "name": "cumulative Verrail productization regression",
+      "status": "passed",
+      "result": "9 files, 75 tests passed"
+    },
+    {
+      "name": "heartbeat stale-queue isolation check",
+      "status": "passed",
+      "result": "24 tests passed when isolated from the full-run database teardown load"
+    },
+    {
+      "name": "Company Skills inherited baseline isolation check",
+      "status": "failed_baseline_only",
+      "result": "71 tests passed and 9 macOS canonical-path tests failed; the same class is recorded in the prior unchanged-base M0 comparison"
+    },
+    {
+      "name": "repository-wide stable runner",
+      "status": "failed_baseline_only_after_focused_remediation",
+      "result": "401 passed, 9 failed, and 1 skipped files; 4666 passed, 20 failed, and 75 skipped tests; 1 unhandled teardown error; 1805.30 seconds",
+      "assessment": "Six observed listener/exposure fixture failures were closed and the full in-scope three-file suite passed 53/53. The remaining 14 test failures and one failed suite are unchanged inherited workspace, skill-discovery, seed, cleanup, or database-isolation failures."
+    }
+  ],
+  "implementation": {
+    "listener_diagnosis": {
+      "status": "passed",
+      "result": "Linux keeps the independent /proc parser. macOS and restricted Linux hosts use lsof -nP with a two-second command timeout. Numeric IPv4/IPv6 loopback, wildcard, and non-loopback forms are normalized without changing the privileged broker's final fail-closed decision."
+    },
+    "skills_catalog": {
+      "status": "passed",
+      "result": "Each referenced skill receives one shared five-second AbortSignal budget across tree and file reads. Fallback requires exact pinned GitHub identity, portable unique file paths, valid sizes and SHA-256 values, SKILL.md, derived trust-level parity, and a recomputed content hash."
+    },
+    "test_fixture_portability": {
+      "status": "passed",
+      "result": "Non-exposed runtime fixtures no longer attempt an invalid HMR companion above port 65535, while managed exposure cases still exercise the required app/HMR pair."
+    }
+  },
+  "build": {
+    "status": "passed",
+    "command": "pnpm build",
+    "result": "Repository build completed; Skills Catalog generated 17 entries and no generated manifest diff remained.",
+    "notes": "Existing Vite CSS highlighting, font resolution, mixed import, and bundle-size warnings remain non-fatal."
+  },
+  "typecheck": {
+    "status": "passed",
+    "command": "pnpm -r typecheck; final pnpm --filter @paperclipai/server typecheck; final pnpm --filter @paperclipai/skills-catalog typecheck",
+    "result": "Workspace typecheck and migration safety passed; final edited packages passed again after remediation."
+  },
+  "integrity": [
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "result": "806 files scanned; all four gates clean"
+    },
+    {
+      "command": "pnpm check:ui-bundle-budget",
+      "status": "passed",
+      "result": "183 JavaScript files; 11.53 MiB raw / 3.32 MiB gzip total"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    }
+  ],
+  "base_comparison": {
+    "commit": "6e523139fc901627e1825123f969315279a5a54c",
+    "status": "reproduced_with_setup_caveat",
+    "reproduced_classes": [
+      "company skill discovery /tmp versus /private/tmp canonicalization",
+      "workspace runtime cleanup and legacy worktree /tmp canonicalization",
+      "workspace repair precondition mismatch",
+      "ambient-instance worktree seed canonical-path rejection",
+      "workspace instance cleanup canonicalization",
+      "macOS listener diagnosis returning unknown without the B2.5 lsof fallback",
+      "runtime exposure failing to diagnose wildcard app and HMR listeners"
+    ],
+    "load_sensitive_classes": [
+      "heartbeat stale-queue TRUNCATE deadlock passed 24/24 in isolation and has no changed implementation or test file",
+      "workspace runtime port exhaustion and timeout behavior varies with long-run process and socket load",
+      "Company Skills full-run setup timeout resolves to the same nine canonical-path failures when run directly"
+    ],
+    "supporting_prior_evidence": ".verrail/targets/m0-integration-merge-closure/runs/run-001/evidence.json",
+    "caveat": "The exact-base detached install did not build plugin-sdk before the general lane and did not expose a usable embedded-postgres optional binary. Those extra 17 failed suites and 102 skipped files are setup artifacts, not used as base-regression evidence."
+  },
+  "acceptance_coverage": [
+    {
+      "criterion": 1,
+      "status": "covered",
+      "evidence": "Pure lsof parsing plus real macOS loopback, wildcard, and HMR listener tests pass; the broker remains the independent final authority."
+    },
+    {
+      "criterion": 2,
+      "status": "covered",
+      "evidence": "A shared bounded AbortSignal and strict cached-manifest validation are implemented and tested; the package and root builds complete."
+    },
+    {
+      "criterion": 3,
+      "status": "covered",
+      "evidence": "The final B2.5 three-file suite passes 53/53 without using the active development server."
+    },
+    {
+      "criterion": 4,
+      "status": "covered",
+      "evidence": "Cumulative focused tests, workspace typecheck, migration safety, root build, Skills Catalog build, token gates, bundle budget, and diff checks pass."
+    },
+    {
+      "criterion": 5,
+      "status": "covered_with_recorded_baseline",
+      "evidence": "The full gate completed. Deterministic residual classes reproduced on exact base, load-sensitive cases were isolated, and the prior M0 base comparison independently records the same inherited classes."
+    },
+    {
+      "criterion": 6,
+      "status": "covered",
+      "evidence": "Receipt, evidence, timeline, and advisory review are attached. No final human approval or ship action is asserted."
+    }
+  ],
+  "links": [
+    "server/src/services/runtime-exposure/loopback-listener.ts",
+    "server/src/services/runtime-exposure/loopback-listener.test.ts",
+    "server/src/services/workspace-runtime-exposure.test.ts",
+    "packages/skills-catalog/src/catalog-builder.ts",
+    "packages/skills-catalog/src/catalog-builder.test.ts",
+    ".verrail/targets/m0-integration-merge-closure/runs/run-001/evidence.json"
+  ],
+  "manual_notes": [
+    "The cumulative branch is ready for commit and pull-request preparation from a merge-delta perspective, but this record is not merge approval.",
+    "No user-facing product behavior, Telemetry path, commit, push, pull request, merge, deployment, release, or ship record was created in B2.5."
+  ],
+  "missing": [
+    "A globally green inherited Paperclip server suite on this macOS host.",
+    "Independent human review of the cumulative uncommitted batch and its commit boundaries.",
+    "Remote CI confirmation after commit and pull-request creation.",
+    "Push, pull request, merge approval, ship record, deployment, and release."
+  ]
+}

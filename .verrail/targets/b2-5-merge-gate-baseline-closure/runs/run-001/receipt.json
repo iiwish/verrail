@@ -1,0 +1,79 @@
+{
+  "id": "run-001",
+  "target_id": "b2-5-merge-gate-baseline-closure",
+  "agent": "codex",
+  "runner": "Codex desktop local worktree",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "6e523139fc901627e1825123f969315279a5a54c",
+  "output_commit": null,
+  "branch": "codex/verrail-brand-navigation-b1",
+  "working_tree": "uncommitted cumulative Verrail productization batch; no commit, push, pull request, merge, deployment, release, or ship record was created",
+  "changed_files": [
+    "packages/skills-catalog/src/catalog-builder.ts",
+    "packages/skills-catalog/src/catalog-builder.test.ts",
+    "server/src/services/runtime-exposure/loopback-listener.ts",
+    "server/src/services/runtime-exposure/loopback-listener.test.ts",
+    "server/src/services/workspace-runtime-exposure.test.ts",
+    ".verrail/targets/b2-5-merge-gate-baseline-closure/**"
+  ],
+  "commands": [
+    {
+      "command": "pnpm exec vitest run server/src/services/runtime-exposure/loopback-listener.test.ts server/src/services/workspace-runtime-exposure.test.ts packages/skills-catalog/src/catalog-builder.test.ts",
+      "status": "passed",
+      "summary": "Three files and 53 listener, exposure, timeout, fallback, and integrity tests passed after the final portability fixes."
+    },
+    {
+      "command": "pnpm exec vitest run <9 Verrail Conversation, Workspace floor, OpenAPI, Layout, App, management navigation, and route files>",
+      "status": "passed",
+      "summary": "Nine files and 75 cumulative Verrail productization regression tests passed."
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "All selected workspace projects and migration safety passed before final review; server and Skills Catalog typecheck were rerun after the final implementation edit and passed."
+    },
+    {
+      "command": "pnpm build",
+      "status": "passed_with_existing_warnings",
+      "summary": "The repository build completed. Skills Catalog generated 17 skills within the bounded fetch window; existing Vite CSS and chunk warnings remained non-fatal."
+    },
+    {
+      "command": "pnpm --filter @paperclipai/skills-catalog build",
+      "status": "passed",
+      "summary": "The previously unbounded remote-reference step completed in 8.27 seconds and produced no generated manifest diff."
+    },
+    {
+      "command": "pnpm test:run",
+      "status": "failed_baseline_only_after_focused_remediation",
+      "summary": "The completed server general lane reported 401 passed, 9 failed, and 1 skipped files; 4666 passed, 20 failed, and 75 skipped tests, plus one unhandled teardown error. Six failures in the B2.5 listener/exposure fixtures were remediated and the complete three-file in-scope suite then passed 53/53. The remaining 14 observed test failures and one failed suite belong to unchanged inherited workspace, skill-discovery, seed, cleanup, and database-isolation classes."
+    },
+    {
+      "command": "pnpm test:run at detached base 6e523139fc901627e1825123f969315279a5a54c",
+      "status": "failed_with_reproduced_baseline_and_temporary_dependency_gaps",
+      "summary": "The exact base reproduced the deterministic macOS path, workspace repair, seed, cleanup, runtime exposure, and listener failure classes. A minimal detached install lacked built plugin-sdk outputs and a usable embedded-postgres optional binary, so those additional suite failures and skips are excluded from parity counts rather than presented as product regressions."
+    },
+    {
+      "command": "pnpm exec vitest run server/src/__tests__/heartbeat-stale-queue-invalidation.test.ts server/src/__tests__/company-skills-service.test.ts",
+      "status": "baseline_class_confirmed",
+      "summary": "Heartbeat stale-queue invalidation passed all 24 tests in isolation, confirming the full-run deadlock as load-sensitive teardown contamination. Company Skills reproduced its nine inherited macOS canonical-path failures; the same class is recorded in the prior unchanged-base M0 comparison."
+    },
+    {
+      "command": "pnpm check:token-gates && pnpm check:ui-bundle-budget && git diff --check",
+      "status": "passed",
+      "summary": "All four token gates were clean across 806 files, the 11.53 MiB raw / 3.32 MiB gzip UI bundle remained within budget, and the working diff had no whitespace errors."
+    }
+  ],
+  "logs": [
+    "Current full test summary: 401 passed / 9 failed / 1 skipped files; 4666 passed / 20 failed / 75 skipped tests; 1805.30 seconds.",
+    "Exact-base comparison summary: deterministic inherited failure classes reproduced; parity count intentionally rejected because the temporary worktree lacked plugin-sdk build outputs and a usable embedded-postgres optional binary."
+  ],
+  "errors": [
+    {
+      "command": "pnpm test:run",
+      "status": "inherited_baseline_gap",
+      "summary": "The repository-wide server lane is not globally green on this macOS host. Remaining failures are outside the B2.5 merge delta and are carried as an explicit CI/release-readiness condition."
+    }
+  ],
+  "summary": "Made runtime listener diagnosis portable through a bounded lsof fallback, made Skills Catalog remote references bounded with integrity-checked manifest fallback, repaired high-port test fixtures, completed repository gates, and separated the cumulative Verrail merge delta from inherited macOS and test-isolation failures."
+}
