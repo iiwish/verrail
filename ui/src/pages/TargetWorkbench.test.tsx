@@ -8,6 +8,7 @@ import { TargetWorkbench } from "./TargetWorkbench";
 
 const get = vi.hoisted(() => vi.fn());
 const getRevision = vi.hoisted(() => vi.fn());
+const setBreadcrumbs = vi.hoisted(() => vi.fn());
 const route = vi.hoisted(() => ({ targetId: "target-1", tab: "overview", targetRevisionId: undefined as string | undefined }));
 
 vi.mock("@/lib/router", () => ({
@@ -19,7 +20,7 @@ vi.mock("@/lib/router", () => ({
 }));
 vi.mock("../api/targets", () => ({ targetsApi: { get, getRevision } }));
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "workspace-1" }) }));
-vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
+vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs }) }));
 vi.mock("../components/PageTabBar", () => ({
   PageTabBar: ({ items }: { items: Array<{ value: string; label: string }> }) => (
     <div>{items.map((item) => <span key={item.value}>{item.label}</span>)}</div>
@@ -120,6 +121,11 @@ describe("TargetWorkbench", () => {
     expect(container.textContent).toContain("no version-bound Acceptance exists");
     expect(container.querySelector('a[href="/VER/issues/VER-1"]')).not.toBeNull();
     expect(container.textContent).not.toContain("Accepted");
+    expect(setBreadcrumbs).toHaveBeenLastCalledWith([
+      { label: "Projects", href: "/projects" },
+      { label: "Verrail", href: "/projects/project-1/overview" },
+      { label: "Release Verrail" },
+    ]);
   });
 
   it("loads immutable revisions through the revision endpoint", async () => {

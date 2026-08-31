@@ -129,6 +129,16 @@ export interface TargetListResponseV1 {
   projectionPolicyVersion: string;
   asOf: string;
   items: TargetReadModelV1[];
+  summary: {
+    total: number;
+    open: number;
+    attention: number;
+    byProject: Record<string, {
+      total: number;
+      open: number;
+      attention: number;
+    }>;
+  };
   nextCursor: string | null;
 }
 

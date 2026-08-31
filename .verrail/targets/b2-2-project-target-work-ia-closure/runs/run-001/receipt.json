@@ -1,0 +1,79 @@
+{
+  "id": "run-001",
+  "target_id": "b2-2-project-target-work-ia-closure",
+  "agent": "codex",
+  "runner": "Codex desktop local checkout",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "7f1a25c256a835233726161389647090b6c7cab9",
+  "output_commit": "",
+  "branch": "codex/verrail-brand-navigation-b1",
+  "working_tree": "uncommitted B2.2 change set",
+  "changed_files": [
+    "docs/product-design.md",
+    "docs/navigation-contract.md",
+    "docs/target-read-model.md",
+    "packages/shared/src/types/target.ts",
+    "server/src/routes/targets.ts",
+    "server/src/__tests__/target-routes.test.ts",
+    "ui/src/App.tsx",
+    "ui/src/App.test.tsx",
+    "ui/src/pages/Projects.tsx",
+    "ui/src/pages/Projects.test.tsx",
+    "ui/src/pages/ProjectDetail.tsx",
+    "ui/src/pages/ProjectTargets.tsx",
+    "ui/src/i18n/locales/en.json",
+    "ui/src/i18n/locales/zh-CN.json",
+    ".verrail/targets/b2-2-project-target-work-ia-closure/**"
+  ],
+  "commands": [
+    {
+      "command": "pnpm exec vitest run server/src/__tests__/target-routes.test.ts ui/src/pages/Projects.test.tsx ui/src/components/TargetList.test.tsx ui/src/App.test.tsx ui/src/i18n/locale-validation.test.ts",
+      "status": "passed",
+      "summary": "Five files and 32 tests passed after the final Project metric failure-state hardening."
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "All selected workspace projects passed before the final localized UI hardening; the final UI package typecheck also passed."
+    },
+    {
+      "command": "pnpm build",
+      "status": "passed",
+      "summary": "The full workspace build passed. The final UI-only change was then verified by a successful UI package build; existing Vite CSS, font, import, and chunk-size warnings remain non-fatal."
+    },
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "summary": "All four token gates were clean across 801 UI files."
+    },
+    {
+      "command": "browser interaction matrix",
+      "status": "passed",
+      "summary": "Project list metrics, Overview default, embedded Targets, New Target project preselection, Legacy Work copy, inherited task controls, breadcrumbs, and canonical routes worked in the live local stack."
+    },
+    {
+      "command": "pnpm test:run",
+      "status": "failed_environment_baseline",
+      "summary": "401 files passed, 1 skipped, and 8 failed; 4706 tests passed, 19 skipped, and 30 failed. The same inherited runtime, skill discovery, macOS /tmp alias, seed, cleanup, conflict, and loopback groups failed; no B2.2-focused test failed."
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "summary": "The final working-tree diff contains no whitespace errors."
+    }
+  ],
+  "artifacts": [
+    ".verrail/targets/b2-2-project-target-work-ia-closure/runs/run-001/evidence.json",
+    ".verrail/targets/b2-2-project-target-work-ia-closure/runs/run-001/acceptance-mapping.md",
+    ".verrail/targets/b2-2-project-target-work-ia-closure/reviews/review-001.json"
+  ],
+  "errors": [
+    {
+      "command": "pnpm test:run",
+      "status": "inherited_environment_baseline",
+      "summary": "The repository-wide suite is not globally green. The 30 failures match the previously recorded eight-file environment-sensitive baseline and remain an independent merge-review concern."
+    }
+  ],
+  "summary": "B2.2 is implementation-complete. Verrail presents Project -> Target -> Work as the canonical hierarchy, reports authorized Target delivery metrics, opens Projects on Overview, embeds Targets in the Project shell, and contains inherited project Issues under an honest Legacy Work boundary while preserving classic behavior and old deep links. The working tree is intentionally uncommitted and awaits independent review."
+}

@@ -107,6 +107,33 @@ function afterCursor(items: TargetReadModelV1[], cursor: CursorPayload | null) {
   });
 }
 
+function summarizeTargets(items: TargetReadModelV1[]) {
+  const summary = {
+    total: 0,
+    open: 0,
+    attention: 0,
+    byProject: {} as Record<string, { total: number; open: number; attention: number }>,
+  };
+
+  for (const item of items) {
+    const isOpen = item.status !== "accepted" && item.status !== "canceled";
+    const needsAttention = item.attentionSummary.total > 0;
+    summary.total += 1;
+    if (isOpen) summary.open += 1;
+    if (needsAttention) summary.attention += 1;
+
+    const projectId = item.project?.id;
+    if (!projectId) continue;
+    const project = summary.byProject[projectId] ?? { total: 0, open: 0, attention: 0 };
+    project.total += 1;
+    if (isOpen) project.open += 1;
+    if (needsAttention) project.attention += 1;
+    summary.byProject[projectId] = project;
+  }
+
+  return summary;
+}
+
 export function targetRoutes(
   db: Db,
   options: { domainApiClient?: VerrailDomainApiClient | null } = {},
@@ -268,6 +295,7 @@ export function targetRoutes(
         new Date(0).toISOString(),
       ),
       items,
+      summary: summarizeTargets(authorized),
       nextCursor,
     };
   }

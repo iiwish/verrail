@@ -68,6 +68,10 @@ AgentDefinition -> AgentVersion -> Deployment -> Run
 
 围绕一个长期交付方向组织 Target、成员、资源、默认策略和时间线。Project 不是权限边界，权限仍由 Workspace Policy 与 ResourceScope 决定。
 
+Project、Target 与 Work 的规范所有权关系固定为 `Project -> Target -> WorkGraph -> WorkNode`。Project 回答交付属于哪个长期业务空间；Target 固定一次可验收结果及责任边界；WorkNode 表达为达成该 Target 需要完成的执行或门禁。Project 可以聚合展示其全部 Target 的 Work，但聚合视图不改变 WorkNode 的 TargetRevision 和 GraphRevision 归属。
+
+继承实现中的 Project-scoped Issue 是迁移期兼容工作，不构成 `Project -> Task` 领域关系。没有经过显式映射的 Issue 不自动成为 Target，也不由 UI 猜测 Target 归属；新交付工作只在 Target Workbench 的 Work 上下文创建。原生 WorkNode 可用前，兼容 Issue 继续通过明确标注的 Legacy Work 表面操作。
+
 ### Target / TargetRevision
 
 Target 是可交付结果的稳定身份，也是用户判断“是否完成”的主要对象。TargetRevision 是不可变责任合同，固定 Outcome Owner、目标、约束、验收条件、风险等级、截止时间和适用策略。条件或责任边界变化必须形成新 Revision，旧证据与验收不能静默沿用。

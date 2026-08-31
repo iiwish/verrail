@@ -58,6 +58,9 @@ diagnostics/
 # Playwright
 tests/e2e/test-results/
 tests/e2e/playwright-report/
+tests/verrail-acceptance/test-results/
+tests/verrail-acceptance/playwright-report/
+tests/verrail-acceptance/screenshots/
 tests/release-smoke/test-results/
 tests/release-smoke/playwright-report/
 test-results/issue-detail-perf/

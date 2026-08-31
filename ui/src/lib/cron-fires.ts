@@ -137,23 +137,13 @@ interface ZonedParts {
   weekday: number;
 }
 
-function getZonedMinuteParts(date: Date, timeZone: string): ZonedParts {
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    weekday: "short",
-    hourCycle: "h23",
-  });
+function getZonedMinuteParts(date: Date, formatter: Intl.DateTimeFormat): ZonedParts {
   const map: Record<string, string> = {};
   for (const part of formatter.formatToParts(date)) {
     if (part.type !== "literal") map[part.type] = part.value;
   }
   const weekday = WEEKDAY_INDEX[map.weekday ?? ""];
-  if (weekday === undefined) throw new Error(`Unable to resolve weekday for ${timeZone}`);
+  if (weekday === undefined) throw new Error("Unable to resolve weekday");
   return {
     month: Number(map.month),
     day: Number(map.day),
@@ -193,6 +183,22 @@ export function nextCronFires(
   const timeZone = options.timeZone ?? "UTC";
   const after = options.after ?? new Date();
 
+  let formatter: Intl.DateTimeFormat;
+  try {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      weekday: "short",
+      hourCycle: "h23",
+    });
+  } catch {
+    return [];
+  }
+
   const cursor = new Date(after.getTime());
   cursor.setUTCSeconds(0, 0);
   cursor.setUTCMinutes(cursor.getUTCMinutes() + 1);
@@ -203,7 +209,7 @@ export function nextCronFires(
   for (let i = 0; i < maxIterations && fires.length < count; i++) {
     let parts: ZonedParts;
     try {
-      parts = getZonedMinuteParts(cursor, timeZone);
+      parts = getZonedMinuteParts(cursor, formatter);
     } catch {
       return fires;
     }

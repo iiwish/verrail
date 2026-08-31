@@ -770,7 +770,7 @@ describe("CompanyEnvironments — test provider button", () => {
       // bindings even when the environment has none yet.
       "company-1",
     );
-    expect(getEnvironmentFormPage()).toBeNull();
+    await waitForAssertion(() => expect(getEnvironmentFormPage()).toBeNull());
   });
 
   it("confirms before cancelling the edit page with unsaved environment variable drafts", async () => {

@@ -130,6 +130,14 @@ describe("Target read routes", () => {
     const first = await request(app).get(`/api/workspaces/${WORKSPACE_ID}/targets?limit=1`);
     expect(first.status).toBe(200);
     expect(first.body.items).toHaveLength(1);
+    expect(first.body.summary).toEqual({
+      total: 2,
+      open: 2,
+      attention: 0,
+      byProject: {
+        [model().project!.id]: { total: 2, open: 2, attention: 0 },
+      },
+    });
     expect(first.body.nextCursor).toEqual(expect.any(String));
     expect(first.headers.etag).toEqual(expect.any(String));
 
@@ -226,6 +234,14 @@ describe("Target read routes", () => {
     const response = await request(app).get(`/api/workspaces/${WORKSPACE_ID}/targets?limit=1`);
     expect(response.status).toBe(200);
     expect(response.body.items.map((item: TargetReadModelV1) => item.targetId)).toEqual([visible.targetId]);
+    expect(response.body.summary).toEqual({
+      total: 1,
+      open: 1,
+      attention: 0,
+      byProject: {
+        [visible.project!.id]: { total: 1, open: 1, attention: 0 },
+      },
+    });
     expect(response.body.nextCursor).toBeNull();
 
     const invalidLimit = await request(app).get(`/api/workspaces/${WORKSPACE_ID}/targets?limit=101`);

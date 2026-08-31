@@ -1,0 +1,30 @@
+{
+  "target_id": "b2-2-project-target-work-ia-closure",
+  "run_id": "run-001",
+  "decision": "request_changes",
+  "readiness": "implementation_complete_needs_independent_review",
+  "reviewer": "Codex implementation self-review; advisory only, independent reviewer and product-owner acceptance required",
+  "rationale": "The B2.2 implementation closes the competing Project child models without deleting inherited behavior. Authorization precedes Target aggregation, Project rows stop using taskCount in Verrail mode, bare Project routes open Overview, Targets share the Project shell, one New Target action remains, and Legacy Work states the compatibility truth without inventing Target membership. Focused tests, typechecks, builds, token gates, browser journeys, and diff checks passed. Final merge approval is withheld because this is a self-review and the repository-wide suite retains the known eight-file, 30-test environment-sensitive baseline.",
+  "linked_evidence": [
+    ".verrail/targets/b2-2-project-target-work-ia-closure/runs/run-001/receipt.json",
+    ".verrail/targets/b2-2-project-target-work-ia-closure/runs/run-001/evidence.json",
+    ".verrail/targets/b2-2-project-target-work-ia-closure/runs/run-001/acceptance-mapping.md",
+    "docs/product-design.md",
+    "docs/navigation-contract.md",
+    "docs/target-read-model.md",
+    "server/src/routes/targets.ts",
+    "ui/src/pages/ProjectDetail.tsx",
+    "ui/src/pages/Projects.tsx"
+  ],
+  "requested_changes": [
+    "Obtain an independent product and engineering review of the B2.2 diff before commit or merge approval.",
+    "Run the repository-wide suite on a clean host or explicitly accept the inherited eight-file, 30-test baseline before merge."
+  ],
+  "conditions": [
+    "Do not treat this advisory record as permission to commit, merge, deploy, release, or create a ship record.",
+    "Do not infer Target membership for legacy Issues; future migration requires an explicit mapping contract.",
+    "Keep native Target writes in the Go Domain API and add Work only through the future Target-owned WorkGraph contract.",
+    "Preserve classic navigation and bookmarked Issue routes until a separately approved migration removes them."
+  ],
+  "created_at": "2026-08-27T06:52:22Z"
+}

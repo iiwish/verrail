@@ -215,7 +215,7 @@ POST /api/workspaces/:workspaceId/targets/:targetId/reconcile
 
 列表参数为 `limit`、`cursor`、`projectId`、`status`、`ownerId`、`attention` 和 `sort`。`limit` 默认 50、最大 100；默认排序为 `updatedAt desc, targetId asc`。Cursor 绑定 Workspace、Principal、过滤器、排序和投影版本，不能跨条件复用。
 
-列表响应包含 `schemaVersion`、`projectionPolicyVersion`、`asOf`、`items` 和 `nextCursor`。详情响应包含单个模型。服务端支持 `ETag` / `If-None-Match`；ETag 覆盖 Principal、TargetRevision、可见聚合摘要和 Projection Version，不能跨 Principal 共用。
+列表响应包含 `schemaVersion`、`projectionPolicyVersion`、`asOf`、`items`、`summary` 和 `nextCursor`。`summary` 在授权过滤之后、分页之前计算，提供当前查询可见范围的 `total`、`open`、`attention` 及 `byProject` 聚合；Project 列表只能使用这份服务端摘要，不能从未授权数量或当前分页推断 Target 指标。详情响应包含单个模型。服务端支持 `ETag` / `If-None-Match`；ETag 覆盖 Principal、TargetRevision、可见聚合摘要和 Projection Version，不能跨 Principal 共用。
 
 UI Canonical Route 使用 `/:workspacePrefix/targets/:targetId`，API 只接受不可变 Workspace UUID，不接受可变 Prefix。`source.href` 由统一 Route Resolver 生成并只指向有权访问的兼容页。
 

@@ -1,0 +1,125 @@
+{
+  "id": "run-001",
+  "target_id": "b2-3-frontend-acceptance-closure",
+  "agent": "codex",
+  "runner": "Codex desktop local checkout",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "7f1a25c256a835233726161389647090b6c7cab9",
+  "output_commit": "",
+  "branch": "codex/verrail-brand-navigation-b1",
+  "working_tree": "uncommitted combined B2.2 and B2.3 change set",
+  "changed_files": [
+    ".gitignore",
+    ".github/workflows/pr.yml",
+    ".github/workflows/release-verify.yml",
+    "package.json",
+    "ui/package.json",
+    "pnpm-lock.yaml",
+    "ui/src/components/ui/dialog.tsx",
+    "ui/src/components/ui/sheet.tsx",
+    "ui/src/components/ui/dialog-sheet-i18n.test.tsx",
+    "ui/src/components/IssuesList.test.tsx",
+    "ui/src/pages/CompanyEnvironments.test.tsx",
+    "ui/src/lib/cron-fires.ts",
+    "scripts/check-ui-bundle-budget.mjs",
+    "scripts/check-ui-bundle-budget.test.mjs",
+    "scripts/__tests__/release-verify-workflow.test.mjs",
+    "scripts/run-verrail-acceptance.mjs",
+    "tests/verrail-acceptance/playwright.config.ts",
+    "tests/verrail-acceptance/project-target-work.spec.ts",
+    "ui/vite.config.ts",
+    ".verrail/targets/b2-3-frontend-acceptance-closure/**"
+  ],
+  "commands": [
+    {
+      "command": "pnpm build-storybook",
+      "status": "passed",
+      "summary": "Static Storybook build completed after aligning core, React/Vite, docs, a11y, and Vitest packages on exact version 10.5.8. Existing CSS, font, and chunk warnings remain non-fatal."
+    },
+    {
+      "command": "VERRAIL_ACCEPTANCE_OUTPUT_ROOT=.verrail/targets/b2-3-frontend-acceptance-closure/runs/run-001 PAPERCLIP_PLAYWRIGHT_CHANNEL=chrome pnpm test:e2e:verrail-acceptance",
+      "status": "passed",
+      "summary": "Two Playwright projects passed in an isolated disposable instance at 1440x900 and 1024x768, covering Project, Target, Target workbench, and Legacy Work navigation without page or console errors. The explicit output root froze review evidence; the outer runner removes its temporary home after Playwright exits."
+    },
+    {
+      "command": "PAPERCLIP_PLAYWRIGHT_CHANNEL=chrome pnpm test:e2e:verrail-acceptance",
+      "status": "passed",
+      "summary": "The reusable CI-mode journey passed 2 tests in 25.4 seconds, left no temporary acceptance home, wrote only to ignored test output directories, and did not mutate the frozen delivery evidence hashes."
+    },
+    {
+      "command": "node --test scripts/__tests__/release-verify-workflow.test.mjs scripts/check-ui-bundle-budget.test.mjs",
+      "status": "passed",
+      "summary": "All 11 workflow and bundle contract tests passed; PR and release verification both require the Verrail acceptance journey and UI bundle budget."
+    },
+    {
+      "command": "pnpm exec vitest run --project @paperclipai/ui",
+      "status": "passed",
+      "summary": "481 UI test files and 4406 tests passed."
+    },
+    {
+      "command": "pnpm exec vitest run ui/src/lib/cron-fires.test.ts ui/src/components/ui/dialog-sheet-i18n.test.tsx ui/src/pages/CompanyEnvironments.test.tsx ui/src/components/IssuesList.test.tsx ui/src/i18n/locale-validation.test.ts",
+      "status": "passed",
+      "summary": "The final focused acceptance set passed 5 files and 96 tests after the last source edit."
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "All 34 selected workspace projects passed after fixing the cron formatter diagnostic."
+    },
+    {
+      "command": "pnpm build",
+      "status": "passed",
+      "summary": "The full workspace production build passed; inherited non-fatal Vite CSS, font, dynamic-import, and chunk-size warnings remain."
+    },
+    {
+      "command": "pnpm --filter @paperclipai/ui typecheck && pnpm --filter @paperclipai/ui build",
+      "status": "passed",
+      "summary": "The final UI state was revalidated after the Vite entry-scan guard and Playwright lifecycle hardening."
+    },
+    {
+      "command": "pnpm check:ui-bundle-budget",
+      "status": "passed",
+      "summary": "183 JavaScript assets measured 11.50 MiB raw and 3.31 MiB gzip in aggregate; the largest entry was 7.03 MiB raw and 1.94 MiB gzip, within the recorded baseline budgets."
+    },
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "summary": "All four token gates were clean across 802 UI files."
+    },
+    {
+      "command": "pnpm check:brand-assets",
+      "status": "passed",
+      "summary": "All 17 Verrail brand assets validated."
+    },
+    {
+      "command": "pnpm test:run",
+      "status": "failed_environment_baseline",
+      "summary": "398 files passed, 1 skipped, and 11 failed; 4629 tests passed, 99 skipped, and 27 failed. Failures remain in unrelated embedded database startup, macOS /tmp alias, skill discovery, workspace runtime, listener ownership, and remote adapter timing groups; no B2.3 UI file failed."
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "summary": "The final working-tree diff contains no whitespace errors."
+    }
+  ],
+  "artifacts": [
+    ".verrail/targets/b2-3-frontend-acceptance-closure/runs/run-001/evidence.json",
+    ".verrail/targets/b2-3-frontend-acceptance-closure/runs/run-001/acceptance-mapping.md",
+    ".verrail/targets/b2-3-frontend-acceptance-closure/runs/run-001/playwright-report/index.html",
+    ".verrail/targets/b2-3-frontend-acceptance-closure/runs/run-001/screenshots/desktop-1440-project-targets.png",
+    ".verrail/targets/b2-3-frontend-acceptance-closure/runs/run-001/screenshots/desktop-1440-legacy-work.png",
+    ".verrail/targets/b2-3-frontend-acceptance-closure/runs/run-001/screenshots/narrow-desktop-1024-project-targets.png",
+    ".verrail/targets/b2-3-frontend-acceptance-closure/runs/run-001/screenshots/narrow-desktop-1024-legacy-work.png",
+    ".verrail/targets/b2-3-frontend-acceptance-closure/reviews/review-001.json",
+    ".verrail/targets/b2-3-frontend-acceptance-closure/reviews/review-002.json"
+  ],
+  "errors": [
+    {
+      "command": "pnpm test:run",
+      "status": "inherited_environment_baseline",
+      "summary": "The repository-wide suite is not globally green. Its 27 failures are outside the B2 frontend scope and must be accepted or repaired independently before a maintainer claims repository-wide green status."
+    }
+  ],
+  "summary": "B2.3 is implementation-complete. Storybook is aligned and buildable, Vite dependency discovery is scoped to the application entry, the B2 Project-to-Target-to-Work journey has an isolated self-cleaning two-viewport browser gate, shared close controls are localized and keyboard-dismissable, observed UI flakes are stable under the full UI suite, and a measured bundle baseline is enforced in PR and release verification. Frozen delivery evidence is separate from ignored reusable test output. The working tree remains uncommitted and awaits independent review."
+}

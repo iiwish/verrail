@@ -1,0 +1,47 @@
+{
+  "target_id": "b2-2-project-target-work-ia-closure",
+  "spec_version": "1.0",
+  "repo_path": "/Users/iiwish/self/verrail",
+  "branch": "codex/verrail-brand-navigation-b1",
+  "base_commit": "7f1a25c2",
+  "agent": "codex",
+  "prompt": "Close the Project-Target-Work information architecture by making Target the delivery unit inside Project, containing inherited Issues as Legacy Work, preserving classic behavior, and proving the result.",
+  "allowed_actions": [
+    "Update canonical product, navigation, and Target read-model documentation",
+    "Extend authorization-filtered Target list summaries",
+    "Change Project list and detail UI under the Verrail navigation flag",
+    "Preserve and relabel inherited Issue workflows as compatibility UI",
+    "Add focused service, component, route, and locale tests",
+    "Run the local stack and browser verification",
+    "Create B2.2 delivery records and an advisory review decision"
+  ],
+  "forbidden_actions": [
+    "Delete or silently migrate Issue data",
+    "Invent Target membership for legacy Issues",
+    "Move Target write authority outside Go",
+    "Break classic navigation or compatibility deep links",
+    "Commit, merge, deploy, release, or create a ship record without explicit user approval"
+  ],
+  "validation_commands": [
+    "pnpm exec vitest run server/src/__tests__/target-routes.test.ts ui/src/components/TargetList.test.tsx ui/src/App.test.tsx ui/src/i18n/locale-validation.test.ts",
+    "pnpm -r typecheck",
+    "pnpm test:run",
+    "pnpm build",
+    "pnpm check:token-gates",
+    "git diff --check"
+  ],
+  "expected_evidence": [
+    "Authorization-filtered Target summary route coverage",
+    "Project navigation and compatibility behavior tests",
+    "English and Chinese locale parity",
+    "Desktop and narrow browser screenshots and interaction checks",
+    "Repository verification results",
+    "Advisory review decision with no self-approval"
+  ],
+  "stop_conditions": [
+    "The UI would need to infer a Target relationship absent from authoritative data",
+    "Target metrics cannot be calculated after authorization",
+    "Preserving legacy work would require changing Issue behavior",
+    "The change would move native Target authority outside the Go Domain API"
+  ]
+}

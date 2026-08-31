@@ -6,7 +6,6 @@ import type { ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DialogProvider } from "../context/DialogContext";
 import { ProjectDetail } from "./ProjectDetail";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -32,14 +31,20 @@ const mockResourceMembershipsApi = vi.hoisted(() => ({
 }));
 const mockNavigate = vi.hoisted(() => vi.fn());
 const mockSetBreadcrumbs = vi.hoisted(() => vi.fn());
+const mockOpenNewTarget = vi.hoisted(() => vi.fn());
 const mockIssuesList = vi.hoisted(() => vi.fn());
+const mockTargetList = vi.hoisted(() => vi.fn());
 const mockSummarySlotCard = vi.hoisted(() => vi.fn());
 const mockLocation = vi.hoisted(() => ({
   pathname: "/projects/project-1/plugin-operations",
   search: "",
 }));
 const mockCompanyContext = vi.hoisted(() => ({
-  companies: [{ id: "company-1", issuePrefix: "PAP" }] as Array<{ id: string; issuePrefix: string }>,
+  companies: [{ id: "company-1", issuePrefix: "PAP" }] as Array<{
+    id: string;
+    issuePrefix: string;
+    enableVerrailNavigation?: boolean;
+  }>,
   selectedCompanyId: "company-1" as string | null,
 }));
 const mockUsePluginSlots = vi.hoisted(() => vi.fn(() => ({ slots: [] as unknown[], isLoading: false })));
@@ -73,6 +78,9 @@ vi.mock("../context/CompanyContext", () => ({
 vi.mock("../context/PanelContext", () => ({ usePanel: () => ({ closePanel: vi.fn() }) }));
 vi.mock("../context/ToastContext", () => ({ useToastActions: () => ({ pushToast: vi.fn() }) }));
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: mockSetBreadcrumbs }) }));
+vi.mock("../context/DialogContext", () => ({
+  useDialogActions: () => ({ openNewTarget: mockOpenNewTarget }),
+}));
 vi.mock("@/plugins/slots", () => ({
   PluginSlotMount: (props: unknown) => {
     mockPluginSlotMount(props);
@@ -111,6 +119,12 @@ vi.mock("../components/IssuesList", () => ({
   IssuesList: (props: unknown) => {
     mockIssuesList(props);
     return <div data-testid="issues-list" />;
+  },
+}));
+vi.mock("../components/TargetList", () => ({
+  TargetList: (props: unknown) => {
+    mockTargetList(props);
+    return <div data-testid="target-list" />;
   },
 }));
 
@@ -206,6 +220,22 @@ describe("ProjectDetail", () => {
     });
   });
 
+  async function renderCurrentRoute() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    await act(async () => {
+      root = createRoot(container);
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <ProjectDetail />
+        </QueryClientProvider>,
+      );
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+
   afterEach(async () => {
     await act(() => root?.unmount());
     root = null;
@@ -220,9 +250,7 @@ describe("ProjectDetail", () => {
       root = createRoot(container);
       root.render(
         <QueryClientProvider client={queryClient}>
-          <DialogProvider>
-            <ProjectDetail />
-          </DialogProvider>
+          <ProjectDetail />
         </QueryClientProvider>,
       );
     });
@@ -258,9 +286,7 @@ describe("ProjectDetail", () => {
       root = createRoot(container);
       root.render(
         <QueryClientProvider client={queryClient}>
-          <DialogProvider>
-            <ProjectDetail />
-          </DialogProvider>
+          <ProjectDetail />
         </QueryClientProvider>,
       );
     });
@@ -270,6 +296,60 @@ describe("ProjectDetail", () => {
     });
 
     expect(container.textContent).toContain("not-a-date");
+  });
+
+  it("makes Targets the Project delivery surface in Verrail navigation", async () => {
+    mockCompanyContext.companies = [{
+      id: "company-1",
+      issuePrefix: "PAP",
+      enableVerrailNavigation: true,
+    }];
+    mockLocation.pathname = "/projects/project-1/targets";
+
+    await renderCurrentRoute();
+
+    expect(container.querySelector('[data-testid="target-list"]')).not.toBeNull();
+    expect(mockTargetList).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: "company-1",
+      projectId: "project-1",
+    }));
+    expect(container.textContent).toContain("Targets");
+    expect(container.textContent).toContain("Legacy work");
+
+    const newTargetButtons = Array.from(container.querySelectorAll("button"))
+      .filter((button) => button.textContent?.trim() === "New Target");
+    expect(newTargetButtons).toHaveLength(1);
+    act(() => newTargetButtons[0]?.click());
+    expect(mockOpenNewTarget).toHaveBeenCalledWith({ projectId: "project-1" });
+  });
+
+  it("keeps inherited Issues explicit on the Verrail Legacy work route", async () => {
+    mockCompanyContext.companies = [{
+      id: "company-1",
+      issuePrefix: "PAP",
+      enableVerrailNavigation: true,
+    }];
+    mockLocation.pathname = "/projects/project-1/legacy-work";
+
+    await renderCurrentRoute();
+
+    expect(container.textContent).toContain("About legacy work");
+    expect(container.textContent).toContain("no Target relationship is inferred here");
+    expect(container.querySelector('[data-testid="issues-list"]')).not.toBeNull();
+  });
+
+  it("opens the Verrail Project overview from a bare Project route", async () => {
+    mockCompanyContext.companies = [{
+      id: "company-1",
+      issuePrefix: "PAP",
+      enableVerrailNavigation: true,
+    }];
+    mockLocation.pathname = "/projects/project-1";
+
+    await renderCurrentRoute();
+
+    expect(container.querySelector('[data-testid="navigate"]')?.textContent)
+      .toBe("/projects/project-1/overview");
   });
 
   describe("plugin detail-tab deep links", () => {
@@ -291,9 +371,7 @@ describe("ProjectDetail", () => {
         root = createRoot(container);
         root.render(
           <QueryClientProvider client={queryClient}>
-            <DialogProvider>
-              <ProjectDetail />
-            </DialogProvider>
+            <ProjectDetail />
           </QueryClientProvider>,
         );
       });

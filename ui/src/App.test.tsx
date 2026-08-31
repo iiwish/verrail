@@ -274,7 +274,8 @@ describe("Verrail navigation routes", () => {
     expect(appSource).toContain('<Route path="targets/:targetId" element={<TargetOverviewRedirect />} />');
     expect(appSource).toContain('<Route path="targets/:targetId/:tab" element={<TargetWorkbench />} />');
     expect(appSource).toContain('<Route path="targets/:targetId/revisions/:targetRevisionId" element={<TargetWorkbench />} />');
-    expect(appSource).toContain('<Route path="projects/:projectId/targets" element={<ProjectTargets />} />');
+    expect(appSource).toContain('<Route path="projects/:projectId/targets" element={<ProjectDetail />} />');
+    expect(appSource).toContain('<Route path="projects/:projectId/legacy-work" element={<ProjectDetail />} />');
     expect(appSource).toContain('<Route path="infrastructure" element={<VerrailInfrastructure />} />');
     expect(appSource).toContain('<Route path="governance" element={<VerrailGovernance />} />');
   });

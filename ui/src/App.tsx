@@ -101,7 +101,6 @@ import { filterHiddenInstanceSettingsPath, normalizeRememberedInstanceSettingsPa
 import { isVerrailNavigationEnabled, workspaceLandingRoute } from "./lib/verrail-navigation";
 import { VerrailHome } from "./pages/VerrailHome";
 import { VerrailGovernance, VerrailInfrastructure } from "./pages/VerrailOperationsIndex";
-import { ProjectTargets } from "./pages/ProjectTargets";
 import { TargetWorkbench } from "./pages/TargetWorkbench";
 
 const CompanyExport = lazy(() =>
@@ -120,7 +119,8 @@ function boardRoutes() {
         <Route path="targets/:targetId" element={<TargetOverviewRedirect />} />
         <Route path="targets/:targetId/:tab" element={<TargetWorkbench />} />
         <Route path="targets/:targetId/revisions/:targetRevisionId" element={<TargetWorkbench />} />
-        <Route path="projects/:projectId/targets" element={<ProjectTargets />} />
+        <Route path="projects/:projectId/targets" element={<ProjectDetail />} />
+        <Route path="projects/:projectId/legacy-work" element={<ProjectDetail />} />
         <Route path="infrastructure" element={<VerrailInfrastructure />} />
         <Route path="governance" element={<VerrailGovernance />} />
       </Route>
@@ -676,6 +676,7 @@ export function App() {
           <Route path="projects" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/targets" element={<UnprefixedBoardRedirect />} />
+          <Route path="projects/:projectId/legacy-work" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/overview" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/issues" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/issues/:filter" element={<UnprefixedBoardRedirect />} />

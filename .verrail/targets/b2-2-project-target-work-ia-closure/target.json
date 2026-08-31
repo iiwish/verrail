@@ -1,0 +1,27 @@
+{
+  "id": "b2-2-project-target-work-ia-closure",
+  "title": "B2.2 Project-Target-Work Information Architecture Closure",
+  "intent": "Make Project -> Target -> Work the unambiguous Verrail product hierarchy while preserving inherited project-scoped Issue workflows as an explicitly labeled compatibility surface.",
+  "scope": "Align canonical documentation, Project list delivery metrics, Project detail navigation, Target creation and listing, legacy work labeling, route defaults, breadcrumbs, and focused regression coverage without migrating Issue storage or implementing WorkGraph writes.",
+  "non_goals": [
+    "Delete or rewrite inherited Issue data and workflows",
+    "Treat every legacy Issue as a Target",
+    "Implement native WorkGraph, WorkNode, Stage progression, Review, or Acceptance",
+    "Move native Target write authority out of the Go Domain API",
+    "Remove compatibility routes or break bookmarked Project Issue links",
+    "Commit, merge, deploy, release, or create a ship record without explicit approval"
+  ],
+  "acceptance_criteria": [
+    "Canonical product and navigation contracts define Project as the long-lived container, Target as the delivery and acceptance boundary, and WorkItem as Target-owned execution.",
+    "With Verrail navigation enabled, the Project list reports authorization-filtered Target delivery metrics instead of inherited task counts.",
+    "With Verrail navigation enabled, a bare Project route opens Overview and the primary Project tabs put Overview and Targets before administrative and compatibility surfaces.",
+    "Project Targets render inside the Project detail shell with one New Target primary action and consistent breadcrumbs and routes.",
+    "Inherited project-scoped Issues remain fully usable under an explicitly labeled Legacy Work compatibility surface with honest explanatory copy.",
+    "Classic Paperclip navigation retains its Tasks-first behavior and existing Issue routes remain addressable.",
+    "English and Simplified Chinese strings remain in parity and all UI styling passes the token gate.",
+    "Focused route, API, component, typecheck, test, build, browser, and diff verification is recorded truthfully."
+  ],
+  "status": "needs_review",
+  "created_at": "2026-08-27T05:51:17Z",
+  "updated_at": "2026-08-28T02:21:01Z"
+}

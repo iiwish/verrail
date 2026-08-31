@@ -1,0 +1,51 @@
+{
+  "target_id": "b2-3-frontend-acceptance-closure",
+  "spec_version": "1.0",
+  "repo_path": "/Users/iiwish/self/verrail",
+  "branch": "codex/verrail-brand-navigation-b1",
+  "base_commit": "7f1a25c2",
+  "agent": "codex",
+  "prompt": "Close B2.3 frontend acceptance by restoring Storybook, adding isolated browser acceptance, stabilizing observed tests, localizing shared close controls, enforcing a measured bundle baseline, and recording reviewable evidence.",
+  "allowed_actions": [
+    "Align Storybook development dependency versions and lockfile state",
+    "Add focused accessibility and test-stability coverage",
+    "Add isolated Playwright acceptance configuration, seed setup, and journey tests",
+    "Add a measured frontend bundle budget check",
+    "Update shared Dialog and Sheet accessible labels through the existing locale contract",
+    "Run focused and full verification and capture browser screenshots",
+    "Create B2.3 receipt, evidence, acceptance mapping, timeline, and advisory review"
+  ],
+  "forbidden_actions": [
+    "Implement deferred WorkGraph, Stage, Temporal, or Go backend capabilities",
+    "Change the canonical B2 information architecture",
+    "Delete or migrate Issue data",
+    "Hide failing checks or weaken behavioral assertions",
+    "Commit, merge, deploy, release, self-approve, or create a ship record"
+  ],
+  "validation_commands": [
+    "pnpm exec vitest run <focused B2.3 tests>",
+    "pnpm --filter @paperclipai/ui test",
+    "pnpm --filter @paperclipai/ui typecheck",
+    "pnpm build",
+    "pnpm build-storybook",
+    "pnpm test:e2e:verrail-acceptance",
+    "pnpm check:ui-bundle-budget",
+    "pnpm check:token-gates",
+    "pnpm check:brand-assets",
+    "git diff --check"
+  ],
+  "expected_evidence": [
+    "Exact Storybook dependency alignment and successful static build",
+    "Focused accessibility and stability test results",
+    "Isolated desktop and narrow-desktop Playwright results and screenshots",
+    "Production bundle measurements against explicit budgets",
+    "Full UI and repository-facing verification results",
+    "Advisory merge-readiness review with residual risks and no self-approval"
+  ],
+  "stop_conditions": [
+    "Acceptance requires production data or the developer's existing database",
+    "A proposed stabilization would remove or materially weaken assertions",
+    "A browser failure reveals a B2 product regression that cannot be fixed within this slice",
+    "The work would require a deferred domain or orchestration capability"
+  ]
+}
