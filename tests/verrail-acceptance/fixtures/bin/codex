@@ -12,8 +12,6 @@ process.on("SIGTERM", () => {
 });
 
 process.stdin.on("end", () => {
-  if (prompt.includes("[acceptance-empty]")) return;
-
   const emitResponse = () => {
     process.stdout.write(`${JSON.stringify({
       type: "item.completed",
@@ -28,6 +26,8 @@ process.stdin.on("end", () => {
     setTimeout(emitResponse, 10_000);
     return;
   }
+
+  if (prompt.includes("[acceptance-empty]")) return;
 
   emitResponse();
 });
