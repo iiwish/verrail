@@ -229,6 +229,63 @@ describeEmbeddedPostgres("companyService", () => {
     expect(await pluginRegistryService(db).getById(plugin!.id)).toMatchObject({ status: "disabled" });
   });
 
+  it("releases archived navigation routes and validates ownership on reactivation", async () => {
+    const created = await companyService(db).create({
+      name: "Archived Navigation Owner",
+      enableVerrailNavigation: true,
+    });
+    const archived = await companyService(db).archive(created.id);
+    expect(archived).toMatchObject({
+      status: "archived",
+      enableVerrailNavigation: true,
+    });
+
+    const [plugin] = await db.insert(plugins).values({
+      pluginKey: "paperclip.archived-home",
+      packageName: "@paperclipai/archived-home",
+      version: "1.0.0",
+      apiVersion: 1,
+      categories: ["ui"],
+      manifestJson: {
+        id: "paperclip.archived-home",
+        apiVersion: 1,
+        version: "1.0.0",
+        displayName: "Archived Home",
+        description: "A plugin that claims a route released by an archived workspace.",
+        author: "Paperclip",
+        categories: ["ui"],
+        capabilities: [],
+        entrypoints: { ui: "./dist/ui" },
+        ui: {
+          slots: [{
+            type: "page",
+            id: "archived-home-page",
+            displayName: "Archived Home",
+            exportName: "ArchivedHome",
+            routePath: "home",
+          }],
+        },
+      },
+      status: "disabled",
+      installOrder: 1,
+    }).returning();
+
+    await expect(
+      pluginRegistryService(db).updateStatus(plugin!.id, { status: "ready" }),
+    ).resolves.toMatchObject({ status: "ready" });
+
+    await expect(
+      companyService(db).update(created.id, { status: "active" }),
+    ).rejects.toMatchObject({
+      status: 409,
+      details: { code: "VERRAIL_NAVIGATION_ROUTE_CONFLICT" },
+    });
+    expect(await companyService(db).getById(created.id)).toMatchObject({
+      status: "archived",
+      enableVerrailNavigation: true,
+    });
+  });
+
   it("serializes concurrent navigation activation and conflicting plugin readiness", async () => {
     const created = await companyService(db).create({ name: "Concurrent Navigation Guard" });
     const [plugin] = await db.insert(plugins).values({

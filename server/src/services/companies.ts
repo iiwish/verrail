@@ -283,7 +283,9 @@ export function companyService(db: Db) {
     },
 
     create: async (data: typeof companies.$inferInsert) => {
-      const created = data.enableVerrailNavigation === true
+      const willOwnVerrailNavigationRoutes =
+        data.enableVerrailNavigation === true && data.status !== "archived";
+      const created = willOwnVerrailNavigationRoutes
         ? await db.transaction(async (tx) => {
             const txDb = tx as unknown as Db;
             await lockVerrailNavigationRouteOwnership(txDb);
@@ -312,7 +314,15 @@ export function companyService(db: Db) {
           .then((rows) => rows[0] ?? null);
         if (!existing) return null;
 
-        if (data.enableVerrailNavigation === true && !existing.enableVerrailNavigation) {
+        const nextStatus = data.status ?? existing.status;
+        const nextNavigationEnabled =
+          data.enableVerrailNavigation ?? existing.enableVerrailNavigation;
+        const currentlyOwnsVerrailNavigationRoutes =
+          existing.enableVerrailNavigation && existing.status !== "archived";
+        const willOwnVerrailNavigationRoutes =
+          nextNavigationEnabled && nextStatus !== "archived";
+
+        if (willOwnVerrailNavigationRoutes && !currentlyOwnsVerrailNavigationRoutes) {
           const txDb = tx as unknown as Db;
           await lockVerrailNavigationRouteOwnership(txDb);
           await assertVerrailNavigationCanEnable(txDb);
