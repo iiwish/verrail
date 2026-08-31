@@ -201,6 +201,7 @@ describe("company portability", () => {
       requireBoardApprovalForNewAgents: false,
       enableVerrailNavigation: false,
     });
+    companySvc.update.mockReset().mockResolvedValue(null);
     agentSvc.list.mockResolvedValue([
       {
         id: "agent-1",
