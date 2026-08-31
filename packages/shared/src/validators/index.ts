@@ -67,6 +67,19 @@ export {
   type UpdateCompanyBranding,
 } from "./company.js";
 export {
+  conversationStatusSchema,
+  conversationMessageRoleSchema,
+  conversationContextTypeSchema,
+  conversationListQuerySchema,
+  createConversationSchema,
+  updateConversationSchema,
+  sendConversationMessageSchema,
+  type ConversationListQuery,
+  type CreateConversationInput,
+  type UpdateConversationInput,
+  type SendConversationMessageInput,
+} from "./conversation.js";
+export {
   environmentDriverSchema,
   environmentStatusSchema,
   environmentLeaseStatusSchema,

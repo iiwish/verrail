@@ -198,6 +198,11 @@ import {
   registerTargetProjectionSchema,
   targetIdempotencyKeySchema,
   targetListQuerySchema,
+  // Workspace conversations
+  conversationListQuerySchema,
+  createConversationSchema,
+  updateConversationSchema,
+  sendConversationMessageSchema,
   // Tool access
   connectToolAppSchema,
   createToolApplicationSchema,
@@ -2814,6 +2819,82 @@ registry.registerPath({
   summary: "Delete a project",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+// ─── Workspace conversations ────────────────────────────────────────────────
+
+registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/conversations",
+  tags: ["conversations"],
+  summary: "List conversations in a workspace",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    query: conversationListQuerySchema,
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/conversations",
+  tags: ["conversations"],
+  summary: "Create a workspace conversation",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    body: jsonBody(createConversationSchema),
+  },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/conversations/{conversationId}",
+  tags: ["conversations"],
+  summary: "Get a workspace conversation and its messages",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), conversationId: z.string().uuid() }),
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/workspaces/{workspaceId}/conversations/{conversationId}",
+  tags: ["conversations"],
+  summary: "Rename, pin, archive, or restore a workspace conversation",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), conversationId: z.string().uuid() }),
+    body: jsonBody(updateConversationSchema),
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/messages/stream",
+  tags: ["conversations"],
+  summary: "Append a user message and stream the local assistant response",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), conversationId: z.string().uuid() }),
+    body: jsonBody(sendConversationMessageSchema),
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    404: r.notFound,
+    409: r.conflict,
+    429: r.tooManyRequests,
+    503: r.serviceUnavailable,
+  },
 });
 
 // ─── Target domain and compatibility read model ─────────────────────────────

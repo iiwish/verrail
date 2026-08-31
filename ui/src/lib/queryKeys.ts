@@ -1,4 +1,11 @@
 export const queryKeys = {
+  conversations: {
+    all: (workspaceId: string) => ["conversations", workspaceId] as const,
+    list: (workspaceId: string, status: "active" | "archived", q = "") =>
+      ["conversations", workspaceId, "list", status, q] as const,
+    detail: (workspaceId: string, conversationId: string) =>
+      ["conversations", workspaceId, "detail", conversationId] as const,
+  },
   targets: {
     list: (
       workspaceId: string,

@@ -1,4 +1,5 @@
 export { companyService } from "./companies.js";
+export { conversationService } from "./conversations.js";
 export { companyArtifactsService } from "./company-artifacts.js";
 export { companySearchService } from "./company-search.js";
 export { companySearchExtractService } from "./company-search-extract.js";
