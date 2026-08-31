@@ -7,6 +7,7 @@ import {
   diagnoseRuntimeListenerBinds,
   formatProcAddressHex,
   listenerBindFactsForPort,
+  listenerBindFactsFromLsof,
   parseProcNetListeners,
 } from "./loopback-listener.js";
 
@@ -128,6 +129,32 @@ describe("listenerBindFactsForPort", () => {
   });
 });
 
+describe("listenerBindFactsFromLsof", () => {
+  it("accepts numeric IPv4 and IPv6 loopback listeners", () => {
+    expect(listenerBindFactsFromLsof("p101\nn127.0.0.1:42003\np102\nn[::1]:42003\n")).toEqual({
+      present: true,
+      loopbackOnly: true,
+      addresses: ["127.0.0.1", "::1"],
+    });
+  });
+
+  it("rejects wildcard and non-loopback listeners", () => {
+    expect(listenerBindFactsFromLsof("p101\nn*:42003\np102\nn100.123.243.20:42003\n")).toEqual({
+      present: true,
+      loopbackOnly: false,
+      addresses: ["*", "100.123.243.20"],
+    });
+  });
+
+  it("reports an empty lsof result as absent", () => {
+    expect(listenerBindFactsFromLsof("")).toEqual({
+      present: false,
+      loopbackOnly: true,
+      addresses: [],
+    });
+  });
+});
+
 describe("diagnoseRuntimeListenerBinds against live listeners", () => {
   const appPort = RUNTIME_EXPOSURE_APP_PORT_MIN + 900;
   const hmrPort = deriveViteHmrPort(appPort);
@@ -160,8 +187,9 @@ describe("diagnoseRuntimeListenerBinds against live listeners", () => {
     await withListener(appPort, undefined, async () => {
       const diagnosis = await diagnoseRuntimeListenerBinds([appPort]);
       expect(diagnosis).toContain(`port ${appPort}`);
-      // Node's hostless listen is dual-stack, so /proc shows :: and/or 0.0.0.0.
-      expect(diagnosis).toMatch(/0\.0\.0\.0|::/);
+      // Node's hostless listen is dual-stack. /proc shows ::/0.0.0.0 and
+      // lsof may collapse that into a single wildcard marker.
+      expect(diagnosis).toMatch(/0\.0\.0\.0|::|\*/);
       expect(diagnosis).toContain("--bind loopback");
     });
   });

@@ -59,7 +59,7 @@ import { useTranslation } from "@/i18n";
  * shelf components so a decision looks, groups, and resolves the same wherever it
  * is surfaced.
  */
-export function DecisionQueuePage() {
+export function DecisionQueuePage({ basePath = "/decisions" }: { basePath?: string }) {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToastActions();
@@ -128,8 +128,15 @@ export function DecisionQueuePage() {
   }, [agents]);
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Decisions", href: "/decisions" }, { label: queue?.title ?? queueKey }]);
-  }, [setBreadcrumbs, queue?.title, queueKey]);
+    const breadcrumbs = [
+      { label: t("nav.decisions"), href: basePath },
+      { label: queue?.title ?? queueKey },
+    ];
+    if (basePath.startsWith("/governance")) {
+      breadcrumbs.unshift({ label: t("nav.governance"), href: "/governance" });
+    }
+    setBreadcrumbs(breadcrumbs);
+  }, [basePath, queue?.title, queueKey, setBreadcrumbs, t]);
 
   // Re-hydrate per-company preferences when the company changes.
   useEffect(() => {
@@ -242,7 +249,7 @@ export function DecisionQueuePage() {
       </div>
 
       <div className="space-y-2">
-        <DecisionQueueRail companyId={selectedCompanyId} activeQueueKey={queueKey} />
+        <DecisionQueueRail companyId={selectedCompanyId} activeQueueKey={queueKey} basePath={basePath} />
         <DecisionDateChips
           value={dateRange}
           custom={customRange}

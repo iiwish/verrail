@@ -1,10 +1,10 @@
 # Verrail 后续产品目标与路线
 
-版本：0.2
+版本：0.3
 
 状态：`Confirmed`
 
-最后更新：2026-08-26
+最后更新：2026-08-28
 
 审核要求：确认产品差异化、首个纵向闭环、阶段顺序和企业执行边界后进入实施
 
@@ -118,7 +118,7 @@ GitHub 需求
 - 以 [`navigation-contract.md`](./navigation-contract.md) 发布 Home、Projects、Agents、Infrastructure、Governance 和 Settings 新导航；
 - 现有 Company/Project/Issue 能通过兼容映射逐步迁移，不进行一次性破坏式换表。
 
-退出门槛：用户不需要理解 CEO、组织图、Heartbeat 或 Temporal，就能创建版本化 Target、看到阶段与责任人，并进入真实运行记录；服务重启不会丢失 Workflow 唤醒。
+退出门槛：用户不需要理解 CEO、组织图、Heartbeat、Workspace 租户结构或 Temporal，就能创建版本化 Target、看到阶段与责任人，并进入真实运行记录；服务重启不会丢失 Workflow 唤醒。
 
 ### G2：可信交付闭环
 

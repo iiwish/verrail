@@ -24,6 +24,7 @@ const CATALOG_SCHEMA_VERSION = 1;
 const SKILL_ENTRYPOINT = "SKILL.md";
 const CATALOG_REFERENCE_FILE = "catalog-ref.json";
 const MAX_CATALOG_FILE_BYTES = 1024 * 1024;
+const DEFAULT_REFERENCE_FETCH_TIMEOUT_MS = 5_000;
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const CATALOG_KINDS = new Set<CatalogSkillKind>(["bundled", "optional"]);
 
@@ -66,6 +67,7 @@ interface GitHubTreeEntry {
 interface BuildCatalogManifestOptions {
   packageDir: string;
   generatedAt?: string;
+  referenceFetchTimeoutMs?: number;
 }
 
 interface BuildCatalogManifestResult {
@@ -115,6 +117,7 @@ export async function buildCatalogManifest(
       candidate,
       errors,
       existingSkillsById.get(skillIdForCandidate(candidate)) ?? null,
+      options.referenceFetchTimeoutMs ?? DEFAULT_REFERENCE_FETCH_TIMEOUT_MS,
     );
     if (skill) skills.push(skill);
   }
@@ -261,9 +264,16 @@ async function buildCatalogSkill(
   candidate: SkillCandidate,
   errors: string[],
   existingSkill: CatalogSkill | null,
+  referenceFetchTimeoutMs: number,
 ): Promise<CatalogSkill | null> {
   if (candidate.source === "reference") {
-    return buildReferencedCatalogSkill(packageDir, candidate, errors, existingSkill);
+    return buildReferencedCatalogSkill(
+      packageDir,
+      candidate,
+      errors,
+      existingSkill,
+      referenceFetchTimeoutMs,
+    );
   }
 
   const prefix = relativePackagePath(packageDir, candidate.absolutePath);
@@ -333,6 +343,7 @@ async function buildReferencedCatalogSkill(
   candidate: Extract<SkillCandidate, { source: "reference" }>,
   errors: string[],
   existingSkill: CatalogSkill | null,
+  referenceFetchTimeoutMs: number,
 ): Promise<CatalogSkill | null> {
   const prefix = relativePackagePath(packageDir, candidate.absolutePath);
   validateSlug("category", candidate.category, prefix, errors);
@@ -354,9 +365,22 @@ async function buildReferencedCatalogSkill(
     ? existingSkill
     : null;
   const errorStart = errors.length;
+  const fetchSignal = AbortSignal.timeout(Math.max(1, Math.floor(referenceFetchTimeoutMs)));
 
-  const files = await collectReferencedSkillFiles(source, descriptor.files ?? [SKILL_ENTRYPOINT], prefix, errors);
-  const skillMarkdown = await readReferencedFileText(source, SKILL_ENTRYPOINT, prefix, errors);
+  const files = await collectReferencedSkillFiles(
+    source,
+    descriptor.files ?? [SKILL_ENTRYPOINT],
+    prefix,
+    errors,
+    fetchSignal,
+  );
+  const skillMarkdown = await readReferencedFileText(
+    source,
+    SKILL_ENTRYPOINT,
+    prefix,
+    errors,
+    fetchSignal,
+  );
   if (!skillMarkdown) {
     const nextErrors = errors.slice(errorStart);
     if (fallbackSkill && canFallbackToExistingReferencedSkill(nextErrors)) {
@@ -438,7 +462,11 @@ function canReuseExistingReferencedSkill(
   source: CatalogSkillSource,
   expectedPath: string,
 ) {
-  if (!existingSkill || existingSkill.source?.type !== "github") return false;
+  if (
+    !existingSkill ||
+    existingSkill.source?.type !== "github" ||
+    !hasValidReferencedSkillCache(existingSkill)
+  ) return false;
   const existingSource = existingSkill.source;
   return (
     existingSkill.id === skillIdForCandidate(candidate) &&
@@ -449,6 +477,29 @@ function canReuseExistingReferencedSkill(
     existingSource.ref === source.ref &&
     existingSource.commit === source.commit &&
     existingSource.path === source.path
+  );
+}
+
+function hasValidReferencedSkillCache(skill: CatalogSkill) {
+  if (skill.files.length === 0) return false;
+  const paths = new Set<string>();
+  for (const file of skill.files) {
+    const normalizedPath = normalizeReferencedPath(file.path);
+    if (
+      !normalizedPath ||
+      normalizedPath !== file.path ||
+      paths.has(file.path) ||
+      !Number.isInteger(file.sizeBytes) ||
+      file.sizeBytes < 0 ||
+      file.sizeBytes > MAX_CATALOG_FILE_BYTES ||
+      !/^[0-9a-f]{64}$/i.test(file.sha256)
+    ) return false;
+    paths.add(file.path);
+  }
+  return (
+    skill.files.some((file) => file.path === SKILL_ENTRYPOINT && file.kind === "skill") &&
+    skill.trustLevel === deriveTrustLevel(skill.files) &&
+    skill.contentHash === buildContentHash(skill.files)
   );
 }
 
@@ -566,8 +617,9 @@ async function collectReferencedSkillFiles(
   includePatterns: string[],
   prefix: string,
   errors: string[],
+  signal: AbortSignal,
 ): Promise<CatalogSkillFile[]> {
-  const tree = await fetchGitHubTree(source, prefix, errors);
+  const tree = await fetchGitHubTree(source, prefix, errors, signal);
   const sourceRoot = source.path ? `${source.path}/` : "";
   const normalizedPatterns: string[] = [];
   for (const pattern of includePatterns) {
@@ -590,7 +642,7 @@ async function collectReferencedSkillFiles(
       continue;
     }
 
-    const bytes = await fetchReferencedFileBytes(source, relativePath, prefix, errors);
+    const bytes = await fetchReferencedFileBytes(source, relativePath, prefix, errors, signal);
     if (!bytes) continue;
     files.push({
       path: relativePath,
@@ -612,10 +664,14 @@ async function fetchGitHubTree(
   source: CatalogSkillSource,
   prefix: string,
   errors: string[],
+  signal: AbortSignal,
 ): Promise<GitHubTreeEntry[]> {
   const url = `${githubApiBase(source.hostname)}/repos/${source.owner}/${source.repo}/git/trees/${source.commit}?recursive=1`;
   try {
-    const response = await fetch(url, { headers: { accept: "application/vnd.github+json" } });
+    const response = await fetch(url, {
+      headers: { accept: "application/vnd.github+json" },
+      signal,
+    });
     if (!response.ok) {
       errors.push(`${prefix} failed to fetch GitHub tree: HTTP ${response.status}.`);
       return [];
@@ -634,8 +690,9 @@ async function readReferencedFileText(
   relativePath: string,
   prefix: string,
   errors: string[],
+  signal: AbortSignal,
 ) {
-  const bytes = await fetchReferencedFileBytes(source, relativePath, prefix, errors);
+  const bytes = await fetchReferencedFileBytes(source, relativePath, prefix, errors, signal);
   return bytes ? bytes.toString("utf8") : null;
 }
 
@@ -644,6 +701,7 @@ async function fetchReferencedFileBytes(
   relativePath: string,
   prefix: string,
   errors: string[],
+  signal: AbortSignal,
 ): Promise<Buffer | null> {
   const normalizedPath = normalizeReferencedPath(relativePath);
   if (!normalizedPath) {
@@ -652,7 +710,7 @@ async function fetchReferencedFileBytes(
   }
   const url = rawGitHubUrl(source, normalizedPath);
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, { signal });
     if (!response.ok) {
       errors.push(`${prefix}/${normalizedPath} failed to fetch pinned GitHub file: HTTP ${response.status}.`);
       return null;

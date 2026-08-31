@@ -9,7 +9,7 @@ import {
   Settings,
   ShieldCheck,
 } from "lucide-react";
-import { Link } from "@/lib/router";
+import { Link, useLocation } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
@@ -20,12 +20,18 @@ import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
 import { SidebarNavItem } from "./SidebarNavItem";
 import { SidebarSection } from "./SidebarSection";
 import { VerrailBrand } from "./VerrailBrand";
+import { resolveVerrailManagementSection } from "../lib/verrail-section-navigation";
 
 export function VerrailSidebar() {
   const { t } = useTranslation();
-  const { selectedCompanyId, selectedCompany } = useCompany();
+  const { companies, selectedCompanyId, selectedCompany } = useCompany();
   const { isMobile, collapsed, collapseLocked, peeking, toggleCollapsed, setCollapsed } = useSidebar();
+  const location = useLocation();
   const rail = collapsed && !peeking;
+  const projectsActive = resolveVerrailManagementSection(
+    location.pathname,
+    selectedCompany?.issuePrefix,
+  ) === "projects";
   const pluginContext = {
     companyId: selectedCompanyId,
     companyPrefix: selectedCompany?.issuePrefix ?? null,
@@ -65,14 +71,21 @@ export function VerrailSidebar() {
         ) : null}
       </div>
 
-      <div className="shrink-0 px-3 pb-2">
-        <SidebarCompanyMenu />
-      </div>
+      {(companies ?? []).filter((company) => company.status !== "archived").length > 1 ? (
+        <div className="shrink-0 px-3 pb-2">
+          <SidebarCompanyMenu />
+        </div>
+      ) : null}
 
       <nav className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 py-2 scrollbar-auto-hide pointer-coarse:gap-3">
         <div className="flex flex-col gap-0.5" data-testid="verrail-primary-navigation">
           <SidebarNavItem to="/home" label={t("nav.home")} icon={House} end />
-          <SidebarNavItem to="/projects" label={t("nav.projects")} icon={FolderKanban} />
+          <SidebarNavItem
+            to="/projects"
+            label={t("nav.projects")}
+            icon={FolderKanban}
+            active={projectsActive}
+          />
           <SidebarNavItem to="/agents" label={t("nav.agents")} icon={Bot} />
           <SidebarNavItem to="/infrastructure" label={t("nav.infrastructure")} icon={ServerCog} />
           <SidebarNavItem to="/governance" label={t("nav.governance")} icon={ShieldCheck} />

@@ -440,12 +440,12 @@ export function decideByLabel(decideBy: string | null): string {
 
 export type AttentionDateRangeId = "all" | "today" | "yesterday" | "last_7_days" | "this_month" | "custom";
 
-export const ATTENTION_DATE_RANGE_OPTIONS: ReadonlyArray<[AttentionDateRangeId, string]> = [
-  ["all", "All"],
-  ["today", "Today"],
-  ["yesterday", "Yesterday"],
-  ["last_7_days", "Last 7 days"],
-  ["this_month", "This month"],
+export const ATTENTION_DATE_RANGE_OPTIONS: ReadonlyArray<Exclude<AttentionDateRangeId, "custom">> = [
+  "all",
+  "today",
+  "yesterday",
+  "last_7_days",
+  "this_month",
 ];
 
 export interface AttentionActivityBounds {

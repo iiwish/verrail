@@ -1,10 +1,10 @@
 # Verrail 导航与路由迁移合同
 
-版本：0.2
+版本：0.4
 
 状态：`Confirmed`
 
-最后更新：2026-08-26
+最后更新：2026-08-28
 
 变更要求：一级信息架构、Canonical Route、路由身份、权限或兼容窗口发生变化时重新评审本合同
 
@@ -53,6 +53,10 @@ Home 支持 Project、Role、Stage、Status 和 Owner 筛选。没有真实数�
 
 Project 的规范产品层级是 `Project -> Target -> Work`。Project 导航以 Overview 和 Targets 为主；Work 只在 Target Workbench 内作为正式执行表面。Project 可以提供跨 Target 的只读工作聚合，但必须按 Target 分组且创建 Work 时要求确定 Target。继承的 Project-scoped Issue 保留在 Legacy Work 兼容表面，不与 Targets 并列表达新的领域所有权。
 
+Projects 使用领域层级型上下文二级侧栏。侧栏提供全部项目入口、当前 Principal 可见的 Project 列表和创建操作；选中 Project 在原位展开当前 Principal 可见的 Target 列表，而不是展开 Project 功能菜单。进入 Target Workbench 后保持同一 Projects 侧栏、所属 Project 和选中 Target，使 `Project -> Target` 关系持续可见。
+
+Project 行进入独立 Project Detail。Overview、Resources、Plugin 能力、Settings、Budget 与 Legacy Work 属于 Project Detail 内部导航，不占用对象层级侧栏；Project Targets 页面提供筛选、创建和批量查看，侧栏负责在 Project 与 Target 之间快速切换。Target 和 Legacy Work 不作为 Project 的同级对象展示。
+
 | 对象 | Canonical Route | 主要表面 |
 | --- | --- | --- |
 | Project 列表 | `/projects` | Project、活动 Target、健康和最近活动 |
@@ -76,11 +80,15 @@ Target Workbench 始终显示 Target 标题、状态、Outcome Owner、当前 St
 | 表面 | 二级路由 |
 | --- | --- |
 | Agents | `/agents/definitions`、`/agents/evaluations`、`/agents/deployments` |
-| Infrastructure | `/infrastructure/runners`、`/infrastructure/runtime-pools`、`/infrastructure/connectors`、`/infrastructure/secrets`、`/infrastructure/storage` |
-| Governance | `/governance/attention`、`/governance/policies`、`/governance/approvals`、`/governance/audit`、`/governance/costs` |
+| Infrastructure | `/infrastructure/secrets`、`/infrastructure/environments`、`/infrastructure/adapters`、`/infrastructure/plugins` |
+| Governance | `/governance/attention`、`/governance/approvals`、`/governance/audit`、`/governance/costs` |
 | Settings | `/settings/general`、`/settings/members`、`/settings/access`、`/settings/integrations`、`/settings/billing`、`/settings/experimental` |
 
-管理栏目可以先使用聚合 Landing Page 和兼容链接，不要求第一批重写所有内部页面。
+Infrastructure 与 Governance 使用和 Settings 一致的上下文二级侧栏。一级入口直接进入第一个可操作页面，不使用只包含链接的聚合列表。二级侧栏只发布具备真实读取、操作、空状态和错误状态的能力；Runner、Runtime Pool、Connector、Storage、Policy 和数据策略在对应能力可用前不显示占位入口。
+
+Agents 使用对象列表型上下文二级侧栏。侧栏主体是当前 Principal 可见的 Agent 列表，提供创建、快速切换、运行状态和选中态；All Agents 是集合入口，Deployments 是运行投影视图，不与 Agent 对象列表竞争主体位置。Definitions 的配置与版本能力归入具体 Agent 工作区；Evaluations 只有在真实评测合同和页面可用后显示。`All`、`Active`、`Paused`、`Error` 和 `Built-in` 是集合页筛选，不定义二级领域栏目。
+
+Infrastructure 的当前页面复用既有 Environment、Secret、Adapter 和 Plugin 能力，Governance 的当前页面复用 Attention、Approval、Activity 和 Cost 能力。Canonical Route 负责稳定导航身份，兼容路由继续保留原有深链、API 和写入所有权。Settings 只承担 Workspace 与实例配置，不重复展示已经归属 Infrastructure 的 Environment、Secret、Adapter 和 Plugin 管理入口。
 
 ## 7. 当前路由映射
 
@@ -95,7 +103,7 @@ Target Workbench 始终显示 Target 标题、状态、Outcome Owner、当前 St
 | `/routines/*` | Target Trigger/Automation 或 Settings Advanced | 保留兼容深链 |
 | `/pipelines/*`、`/review-queue` | ProcessTemplate、StageTemplate、Work/Review | 新对象存在前保留实验门禁和深链 |
 | `/artifacts` | Target Artifacts 和全局 Artifact Search | 保留全局兼容入口，新增链接优先进入 Target |
-| `/agents/*` | `/agents/*` | 路由保持，页面语义迁移为 Definition/Version/Deployment |
+| `/agents/all`、`/agents/active`、`/agents/paused`、`/agents/error`、`/agents/builtin` | `/agents/definitions`、`/agents/deployments` | 旧筛选深链保持；新二级导航按 Definition 与 Deployment 组织 |
 | `/workspaces`、`/execution-workspaces/*` | `/infrastructure/*` | 保留现有详情深链和运行诊断 |
 | `/apps/*`、Tool/Connector 设置 | `/infrastructure/connectors` | Plugin/Provider 自有子路由保持协议兼容 |
 | `/approvals/*` | `/governance/approvals` | 分离 Action Approval、Decision、Review 和 Acceptance 后迁移 |
@@ -131,6 +139,7 @@ Target Workbench 始终显示 Target 标题、状态、Outcome Owner、当前 St
 16. Verrail 模式中的 Project 裸路由固定进入 Overview，不读取继承 Tasks Tab 缓存；Project 一级操作只创建 Target，`New Task` 不出现在 Project Overview 或 Targets。
 17. `/projects/:projectId/issues` 及其筛选深链继续打开同一兼容工作数据；Verrail 新链接使用 `/projects/:projectId/legacy-work`，经典导航继续使用原 Tasks 命名和路径。
 18. Project 列表中的 Target 数量、Attention 和健康摘要必须在服务端完成 Principal 授权过滤后计算，不从分页行数、隐藏对象或旧 `taskCount` 推断。
+19. Projects 与 Agents 的二级侧栏都以对象切换为主，但遵循各自领域层级。Projects 选中 Project 后展开 Target 列表，Project 管理功能收口在 Project Detail；Agents 选中 Agent 后展开该 Agent 的功能入口。移动端使用同一信息架构的抽屉呈现。
 
 ### Target 只读投影前提
 

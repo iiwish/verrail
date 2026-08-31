@@ -280,6 +280,7 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
   const budgets = budgetService(db);
   const artifacts = companyArtifactsService(db, storage);
   const feedback = feedbackService(db);
+  let localDefaultWorkspacePromise: Promise<Awaited<ReturnType<typeof svc.create>>> | null = null;
   const importJobs = new Map<string, ImportJobRecord>();
   // Terminal jobs are retained in memory for an hour after they settle. A long
   // import can outlast a user stepping away, and dropping the completion after
@@ -352,7 +353,42 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
 
   router.get("/", async (req, res) => {
     assertBoard(req);
-    const result = await svc.list();
+    let result = await svc.list();
+    if (
+      result.length === 0
+      && req.actor.source === "local_implicit"
+      && !isCloudManagedInstance()
+    ) {
+      localDefaultWorkspacePromise ??= (async () => {
+        const ownerPrincipalId = req.actor.userId ?? "local-board";
+        const workspace = await svc.create({
+          name: "My Workspace",
+          description: "",
+          defaultResponsibleUserId: ownerPrincipalId,
+          enableVerrailNavigation: true,
+        });
+        await access.ensureMembership(workspace.id, "user", ownerPrincipalId, "owner", "active");
+        await access.ensureRoleDefaultGrants(
+          workspace.id,
+          ownerPrincipalId,
+          "owner",
+          req.actor.userId ?? null,
+        );
+        await logActivity(db, {
+          companyId: workspace.id,
+          actorType: "system",
+          actorId: "workspace-bootstrap",
+          action: "workspace.default_created",
+          entityType: "company",
+          entityId: workspace.id,
+          details: { source: "local_trusted_bootstrap" },
+        });
+        return workspace;
+      })().finally(() => {
+        localDefaultWorkspacePromise = null;
+      });
+      result = [await localDefaultWorkspacePromise];
+    }
     if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) {
       res.json(result);
       return;

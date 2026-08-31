@@ -48,7 +48,7 @@ afterEach(async () => {
 function serviceCommand() {
   // Answers `/api/health` the way a real Paperclip dev runtime does: managed
   // publication requires semantic health, not just a 200 (PAP-17572).
-  return `node -e 'const http=require("http");const p=Number(process.env.PORT);for(const q of [p,p+10000])http.createServer((rq,r)=>{if(rq.url==="/api/health"){r.setHeader("content-type","application/json");r.end(JSON.stringify({status:"ok"}));return}r.statusCode=200;r.end("ok")}).listen(q,"127.0.0.1");setInterval(()=>{},1000)'`;
+  return `node -e 'const http=require("http");const p=Number(process.env.PORT);for(const q of p+10000<=65535?[p,p+10000]:[p])http.createServer((rq,r)=>{if(rq.url==="/api/health"){r.setHeader("content-type","application/json");r.end(JSON.stringify({status:"ok"}));return}r.statusCode=200;r.end("ok")}).listen(q,"127.0.0.1");setInterval(()=>{},1000)'`;
 }
 
 /**
@@ -86,7 +86,7 @@ const p = Number(process.env.PORT);
 // Even a pre-exposure checkout answered /api/health semantically; these guests
 // model bind behaviour, not health behaviour.
 const health = (rq, r) => { if (rq.url === "/api/health") { r.setHeader("content-type", "application/json"); r.end(JSON.stringify({ status: "ok" })); return true; } return false; };
-for (const q of [p, p + 10000]) {
+for (const q of p + 10000 <= 65535 ? [p, p + 10000] : [p]) {
   http.createServer((rq, r) => { if (health(rq, r)) return; r.statusCode = 200; r.end("ok"); }).listen(q, host);
 }
 setInterval(() => {}, 1000);
@@ -622,7 +622,7 @@ describe("loopback bind is forced on the guest, not merely requested (PAP-17256)
       command: guestCommand("dev-runner-legacy.mjs"),
       expose: LEGACY_HTTP_EXPOSE,
       port: { type: "auto", envKey: "PORT" },
-    }))).rejects.toThrow(/listener_ownership_mismatch.*(?:0\.0\.0\.0|::)/s);
+    }))).rejects.toThrow(/listener_ownership_mismatch.*(?:0\.0\.0\.0|::|\*)/s);
 
     // Terminal recovery: the reservation is released and nothing was exposed.
     // The diagnosis runs before the broker, so `expose` is never attempted.

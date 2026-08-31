@@ -31,6 +31,7 @@ const mockCompanyContext = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/router", () => ({
+  useLocation: () => ({ pathname: "/PAP/home", search: "", hash: "", state: null }),
   Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => (
     <a href={to} {...props}>{children}</a>
   ),

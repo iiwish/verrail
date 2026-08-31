@@ -14,6 +14,7 @@ const mockPluginsApi = vi.hoisted(() => ({
   list: vi.fn(),
 }));
 const mockUsePluginSlots = vi.hoisted(() => vi.fn());
+const mockUseCompany = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/router", () => ({
   Link: ({
@@ -39,10 +40,7 @@ vi.mock("@/lib/router", () => ({
 }));
 
 vi.mock("@/context/CompanyContext", () => ({
-  useCompany: () => ({
-    selectedCompanyId: "company-1",
-    selectedCompany: { id: "company-1", name: "Paperclip" },
-  }),
+  useCompany: mockUseCompany,
 }));
 
 vi.mock("@/context/SidebarContext", () => ({
@@ -113,6 +111,10 @@ describe("CompanySettingsSidebar", () => {
       slots: [],
       isLoading: false,
       errorMessage: null,
+    });
+    mockUseCompany.mockReturnValue({
+      selectedCompanyId: "company-1",
+      selectedCompany: { id: "company-1", name: "Paperclip" },
     });
   });
 
@@ -294,6 +296,40 @@ describe("CompanySettingsSidebar", () => {
     });
   });
 
+  it("keeps infrastructure ownership out of Settings for Verrail workspaces", async () => {
+    mockUseCompany.mockReturnValue({
+      selectedCompanyId: "company-1",
+      selectedCompany: { id: "company-1", name: "Verrail", enableVerrailNavigation: true },
+    });
+    const root = createRoot(container);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <CompanySettingsSidebar />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+
+    expect(container.textContent).toContain("General");
+    expect(container.textContent).toContain("Members");
+    expect(container.textContent).toContain("Access");
+    expect(container.textContent).not.toContain("Environments");
+    expect(container.textContent).not.toContain("Secrets");
+    expect(container.textContent).not.toContain("Plugins");
+    expect(container.textContent).not.toContain("Adapters");
+    expect(container.querySelector('button[data-to="/home"]')).not.toBeNull();
+    expect(mockPluginsApi.list).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it("renders instance plugin links while filtering sandbox-provider-only plugins", async () => {
     mockPluginsApi.list.mockResolvedValue([
       {
@@ -369,6 +405,10 @@ describe("CompanySettingsSidebar operator-hidden entries", () => {
     });
     mockPluginsApi.list.mockResolvedValue([]);
     mockUsePluginSlots.mockReturnValue({ slots: [], isLoading: false, errorMessage: null });
+    mockUseCompany.mockReturnValue({
+      selectedCompanyId: "company-1",
+      selectedCompany: { id: "company-1", name: "Paperclip" },
+    });
   });
 
   afterEach(() => {

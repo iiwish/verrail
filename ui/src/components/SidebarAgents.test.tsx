@@ -41,6 +41,7 @@ const mockOpenNewAgent = vi.hoisted(() => vi.fn());
 const mockPushToast = vi.hoisted(() => vi.fn());
 const mockSetSidebarOpen = vi.hoisted(() => vi.fn());
 const mockSidebarState = vi.hoisted(() => ({ collapsed: false, peeking: false }));
+const mockLocation = vi.hoisted(() => ({ pathname: "/PAP/dashboard" }));
 
 vi.mock("@/lib/router", () => ({
   Link: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
@@ -64,7 +65,7 @@ vi.mock("@/lib/router", () => ({
       {children}
     </a>
   ),
-  useLocation: () => ({ pathname: "/PAP/dashboard", search: "", hash: "", state: null }),
+  useLocation: () => ({ pathname: mockLocation.pathname, search: "", hash: "", state: null }),
 }));
 
 vi.mock("../context/CompanyContext", () => ({
@@ -279,6 +280,7 @@ describe("SidebarAgents", () => {
       });
     });
     localStorage.clear();
+    mockLocation.pathname = "/PAP/dashboard";
   });
 
   afterEach(async () => {
@@ -318,6 +320,20 @@ describe("SidebarAgents", () => {
       currentRoot.render(
         <QueryClientProvider client={queryClient}>
           <SidebarAgents />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+  }
+
+  async function renderVerrailAgentList() {
+    const currentRoot = createRoot(container);
+    root = currentRoot;
+
+    await act(async () => {
+      currentRoot.render(
+        <QueryClientProvider client={queryClient}>
+          <SidebarAgents appearance="list" />
         </QueryClientProvider>,
       );
     });
@@ -864,6 +880,25 @@ describe("SidebarAgents", () => {
     expect(labels[2]).toBe("Charlie");
     // No recent-5 truncation, so no "See all agents" link in classic mode.
     expect(seeAllAgentsLink(container)).toBeNull();
+  });
+
+  it("expands the selected agent workspace in Verrail list mode", async () => {
+    mockLocation.pathname = "/PAP/agents/alpha/configuration";
+    mockAgentsApi.list.mockResolvedValue([
+      makeAgent({ id: "agent-a", name: "Alpha", urlKey: "alpha" }),
+      makeAgent({ id: "agent-b", name: "Bravo", urlKey: "bravo" }),
+    ]);
+    mockHeartbeatsApi.liveRunsForCompany.mockResolvedValue([]);
+
+    await renderVerrailAgentList();
+
+    expect(container.querySelector('[data-testid="verrail-agent-list"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/agents/alpha/dashboard"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/agents/alpha/instructions"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/agents/alpha/configuration"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/agents/alpha/runs"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/agents/bravo/configuration"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/agents/bravo/dashboard"]')).toBeNull();
   });
 
   it("classic mode (flag OFF) shows more than 5 agents without truncation", async () => {

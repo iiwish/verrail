@@ -276,7 +276,24 @@ describe("Verrail navigation routes", () => {
     expect(appSource).toContain('<Route path="targets/:targetId/revisions/:targetRevisionId" element={<TargetWorkbench />} />');
     expect(appSource).toContain('<Route path="projects/:projectId/targets" element={<ProjectDetail />} />');
     expect(appSource).toContain('<Route path="projects/:projectId/legacy-work" element={<ProjectDetail />} />');
-    expect(appSource).toContain('<Route path="infrastructure" element={<VerrailInfrastructure />} />');
-    expect(appSource).toContain('<Route path="governance" element={<VerrailGovernance />} />');
+    expect(appSource).toContain('<Route path="projects/:projectId/plugin-operations" element={<ProjectDetail />} />');
+    expect(appSource).toContain(
+      '<Route path="infrastructure" element={<Navigate to="/infrastructure/secrets" replace />} />',
+    );
+    expect(appSource).toContain('path="infrastructure/environments"');
+    expect(appSource).toContain('path="infrastructure/secrets"');
+    expect(appSource).toContain('path="infrastructure/adapters"');
+    expect(appSource).toContain('path="infrastructure/plugins"');
+    expect(appSource).toContain(
+      '<Route path="governance" element={<Navigate to="/governance/attention" replace />} />',
+    );
+    expect(appSource).toContain('path="governance/attention"');
+    expect(appSource).toContain('path="governance/approvals"');
+    expect(appSource).toContain('path="governance/audit"');
+    expect(appSource).toContain('path="governance/costs"');
+    expect(appSource).toContain('<Route path="agents" element={<Navigate to="/agents/definitions" replace />} />');
+    expect(appSource).toContain('<Route path="agents/definitions" element={<Agents />} />');
+    expect(appSource).toContain('<Route path="agents/deployments" element={<AgentDeployments />} />');
+    expect(appSource).not.toContain("VerrailOperationsIndex");
   });
 });

@@ -148,7 +148,7 @@ function FinanceSummaryCard({
   );
 }
 
-export function Costs() {
+export function Costs({ section = "costs" }: { section?: "costs" | "governance" }) {
   const { t } = useTranslation();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -171,8 +171,12 @@ export function Costs() {
   } = useDateRange();
 
   useEffect(() => {
-    setBreadcrumbs([{ label: t("costs.title") }]);
-  }, [setBreadcrumbs, t]);
+    setBreadcrumbs(
+      section === "governance"
+        ? [{ label: t("nav.governance"), href: "/governance" }, { label: t("costs.title") }]
+        : [{ label: t("costs.title") }],
+    );
+  }, [section, setBreadcrumbs, t]);
 
   const [today, setToday] = useState(() => new Date().toDateString());
   const todayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

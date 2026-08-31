@@ -87,12 +87,17 @@ function ExperimentalBadge() {
  * @see PluginSettings — linked from the Settings icon on each plugin row.
  * @see doc/plugins/PLUGIN_SPEC.md §3 — Plugin Lifecycle for status semantics.
  */
-export function PluginManager() {
+export function PluginManager({
+  basePath = "/company/settings/instance/plugins",
+}: {
+  basePath?: string;
+}) {
   const { selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const { t } = useTranslation();
+  const inInfrastructure = basePath.startsWith("/infrastructure");
 
   const [installPackage, setInstallPackage] = useState("");
   const [installDialogOpen, setInstallDialogOpen] = useState(false);
@@ -102,11 +107,16 @@ export function PluginManager() {
 
   useEffect(() => {
     setBreadcrumbs([
-      { label: selectedCompany?.name ?? t("settings.company.fallbackName"), href: "/dashboard" },
-      { label: t("settings.title"), href: "/company/settings" },
+      {
+        label: selectedCompany?.name ?? t("settings.company.fallbackName"),
+        href: inInfrastructure ? "/home" : "/dashboard",
+      },
+      inInfrastructure
+        ? { label: t("nav.infrastructure"), href: "/infrastructure" }
+        : { label: t("settings.title"), href: "/company/settings" },
       { label: t("plugins.manager.plugins") },
     ]);
-  }, [selectedCompany?.name, setBreadcrumbs, t]);
+  }, [inInfrastructure, selectedCompany?.name, setBreadcrumbs, t]);
 
   const { data: plugins, isLoading, error } = useQuery({
     queryKey: queryKeys.plugins.all,
@@ -325,7 +335,7 @@ export function PluginManager() {
                             </Button>
                           )}
                           <Button variant="outline" size="sm" asChild>
-                            <Link to={`/company/settings/instance/plugins/${installedPlugin.id}`}>
+                            <Link to={`${basePath}/${installedPlugin.id}`}>
                               {installedPlugin.status === "ready" ? t("plugins.manager.openSettings") : t("plugins.manager.review")}
                             </Link>
                           </Button>
@@ -379,7 +389,7 @@ export function PluginManager() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <Link
-                        to={`/company/settings/instance/plugins/${plugin.id}`}
+                        to={`${basePath}/${plugin.id}`}
                         className="font-medium hover:underline truncate block"
                         title={plugin.manifestJson.displayName ?? plugin.packageName}
                       >
@@ -483,7 +493,7 @@ export function PluginManager() {
                         </Button>
                       </div>
                       <Button variant="outline" size="sm" className="mt-2 h-8" asChild>
-                        <Link to={`/company/settings/instance/plugins/${plugin.id}`}>
+                        <Link to={`${basePath}/${plugin.id}`}>
                           <Settings className="h-4 w-4" />
                           {t("plugins.manager.configure")}
                         </Link>

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockCompanyService = vi.hoisted(() => ({
   create: vi.fn(),
+  list: vi.fn(),
 }));
 
 const mockAccessService = vi.hoisted(() => ({
@@ -29,6 +30,11 @@ vi.mock("../services/index.js", () => ({
   workTimelineService: () => ({}),
 }));
 
+const companyRouteModulesPromise = Promise.all([
+  import("../routes/companies.js"),
+  import("../middleware/index.js"),
+]);
+
 const createdCompany = {
   id: "company-new",
   name: "New Company",
@@ -36,10 +42,7 @@ const createdCompany = {
 };
 
 async function createApp(actor: Record<string, unknown>) {
-  const [{ companyRoutes }, { errorHandler }] = await Promise.all([
-    import("../routes/companies.js"),
-    import("../middleware/index.js"),
-  ]);
+  const [{ companyRoutes }, { errorHandler }] = await companyRouteModulesPromise;
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -57,6 +60,7 @@ describe("POST /api/companies Cloud floor", () => {
     delete process.env.PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN;
     delete process.env.PAPERCLIP_MANAGED_CONFIG;
     mockCompanyService.create.mockResolvedValue(createdCompany);
+    mockCompanyService.list.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -120,5 +124,42 @@ describe("POST /api/companies Cloud floor", () => {
       "owner",
       "active",
     );
+  });
+
+  it("provisions one default Verrail workspace for a trusted empty local instance", async () => {
+    const app = await createApp({
+      type: "board",
+      source: "local_implicit",
+      userId: "local-user",
+      isInstanceAdmin: true,
+    });
+
+    const res = await request(app).get("/api/companies");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([createdCompany]);
+    expect(mockCompanyService.create).toHaveBeenCalledWith({
+      name: "My Workspace",
+      description: "",
+      defaultResponsibleUserId: "local-user",
+      enableVerrailNavigation: true,
+    });
+    expect(mockAccessService.ensureMembership).toHaveBeenCalledWith(
+      "company-new",
+      "user",
+      "local-user",
+      "owner",
+      "active",
+    );
+    expect(mockAccessService.ensureRoleDefaultGrants).toHaveBeenCalledWith(
+      "company-new",
+      "local-user",
+      "owner",
+      "local-user",
+    );
+    expect(mockLogActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      action: "workspace.default_created",
+      entityId: "company-new",
+    }));
   });
 });

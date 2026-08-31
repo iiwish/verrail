@@ -1,10 +1,10 @@
 # Verrail 产品契约
 
-版本：0.2
+版本：0.3
 
 状态：`Confirmed`
 
-最后更新：2026-08-26
+最后更新：2026-08-28
 
 审核要求：确认产品对象、标志性旅程、MVP 范围和验收标准
 
@@ -63,6 +63,8 @@ AgentDefinition -> AgentVersion -> Deployment -> Run
 ### Workspace
 
 租户级安全与数据边界，拥有身份、策略、Project、Agent、Connector、RuntimePool 和审计记录。当前继承实现中的 `company` 可以作为过渡存储边界，但产品界面统一使用 Workspace。
+
+Workspace 采用环境化租户体验。首次进入时，部署后端为用户或单租户实例幂等提供一个默认 Workspace；仅有一个可访问 Workspace 时，日常工作台不展示切换器，也不要求用户先理解租户结构。拥有多个 Workspace 时才展示切换入口。隐藏切换器不改变 Workspace 的权限、隔离、审计、计费和 URL 兼容边界。
 
 ### Project
 
@@ -165,6 +167,7 @@ Target Workbench 是标志性界面。它必须让用户不离开 Target 就能�
 ### 必须具备
 
 - Workspace、Project、Target、TargetRevision、Stage 和 Target Workbench；
+- Workspace 默认供给与单 Workspace 环境化体验；
 - AgentDefinition、AgentVersion、Deployment 与基础 EvaluationRun；
 - 版本化 GraphRevision、TaskNode/GateNode 与 Temporal 耐久编排；
 - Codex Adapter 的固定版本执行与事件归一化；

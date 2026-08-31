@@ -1,10 +1,10 @@
 # Verrail 运行本体契约
 
-版本：0.2
+版本：0.3
 
 状态：`Confirmed`
 
-最后更新：2026-08-26
+最后更新：2026-08-28
 
 ## 1. 目的
 
@@ -51,6 +51,8 @@ Verrail 的领域中心是可验收交付：Target 固定责任，Submission 固
 ### Workspace
 
 租户级安全、数据和配置边界。所有业务对象必须直接或间接属于且只属于一个 Workspace。
+
+默认 Workspace 由部署后端按用户或单租户实例幂等供给。产品可以在只有一个可访问 Workspace 时隐藏选择界面，但不得省略 Workspace ID、权限检查、数据隔离、审计归属或路由兼容语义。
 
 ### Principal 与 RoleBinding
 

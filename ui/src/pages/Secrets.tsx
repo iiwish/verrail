@@ -648,7 +648,7 @@ export function getAwsManagedPathPreview(input: {
   return `${prefix}/${deploymentId}/${input.companyId}/${secretKey}`;
 }
 
-export function Secrets() {
+export function Secrets({ section = "settings" }: { section?: "settings" | "infrastructure" }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { selectedCompanyId } = useCompany();
@@ -722,8 +722,12 @@ export function Secrets() {
   const [newFolderError, setNewFolderError] = useState<string | null>(null);
 
   useEffect(() => {
-    setBreadcrumbs([{ label: t("secrets.title") }]);
-  }, [setBreadcrumbs, t]);
+    setBreadcrumbs(
+      section === "infrastructure"
+        ? [{ label: t("nav.infrastructure"), href: "/infrastructure" }, { label: t("secrets.title") }]
+        : [{ label: t("secrets.title") }],
+    );
+  }, [section, setBreadcrumbs, t]);
 
   const secretsQuery = useQuery({
     queryKey: selectedCompanyId
@@ -3248,20 +3252,19 @@ export function Secrets() {
 }
 
 function SecretsHowToUse() {
+  const { t } = useTranslation();
+
   return (
     <div className="flex items-start gap-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
       <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       <div className="space-y-1">
-        <p className="font-medium text-foreground">Use secrets by binding them to runtime environment variables.</p>
+        <p className="font-medium text-foreground">{t("secrets.usage.title")}</p>
         <p>
-          Create or link a secret here, then open an agent&apos;s Environment variables or a project&apos;s Env field.
-          Add the env key the process expects, for example <code className="font-mono">GH_TOKEN</code>, choose{" "}
-          <span className="font-medium text-foreground">Secret</span>, and select the stored secret version.
+          {t("secrets.usage.setupPrefix")} {" "}
+          <code className="font-mono">GH_TOKEN</code>
+          {t("secrets.usage.setupSuffix")}
         </p>
-        <p>
-          Paperclip resolves the value server-side when the run starts and injects it as that env var. Project env
-          applies to every task in the project and overrides agent env on matching keys.
-        </p>
+        <p>{t("secrets.usage.runtime")}</p>
       </div>
     </div>
   );

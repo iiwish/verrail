@@ -15,7 +15,7 @@ import { useTranslation } from "@/i18n";
  * audit. The mode lives in `?mode=` so `/audit` deep links can preset it and
  * links stay shareable. The server enforces both tiers regardless.
  */
-export function CompanyActivity() {
+export function CompanyActivity({ section = "activity" }: { section?: "activity" | "governance" }) {
   const { t } = useTranslation();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -23,8 +23,12 @@ export function CompanyActivity() {
   const mode: AuditFeedMode = searchParams.get("mode") === "agents" ? "agents" : "all";
 
   useEffect(() => {
-    setBreadcrumbs([{ label: t("activity.title") }]);
-  }, [setBreadcrumbs, t]);
+    setBreadcrumbs(
+      section === "governance"
+        ? [{ label: t("nav.governance"), href: "/governance" }, { label: t("activity.title") }]
+        : [{ label: t("activity.title") }],
+    );
+  }, [section, setBreadcrumbs, t]);
 
   const handleModeChange = useCallback(
     (next: AuditFeedMode) => {

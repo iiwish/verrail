@@ -4,8 +4,6 @@ import { Link, useParams, useNavigate, useLocation, Navigate } from "@/lib/route
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PROJECT_COLORS, PROJECT_ICON_NAMES, isUuidLike, type BudgetPolicySummary } from "@paperclipai/shared";
 import { budgetsApi } from "../api/budgets";
-import { executionWorkspacesApi } from "../api/execution-workspaces";
-import { instanceSettingsApi } from "../api/instanceSettings";
 import { projectsApi } from "../api/projects";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
@@ -30,11 +28,11 @@ import { SummarySlotCard } from "../components/SummarySlotCard";
 import { TargetList } from "../components/TargetList";
 import { MembershipAction } from "../components/MembershipAction";
 import { StarToggle } from "../components/StarToggle";
-import { buildProjectWorkspaceSummaries } from "../lib/project-workspaces-tab";
 import { collectLiveIssueIds } from "../lib/liveIssueIds";
 import { projectRouteRef } from "../lib/utils";
 import { PROJECT_ICONS } from "../lib/project-icons";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
+import { useProjectWorkspaceNavigation } from "../hooks/useProjectWorkspaceNavigation";
 import { formatDate } from "../i18n/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -423,10 +421,6 @@ export function ProjectDetail() {
   const projectMembershipState = project?.id
     ? resourceMembershipState(membershipsQuery.data, "project", project.id)
     : "joined";
-  const experimentalSettingsQuery = useQuery({
-    queryKey: queryKeys.instance.experimentalSettings,
-    queryFn: () => instanceSettingsApi.getExperimental(),
-  });
   const {
     slots: pluginDetailSlots,
     isLoading: pluginDetailSlotsLoading,
@@ -449,39 +443,12 @@ export function ProjectDetail() {
   // disabled query reports isLoading=false — so "not loading" alone cannot
   // distinguish "contribution unavailable" from "not asked yet" on cold loads.
   const pluginTabDecisionLoaded = Boolean(resolvedCompanyId) && !pluginDetailSlotsLoading;
-  const isolatedWorkspacesEnabled = experimentalSettingsQuery.data?.enableIsolatedWorkspaces === true;
-  const workspaceTabProjectId = project?.id ?? null;
-  const { data: workspaceTabIssues = [], isLoading: isWorkspaceTabIssuesLoading, error: workspaceTabIssuesError } = useQuery({
-    queryKey: workspaceTabProjectId && resolvedCompanyId
-      ? queryKeys.issues.listByProject(resolvedCompanyId, workspaceTabProjectId)
-      : ["issues", "__workspace-tab__", "disabled"],
-    queryFn: () => issuesApi.list(resolvedCompanyId!, { projectId: workspaceTabProjectId! }),
-    enabled: Boolean(resolvedCompanyId && workspaceTabProjectId && isolatedWorkspacesEnabled),
-  });
   const {
-    data: workspaceTabExecutionWorkspaces = [],
-    isLoading: isWorkspaceTabExecutionWorkspacesLoading,
-    error: workspaceTabExecutionWorkspacesError,
-  } = useQuery({
-    queryKey: workspaceTabProjectId && resolvedCompanyId
-      ? queryKeys.executionWorkspaces.list(resolvedCompanyId, { projectId: workspaceTabProjectId })
-      : ["execution-workspaces", "__workspace-tab__", "disabled"],
-    queryFn: () => executionWorkspacesApi.list(resolvedCompanyId!, { projectId: workspaceTabProjectId! }),
-    enabled: Boolean(resolvedCompanyId && workspaceTabProjectId && isolatedWorkspacesEnabled),
-  });
-  const workspaceSummaries = useMemo(() => {
-    if (!project || !isolatedWorkspacesEnabled) return [];
-    return buildProjectWorkspaceSummaries({
-      project,
-      issues: workspaceTabIssues,
-      executionWorkspaces: workspaceTabExecutionWorkspaces,
-    });
-  }, [project, isolatedWorkspacesEnabled, workspaceTabIssues, workspaceTabExecutionWorkspaces]);
-  const showWorkspacesTab = isolatedWorkspacesEnabled && workspaceSummaries.length > 0;
-  const workspaceTabDecisionLoaded =
-    experimentalSettingsQuery.isFetched &&
-    (!isolatedWorkspacesEnabled || (!isWorkspaceTabIssuesLoading && !isWorkspaceTabExecutionWorkspacesLoading));
-  const workspaceTabError = (workspaceTabIssuesError ?? workspaceTabExecutionWorkspacesError) as Error | null;
+    decisionLoaded: workspaceTabDecisionLoaded,
+    error: workspaceTabError,
+    showWorkspaces: showWorkspacesTab,
+    summaries: workspaceSummaries,
+  } = useProjectWorkspaceNavigation(project, resolvedCompanyId);
 
   useEffect(() => {
     if (!project?.companyId || project.companyId === selectedCompanyId) return;
@@ -915,33 +882,34 @@ export function ProjectDetail() {
         itemClassName="inline-flex"
       />
 
-      <Tabs value={activeTab ?? (verrailNavigationEnabled ? "overview" : "list")} onValueChange={(value) => handleTabChange(value as ProjectTab)}>
-        <PageTabBar
-          items={verrailNavigationEnabled
-            ? [
-                { value: "overview", label: t("projects.detail.tabs.overview") },
-                { value: "targets", label: t("projects.detail.tabs.targets") },
-                ...(project.managedByPlugin ? [{ value: "plugin-operations", label: t("projects.detail.tabs.pluginOperations") }] : []),
-                ...(showWorkspacesTab ? [{ value: "workspaces", label: t("projects.detail.tabs.resources") }] : []),
-                { value: "configuration", label: t("projects.detail.tabs.settings") },
-                { value: "budget", label: t("projects.detail.tabs.budget") },
-                { value: "list", label: t("projects.detail.tabs.legacyWork") },
-                ...pluginTabItems.map((item) => ({ value: item.value, label: item.label })),
-              ]
-            : [
-                { value: "list", label: t("projects.detail.tabs.tasks") },
-                { value: "overview", label: t("projects.detail.tabs.overview") },
-                ...(project.managedByPlugin ? [{ value: "plugin-operations", label: t("projects.detail.tabs.pluginOperations") }] : []),
-                ...(showWorkspacesTab ? [{ value: "workspaces", label: t("projects.detail.tabs.workspaces") }] : []),
-                { value: "configuration", label: t("projects.detail.tabs.configuration") },
-                { value: "budget", label: t("projects.detail.tabs.budget") },
-                ...pluginTabItems.map((item) => ({ value: item.value, label: item.label })),
-              ]}
-          align="start"
-          value={activeTab ?? (verrailNavigationEnabled ? "overview" : "list")}
-          onValueChange={(value) => handleTabChange(value as ProjectTab)}
-        />
-      </Tabs>
+      {(!verrailNavigationEnabled || activeTab !== "targets") ? (
+        <Tabs value={activeTab ?? "list"} onValueChange={(value) => handleTabChange(value as ProjectTab)}>
+          <PageTabBar
+            items={verrailNavigationEnabled
+              ? [
+                  { value: "overview", label: t("projects.detail.tabs.overview") },
+                  ...(showWorkspacesTab ? [{ value: "workspaces", label: t("projects.detail.tabs.resources") }] : []),
+                  ...(project.managedByPlugin ? [{ value: "plugin-operations", label: t("projects.detail.tabs.pluginOperations") }] : []),
+                  { value: "configuration", label: t("projects.detail.tabs.settings") },
+                  { value: "budget", label: t("projects.detail.tabs.budget") },
+                  { value: "list", label: t("projects.detail.tabs.legacyWork") },
+                  ...pluginTabItems.map((item) => ({ value: item.value, label: item.label })),
+                ]
+              : [
+                  { value: "list", label: t("projects.detail.tabs.tasks") },
+                  { value: "overview", label: t("projects.detail.tabs.overview") },
+                  ...(project.managedByPlugin ? [{ value: "plugin-operations", label: t("projects.detail.tabs.pluginOperations") }] : []),
+                  ...(showWorkspacesTab ? [{ value: "workspaces", label: t("projects.detail.tabs.workspaces") }] : []),
+                  { value: "configuration", label: t("projects.detail.tabs.configuration") },
+                  { value: "budget", label: t("projects.detail.tabs.budget") },
+                  ...pluginTabItems.map((item) => ({ value: item.value, label: item.label })),
+                ]}
+            align="start"
+            value={activeTab ?? "list"}
+            onValueChange={(value) => handleTabChange(value as ProjectTab)}
+          />
+        </Tabs>
+      ) : null}
 
       {activeTab === "overview" && (
         <div className="space-y-8">

@@ -85,7 +85,7 @@ function findScrollContainer(element: HTMLElement | null): HTMLElement | null {
   return null;
 }
 
-export function WhatNeedsMe() {
+export function WhatNeedsMe({ basePath = "/decisions" }: { basePath?: string }) {
   const { t } = useTranslation();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -137,8 +137,12 @@ export function WhatNeedsMe() {
   );
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Decisions" }]);
-  }, [setBreadcrumbs]);
+    setBreadcrumbs(
+      basePath.startsWith("/governance")
+        ? [{ label: t("nav.governance"), href: "/governance" }, { label: t("nav.decisions") }]
+        : [{ label: t("nav.decisions") }],
+    );
+  }, [basePath, setBreadcrumbs, t]);
 
   // Re-hydrate per-company preferences when the company changes.
   useEffect(() => {
@@ -537,7 +541,7 @@ export function WhatNeedsMe() {
       {/* Queue quicklinks + date-range chips (§4.1–§4.2). The rail self-hides
           when the company has no queues; the chips filter the desk server-side. */}
       <div className="space-y-2">
-        <DecisionQueueRail companyId={selectedCompanyId} activeQueueKey={null} />
+        <DecisionQueueRail companyId={selectedCompanyId} activeQueueKey={null} basePath={basePath} />
         <DecisionDateChips
           value={dateRange}
           custom={customRange}

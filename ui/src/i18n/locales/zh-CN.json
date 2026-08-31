@@ -586,6 +586,18 @@
     "expandSidebar": "展开侧边栏",
     "collapseSidebar": "收起侧边栏"
   },
+  "agentNav": {
+    "all": "全部智能体",
+    "definitions": "智能体",
+    "deployments": "部署",
+    "yours": "你的智能体"
+  },
+  "agentDeployments": {
+    "total": "{{count}} 个部署",
+    "liveRuns": "{{count}} 个运行中",
+    "empty": "没有符合当前筛选的部署。",
+    "unavailable": "暂时无法加载部署，请重试。"
+  },
   "verrailHome": {
     "attention": "需要处理",
     "liveRuns": "运行中",
@@ -1235,6 +1247,8 @@
   },
   "projects": {
     "title": "项目",
+    "all": "全部项目",
+    "yours": "你的项目",
     "selectCompany": "请选择组织以查看项目。",
     "sort": "排序",
     "sortValue": "排序：{{value}}",
@@ -2533,6 +2547,7 @@
   "secrets": {
     "title": "密钥", "selectCompany": "请选择组织以管理密钥。",
     "tabs": { "secrets": "密钥", "mySecrets": "我的密钥", "vaults": "提供方保险库", "proposals": "提案" },
+    "usage": { "title": "将密钥绑定到运行时环境变量。", "setupPrefix": "在此创建或链接密钥，然后打开智能体的环境变量或项目的环境字段。添加进程所需的环境变量名，例如", "setupSuffix": "，选择“密钥”，再选择已存储的密钥版本。", "runtime": "运行开始时，Verrail 会在服务端解析密钥值并注入对应的环境变量。项目环境变量适用于项目中的全部任务，并会覆盖智能体上同名的环境变量。" },
     "searchPlaceholder": "按名称、键或引用搜索", "searchLabel": "搜索密钥", "viewMode": "视图模式", "views": { "folders": "文件夹", "flat": "平铺" }, "newFolder": "新建文件夹", "newSecret": "新建密钥", "createFolder": "创建文件夹", "folderName": "文件夹名称", "loadFailed": "加载密钥失败", "empty": "暂无密钥。创建组织共享密钥或由每位用户自行提供的密钥。", "searchResults": "搜索结果", "matches_one": "所有文件夹中有 {{count}} 个匹配项", "matches_other": "所有文件夹中有 {{count}} 个匹配项", "searchEverywhere": " · 正在搜索所有位置，不仅是 {{path}}", "emptyFolder": "此文件夹中暂无密钥。", "newSecretHere": "在此新建密钥", "noSearchMatches": "没有密钥匹配此次搜索。", "noFilterMatches": "没有密钥匹配筛选条件。",
     "columns": { "secret": "密钥", "status": "状态", "versionCoverage": "版本 / 覆盖范围", "updated": "更新时间", "actions": "操作" },
     "eachUserOwns": "每位用户提供并拥有自己的值", "company": "组织", "eachUser": "每位用户", "linked": "已链接", "managed": "受管", "memberOwned": "成员拥有的值", "updatedAt": "更新于 {{date}}",
@@ -2542,6 +2557,7 @@
   "decisions": { "title": "决策", "selectCompany": "请先选择组织。", "snoozed": "已稍后处理", "dismissed": "已忽略", "aging": "长期未处理", "agingDescription": "超过 {{count}} 天未处理，已移出主列表。仍需关注的项目可以保留显示。", "decided": "已决策", "expired": "已过期", "loadingDecided": "正在加载已决策项目…", "noDecided": "没有已决策项目。", "loadingExpired": "正在加载已过期项目…", "noExpired": "没有已过期项目。", "bundleProposed_one": "{{agent}} 提出了 1 个决策", "bundleProposed_other": "{{agent}} 提出了 {{count}} 个决策", "anAgent": "某个智能体", "fromPrefix": "· 来自 ", "pendingCount_one": "1 个待处理", "pendingCount_other": "{{count}} 个待处理", "noMatch": "没有决策符合当前筛选条件。", "caughtUp": "已全部处理。", "adjustFilters": "调整或清除筛选条件以查看其他项目。", "nothingNeedsDecision": "目前没有需要你决策的事项。" },
   "companies": { "title": "组织", "new": "新建组织", "loading": "正在加载组织...", "rename": "重命名", "unarchive": "取消归档", "delete": "删除组织", "agentCount_one": "1 个智能体", "agentCount_other": "{{count}} 个智能体", "taskCount_one": "1 个任务", "taskCount_other": "{{count}} 个任务", "unlimitedBudget": "预算不限", "created": "创建于 {{time}}", "deleteConfirm": "删除此组织及其全部数据？此操作无法撤销。", "status": { "active": "活跃", "paused": "已暂停", "archived": "已归档" } },
   "skills": { "title": "Skills", "fork": "派生 Skill", "new": "新建 Skill", "detail": "详情", "selectCompany": "请选择组织以管理 Skills。", "createNew": "创建新 Skill", "forkDescription": "检查派生元数据，并创建可编辑的组织副本。", "createDescription": "在 Verrail 工作区中创建可编辑的组织 Skill。", "remove": "移除 Skill", "removeDescription": "从组织库中移除此 Skill。如果仍有智能体使用它，必须先解除关联。", "removeNamed": "即将移除 {{name}}。", "removeThis": "即将移除此 Skill。", "usedBy": "当前由 {{names}} 使用。", "detachBeforeRemove": "请先从所有智能体解除此 Skill，才能移除。", "removing": "正在移除...", "addSource": "添加 Skill 来源", "addSourceDescription": "请先在字段中粘贴本地路径、GitHub URL 或 skills.sh 命令。", "browseSkillsSh": "浏览 skills.sh", "findCommands": "查找安装命令并粘贴到这里。", "searchGithub": "搜索 GitHub", "searchGithubDescription": "查找包含 SKILL.md 的仓库，然后粘贴仓库 URL。", "import": "导入 Skill", "importDescription": "粘贴本地路径、GitHub URL 或 skills.sh 命令，将 Skill 导入当前组织。", "importPlaceholder": "粘贴路径、GitHub URL 或 skills.sh 命令", "importAction": "导入" },
+  "attentionDateRange": { "all": "全部", "today": "今天", "yesterday": "昨天", "last7Days": "最近 7 天", "thisMonth": "本月", "custom": "自定义", "from": "开始日期", "to": "结束日期", "clear": "清除" },
   "decisionQueue": { "seedUpdateFailed": "无法更新自动加入规则", "tryAgain": "请重试。", "empty": "此队列为空。", "emptyDescription": "当决策符合队列规则或被智能体加入时，会出现在这里。", "agingDescription": "超过 {{count}} 天未处理，已移出队列主列表。仍需关注的项目可以保留显示。", "autoSeeding": "自动加入已{{state}}", "on": "开启", "off": "关闭", "seedingOnDescription": "此队列会自动填充。决策匹配任一规则时会立即加入：", "seedingOffDescription": "自动加入已暂停。开启后以下规则会把决策加入队列：", "seedingOnHint": "关闭后只会停止新的自动加入。现有决策会保留，手动操作仍然可用。", "seedingOffHint": "自动加入关闭时，仍可手动添加或移除决策。", "disable": "停用", "enable": "启用", "removed": "已从队列移除", "excludeFailed": "无法排除", "exclude": "排除", "removeFromQueue": "从此队列移除", "reasonOptional": "原因（可选）…" },
   "newTask": { "titlePlaceholder": "任务标题", "descriptionPlaceholder": "添加描述...", "newSubtask": "新建子任务", "newTask": "新建任务", "for": "分配给", "assignee": "负责人", "noAssignee": "无负责人", "searchAssignees": "搜索负责人...", "noAssignees": "未找到负责人。", "in": "属于", "project": "项目", "noProject": "无项目", "searchProjects": "搜索项目...", "noProjects": "未找到项目。", "addParticipantsWithWatchdog": "添加审核人、批准人或看护智能体", "addParticipants": "添加审核人或批准人", "startDate": "开始日期", "dueDate": "截止日期", "lowTrustNotice": "低信任审核智能体。它只能在分配的审核边界内操作；任务、项目或运行策略定义具体范围。", "discardDraft": "放弃草稿", "creating": "正在创建...", "createSubtask": "创建子任务", "createTask": "创建任务" },
   "portability": {
