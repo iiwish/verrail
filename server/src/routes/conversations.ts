@@ -19,6 +19,7 @@ import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 const MAX_CONCURRENT_CHAT_RUNS = 3;
 const CHAT_TIMEOUT_MS = 120_000;
 const CHAT_TERMINATION_GRACE_MS = 5_000;
+const CHAT_OUTPUT_DRAIN_GRACE_MS = 1_000;
 const CHAT_RUNTIME_ENV_KEYS = [
   "PATH",
   "HOME",
@@ -70,14 +71,14 @@ export function createConversationRunLimiter(maxConcurrentRuns: number) {
 
 export function scheduleConversationRuntimeTermination(
   proc: { exitCode: number | null; kill: (signal: NodeJS.Signals) => boolean },
-  onGraceExpired: () => void,
+  onEscalated: () => void,
   graceMs = CHAT_TERMINATION_GRACE_MS,
 ) {
   if (proc.exitCode !== null) return null;
   proc.kill("SIGTERM");
   return setTimeout(() => {
     if (proc.exitCode === null) proc.kill("SIGKILL");
-    onGraceExpired();
+    onEscalated();
   }, graceMs);
 }
 
@@ -366,16 +367,17 @@ export function conversationRoutes(db: Db, opts: { deploymentMode: DeploymentMod
       let timedOut = false;
       let stderrBytes = 0;
       let cleanedUp = false;
+      let finalized = false;
       let forceKillTimer: ReturnType<typeof setTimeout> | null = null;
+      let outputDrainTimer: ReturnType<typeof setTimeout> | null = null;
       const cleanupResources = () => {
         if (cleanedUp) return;
         cleanedUp = true;
         releaseRun();
         void rm(runtimeCwd, { recursive: true, force: true });
       };
-      const forceCleanup = () => {
+      const handleTerminationEscalation = () => {
         clearTimeout(timeout);
-        cleanupResources();
         if (!res.writableEnded && !res.destroyed) {
           res.write(`data: ${JSON.stringify({
             type: "error",
@@ -387,8 +389,8 @@ export function conversationRoutes(db: Db, opts: { deploymentMode: DeploymentMod
         }
       };
       terminateRuntime = () => {
-        if (forceKillTimer || proc.exitCode !== null) return;
-        forceKillTimer = scheduleConversationRuntimeTermination(proc, forceCleanup);
+        if (forceKillTimer || cleanedUp) return;
+        forceKillTimer = scheduleConversationRuntimeTermination(proc, handleTerminationEscalation);
       };
       const timeout = setTimeout(() => {
         timedOut = true;
@@ -442,10 +444,9 @@ export function conversationRoutes(db: Db, opts: { deploymentMode: DeploymentMod
         }
       });
 
-      proc.on("close", async (exitCode) => {
-        clearTimeout(timeout);
-        if (forceKillTimer) clearTimeout(forceKillTimer);
-        cleanupResources();
+      const finalizeRuntime = async (exitCode: number | null) => {
+        if (finalized) return;
+        finalized = true;
         try {
           const outcome = classifyConversationRuntimeOutcome(responseText, exitCode, timedOut);
           if (outcome.kind === "error") {
@@ -490,9 +491,30 @@ export function conversationRoutes(db: Db, opts: { deploymentMode: DeploymentMod
             res.end();
           }
         }
+      };
+
+      proc.on("exit", (exitCode) => {
+        clearTimeout(timeout);
+        if (forceKillTimer) clearTimeout(forceKillTimer);
+        cleanupResources();
+        outputDrainTimer = setTimeout(() => {
+          proc.stdout.destroy();
+          proc.stderr.destroy();
+          void finalizeRuntime(exitCode);
+        }, CHAT_OUTPUT_DRAIN_GRACE_MS);
+      });
+
+      proc.on("close", (exitCode) => {
+        clearTimeout(timeout);
+        if (forceKillTimer) clearTimeout(forceKillTimer);
+        if (outputDrainTimer) clearTimeout(outputDrainTimer);
+        cleanupResources();
+        void finalizeRuntime(exitCode);
       });
 
       proc.on("error", (error) => {
+        if (finalized) return;
+        finalized = true;
         clearTimeout(timeout);
         if (forceKillTimer) clearTimeout(forceKillTimer);
         cleanupResources();

@@ -178,19 +178,19 @@ describe("conversation routes", () => {
     expect(limiter.activeCount()).toBe(3);
   });
 
-  it("escalates runtime termination and forces cleanup after the grace period", async () => {
+  it("escalates runtime termination after the grace period", async () => {
     vi.useFakeTimers();
     try {
       const { scheduleConversationRuntimeTermination } = await import("../routes/conversations.js");
       const proc = { exitCode: null, kill: vi.fn(() => true) };
-      const cleanup = vi.fn();
+      const escalated = vi.fn();
 
-      scheduleConversationRuntimeTermination(proc, cleanup, 100);
+      scheduleConversationRuntimeTermination(proc, escalated, 100);
       expect(proc.kill).toHaveBeenCalledWith("SIGTERM");
 
       await vi.advanceTimersByTimeAsync(100);
       expect(proc.kill).toHaveBeenCalledWith("SIGKILL");
-      expect(cleanup).toHaveBeenCalledOnce();
+      expect(escalated).toHaveBeenCalledOnce();
     } finally {
       vi.useRealTimers();
     }
