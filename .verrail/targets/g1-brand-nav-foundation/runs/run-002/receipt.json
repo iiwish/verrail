@@ -1,0 +1,31 @@
+{
+  "id": "run-002",
+  "target_id": "g1-brand-nav-foundation",
+  "agent": "codex",
+  "runner": "GitHub Actions pull-request workflow",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "7229c4d5c62a5ea1b394121dbc9b4100a27697bc",
+  "output_commit": "3cc74798b0f421f65f49185bb3c65febb65dd02f",
+  "branch": "codex/verrail-brand-foundation",
+  "working_tree": "clean",
+  "commands": [
+    {
+      "command": "GitHub Actions PR workflow run 33362223145",
+      "status": "passed",
+      "summary": "Policy, typecheck, release registry, all general and serialized server shards, build, canary dry run, and all three browser shards passed."
+    },
+    {
+      "command": "pnpm exec vitest run server/src/__tests__/verrail-navigation.test.ts server/src/__tests__/companies-service.test.ts server/src/__tests__/company-portability.test.ts",
+      "status": "passed",
+      "summary": "3 files and 101 focused tests passed after reciprocal route-ownership closure."
+    },
+    {
+      "command": "pnpm --filter @paperclipai/server typecheck && pnpm --filter paperclipai typecheck",
+      "status": "passed",
+      "summary": "Server and CLI contracts passed TypeScript validation."
+    }
+  ],
+  "errors": [],
+  "summary": "Revalidated the brand and navigation foundation on its isolated pull-request head. The previously recorded local baseline failures are superseded for merge readiness by a complete green remote PR workflow."
+}
