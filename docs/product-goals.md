@@ -1,10 +1,10 @@
 # Verrail 后续产品目标与路线
 
-版本：0.1
+版本：0.2
 
-状态：`Ready_For_User_Review`
+状态：`Confirmed`
 
-最后更新：2026-08-25
+最后更新：2026-08-26
 
 审核要求：确认产品差异化、首个纵向闭环、阶段顺序和企业执行边界后进入实施
 
@@ -15,9 +15,10 @@ Verrail 是面向专业 AI 交付的可信控制平面。它不以“再提供�
 核心结果不是任务完成或 Agent 显示为在线，而是一个目标产生了可审阅产物、独立证据、明确责任和可追溯验收。
 
 ```text
-Project -> Target -> Stage -> Work Graph
+Project -> Target -> TargetRevision -> Stage / Work Graph
         -> Agent Run / Human Decision / Integration Run
-        -> Artifact Revision -> Evidence -> Review -> Acceptance
+        -> ArtifactRevision / Claim / Evidence / VerificationResult
+        -> Submission -> Review -> Acceptance -> Outcome
 ```
 
 ## 2. 差异化
@@ -26,8 +27,8 @@ Codex 等 Harness 负责高质量执行单个编码任务；Verrail 负责跨任
 
 1. 这次运行固定了哪个 AgentVersion、模型、Skill、权限与环境；
 2. 谁有权调用、决策、批准外部动作和验收结果；
-3. 产物对应哪个目标、阶段、Base Revision 和内容 Hash；
-4. 测试与检查是否来自独立、可验证的 Evidence，而不是 Agent 自述；
+3. 本次 Submission 对应哪个 TargetRevision、ArtifactRevision、Base Revision 和内容 Hash；
+4. 每个 AcceptanceCriterion 是否由独立 Claim、Evidence 和 VerificationResult 覆盖，而不是 Agent 自述；
 5. 中断、重试、改派或 Runner 失联后，权威状态是否仍然一致；
 6. 企业代码与凭证能否留在客户网络，同时由统一控制平面治理。
 
@@ -36,12 +37,13 @@ Codex 等 Harness 负责高质量执行单个编码任务；Verrail 负责跨任
 ## 3. 产品原则
 
 1. **采用成熟执行基座**：保留 Paperclip 的 TypeScript、PostgreSQL、Adapter、Plugin、运行日志、Secret、成本和工作区能力，不重复建设通用 Harness。
-2. **围绕交付事实重构**：一级对象采用 Project、Target、Stage、Artifact、Review、Agent Run、Evidence 与 Timeline。
+2. **围绕交付事实重构**：Target 固定责任，Submission 固定交付候选，Evidence 证明 Claim，Acceptance 裁决完成；Stage、Timeline 和 Attention 是投影。
 3. **责任类型不可混用**：调用权、执行权、决定权、行动批准权和验收权独立计算。
 4. **人类与确定性系统是一等节点**：HumanTask、DecisionGate、ReviewGate、AcceptanceGate 和 IntegrationTask 与 AgentTask 共同组成 Work Graph。
 5. **一个产品，多种部署**：本地、自托管、Verrail Cloud 与客户 VPC Runner 使用同一领域合同。
-6. **执行面可替换**：HostTrusted、CubeSandbox、容器或未来 Kubernetes 只实现 Runtime Backend，不拥有业务事实。
-7. **Go 是演进手段，不是近期目标**：只有清晰的服务边界、容量或隔离收益成立时，才通过协议逐步提取 Go 服务。
+6. **Temporal 是耐久编排内核**：Target 与 Run 使用 Workflow、Activity、Signal、Timer、Retry 和 Child Workflow；PostgreSQL 仍是业务事实源。
+7. **执行面可替换**：HostTrusted、CubeSandbox、容器或未来 Kubernetes 只实现 Runtime Backend，不拥有业务事实。
+8. **Go 采用目标内核加绞杀迁移**：Go 是 Verrail 新领域与编排内核的目标语言，但不以逐行翻译或一次性重写 Paperclip 全部能力作为路线。
 
 ## 4. 基座策略
 
@@ -49,7 +51,8 @@ Codex 等 Harness 负责高质量执行单个编码任务；Verrail 负责跨任
 | --- | --- |
 | 保留 | 认证与用户、PostgreSQL/Drizzle、S3/本地存储、Adapter SDK、Plugin SDK、Secret、成本、运行日志、工作区与 Runtime Service 基础 |
 | 重构 | Company/Tenant 语义、CEO/组织图、Issue 单指派模型、Board 审批、Heartbeat 导航与 AI 公司创建流程 |
-| 新建 | Project/Target/Stage、版本化 Agent 生命周期、Work Graph、五类授权、Artifact/Evidence/Acceptance、Execution Gateway、Runner Fleet、Cloud Tenant Cell |
+| 新建 | TargetRevision、版本化 Agent 生命周期、Work Graph、Criterion/Claim/Verification、Submission/Acceptance、Temporal 编排、Execution Gateway、Runner Fleet、Cloud Tenant Cell |
+| 迁移 | 进程内 Timer、周期扫描、手工重试与恢复器逐步迁入 Temporal；新 Verrail 领域优先采用稳定语言中立合同并由 Go 内核承接 |
 | 延后 | 通用工作流设计器、插件市场、多区域主动写入、全量 Go 重写、移动端完整工作台、专业文档或代码编辑器 |
 
 ## 5. 标志性纵向闭环
@@ -58,12 +61,13 @@ Codex 等 Harness 负责高质量执行单个编码任务；Verrail 负责跨任
 
 ```text
 GitHub 需求
-  -> 创建 Target 并固定验收条件
+  -> 创建 TargetRevision 并固定验收条件
   -> 选择已发布的 Codex AgentVersion
   -> 在受控 Workspace/Sandbox 执行
   -> 生成 CodeChange ArtifactRevision
-  -> 独立 Review 与 CI IntegrationTask 产生 Evidence
-  -> 责任人完成 Acceptance
+  -> CI IntegrationTask 针对 Criterion 产生 Evidence 与 VerificationResult
+  -> 创建不可变 Submission
+  -> 独立 Review 后由责任人完成 Acceptance
   -> 创建或更新 Pull Request
   -> Timeline 保留全部版本、权限、日志和决定
 ```
@@ -81,7 +85,7 @@ GitHub 需求
 - Verrail 规范文档、ADR 和术语表成为事实源；
 - 上游历史计划、AI 公司营销叙事和无关截图退出规范目录；
 - 建立上游 Commit、许可证、NOTICE 和依赖来源记录；
-- 建立品牌与内部包名重构清单，不在同一提交中机械改完所有标识；
+- 以 [`brand-migration.md`](./brand-migration.md) 建立品牌与内部包名重构边界，不在同一提交中机械改完所有标识；
 - 现有 TypeScript 基座可安装、启动、测试和回归。
 
 退出门槛：新贡献者能区分“当前继承实现”和“Verrail 目标合同”，核心检查保持绿色。
@@ -100,18 +104,21 @@ GitHub 需求
 
 实施合同见 [`p0-plan.md`](./p0-plan.md)、[`i18n-spec.md`](./i18n-spec.md) 和 [`feature-trimming.md`](./feature-trimming.md)。
 
-### G1：Verrail 产品骨架
+### G1：Verrail 领域骨架与编排基线
 
 目标：让首屏和导航表达可信交付，而不是 AI 公司组织管理。
 
 交付：
 
-- Workspace、Project、Target、Stage 和 Timeline 基础数据模型；
-- Target Workbench 成为主工作面，包含 Overview、Graph、Artifacts、Evidence、Runs、Timeline；
+- Workspace、Project、Target、TargetRevision、Stage、Submission 和 Timeline 基础数据模型；
+- AcceptanceCriterion、Claim、ArtifactRevision、Evidence 和 VerificationResult 最小合同；
+- PostgreSQL Transactional Outbox、Temporal Namespace、Worker、稳定 Workflow ID 和加密 Payload/Data Converter 基线；
+- Target Workbench 成为主工作面，包含 Overview、Stages、Work、Submission、Artifacts、Evidence、Runs、Timeline；
 - Attention Inbox 汇总待决定、待批准、待评审和待验收事项；
+- 以 [`navigation-contract.md`](./navigation-contract.md) 发布 Home、Projects、Agents、Infrastructure、Governance 和 Settings 新导航；
 - 现有 Company/Project/Issue 能通过兼容映射逐步迁移，不进行一次性破坏式换表。
 
-退出门槛：用户不需要理解 CEO、组织图或 Heartbeat，就能创建 Target、看到阶段与责任人，并进入真实运行记录。
+退出门槛：用户不需要理解 CEO、组织图、Heartbeat 或 Temporal，就能创建版本化 Target、看到阶段与责任人，并进入真实运行记录；服务重启不会丢失 Workflow 唤醒。
 
 ### G2：可信交付闭环
 
@@ -120,26 +127,29 @@ GitHub 需求
 交付：
 
 - AgentDefinition、AgentVersion、Deployment 与 EvaluationRun；
-- 版本化 WorkGraph 和六类节点；
-- ArtifactContract、ArtifactRevision、Evidence、DeliveryReview 与 Acceptance；
+- 版本化 WorkGraph、TaskNode/GateNode、Run/RunAttempt、IntegrationRun/IntegrationAttempt、HumanWorkResult、TargetWorkflow 与 RunWorkflow；
+- Temporal Signal/Update、Timer、Retry、Child Workflow、取消、Workflow Versioning 与 Continue-As-New 策略；
+- ArtifactContract、ArtifactRevision、Claim、Evidence、VerificationResult、Submission、DeliveryReview 与 Acceptance；
 - GitHub Connector、CI Evidence、结构化 Action 与参数绑定 Approval；
-- Run、Artifact、Evidence、Review、Acceptance 的统一 Timeline。
+- Run、Artifact、Evidence、Submission、Review、Acceptance 的统一 Timeline。
 
-退出门槛：同一 Target 可证明 Agent 版本、代码差异、独立 CI 结果和责任人验收；修改产物后旧验收自动失效。
+退出门槛：同一 Target 可证明目标版本、Agent 版本、代码差异、Criterion 覆盖、独立 CI 结果和责任人验收；API、Worker 或 Runner 故障后 Workflow 可恢复；修改 TargetRevision 或 Submission 后旧验收自动失效。
 
-### G3：企业执行平面
+### G3：Go 领域内核与企业执行平面
 
-目标：把执行从控制平面进程中独立出来，并支持 Linux 强隔离试点。
+目标：让新 Verrail 领域、Temporal 编排和执行协议由 Go 服务承接，同时保留 TypeScript Compatibility Service，支持 Linux 强隔离试点。
 
 交付：
 
+- Go Domain API、Temporal Worker、Execution Gateway 和 Runner 的语言中立合同；
+- Workspace/Project/Target/Submission 新路径逐切片迁入 Go，TypeScript 旧路径只读化后退役；
 - 版本化 Runner Protocol、Execution Gateway、Runner Enrollment 与凭证轮换；
-- Node/Run/Sandbox Lease、fencing token、容量和心跳；
+- Run/Sandbox Lease、fencing token、容量和心跳；
 - HostTrusted 与 ContainerIsolated 两种清晰的信任配置；
 - CubeSandbox 通过 `SandboxDriver` 完成安全、恢复、性能和运维 Spike；
 - 客户 VPC Runner 使用出站连接，执行代码与运行时 Secret 可留在客户网络。
 
-退出门槛：Runner 失联、重复回传和重试不会覆盖新 Attempt；强隔离任务不会被错误调度到 HostTrusted。
+退出门槛：首个 GitHub 到 Acceptance 闭环由 Go/Temporal 主路径承载；Runner 失联、重复回传和重试不会覆盖新 Attempt；强隔离任务不会被错误调度到 HostTrusted；TypeScript 旧路径可按切片关闭并可回退。
 
 ### G4：Cloud 与企业部署
 
@@ -170,21 +180,24 @@ GitHub 需求
 
 ## 7. 近期实施顺序
 
-1. 锁定 P0 用户可达页面和内部排除表面，不裁剪现有业务功能；
-2. 完成 locale 检测、语言切换、本地持久化和锁定表面的中英文翻译；
-3. 定义 Project/Target/Stage 数据合同和兼容映射；
-4. 构建 Target Workbench 的只读真实数据骨架；
-5. 引入 ArtifactRevision、Evidence、Review 与 Acceptance 最小合同；
-6. 打通一个固定 Codex Deployment 的 GitHub 交付闭环；
-7. 把 Runner Protocol 和 SandboxDriver 从进程实现中抽成稳定接口；
-8. 在真实 Linux 环境完成 CubeSandbox Spike，再决定生产准入；
-9. 以设计伙伴工作流验证 Cloud/Private Runner 组合。
+1. 完成首批品牌资产、名称冲突筛查和视觉审核，固定新导航路由注册、权限、Plugin 冲突与 TargetReadModel 实施合同；
+2. 完成用户可见品牌切换，保留 package、CLI、环境变量、Plugin、Telemetry 和存量数据兼容标识；
+3. 定义 G1 数据模型、API、状态转换、兼容投影、回填与回滚实施合同；
+4. 通过 Feature Flag 发布新导航 Shell、Canonical Route 和旧深链别名；
+5. 构建 Target Workbench 的只读真实数据骨架，验证 Workspace/Project/Target/Work 映射；
+6. 完成 Go + Temporal 最小 Spike：Outbox 启动、Signal、Activity 幂等、Worker 重启、Workflow replay 和版本升级；
+7. 打通一个固定 Codex Deployment 的 GitHub 到 Submission/Acceptance 闭环；
+8. 把 Runner Protocol 和 SandboxDriver 从进程实现中抽成稳定接口；
+9. 按 Workspace/Target、Orchestration、Assurance、Execution 的纵向切片迁入 Go；
+10. 在真实 Linux 环境完成 CubeSandbox Spike，再决定生产准入；
+11. 以设计伙伴工作流验证 Cloud/Private Runner 组合。
 
 ## 8. 成功指标
 
-- 首次可验收交付时间：从 Target 创建到首个可审阅 ArtifactRevision；
-- 证据完整率：已验收交付中同时具备版本、权限、环境、CI 与内容 Hash 的比例；
+- 首次可验收交付时间：从 TargetRevision 发布到首个可审阅 Submission；
+- 证明完整率：已验收 Submission 中每个必需 Criterion 都有有效 VerificationResult，且具备版本、权限、环境、CI 与内容 Hash 的比例；
 - 恢复成功率：服务或 Runner 中断后无需人工改库即可收敛的运行比例；
+- 编排恢复率：Temporal Worker、API 或控制平面重启后能够从 Workflow History 和 PostgreSQL 事实自动继续的比例；
 - 人工注意力质量：Inbox 中确实需要责任人处理的项目比例；
 - 运行时可替换性：同一合同在至少两个 Adapter 或 Runtime Profile 上通过；
 - 企业数据边界：私有 Runner 模式下不允许出站的数据保持在客户网络；
@@ -196,15 +209,16 @@ GitHub 需求
 - 不把 Issue Tracker、聊天工具或组织图换皮当作产品完成；
 - 不建设通用低代码工作流平台；
 - 不替代 GitHub、Figma、飞书或专业 IDE 的深度编辑能力；
-- 不在没有独立收益证明时启动全量 Go 重写；
+- 不逐行翻译全部 Paperclip 后端，不以一次性切换、长期双写或功能全量等价作为 Go 重构方法；
 - 不以支持最多 Adapter、最多 Agent 或最多页面作为近期成功标准。
 
-## 10. 待确认事项
+## 10. 后续决策项
 
 1. 首批设计伙伴更偏向个人开发者、小团队还是受监管企业；
 2. Target 的默认 Stage 模板是否固定为 Define、Execute、Verify、Accept；
 3. Cloud 首发采用共享控制平面加租户隔离，还是每租户独立 Control Cell；
 4. CubeSandbox 的目标安全等级和运维责任由谁承担；
-5. 首个付费价值更偏向企业私有 Runner、治理审计，还是托管执行额度。
+5. 首个付费价值更偏向企业私有 Runner、治理审计，还是托管执行额度；
+6. Temporal 首发采用自托管开发集群加 Temporal Cloud 生产路径，还是同时提供生产级自托管支持。
 
-本文在上述事项得到用户确认后转为 `Confirmed`，再拆分 G0 与 G1 的实施任务。
+这些事项不改变已确认的领域中心、Go 目标内核和 Temporal 必选决策，也不阻塞品牌、新导航 Shell、只读 Target Workbench 与首条 G1 垂直切片；涉及 Cloud 拓扑、隔离承诺和商业优先级的实施任务必须在对应 ADR 或阶段计划获得确认后进入执行。

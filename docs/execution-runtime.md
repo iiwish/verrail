@@ -1,20 +1,24 @@
 # Verrail 执行运行时契约
 
-版本：0.1
+版本：0.2
 
-状态：`Ready_For_User_Review`
+状态：`Confirmed`
 
-最后更新：2026-08-25
+最后更新：2026-08-26
 
 ## 1. 目的
 
-执行平面让 Verrail 在托管 Linux、开发者机器或客户 VPC 中运行 Agent，同时保持同一权限、租约、产物、证据和审计语义。执行资源可以替换，业务事实不能下沉。
+执行平面让 Verrail 在托管 Linux、开发者机器或客户 VPC 中运行 Agent，同时保持同一权限、租约、产物、证据和审计语义。本文中的 Run/RunAttempt 专指 AgentTask 执行；IntegrationTask 使用 Connector 与 IntegrationRun 合同，HumanTask 使用 HumanWorkResult，不进入 Runner。执行资源可以替换，业务事实不能下沉。
 
 ## 2. 组件
 
 ### Execution Gateway
 
 控制平面和 Runner 之间唯一远程边界，负责认证、协议协商、命令投递、心跳、事件回传、背压和连接恢复。Gateway 不拥有 Graph 或 Run 状态。
+
+### Temporal Worker
+
+执行 TargetWorkflow 与 RunWorkflow，负责 Timer、Retry、Signal、取消、长时间等待和 Workflow replay。Worker 不直接运行 Harness，不持有长期凭证，不绕过领域服务修改业务状态。Worker 故障与 Runner 故障使用不同恢复边界。
 
 ### RuntimePool
 
@@ -45,26 +49,29 @@ Harness 适配边界，至少支持 `probe/start/resume/respond/cancel/stream/co
 
 ## 4. 执行生命周期
 
-1. Graph Engine 创建 ready NodeExecution；
-2. Scheduler 根据 RuntimeRequirement、数据策略、容量和成本选择 RuntimePool；
-3. 控制平面创建 ExecutionLease、Attempt 和 fencing token；
-4. Gateway 将带签名命令投递给指定 Runner；
-5. Runner 验证租约，挂载 WorkspaceVolume，创建或恢复 Sandbox；
-6. Runner 生成 EnvironmentManifest 并启动 Adapter/Harness；
-7. 事件按 Cursor 回传，控制平面校验并持久化；
-8. Artifact 先校验类型、大小和 Hash，再形成 ArtifactRevision；
-9. RunResult 与要求的 Evidence 通过领域校验后推进 NodeExecution；
-10. Runtime 进程和 Sandbox 回收，Workspace 按 RetentionPolicy 保留或清理。
+1. TargetWorkflow 请求 Graph Engine 计算 ready TaskNode；
+2. Graph Engine 创建或返回幂等 Run，RunWorkflow 协调其生命周期；
+3. Runtime Scheduling Activity 根据 RuntimeRequirement、数据策略、容量和成本选择 RuntimePool；
+4. 领域服务创建 RunAttempt、ExecutionLease 和 fencing token；
+5. Gateway 将带签名命令投递给指定 Runner；
+6. Runner 验证租约，挂载 WorkspaceVolume，创建或恢复 Sandbox；
+7. Runner 生成 EnvironmentManifest 并启动 Adapter/Harness；
+8. 事件按 Cursor 回传，控制平面校验并持久化，Outbox 通知 RunWorkflow；
+9. Artifact 先校验类型、大小和 Hash，再形成 ArtifactRevision；
+10. RunResult 与要求的 Evidence 通过领域校验后完成 RunAttempt，并由 Graph Engine 推导 TaskNode 状态；
+11. Runtime 进程和 Sandbox 回收，Workspace 按 RetentionPolicy 保留或清理。
 
 ## 5. Lease 与恢复
 
 - ExecutionLease 固定 Workspace、RunAttempt、Runner、RuntimeProfile、期限、资源和 fencing token；
+- Temporal Activity Retry 不延长 ExecutionLease，也不允许重复创建同一 Attempt；每次 Activity 使用稳定业务幂等键；
 - Runner 只能为活动租约回传事件和结果；
 - 心跳丢失后先标记 `suspect`，超过宽限期再过期租约；
 - 新 Attempt 使用更高 fencing token，旧 Attempt 的迟到结果只进入审计，不改变权威状态；
 - 事件携带单调 Cursor，重复事件幂等，缺口触发补传或明确降级；
 - Workspace 与 Checkpoint 恢复必须校验 Base Revision、内容 Hash 和 EnvironmentManifest 兼容性；
 - 取消需要可观察的 `requested -> acknowledged -> terminated` 过程，不能只改数据库状态。
+- RunWorkflow 取消只发起领域取消命令；Runner 终止确认和租约释放写入 PostgreSQL 后才形成最终取消状态。
 
 ## 6. Workspace、缓存与产物
 
@@ -121,6 +128,9 @@ Private Runner 默认只回传状态、计量、结构化错误、Evidence 摘�
 ## 9. 协议要求
 
 - 使用语言中立、版本化的消息 Schema；
+- TargetWorkflow 与 RunWorkflow 使用稳定 Workflow ID、Task Queue 和版本化 Workflow Type；
+- 长期 Workflow 必须定义 replay-safe 代码升级、Worker Build ID/Deployment、Continue-As-New 和历史大小门槛；
+- Signal/Update Payload 只保存领域 ID、版本、摘要和允许出站的数据，禁止写入 Secret、完整源码或无界 Transcript；
 - 明确兼容窗口、能力协商和拒绝原因；
 - 命令携带稳定幂等键，事件携带 Cursor；
 - 大日志和 Artifact 使用分块、校验和背压；
@@ -130,8 +140,8 @@ Private Runner 默认只回传状态、计量、结构化错误、Evidence 摘�
 
 ## 10. 验收标准
 
-1. 控制平面重启后仍能恢复活动 Run；
-2. Runner 断线和重连不会重复产生外部 Effect；
+1. API、Temporal Worker 或控制平面重启后仍能恢复活动 TargetWorkflow 与 Run；
+2. Workflow replay、Activity Retry、Runner 断线和重连不会重复产生外部 Effect；
 3. 旧租约结果不能覆盖新 Attempt；
 4. HostTrusted 和强隔离任务不会错误互换；
 5. Private Runner 能证明禁止出站的数据未离开客户环境；

@@ -15,6 +15,7 @@ import {
   heartbeatRunEvents,
   heartbeatRuns,
   principalPermissionGrants,
+  plugins,
   routines,
   routineTriggers,
 } from "@paperclipai/db";
@@ -45,6 +46,7 @@ describeEmbeddedPostgres("companyService", () => {
   }, 20_000);
 
   afterEach(async () => {
+    await db.delete(plugins);
     await db.delete(routineTriggers);
     await db.delete(routines);
     await db.delete(builtInManagedResources);
@@ -79,6 +81,60 @@ describeEmbeddedPostgres("companyService", () => {
 
     const rows = await db.select({ issuePrefix: companies.issuePrefix }).from(companies);
     expect(rows.map((row) => row.issuePrefix).sort()).toEqual(["ARO", "AROA"]);
+  });
+
+  it("keeps Verrail navigation disabled by default", async () => {
+    const [created] = await db.insert(companies).values({ name: "Navigation Default" }).returning();
+
+    const company = await companyService(db).getById(created!.id);
+
+    expect(company?.enableVerrailNavigation).toBe(false);
+  });
+
+  it("blocks Verrail navigation activation when an installed plugin owns a reserved root", async () => {
+    const [created] = await db.insert(companies).values({ name: "Navigation Conflict" }).returning();
+    await db.insert(plugins).values({
+      pluginKey: "paperclip.legacy-home",
+      packageName: "@paperclipai/legacy-home",
+      version: "1.0.0",
+      apiVersion: 1,
+      categories: ["ui"],
+      manifestJson: {
+        id: "paperclip.legacy-home",
+        apiVersion: 1,
+        version: "1.0.0",
+        displayName: "Legacy Home",
+        description: "A persisted pre-reservation plugin manifest.",
+        author: "Paperclip",
+        categories: ["ui"],
+        capabilities: [],
+        entrypoints: { ui: "./dist/ui" },
+        ui: {
+          slots: [{
+            type: "page",
+            id: "legacy-home-page",
+            displayName: "Legacy Home",
+            exportName: "LegacyHome",
+            routePath: "home",
+          }],
+        },
+      },
+      status: "installed",
+      installOrder: 1,
+    });
+
+    await expect(
+      companyService(db).update(created!.id, { enableVerrailNavigation: true }),
+    ).rejects.toMatchObject({
+      status: 409,
+      details: {
+        code: "VERRAIL_NAVIGATION_ROUTE_CONFLICT",
+        conflicts: [expect.objectContaining({ pluginKey: "paperclip.legacy-home", routePath: "home" })],
+      },
+    });
+
+    const company = await companyService(db).getById(created!.id);
+    expect(company?.enableVerrailNavigation).toBe(false);
   });
 
   it("does not auto-provision bundled built-in agents for a freshly created company", async () => {

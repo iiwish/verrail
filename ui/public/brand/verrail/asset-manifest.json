@@ -1,0 +1,24 @@
+{
+  "brand": "Verrail",
+  "version": 1,
+  "generatedAt": "2026-08-26T08:32:21Z",
+  "assets": [
+    { "file": "mark-mono.svg", "role": "mark-monochrome", "width": 64, "height": 64, "sha256": "54eef411c4c6667f1f1b9ac8a5f590a1a22278f562fcfedeef6f5418be49f678" },
+    { "file": "mark-dark.svg", "role": "mark-on-light", "width": 64, "height": 64, "sha256": "aa18d424b3cff55a4bb65f34b011818858f241e8fa1f01bb9552d4a582729892" },
+    { "file": "mark-light.svg", "role": "mark-on-dark", "width": 64, "height": 64, "sha256": "c783d41722fe45a9445eff7296691973c9e9f89d90d101fb8a53f58e33f6545b" },
+    { "file": "wordmark-dark.svg", "role": "wordmark-on-light", "width": 248, "height": 64, "sha256": "e2b104b3e020c895cf6e578a35e061c1f452b32a50eaf91365c23fc1f45dad5f" },
+    { "file": "wordmark-light.svg", "role": "wordmark-on-dark", "width": 248, "height": 64, "sha256": "3933810d7e1600c092cff8a409dc5688dbad98ac4333ad12e1d4978687a094f1" },
+    { "file": "lockup-dark.svg", "role": "lockup-on-light", "width": 328, "height": 64, "sha256": "639b0ad7d8a85e1cd6016c00bae1ce08f7d25811b6c0fa8ea9b35dbe716e5547" },
+    { "file": "lockup-light.svg", "role": "lockup-on-dark", "width": 328, "height": 64, "sha256": "48775786d319dfe4337b52939f73832e1d02f22b26eb18c1d67924dc33f7862a" },
+    { "file": "favicon.svg", "role": "favicon-source", "width": 64, "height": 64, "sha256": "6ffdd72db6487b7129c2fae80adf71f0201bd55039c18b13a9f86a8ed91613a6" },
+    { "file": "app-icon.svg", "role": "app-icon-source", "width": 512, "height": 512, "sha256": "3301ad5ea1bfbd3ad0452e57032b60dc23a7b5060bb6b1b99b4f79cbef52fbd9" },
+    { "file": "app-icon-maskable.svg", "role": "maskable-app-icon-source", "width": 512, "height": 512, "sha256": "c1fea75a446be9726a6c8662b86f6c46eaf2fa2fdcffb06d25fe08b012af6948" },
+    { "file": "icon-16.png", "role": "favicon-16", "width": 16, "height": 16, "sha256": "c72b182a9eccb1fc0f02f859c832bccff2920ae978000ae0b25407ef60cda2ba" },
+    { "file": "icon-32.png", "role": "favicon-32", "width": 32, "height": 32, "sha256": "7dfc44bf82c8ff72b1e4087ea4bf753f87df054cbbb5ad4f0743265d11889f23" },
+    { "file": "icon-48.png", "role": "favicon-48", "width": 48, "height": 48, "sha256": "afb8d42abe824655923e2c8c2765dc989f071c868106fc6b10bbb175d0ea5320" },
+    { "file": "icon-180.png", "role": "apple-touch-icon", "width": 180, "height": 180, "sha256": "a894311c7b13caec0205a8d201ce26dcc36c212bb84922c22a0f71d5eacd133f" },
+    { "file": "icon-192.png", "role": "pwa-icon-192", "width": 192, "height": 192, "sha256": "41558db307c59900270054d25549ee8871c287e392f01b9e8c7070979073b137" },
+    { "file": "icon-512.png", "role": "pwa-icon-512", "width": 512, "height": 512, "sha256": "6eb65e278ba7d39f588b476d0641b4bded8be212c2c37f4374aaa1f72ecb1965" },
+    { "file": "icon-maskable-512.png", "role": "pwa-icon-maskable-512", "width": 512, "height": 512, "sha256": "9f0f1854d8f9e158a8b5be972be1ea15a30207993ffb3ec9228b64816f917015" }
+  ]
+}

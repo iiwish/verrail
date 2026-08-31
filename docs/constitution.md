@@ -1,9 +1,9 @@
 # Verrail 项目章程
 
-版本：1.0
-状态：`Ready_For_User_Review`
+版本：1.1
+状态：`Confirmed`
 
-最后更新：2026-08-25
+最后更新：2026-08-26
 审核要求：产品、架构、实现与验收必须遵守本章程
 
 ## 1. 目的
@@ -21,20 +21,23 @@ Engine 负责校验、角色解析、调度、恢复和记录权威状态。平�
 
 钉钉、飞书、企微、REST API、Webhook、Schedule 和 A2A 都是调用、协作或通知入口。
 Channel 消息、Agent Transcript、Temporal History 和 Harness Session 都不是业务真相源。
-Verrail 中持久化的 Project、Target、Stage、GraphRevision、NodeExecution、
-Invocation、Run、Action、Artifact、HumanDecision、Approval、Acceptance、Outcome 和 AuditEvent 才是系统记录。
+Verrail 中持久化的 Project、Target、TargetRevision、GraphRevision、WorkNode、Invocation、Run、RunAttempt、IntegrationRun、IntegrationAttempt、HumanWorkResult、
+ActionRequest、ArtifactRevision、Evidence、VerificationResult、Submission、HumanDecision、ActionApproval、
+DeliveryReview、Acceptance、Outcome 和 AuditEvent 才是系统记录。
 
 ### P-002：Agent 生命周期必须版本化管理
 
 AgentDefinition 是可编辑设计容器，AgentVersion 是不可变发布快照，Deployment 是唯一生产身份。
 草稿 AgentDefinition 和 Harness 私有 Agent/Session 不能直接接收生产调用。创建、评测、发布、部署、暂停、
-升级、回滚、改进和退役必须形成可审计状态转换；每次 Run 必须能够追溯到准确版本、配置、权限、Runtime、
+升级、回滚、改进和退役必须形成可审计状态转换；每次 AgentTask Run 必须能够追溯到准确版本、配置、权限、Runtime、
 Harness、Skill 与插件版本。
 
-### P-003：每次调用都形成可恢复的 Run
+### P-003：每类执行都形成可恢复的持久事实
 
-群聊、API、事件和定时调用必须归一为 Invocation，并创建持久化 Run。浏览器、聊天连接、
-Runner 或单次模型会话中断不得导致权威状态丢失。
+群聊、API、事件和定时调用必须归一为 Invocation。AgentTask 使用持久化 Run/RunAttempt，IntegrationTask 使用
+IntegrationRun/IntegrationAttempt，HumanTask 使用不可变 HumanWorkResult；不同执行事实不得相互伪造。
+Temporal Workflow 负责耐久等待、Timer、Retry、Signal、取消和恢复；浏览器、聊天连接、API、Temporal Worker、
+Runner 或单次模型会话中断不得导致业务事实丢失。
 
 ### P-004：默认拒绝且不可自我扩权
 
@@ -50,9 +53,9 @@ Agent 只拥有显式 Grant 授予的 Capability。权限必须限定主体、�
 
 ### P-006：人类决定、行动授权与验收必须分离
 
-HumanDecision 只推进绑定 WorkNode，Approval 只决定一个 Action 是否可以发生，Acceptance 只决定一个
-DeliveryReview 是否被接受。三者分别使用 DecisionAuthority、ApprovalAuthority 和 AcceptanceAuthority，
-并绑定 GraphRevision、输入摘要、Action 参数、Artifact 摘要、Commit SHA 或内容 Hash。相关对象改变后，
+HumanDecision 只推进绑定 GateNode，ActionApproval 只决定一个 ActionRequest 是否可以发生，Acceptance 只决定一个
+Submission 的 DeliveryReview 是否被接受。三者分别使用 DecisionAuthority、ApprovalAuthority 和 AcceptanceAuthority，
+并绑定 TargetRevision、GraphRevision、输入摘要、Action 参数、Submission、Artifact 摘要、Commit SHA 或内容 Hash。相关对象改变后，
 旧决定不得自动适用于新对象，也不得用一种决定替代另一种。
 
 ### P-007：多 Agent 协作由执行图约束
@@ -102,14 +105,17 @@ Verrail 不建设通用项目管理排期与工时看板，也不做脱离 Targe
 Director 是可版本化、可替换、受权限约束的普通 Agent Deployment，只能提交 GraphProposal/ReplanProposal、
 ReviewRecommendation、推荐角色、请求重规划和汇总状态。是否建议人类评审由 Director AgentVersion 的
 Prompt、Output Schema 和评测合同决定；Workspace Policy 可以增加强制评审但不能被 Agent 绕过。Graph
-Engine 是节点激活、ReviewGate、Node Lease、状态转换、强制门禁、并发控制和恢复的唯一写入边界。
+Engine 是节点激活、ReviewGate、状态转换、强制门禁和并发策略的唯一业务写入边界。Temporal 负责耐久编排，
+但只能驱动经过 Graph Engine 和领域服务校验的命令，不能自行裁决业务状态。
 Director 不得直接修改权威 Graph 状态、删除 Policy 注入的节点或批准自身 Action；交付类 AgentTask 必须指派给
 非 Director 专业 Agent Deployment。
 
 ### P-014：人类与确定性集成是一等节点
 
-HumanTask、DecisionGate、ReviewGate、AcceptanceGate 和 CI/CD IntegrationTask 必须与 AgentTask
-一样具有明确输入、责任角色、输出、完成条件、截止时间和审计记录。Agent 自报的测试或部署结果不能
+HumanTask、AgentTask 和 CI/CD IntegrationTask 是 TaskNode，必须具有明确输入、责任角色、输出、完成条件、
+截止时间和审计记录。AgentTask 形成 Run/RunAttempt，IntegrationTask 形成 IntegrationRun/IntegrationAttempt，
+HumanTask 形成 HumanWorkResult。DecisionGate、ReviewGate、AcceptanceGate 和 PolicyGate 是 GateNode，只能由对应的
+版本绑定决定、评审、验收或策略结果满足，不创建伪 Run。Agent 自报的测试或部署结果不能
 替代 CI/CD Provider 回传的 Evidence；Agent 不得完成 HumanTask/Gate，人类不得伪造 AgentTask Run；任何生产部署仍受
 Capability、Policy 和 Approval 约束。
 
@@ -123,7 +129,8 @@ ArtifactRevision、Materialization、Evidence、责任决定和 Acceptance 的�
 MVP 不因缺少具体 Connector 而取消产物生产。系统使用本地 Workspace、内容寻址快照和用户登记的外部引用完成
 产物闭环，并定义稳定 Connector Plugin 合同。Verrail 提供绑定不可变 ArtifactRevision 的 Review-grade
 Artifact Preview、Revision Diff、评论、Evidence 检查和验收操作，不建设专业编辑器、格式特有创作能力或
-外部平台原生协作界面。Preview 是可重建投影，DeliveryReview 与 Acceptance 必须绑定源 Revision 和内容 Hash。
+外部平台原生协作界面。Preview 是可重建投影，Submission 固定 TargetRevision、ArtifactRevision、
+VerificationResult 与环境摘要，DeliveryReview 与 Acceptance 必须绑定同一 Submission 和内容 Hash。
 深度编辑通过 Runner Workspace 或专业平台完成；外部修改必须经 Hash 检测和授权导入形成新 ArtifactRevision，不能覆盖
 已评审或已验收版本；旧 Review 与 Acceptance 保持不可变，并对新 Revision 明确标记为不适用。
 
@@ -134,6 +141,13 @@ Web 控制台和公共 API 是一等控制表面。PostgreSQL 是所有部署的
 主动出站连接的 Headless Runner 执行；浏览器不能凭端口可达性或本机账户隐式获得 CLI 权限。
 官方托管与开源自托管使用同一领域、API、Schema 和 Runner Protocol，Kubernetes 只能作为可选部署/执行
 Backend，不能成为 Verrail 领域真相源。
+
+### P-017：Temporal 是耐久编排内核，不是业务数据库
+
+Target 和 Run 的长生命周期编排必须使用 Temporal Workflow，禁止继续扩展基于进程内 Timer、周期扫描和手工恢复器的
+新主流程。PostgreSQL 仍是产品查询、权限、版本、证据、评审、验收和审计的唯一权威事实库。Temporal Event History
+只恢复编排决策；所有数据库写入、Provider 调用、LLM 调用和文件操作通过幂等 Activity 或受治理的执行协议完成。
+PostgreSQL 与 Temporal 之间通过 Transactional Outbox、稳定 Workflow ID 和幂等命令收敛，不宣称跨系统 exactly-once。
 
 ## 3. 质量与架构原则
 

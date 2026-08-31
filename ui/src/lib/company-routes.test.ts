@@ -7,6 +7,16 @@ import {
 } from "./company-routes";
 
 describe("company routes", () => {
+  it.each(["home", "targets", "infrastructure", "governance"])(
+    "treats /%s as a workspace board route rather than a workspace prefix",
+    (root) => {
+      expect(isBoardPathWithoutPrefix(`/${root}`)).toBe(true);
+      expect(extractCompanyPrefixFromPath(`/${root}`)).toBeNull();
+      expect(applyCompanyPrefix(`/${root}`, "VRL")).toBe(`/VRL/${root}`);
+      expect(toCompanyRelativePath(`/VRL/${root}`)).toBe(`/${root}`);
+    },
+  );
+
   it("treats execution workspace paths as board routes that need a company prefix", () => {
     expect(isBoardPathWithoutPrefix("/execution-workspaces/workspace-123")).toBe(true);
     expect(isBoardPathWithoutPrefix("/execution-workspaces/workspace-123/routines")).toBe(true);

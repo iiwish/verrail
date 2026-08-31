@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PLUGIN_CAPABILITIES } from "../constants.js";
+import { PLUGIN_CAPABILITIES, VERRAIL_NAVIGATION_ROUTE_ROOTS } from "../constants.js";
 import { resolveDeclaredSandboxCapabilities } from "../environment-support.js";
 import { pluginManagedRoutineDeclarationSchema, pluginManifestV1Schema, pluginUiSlotDeclarationSchema } from "./plugin.js";
 
@@ -223,6 +223,23 @@ describe("plugin UI slot validators", () => {
     if (parsed.success) return;
     expect(parsed.error.issues.some((issue) => issue.message.includes("reserved by the host"))).toBe(true);
   });
+
+  it.each(VERRAIL_NAVIGATION_ROUTE_ROOTS)(
+    "reserves the Verrail %s route root from plugin pages",
+    (routePath) => {
+      const parsed = pluginUiSlotDeclarationSchema.safeParse({
+        type: "page",
+        id: `${routePath}-page`,
+        displayName: routePath,
+        exportName: "PluginPage",
+        routePath,
+      });
+
+      expect(parsed.success).toBe(false);
+      if (parsed.success) return;
+      expect(parsed.error.issues.some((issue) => issue.message.includes("reserved by the host"))).toBe(true);
+    },
+  );
 
   it("accepts workspace entity types as detailTab targets", () => {
     const parsed = pluginUiSlotDeclarationSchema.parse({

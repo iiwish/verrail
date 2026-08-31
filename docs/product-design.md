@@ -1,10 +1,10 @@
 # Verrail 产品契约
 
-版本：0.1
+版本：0.2
 
-状态：`Ready_For_User_Review`
+状态：`Confirmed`
 
-最后更新：2026-08-25
+最后更新：2026-08-26
 
 审核要求：确认产品对象、标志性旅程、MVP 范围和验收标准
 
@@ -12,15 +12,19 @@
 
 Verrail 是开源的 Agent 管理与可信交付控制平面。它把 Codex 等成熟 Agent Harness 作为可替换执行运行时，把专业 Agent 作为组织拥有、可版本化、可部署、可评测和可回滚的数字执行者管理。
 
-Verrail 的核心工作不是替 Agent 思考，而是把目标、责任、执行、产物、证据和验收固定在同一条可恢复的交付链上。
+Verrail 的核心工作不是替 Agent 思考，而是把目标、责任、执行、产物、证明和验收固定在同一条可恢复的交付链上。Target 是责任中心，Submission 是评审中心，Evidence 是证明中心，Acceptance 是完成裁决；Graph 和 Agent 都是交付手段。
 
 ```text
-AgentDefinition -> AgentVersion -> Deployment -> AgentSession / Run
-       -> ArtifactRevision -> Evidence -> DeliveryReview -> Acceptance
+Target -> TargetRevision -> GraphRevision -> WorkNode
+       -> Agent Run / Integration Run / Human Work Result
+       -> ArtifactRevision / Evidence -> Submission
+       -> DeliveryReview -> Acceptance -> Outcome
+
+AgentDefinition -> AgentVersion -> Deployment -> Run
        -> EvaluationRun -> ImprovementProposal
 ```
 
-多人多 Agent 协作由 Human-Agent Work Graph 约束。Director 可以提出计划和重规划建议，Graph Engine 负责节点激活、租约、状态转换、强制门禁和恢复。Agent 的内部计划、Transcript 或自报完成不能替代系统事实。
+多人多 Agent 协作由 Human-Agent Work Graph 约束。Director 可以提出计划和重规划建议，Graph Engine 负责节点激活、状态转换和强制门禁，Temporal 负责耐久等待、Timer、Retry、Signal、取消与恢复。Agent 的内部计划、Temporal History、Transcript 或自报完成不能替代 PostgreSQL 中的系统事实。
 
 ## 2. 目标用户
 
@@ -64,49 +68,60 @@ AgentDefinition -> AgentVersion -> Deployment -> AgentSession / Run
 
 围绕一个长期交付方向组织 Target、成员、资源、默认策略和时间线。Project 不是权限边界，权限仍由 Workspace Policy 与 ResourceScope 决定。
 
-### Target
+### Target / TargetRevision
 
-具有 Outcome Owner、目标、约束、验收条件、风险等级和截止时间的可交付结果。Target 是用户判断“是否完成”的主要对象。
+Target 是可交付结果的稳定身份，也是用户判断“是否完成”的主要对象。TargetRevision 是不可变责任合同，固定 Outcome Owner、目标、约束、验收条件、风险等级、截止时间和适用策略。条件或责任边界变化必须形成新 Revision，旧证据与验收不能静默沿用。
 
 ### Stage
 
-Target 中稳定的交付阶段。默认模板为 Define、Execute、Verify、Accept；团队可在受控范围内配置模板。Stage 聚合 WorkNode、Artifact、Evidence 和 Gate，不取代 Graph 状态。
+Target 中稳定的交付阶段和导航投影。默认模板为 Define、Execute、Verify、Accept；团队可在受控范围内配置 StageTemplate。StageProgress 聚合 Graph、Work、Submission 和 Gate 状态，但 Stage 不拥有 Artifact、Evidence，也不取代 Graph 状态。
 
 ### Work Graph
 
-Target 的版本化执行计划。GraphRevision 是不可变快照，包含节点、依赖、角色、输入、输出、完成定义、预算和证据要求。
+TargetRevision 的版本化执行计划。GraphRevision 是不可变快照，包含节点、依赖、角色、输入、输出、完成定义、预算和证据要求。Graph 是高级检查和故障处理表面，普通用户优先看到 Stage、当前责任和下一步行动。
 
-### Artifact / Evidence / Review / Acceptance
+### Criterion / Claim / Evidence / Verification
 
-Artifact 是交付对象，ArtifactRevision 是不可变版本。Evidence 是来自 Run、CI、扫描器或人工核验的结构化证明。DeliveryReview 汇总特定 Revision 的风险与证明，Acceptance 是具备责任的人对该 Review 的版本绑定决定。
+AcceptanceCriterion 属于 TargetRevision，定义可判定要求和允许的证明方式。Submission 针对 Criterion 提出 Claim；Evidence 是来自 Run、CI、扫描器、Provider 或人工核验的不可变证明；VerificationResult 记录特定验证器对 Claim 和 Evidence 的 `passed`、`failed`、`inconclusive` 或有权 `waived` 结论。
+
+### Artifact / Submission / Review / Acceptance
+
+Artifact 是稳定交付对象，ArtifactRevision 是内容寻址的不可变版本。Submission 是一次不可变的交付候选，固定 TargetRevision、ArtifactRevision、VerificationResult、Commit/外部对象和环境摘要。DeliveryReview 评审 Submission，Acceptance 是具备责任的人对该 Review 和 Submission 的版本绑定决定。
+
+### 产品对象可见性
+
+日常工作台优先使用 Target、Stage、Work、Run、Artifact、Evidence、Review 和 Agent 八个概念。UI 中的 Runs 视图聚合 Agent Run 与 IntegrationRun，但必须显示执行主体类型；HumanWorkResult 留在对应 Work 中。TargetRevision、GraphRevision、RunAttempt、IntegrationAttempt、Lease、Grant、EnvironmentManifest 和 Temporal Workflow 属于需要时展开的高级信息，不要求普通用户先理解内部本体才能完成交付。
 
 ## 5. 节点模型
 
-Work Graph 支持以下一等节点：
+Work Graph 支持 TaskNode 与 GateNode 两类节点：
 
-| 节点 | 责任主体 | 完成依据 |
-| --- | --- | --- |
-| `AgentTask` | Agent Deployment | 结构化 RunResult 与要求的 Artifact/Evidence |
-| `HumanTask` | Human 或 Group | 结构化提交、附件或决定 |
-| `DecisionGate` | Decision Authority | 绑定输入与 GraphRevision 的 HumanDecision |
-| `ReviewGate` | Reviewer | 绑定 ArtifactRevision 的 DeliveryReview |
-| `AcceptanceGate` | Outcome Owner | 绑定 DeliveryReview 的 Acceptance |
-| `IntegrationTask` | CI/CD 或确定性系统 | 可验证 Provider 回执和 Evidence |
+| 类别 | 节点 | 责任主体 | 完成依据 |
+| --- | --- | --- | --- |
+| Task | `AgentTask` | Agent Deployment | Run/RunAttempt、结构化 RunResult 与要求的 Artifact/Evidence |
+| Task | `HumanTask` | Human 或 Group | 不可变 HumanWorkResult、结构化提交或附件 |
+| Task | `IntegrationTask` | CI/CD 或确定性系统 | IntegrationRun、Provider 回执和 Evidence |
+| Gate | `DecisionGate` | Decision Authority | 绑定输入、TargetRevision 与 GraphRevision 的 HumanDecision |
+| Gate | `ReviewGate` | Reviewer | 绑定 Submission 的 DeliveryReview |
+| Gate | `AcceptanceGate` | Outcome Owner | 绑定 DeliveryReview、Submission 与 TargetRevision 的 Acceptance |
+| Gate | `PolicyGate` | Policy Engine | 可解释、版本化的 PolicyResult |
 
-Agent 不得完成 HumanTask 或 Gate。人类不得伪造 AgentTask Run。CI 结果不能由 Agent 文本代替。
+AgentTask 产生 Run/RunAttempt，IntegrationTask 产生 IntegrationRun/IntegrationAttempt，HumanTask 产生 HumanWorkResult；GateNode 等待并校验领域事实，不创建伪执行。四种完成语义不得互相伪造，CI 结果不能由 Agent 文本代替。
 
 ## 6. 核心旅程
 
 ### 6.1 创建并交付 Target
 
-1. Outcome Owner 在 Project 中创建 Target，填写目标、约束、验收条件和风险级别；
-2. 系统选择模板或由 Director 提出 GraphProposal；
+1. Outcome Owner 在 Project 中创建 Target，发布固定目标、约束、验收条件和风险级别的 TargetRevision；
+2. 系统选择 ProcessTemplate，或由 Director 针对该 TargetRevision 提出 GraphProposal；
 3. Graph Engine 校验角色、权限、依赖、预算和强制 Gate，生成 GraphRevision；
-4. Scheduler 激活就绪节点，AgentTask 通过 Deployment 与 Runner 执行；
-5. ArtifactRevision 和 Evidence 持续进入 Target Workbench；
-6. 阻塞、未知外部 Effect 或高风险 Action 进入 Attention Inbox；
-7. Reviewer 完成 DeliveryReview，Outcome Owner 对固定 Revision 完成 Acceptance；
-8. Target 在所有必需节点和验收满足后进入 `accepted`。
+4. Temporal TargetWorkflow 耐久协调节点、等待、Timer、Retry、Signal 和取消，Graph Engine 裁决节点是否可激活；
+5. 就绪 AgentTask 产生 Run/RunAttempt，IntegrationTask 产生 IntegrationRun/IntegrationAttempt，HumanTask 等待有权主体提交 HumanWorkResult；
+6. ArtifactRevision、Claim、Evidence 和 VerificationResult 持续进入 Target Workbench；
+7. 责任主体创建固定 TargetRevision、Artifact、证明、Commit 和环境摘要的 Submission；
+8. 阻塞、未知外部 Effect、高风险 Action、证明缺口或待验收项进入 Attention Inbox；
+9. Reviewer 对 Submission 完成 DeliveryReview，Outcome Owner 对同一 Submission 完成 Acceptance；
+10. Target 在全部必需节点、Criterion 和 Acceptance 满足后派生为 `accepted`。
 
 ### 6.2 发布 AgentVersion
 
@@ -133,7 +148,7 @@ Agent 不得完成 HumanTask 或 Gate。人类不得伪造 AgentTask Run。CI �
 
 - `Home`：跨 Project 的 Attention、风险、运行健康和最近交付；
 - `Projects`：Project 与 Target 列表、筛选和状态；
-- `Target Workbench`：Overview、Graph、Artifacts、Evidence、Runs、Timeline；
+- `Target Workbench`：Overview、Stages、Work、Submission、Artifacts、Evidence、Runs、Timeline；Graph 作为高级视图；
 - `Agents`：AgentDefinition、Version、Evaluation、Deployment 和质量趋势；
 - `Infrastructure`：RuntimePool、Runner、Sandbox、Connector、Secret 和 Storage；
 - `Governance`：Policy、Role、Approval、Audit 和数据策略；
@@ -145,11 +160,11 @@ Target Workbench 是标志性界面。它必须让用户不离开 Target 就能�
 
 ### 必须具备
 
-- Workspace、Project、Target、Stage 和 Target Workbench；
+- Workspace、Project、Target、TargetRevision、Stage 和 Target Workbench；
 - AgentDefinition、AgentVersion、Deployment 与基础 EvaluationRun；
-- 版本化 GraphRevision 与六类节点；
+- 版本化 GraphRevision、TaskNode/GateNode 与 Temporal 耐久编排；
 - Codex Adapter 的固定版本执行与事件归一化；
-- ArtifactRevision、Git Diff、Evidence、DeliveryReview 与 Acceptance；
+- AcceptanceCriterion、Claim、ArtifactRevision、Git Diff、Evidence、VerificationResult、Submission、DeliveryReview 与 Acceptance；
 - GitHub 需求和 Pull Request 的 Connector 闭环；
 - HostTrusted Runner、工作区范围、Lease、恢复和审计；
 - 本地或自托管 PostgreSQL、对象存储、Secret 和基础身份；
@@ -166,8 +181,8 @@ Target Workbench 是标志性界面。它必须让用户不离开 Target 就能�
 ## 9. 非功能需求
 
 - **安全**：默认拒绝；Secret 引用化；高风险 Action 参数绑定审批；租户、资源和运行时作用域强制检查。
-- **可靠性**：所有长任务有持久 Run、Attempt、Lease 和幂等键；进程或 Runner 中断不丢失权威状态。
-- **可追溯**：生产结果可追溯到 AgentVersion、Deployment Revision、GraphRevision、EnvironmentManifest、Artifact Hash 和责任决定。
+- **可靠性**：AgentTask 具有持久 Run、RunAttempt、Lease 和幂等键；IntegrationTask 具有持久 IntegrationRun、IntegrationAttempt、Provider Receipt 和幂等键；HumanTask 具有不可变 HumanWorkResult；长流程由 Temporal Workflow 恢复。API、Worker、Temporal、Runner、Harness 或 Provider 中断不丢失业务事实，Workflow replay 不重复外部 Effect。
+- **可追溯**：生产结果可追溯到 TargetRevision、Submission、AgentVersion、Deployment Revision、GraphRevision、EnvironmentManifest、Artifact Hash、VerificationResult 和责任决定。
 - **性能**：核心列表支持分页和服务端筛选；Timeline 增量加载；Run 日志流不阻塞控制操作。
 - **可观测**：控制平面、Gateway、Runner、Adapter 和 Sandbox 使用统一 Correlation ID、指标、日志和 Trace 语义。
 - **可移植**：开源自托管与 Cloud 使用同一 API、Schema 和 Runner Protocol；第三方服务位于明确 Port 后。
@@ -178,16 +193,17 @@ Target Workbench 是标志性界面。它必须让用户不离开 Target 就能�
 
 MVP 通过以下端到端验收：
 
-1. 用户从 GitHub 需求创建 Target，固定验收条件和 Codex AgentVersion；
+1. 用户从 GitHub 需求创建 TargetRevision，固定验收条件和 Codex AgentVersion；
 2. Agent 在授权工作区生成代码 ArtifactRevision，系统记录环境、日志、成本和权限；
-3. 独立 IntegrationTask 对固定 Commit 产生 CI Evidence；
-4. Reviewer 能查看 Diff、证据和风险并作出 Review；
-5. Outcome Owner 对固定 Review 完成 Acceptance；
-6. 产物变化后旧 Review/Acceptance 不再满足门禁；
-7. Runner 中断后任务可以恢复或重试，旧 Attempt 不能覆盖新结果；
-8. Timeline 可以重建全部关键事实，不依赖 Agent Transcript 作为业务真相；
-9. 用户能暂停或回滚 Deployment，并验证后续 Run 使用正确版本；
-10. 自托管部署可完成备份、恢复和 Secret Key 联合恢复演练。
+3. 独立 IntegrationTask 对固定 Commit 和 Criterion 产生 CI Evidence 与 VerificationResult；
+4. 系统创建固定 TargetRevision、ArtifactRevision、VerificationResult 和环境摘要的 Submission；
+5. Reviewer 能查看 Diff、证明覆盖、缺口和风险并对 Submission 作出 Review；
+6. Outcome Owner 对固定 Review 与 Submission 完成 Acceptance；
+7. TargetRevision、Submission 或受验内容变化后旧 Review/Acceptance 不再满足门禁；
+8. API、Temporal Worker 或 Runner 中断后任务可以恢复或重试，旧 Attempt 不能覆盖新结果，外部 Effect 不重复；
+9. Timeline 可以从 PostgreSQL 事实重建，不依赖 Temporal History 或 Agent Transcript 作为业务真相；
+10. 用户能暂停或回滚 Deployment，并验证后续 Run 使用正确版本；
+11. 自托管部署可完成 PostgreSQL、对象存储、Temporal Namespace 和 Secret Key 的联合恢复演练。
 
 ## 11. 非目标
 

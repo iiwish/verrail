@@ -1,21 +1,22 @@
 # Verrail 架构契约
 
-版本：0.1
+版本：0.2
 
-状态：`Ready_For_User_Review`
+状态：`Confirmed`
 
-最后更新：2026-08-25
+最后更新：2026-08-26
 
 ## 1. 架构目标
 
-Verrail 采用 TypeScript 控制平面、PostgreSQL 事实库、对象存储和独立执行平面。架构优先保证：
+Verrail 采用 PostgreSQL 业务事实库、Temporal 耐久编排、对象存储和独立执行平面。当前兼容 API 与大量继承能力运行在 TypeScript Server；新领域内核的 Go 目标边界由 ADR-0004 定义。架构优先保证：
 
 1. 交付事实可恢复、可审计、可验收；
 2. Agent Harness、Sandbox Backend 和 Provider 可替换；
 3. 开源自托管、托管 Cloud 和客户 VPC 执行使用同一领域合同；
 4. 企业代码、凭证和网络边界可以留在客户环境；
-5. 现有 Paperclip 基座可以渐进重构，不以大爆炸重写阻塞产品验证；
-6. 未来 Go 服务通过协议提取，而不是复制业务模型或双写事实库。
+5. 进程、API、Temporal Worker、Runner 或 Harness 失效后，长流程仍能恢复；
+6. 现有 Paperclip 基座可以渐进重构，不以大爆炸重写阻塞产品验证；
+7. Go 服务通过领域切片和语言中立协议接管责任，不复制业务模型或长期双写事实库。
 
 ## 2. 系统上下文
 
@@ -29,6 +30,10 @@ Human / API / Provider Event
 | Artifact/Evidence | Policy | Audit | Scheduler       |
 +--------------------------+---------------------------+
                            |
+                    Temporal Service
+                           |
+                    Temporal Worker
+                           |
                     Execution Gateway
                            |
           +----------------+----------------+
@@ -41,7 +46,7 @@ Human / API / Provider Event
       Codex / ...                        Codex / ...
 ```
 
-控制平面拥有业务事实。Execution Gateway、Runner、Sandbox 和 Adapter 只执行带租约的命令并回传候选事件、结果和证据。
+PostgreSQL 中的控制平面领域记录拥有业务事实。Temporal 拥有耐久编排历史；Execution Gateway、Runner、Sandbox 和 Adapter 只执行带租约的命令并回传候选事件、结果和证据。
 
 ## 3. 当前工程基座
 
@@ -50,12 +55,26 @@ Human / API / Provider Event
 | Web | React + Vite + TanStack Query | 操作台、设置、运行与审计界面 |
 | Server | Node.js + TypeScript + Express | REST API、领域服务、Scheduler、Adapter 调用 |
 | Database | PostgreSQL + Drizzle | 权威关系事实、迁移、事务与查询 |
+| Durable Orchestration | 当前未接入；目标采用 Temporal | Target/Run Workflow、Timer、Retry、Signal、等待、取消与恢复 |
 | Object Storage | Local/S3-compatible | Artifact、附件、日志和大对象 |
 | Adapters | TypeScript packages | Codex、Claude、Cursor、Process、HTTP 等 Harness 接入 |
 | Plugins | Plugin SDK | Provider、Sandbox、运行时服务和扩展能力 |
 | CLI | TypeScript CLI | 安装、配置、诊断和控制平面操作 |
 
 仓库内部仍有 `paperclipai` 包名、环境变量和领域命名。它们是兼容技术标识，按模块逐步迁移，不定义 Verrail 的产品语义。
+
+### 当前兼容流程引擎
+
+继承实现使用 PostgreSQL 行状态和 Node.js 服务代码共同推进流程：
+
+- `agent_wakeup_requests` 与 `heartbeat_runs` 保存排队、认领、运行、计划重试和结果；
+- `heartbeatService` 负责唤醒合并、并发认领、Adapter 调用、Run 日志、成本、Workspace、Secret、重试和终态处理；
+- Server 启动时执行 orphan reaper、queued run resume、scheduled retry promotion、stranded issue reconciliation 和 stale lock sweep；
+- 单个进程中的周期调度器使用 `setInterval` 扫描 Heartbeat、Routine、Monitor、Decision expiry、Recovery、Watchdog 和资源清理；
+- Pipeline/Case 使用 PostgreSQL 事务、版本字段、租约和显式 transition 服务推进；
+- Recovery Service 通过周期扫描识别 lost process、silent run、stranded issue、missing disposition 和失效租约，并创建重试或人工 Attention。
+
+该实现具备真实的持久化、幂等和恢复保护，但调度、业务裁决、执行适配和补偿逻辑高度集中。新的 Verrail Target/Run 主流程不得继续复制这套 Timer 与 Sweeper 模式；存量路径在 Temporal 纵向切片通过验证后逐步只读化和退役。
 
 ## 4. 控制平面模块
 
@@ -65,11 +84,15 @@ Human / API / Provider Event
 
 ### Delivery Domain
 
-负责 Project、Target、Stage、Outcome、AttentionItem 和 Timeline。这里定义用户可见的交付状态，不直接运行 Agent。
+负责 Project、Target、TargetRevision、StageProgress、HumanWorkResult、Outcome、AttentionItem 和 Timeline。这里定义用户可见的交付状态，不直接运行 Agent。
 
 ### Graph Engine
 
-负责 GraphProposal 校验、GraphRevision、节点激活、角色解析、依赖、强制 Gate、Node Lease、重规划和恢复。Director 是计划提议者，Graph Engine 是唯一状态裁决者。
+负责 GraphProposal 校验、GraphRevision、TaskNode/GateNode、节点激活、角色解析、依赖、强制 Gate 和重规划。Director 是计划提议者，Graph Engine 是唯一业务状态裁决者。
+
+### Durable Orchestration
+
+负责 TargetWorkflow、RunWorkflow、Child Workflow、Signal/Update、Timer、Retry、取消、Continue-As-New 和 Workflow Versioning。Temporal Worker 只编排领域命令和 Activity，不直接拥有 Target、Graph、Run、IntegrationRun、HumanWorkResult、Evidence、Review 或 Acceptance。Workflow ID、Task Queue、Search Attribute 和 Payload Codec 必须 Workspace-scoped 且版本化。
 
 ### Agent Lifecycle
 
@@ -77,7 +100,7 @@ Human / API / Provider Event
 
 ### Artifact and Evidence
 
-负责 ArtifactContract、ArtifactRevision、内容 Hash、Materialization、Evidence、DeliveryReview、ReviewComment 和 Acceptance。大对象写入 Object Store，关系、Hash 和生命周期写入 PostgreSQL。
+负责 AcceptanceCriterion、Claim、ArtifactContract、ArtifactRevision、内容 Hash、Materialization、IntegrationRun/IntegrationAttempt、Provider Receipt、Evidence、VerificationResult、Submission、DeliveryReview、ReviewComment 和 Acceptance。大对象写入 Object Store，关系、Hash 和生命周期写入 PostgreSQL。
 
 ### Capability Gateway
 
@@ -95,9 +118,11 @@ Human / API / Provider Event
 
 ### PostgreSQL
 
-PostgreSQL 是唯一领域事实库。Graph 状态、Run、租约、授权、Artifact 元数据、Evidence、Review、Acceptance 和 AuditEvent 必须在事务边界内保持一致。
+PostgreSQL 是唯一业务事实库。TargetRevision、Graph 状态、Run/RunAttempt、IntegrationRun/IntegrationAttempt、HumanWorkResult、租约、授权、Artifact 元数据、Claim、Evidence、VerificationResult、Submission、Review、Acceptance 和 AuditEvent 必须在事务边界内保持一致。
 
-领域命令使用 Transactional Outbox 发布后续工作。消费者必须容忍重复投递，并使用稳定幂等键。长任务不依赖单个 Node.js 进程的内存状态。
+领域命令使用 Transactional Outbox 发布后续工作。Outbox Dispatcher 使用稳定 Workflow ID 启动或 Signal Temporal；Temporal Activity 使用稳定命令 ID 调用领域服务。两个方向都必须容忍重复投递，不宣称跨 PostgreSQL 与 Temporal 的 exactly-once。长任务不依赖单个 API 或 Worker 进程的内存状态。
+
+Temporal Event History 是编排恢复记录，不是业务查询模型。UI、权限判断、Graph 裁决、Submission、Review 和 Acceptance 从 PostgreSQL 读取；Temporal Search Attributes 只用于运维定位和队列治理。
 
 ### Object Storage
 
@@ -110,9 +135,11 @@ MVP 使用 PostgreSQL 投影和索引。搜索引擎、数据仓库或流系统�
 ## 6. 执行链路
 
 ```text
-Graph Engine
-  -> Outbox Command
-  -> Runtime Scheduler
+Domain Command + Outbox
+  -> Temporal TargetWorkflow
+  -> Graph Engine activation decision
+  -> Temporal RunWorkflow
+  -> Runtime Scheduling Activity
   -> ExecutionLease + fencing token
   -> Execution Gateway
   -> Runner
@@ -121,10 +148,12 @@ Graph Engine
   -> Harness
   -> normalized events / result / artifacts
   -> validation
-  -> domain state + Evidence + AuditEvent
+  -> idempotent domain Activity
+  -> Run/Artifact/Evidence state + AuditEvent
+  -> Workflow Signal / completion
 ```
 
-命令和事件都携带 Workspace、Target、NodeExecution、Run、Attempt、Lease、协议版本和 Correlation ID。Runner 只能提交租约允许的结果。
+Agent 执行命令和事件携带 Workspace、TargetRevision、GraphRevision、WorkNode、Run、RunAttempt、Lease、协议版本、Workflow ID 和 Correlation ID。Integration 事件携带 IntegrationRun、IntegrationAttempt、Connector Version、Connection、Provider Ref 和幂等键；HumanWorkResult 携带 Principal 与输入版本。Runner 只能提交租约允许的结果。Temporal Retry 不替代 Effect 幂等、ExecutionLease 或 fencing。
 
 详细合同见 [`execution-runtime.md`](./execution-runtime.md)。
 
@@ -135,7 +164,9 @@ Verrail Cloud Plane
   Account | Billing | SSO | Fleet | Region | Quota
                          |
                   Tenant Control Cell
-        TypeScript API + PostgreSQL + Object Storage
+       Domain API + PostgreSQL + Object Storage
+                         |
+              Temporal Namespace + Worker
                          |
                   Execution Gateway
              +-----------+-----------+
@@ -147,11 +178,11 @@ Verrail Cloud Plane
 
 ### Open-source self-hosted
 
-单机或小团队使用同一 Server 构建、PostgreSQL、对象存储和一个或多个 Runner。Docker Compose 是首选入口。即使 Server 与 Runner 同机，也使用不同身份和协议边界。
+单机或小团队使用 Domain API、PostgreSQL、对象存储、Temporal 开发/自托管服务和一个或多个 Worker/Runner。Docker Compose 是首选入口。即使组件同机，也使用不同身份和协议边界。生产级自托管 Temporal 的支持等级必须明确，不能把开发服务器包装成高可用承诺。
 
 ### Managed Cloud
 
-Cloud Plane 管理账户、计费、配额、区域与租户单元生命周期。Tenant Control Cell 承担租户业务事实。首发可以共享基础设施，但逻辑合同必须允许高价值或受监管租户独立 Cell。
+Cloud Plane 管理账户、计费、配额、区域与租户单元生命周期。Tenant Control Cell 承担租户业务事实并绑定 Temporal Namespace。首发可以共享基础设施，但逻辑合同必须允许高价值或受监管租户独立 Cell；Temporal Payload 必须加密并遵守数据驻留策略。
 
 ### Private execution
 
@@ -170,27 +201,30 @@ Cloud Plane 管理账户、计费、配额、区域与租户单元生命周期�
 
 领域重构按垂直切片推进：
 
-1. 新增 Verrail 领域表和服务，不立即重命名全部上游表；
-2. 使用版本化兼容映射读取现有 Company/Project/Issue/Agent/Run 数据；
-3. 新 UI 只通过 Verrail API 使用 Target/Graph/Artifact 语义；
-4. 每个切片完成回填、对账、权限测试和回滚路径后停止旧写入；
-5. 所有调用方迁移完成后删除旧投影和兼容代码。
+1. 固定语言中立的 Domain Command、Domain Event、Temporal Workflow、Runner 和 Connector 合同；
+2. 新增 Verrail 领域表、Outbox 和 Temporal Workflow，不立即重命名全部上游表；
+3. 使用版本化兼容映射读取现有 Company/Project/Issue/Agent/Run 数据；
+4. 新 UI 只通过 Verrail API 使用 Target/Submission/Artifact/Evidence 语义；
+5. 每个切片完成回填、对账、Workflow replay、权限测试和回滚路径后停止旧写入；
+6. 所有调用方迁移完成后删除旧投影、Sweeper 和兼容代码。
 
 禁止长期双向写入两套权威模型。迁移期必须有指标显示旧路径调用量与不一致数量。
 
-## 10. 渐进式 Go 演进
+## 10. Go 目标内核与重构边界
 
-TypeScript 控制平面是当前产品基座。Go 只在以下条件同时成立时引入：
+TypeScript Server 是当前兼容基座。Go 是新 Verrail 领域与编排内核的目标语言，范围为 Domain API、Temporal Worker、Execution Gateway、Runner 和适合独立部署的后台 Worker。
 
-- 边界已有稳定、语言中立协议；
-- 性能、资源、隔离或单二进制运维收益经过测量；
-- 服务不需要共享内存或直接访问 TypeScript 内部模块；
-- 数据所有权、幂等、错误、版本和回滚合同完整；
-- 提取不要求复制领域事实或长期双写。
+Go 重构遵守以下边界：
 
-优先候选为 Execution Gateway、Runner Agent、Lease/Fencing 服务、日志/Artifact 流和高吞吐调度 Worker。Project、Target、Graph、权限、Review 和 Acceptance 先保留在 TypeScript 模块化控制平面中。
+- 以 Verrail v0.2 领域合同为目标，不逐行翻译 Paperclip 路由和 Service；
+- React UI、成熟 TypeScript Adapter、Plugin SDK 和不影响标志性闭环的继承能力可以继续运行在 TypeScript Compatibility Service；
+- 新 Go 服务先拥有新的 Workspace/Target/Graph/Run/Submission 领域表，旧表只通过兼容 Adapter 读取；
+- 同一聚合在任一迁移阶段只有一个写入 Owner，禁止长期双写；
+- Temporal Workflow、Domain Command/Event、OpenAPI、Runner Protocol 和 Artifact 接口先于代码稳定；
+- 切换采用 Strangler 路由、影子读取、契约测试、按 Workspace 或 Feature Flag 放量和一键回退；
+- 只有迁移切片通过数据对账、权限、安全、replay、恢复和负载验证后，TypeScript 写路径才能关闭。
 
-迁移使用 Strangler 模式：接口固定、影子读取或结果对比、小流量切换、可回退路由、停止旧实现。全量 Go 重写不属于路线目标。
+“后端 Go 化”指核心控制平面和执行平面由 Go 承担，不要求把 React UI、所有 Harness Adapter、Plugin 作者 SDK、历史迁移脚本或一次性运维工具机械改写为 Go。工作量与方案比较见 [`adrs/0004-go-control-plane-replatform.md`](./adrs/0004-go-control-plane-replatform.md)。
 
 ## 11. 安全边界
 
@@ -205,14 +239,14 @@ TypeScript 控制平面是当前产品基座。Go 只在以下条件同时成立
 
 ## 12. 可靠性与运维
 
-- Run、Attempt、Node 和 Sandbox 使用独立生命周期；
+- Run/RunAttempt、IntegrationRun/IntegrationAttempt、HumanWorkResult、WorkNode、Temporal Workflow 和 Sandbox 使用独立生命周期；
 - Lease 超时和 fencing token 解决失联与重复回传；
 - Provider `UnknownEffect` 先核验再重试；
-- 数据库与对象存储按同一恢复点目标制定备份；
-- Server、Gateway、Runner、Adapter 与 Sandbox 使用统一健康和容量语义；
+- PostgreSQL、对象存储与 Temporal Namespace 按可验证的恢复点和恢复顺序制定备份；
+- API、Temporal Service、Worker、Gateway、Runner、Adapter 与 Sandbox 使用统一健康和容量语义；
 - 部署必须支持迁移前检查、滚动升级、版本兼容窗口和回滚；
 - 关键 SLO 覆盖 API 可用性、调度延迟、运行恢复、Artifact 持久化和审计完整性。
 
 ## 13. 实施边界
 
-近期保持模块化单体，不提前拆分微服务。先完成一个 Target 到 Acceptance 的真实闭环，再扩展 Adapter、Connector、Sandbox 和 Cloud 规模。任何基础设施建设都必须证明它降低交付风险或打开企业场景，而不是只增加架构层数。
+近期只引入四个有明确责任的运行单元：Compatibility API、Verrail Domain/Temporal Worker、Execution Gateway/Runner 和 PostgreSQL/Object Storage/Temporal 基础设施。先完成一个 TargetRevision 到 Submission/Acceptance 的真实闭环，再扩展 Adapter、Connector、Sandbox 和 Cloud 规模。任何进一步拆分都必须证明它降低交付风险或打开企业场景，而不是只增加架构层数。

@@ -1,28 +1,30 @@
 # Verrail 运行本体契约
 
-版本：0.1
+版本：0.2
 
-状态：`Ready_For_User_Review`
+状态：`Confirmed`
 
-最后更新：2026-08-25
+最后更新：2026-08-26
 
 ## 1. 目的
 
-本文定义 Verrail 的核心名词、关系、状态和不变量。数据库表名、API 路径、UI 文案和 Provider 标识可以在迁移期不同，但不得改变这些语义。
+本文定义 Verrail 的核心名词、关系、状态和不变量。数据库表名、API 路径、UI 文案、Temporal Workflow 和 Provider 标识可以采用不同实现形式，但不得改变这些业务语义。
+
+Verrail 的领域中心是可验收交付：Target 固定责任，Submission 固定本次交付候选，Evidence 证明声明，Acceptance 裁决完成。Agent、Work Graph、Temporal、Runner 和 Harness 都是实现交付的手段。
 
 ## 2. 语义层次
 
-### 组织层
+### 组织与访问层
 
 `Workspace`、`Principal`、`RoleBinding`、`Project`、`Policy`。
 
-### 目标层
+### 交付责任层
 
-`Target`、`Stage`、`Outcome`、`AttentionItem`。
+`Target`、`TargetRevision`、`Stage`、`Outcome`。
 
 ### 计划与执行层
 
-`WorkGraph`、`GraphRevision`、`WorkNode`、`NodeExecution`、`Invocation`、`Run`、`RunAttempt`。
+`WorkGraph`、`GraphRevision`、`WorkNode`、`Invocation`、`Run`、`RunAttempt`、`IntegrationRun`、`IntegrationAttempt`、`HumanWorkResult`。
 
 ### Agent 生命周期层
 
@@ -30,7 +32,7 @@
 
 ### 交付证明层
 
-`ArtifactContract`、`Artifact`、`ArtifactRevision`、`Evidence`、`DeliveryReview`、`Acceptance`。
+`AcceptanceCriterion`、`Claim`、`Evidence`、`VerificationResult`、`ArtifactContract`、`Artifact`、`ArtifactRevision`、`Submission`、`DeliveryReview`、`Acceptance`。
 
 ### 执行基础设施层
 
@@ -38,25 +40,31 @@
 
 ### 外部 Effect 层
 
-`Connector`、`Connection`、`Capability`、`Grant`、`Action`、`Approval`、`CredentialRef`、`CredentialLease`。
+`Connector`、`Connection`、`Capability`、`Grant`、`ActionRequest`、`ActionApproval`、`EffectReceipt`、`CredentialRef`、`CredentialLease`。
+
+### 产品投影层
+
+`AttentionItem`、`Timeline`、`StageProgress`、`DeliveryHealth`。这些对象由领域事实计算，不拥有独立业务真相。
 
 ## 3. 核心实体
 
 ### Workspace
 
-租户级安全、数据和配置边界。所有业务对象必须直接或间接属于一个 Workspace。
+租户级安全、数据和配置边界。所有业务对象必须直接或间接属于且只属于一个 Workspace。
 
 ### Principal 与 RoleBinding
 
-Principal 是 Human、Group、ServiceAccount、Agent Deployment 或 Runner Identity。RoleBinding 把 Principal 绑定到 Workspace 或明确 ResourceScope 下的角色。身份和责任角色分开建模。
+Principal 是 Human、Group、ServiceAccount、Agent Deployment 或 Runner Identity。RoleBinding 把 Principal 绑定到 Workspace 或明确 ResourceScope 下的角色。身份、工作责任和授权分别计算。
 
 ### Project
 
-长期交付方向的组织容器，拥有 Target、成员投影、默认策略和资源引用。Project 不自动放大成员权限。
+长期交付方向的组织容器，拥有 Target、默认策略和资源引用。Project 不是自动扩权边界。
 
-### Target
+### Target 与 TargetRevision
 
-可被验收的结果，至少包含 Goal、OutcomeOwner、AcceptanceCriteria、RiskLevel、Deadline 和状态。状态为：
+Target 是可被验收结果的稳定身份。TargetRevision 是不可变的责任合同，固定 Goal、Constraints、AcceptanceCriteria、RiskLevel、Deadline、OutcomeOwner 和适用策略摘要。目标、约束、验收条件或责任边界变化必须创建新 Revision。
+
+Target 状态为：
 
 ```text
 draft -> ready -> active -> verifying -> awaiting_acceptance -> accepted
@@ -65,79 +73,108 @@ draft -> ready -> active -> verifying -> awaiting_acceptance -> accepted
                     +-> canceled
 ```
 
-`accepted` 只能由有效 Acceptance 和全部强制 Gate 推导，不能由 Agent 或普通状态更新直接写入。
+`accepted` 只能由针对活动 TargetRevision 的有效 Acceptance 和全部强制控制条件推导，不能由 Agent 或普通状态更新直接写入。
 
 ### Stage
 
-Target 内稳定的交付阶段，拥有顺序、进入条件、退出条件和聚合状态。Stage 用于人类理解与导航；Graph Engine 仍以 WorkNode 和依赖作为调度事实。
+Stage 是面向人的稳定交付阶段和导航投影。StageTemplate 定义顺序、进入条件和退出条件；Target 的 StageProgress 由活动 GraphRevision、WorkNode、Submission 和 Gate 状态聚合。Stage 不拥有 Artifact、Evidence 或运行状态，也不取代 Graph Engine 的依赖裁决。
 
 ### WorkGraph 与 GraphRevision
 
-WorkGraph 是 Target 的计划容器。GraphRevision 是不可变节点与边快照，绑定目标、输入、角色解析规则、预算、策略注入和来源提案。重规划创建新 Revision，不原地修改已执行版本。
+WorkGraph 是 Target 的计划容器。GraphRevision 是不可变节点与边快照，必须绑定一个 TargetRevision，并记录输入、角色解析、预算、策略注入和来源提案。重规划创建新 Revision，不原地修改已激活版本。
 
-### WorkNode 与 NodeExecution
+### WorkNode
 
-WorkNode 定义一项责任、输入、输出、完成条件、证据要求、超时和预算。NodeExecution 是某个 GraphRevision 下的执行实例，状态为：
+WorkNode 定义责任、输入、输出、完成条件、证据要求、超时和预算。WorkNode 分为两类：
 
-```text
-pending -> ready -> leased -> running -> succeeded
-                    |          |       -> failed
-                    |          |       -> blocked
-                    |          +------ -> canceled
-                    +----------------- -> expired
-```
+| 类别 | 类型 | 完成语义 |
+| --- | --- | --- |
+| `TaskNode` | `AgentTask` | 通过 Run 和 RunAttempt 产生结构化结果、Artifact 或 Evidence |
+| `TaskNode` | `IntegrationTask` | 通过 IntegrationRun、IntegrationAttempt 和 Provider 回执产生结果或 Evidence |
+| `TaskNode` | `HumanTask` | 由有权 Human 或 Group 提交不可变 HumanWorkResult |
+| `GateNode` | `DecisionGate`、`ReviewGate`、`AcceptanceGate`、`PolicyGate` | 由绑定版本的决定、评审、验收或策略结果满足，不创建伪执行 |
 
-WorkNode 类型固定为 `AgentTask`、`HumanTask`、`DecisionGate`、`ReviewGate`、`AcceptanceGate` 和 `IntegrationTask`。新增类型必须说明责任主体和不可伪造的完成依据。
+不同 TaskNode 使用不同执行事实，不能为了统一列表而伪造成同一种 Run。GateNode 只等待并校验对应领域事实。Agent 不得完成 HumanTask 或 Gate，人类不得伪造 AgentTask Run，Agent 自报不能替代 IntegrationTask 回执。
+
+### Invocation、Run、IntegrationRun、HumanWorkResult 与 AgentSession
+
+Invocation 是一次经过授权的启动、继续、取消或输入意图，可以激活 Target、Deployment 或 WorkNode。
+
+Run 是一个已激活 AgentTask 的持久逻辑执行，一次 Run 可以因重试、失联或改派产生多个 RunAttempt。每个 RunAttempt 固定 Deployment Revision、AgentVersion、EnvironmentManifest、ExecutionLease、Adapter/Harness Version 和 fencing token。
+
+IntegrationRun 是一个已激活 IntegrationTask 的持久逻辑执行，一次 IntegrationRun 可以因 Provider 重试、回调丢失或重新调度产生多个 IntegrationAttempt。每个 IntegrationAttempt 固定 Connector/Integration Version、Connection、外部对象或 Job 引用、幂等键和 Provider Receipt；它不伪造 AgentVersion、Sandbox 或 ExecutionLease。
+
+HumanWorkResult 是 HumanTask 的不可变提交事实，固定 WorkNode、GraphRevision、Principal、输入版本、结构化结果、ArtifactRevision 或附件 Hash 和提交时间。修改结果创建新 HumanWorkResult，不覆盖旧提交；HumanTask 不创建 Agent Run 或虚构 Runner。
+
+AgentSession 是 Agent 的逻辑上下文边界，不等于 Channel Thread、Temporal Workflow Execution 或 Harness Session。上下文延续不得改变 Run 和 Attempt 的业务身份。
 
 ### AgentDefinition、AgentVersion 与 Deployment
 
-AgentDefinition 是可编辑设计容器。AgentVersion 是不可变发布快照，固定 Runtime、模型、Prompt、Skill、工具、输出 Schema、Capability 上限和供应链信息。Deployment 是生产调用身份，固定一个 AgentVersion 和运行配置 Revision。
-
-### Invocation、AgentSession、Run 与 RunAttempt
-
-Invocation 是一次经过授权的调用意图。AgentSession 是 Agent 的逻辑上下文边界，不等于聊天 Thread 或 Harness Session。Run 是持久业务执行记录；RunAttempt 是一次可重试的具体执行。每个 Attempt 固定 EnvironmentManifest、ExecutionLease、Adapter/Harness Version 和 fencing token。
+AgentDefinition 是可编辑设计容器。AgentVersion 是不可变发布快照，固定 Runtime、模型、Prompt、Skill、工具、输出 Schema、Capability 上限和供应链信息。Deployment 是生产调用身份，固定一个 AgentVersion 和版本化运行配置。WorkNode 指派最终绑定到 Deployment Revision，而不是可变 Agent 草稿。
 
 ### EvaluationRun 与 ImprovementProposal
 
-EvaluationRun 在版本化评测集上比较 AgentVersion 的质量、成本、延迟和安全结果。ImprovementProposal 引用来源 Run/Evidence，提出对 AgentDefinition、Skill 或配置的修改；未经人类批准不得发布新 AgentVersion。
+EvaluationRun 在版本化评测集上比较 AgentVersion 的质量、成本、延迟和安全结果。ImprovementProposal 引用来源 Run、Submission 或 Evidence，提出对 AgentDefinition、Skill 或配置的修改；未经人类批准不得发布新 AgentVersion。
+
+### AcceptanceCriterion、Claim、Evidence 与 VerificationResult
+
+AcceptanceCriterion 属于 TargetRevision，定义可判定的验收要求和允许的证明方式。Submission 针对每个适用 Criterion 提出 Claim。Evidence 是支持或反驳 Claim 的不可变来源记录，包含类型、生产主体、对象 Hash、时间、有效期、信任等级和原始引用。
+
+VerificationResult 绑定 Criterion、Claim、Evidence 集合和验证器版本，结果为 `passed`、`failed`、`inconclusive` 或 `waived`。`waived` 必须引用具备权限的人类例外决定及有效范围。Agent 自述只能作为低信任 Observation，不能冒充 CI、扫描器或人工核验结果。
 
 ### ArtifactContract、Artifact 与 ArtifactRevision
 
-ArtifactContract 定义交付类型、结构、必需字段、渲染方式和证据要求。Artifact 是稳定交付对象；ArtifactRevision 是内容寻址的不可变版本，至少绑定内容 Hash、来源 Target/WorkNode/Run、Base Revision 和创建主体。
+ArtifactContract 定义交付类型、结构、必需字段、渲染方式和证据要求。Artifact 是稳定交付对象；ArtifactRevision 是内容寻址的不可变版本，至少绑定内容 Hash、来源 Target、WorkNode、Run、Base Revision 和创建主体。
 
-### Evidence
+### Submission
 
-Evidence 是对特定声明的结构化证明，记录类型、来源、生成主体、对象 Hash、时间、有效期和原始引用。Agent 自述可以作为低信任 Observation，不能冒充 CI、扫描器或人工核验结果。
+Submission 是一次不可变的待评审交付候选，固定 TargetRevision、ArtifactRevision 集合、VerificationResult 集合、Commit 或外部对象快照、EnvironmentManifest 摘要和提交主体。Artifact、Evidence、目标条件或外部对象发生实质变化时必须创建新 Submission，不能静默修改已评审候选。
 
 ### DeliveryReview 与 Acceptance
 
-DeliveryReview 绑定一个或多个固定 ArtifactRevision 和 Evidence，记录风险、未证明事项、评论和 Reviewer 结论。Acceptance 绑定 DeliveryReview、AcceptanceCriteria 和 AcceptanceAuthority。源 Revision、Evidence 或条件变化后，旧 Acceptance 不再满足当前 Target 门禁。
+DeliveryReview 绑定一个 Submission，记录风险、未证明事项、评论和 Reviewer 结论。Acceptance 绑定 DeliveryReview、Submission、TargetRevision 和 AcceptanceAuthority。新 Submission 或新 TargetRevision 不继承旧 Acceptance。
 
 ### RuntimePool、Runner 与 Lease
 
-RuntimePool 表示区域、信任域、网络、数据驻留和 RuntimeProfile 的调度池。Runner 是主动连接控制平面的执行节点。ExecutionLease 授权一个 Attempt 在指定 Runner 上执行；SandboxLease 进一步绑定隔离实例。所有提交使用 fencing token 防止旧租约覆盖新状态。
+RuntimePool 表示区域、信任域、网络、数据驻留和 RuntimeProfile 的调度池。Runner 是主动连接执行平面的节点。ExecutionLease 授权一个 RunAttempt 在指定 Runner 上执行；SandboxLease 进一步绑定隔离实例。所有结果提交使用 fencing token 防止旧租约覆盖新状态。
 
-### WorkspaceVolume 与 EnvironmentManifest
+### Connector、ActionRequest 与 EffectReceipt
 
-WorkspaceVolume 是可恢复的任务工作状态，生命周期独立于 Runtime 进程。EnvironmentManifest 是不可变环境摘要，包含 OS/Arch、镜像或宿主信息、工具版本、Adapter/Harness、网络策略、挂载、Secret 引用和来源 Hash。
+Connector 定义 Provider 能力和事件映射；Connection 是 Workspace 对 Provider 的已配置连接。Agent 只能提出结构化 ActionRequest。Capability Gateway 根据 Deployment、Grant、ResourceScope、Policy、风险和 CredentialLease 决定是否需要 ActionApproval 并执行。EffectReceipt 记录 Provider 的不可变结果或 `UnknownEffect` 状态。
 
-### Connector、Connection 与 Action
+## 4. Temporal 与业务事实
 
-Connector 定义 Provider 能力和事件映射；Connection 是 Workspace 对 Provider 的已配置连接。Agent 只提出结构化 Action，Capability Gateway 根据 Deployment、Grant、ResourceScope、Policy、风险和 CredentialLease 决定是否执行。
+Temporal 是 Verrail 的耐久编排引擎，负责 Workflow replay、Timer、Retry、Signal、Update、Child Workflow、取消和长时间等待。Temporal 不拥有 Project、Target、GraphRevision、Run、Submission、Evidence、Review、Acceptance、授权或审计的业务真相。
 
-## 4. 五类授权
+PostgreSQL 事务写入领域事实和 Transactional Outbox。Outbox Dispatcher 使用稳定 Workflow ID 和幂等键启动或通知 Temporal。Temporal Activity 通过版本化领域命令修改 PostgreSQL；外部 Effect 仍经过 Capability Gateway。Temporal Event History 用于恢复编排状态和诊断，不作为用户权限判断、验收或业务查询的唯一来源。
+
+推荐映射：
+
+```text
+TargetWorkflow(target_id)
+  coordinates active TargetRevision + GraphRevision
+  starts RunWorkflow(run_id) for ready AgentTask
+  coordinates IntegrationRun through idempotent Activities and provider-backed Signals
+  waits for HumanWorkResult and domain-backed Signals for gates, replans and external events
+
+RunWorkflow(run_id)
+  coordinates RunAttempt, timeout, retry, cancellation and Runner dispatch
+  never bypasses ExecutionLease, fencing or Capability Gateway
+```
+
+## 5. 五类授权
 
 | 授权 | 回答的问题 | 典型主体 |
 | --- | --- | --- |
-| `InvocationAuthority` | 谁可以启动、读取或取消某个 Deployment/Target/Run | Human、ServiceAccount、Connector |
-| `ExecutionAuthority` | 哪个 Deployment/Runner 可以执行某个 WorkNode | Graph Engine、Scheduler、Runner |
+| `InvocationAuthority` | 谁可以启动、读取、输入或取消 Deployment、Target 或 Run | Human、ServiceAccount、Connector |
+| `ExecutionAuthority` | 哪个 Deployment、RuntimePool 和 Runner 可以执行 WorkNode | Graph Engine、Scheduler、Runner |
 | `DecisionAuthority` | 谁可以完成 HumanTask 或 DecisionGate | Human、Group |
-| `ApprovalAuthority` | 谁可以允许一个结构化外部 Action 发生 | Human、Policy-authorized service |
-| `AcceptanceAuthority` | 谁可以接受特定 DeliveryReview | Outcome Owner、指定 Group |
+| `ApprovalAuthority` | 谁可以允许一个结构化外部 ActionRequest 发生 | Human、Policy-authorized service |
+| `AcceptanceAuthority` | 谁可以接受特定 Submission 的 DeliveryReview | Outcome Owner、指定 Group |
 
-五类授权独立计算。拥有一种授权不推导出其他授权。Agent 不能批准自己的高风险 Action，也不能验收自己的交付。
+五类授权独立计算。界面可以将待人工处理事项统一呈现为 Decision，但后端不得合并其权限或版本绑定。Agent 不能批准自己的高风险 Action，也不能验收自己的交付。
 
-## 5. 关系
+## 6. 关系
 
 ```text
 Workspace
@@ -147,51 +184,71 @@ Project
   owns Target
 
 Target
-  owns Stage, WorkGraph, Artifact, Outcome, Timeline
+  owns immutable TargetRevision and WorkGraph
+  projects StageProgress, AttentionItem, Timeline and Outcome
 
-WorkGraph
-  owns immutable GraphRevision
+GraphRevision(targetRevisionId)
+  contains TaskNode and GateNode
 
-GraphRevision
-  contains WorkNode
-
-WorkNode
-  creates NodeExecution
-
-NodeExecution
-  may create Invocation -> Run -> RunAttempt
+TaskNode
+  AgentTask -> Run -> RunAttempt
+  IntegrationTask -> IntegrationRun -> IntegrationAttempt
+  HumanTask -> HumanWorkResult
 
 RunAttempt
-  uses Deployment + AgentVersion + ExecutionLease + EnvironmentManifest
+  uses DeploymentRevision + AgentVersion + ExecutionLease + EnvironmentManifest
   produces ArtifactRevision and Evidence
 
-ArtifactRevision + Evidence
-  form DeliveryReview -> Acceptance
+IntegrationAttempt
+  uses ConnectorVersion + Connection + ProviderRef + idempotency key
+  produces EffectReceipt and Evidence
+
+HumanWorkResult
+  binds Principal + GraphRevision + immutable content or ArtifactRevision
+
+TargetRevision + ArtifactRevisions + VerificationResults
+  form immutable Submission -> DeliveryReview -> Acceptance -> Outcome
 ```
 
-## 6. 系统不变量
+## 7. 系统不变量
 
 1. 所有业务对象必须属于且只属于一个 Workspace；
-2. 生产 Run 必须固定不可变 AgentVersion 和 Deployment Revision；
-3. 已执行 GraphRevision 不得原地修改；
-4. Graph Engine 是节点激活与权威状态转换的唯一写入边界；
-5. Director 只能提交提案，不能绕过 Policy、Gate 或直接完成节点；
-6. AgentTask、HumanTask、Gate 和 IntegrationTask 的完成依据不可互相伪造；
-7. 每个外部 Effect 必须通过结构化 Action，使用稳定幂等键并形成 AuditEvent；
+2. Target 的目标、约束、验收条件或责任边界变化必须形成新 TargetRevision；
+3. 生产 AgentTask Run 必须固定不可变 AgentVersion、Deployment Revision 和 GraphRevision；IntegrationRun 必须固定 Connector/Integration Version、Connection 和 GraphRevision；HumanWorkResult 必须固定 Principal 与 GraphRevision；
+4. 已激活 GraphRevision 和已提交 Submission 不得原地修改；
+5. Graph Engine 是节点激活与权威状态转换的唯一写入边界，Temporal 只驱动经过领域校验的命令；
+6. AgentTask、IntegrationTask、HumanTask 与 GateNode 使用不同完成语义，不得相互伪造；
+7. 每个外部 Effect 必须经过结构化 ActionRequest，使用稳定幂等键并形成 EffectReceipt 与 AuditEvent；
 8. Invocation、Execution、Decision、Approval 和 Acceptance 授权不得合并；
-9. ArtifactRevision、Evidence、Review 和 Acceptance 必须绑定内容或对象 Hash；
-10. 源内容变化后，旧 Review/Acceptance 不能自动适用；
-11. Runner、Adapter、Harness Session 和 Transcript 不是业务事实源；
-12. Runner 不直接访问控制平面数据库；
+9. Claim、Evidence、VerificationResult、Submission、Review 和 Acceptance 必须绑定内容或对象 Hash；
+10. TargetRevision、Submission 或受验对象变化后，旧 Review 与 Acceptance 不能自动适用；
+11. Runner、Adapter、Harness Session、Temporal History 和 Transcript 不是业务事实源；
+12. Runner 与 Temporal Worker 不绕过领域服务直接推进 Target、Graph、Review 或 Acceptance；
 13. 旧 Lease 的结果不得覆盖使用更高 fencing token 的 Attempt；
-14. Secret 明文不得写入 Graph、Run、日志、Artifact 或 AuditEvent；
-15. WorkspaceVolume 可以延续，Runtime 进程和 Sandbox 可以回收；
-16. 任何 `UnknownEffect` 必须先核验 Provider 状态，不能盲目重放；
-17. `accepted` Target 必须可从版本、证据、评审和验收事实重建；
-18. 团队可信记忆只能来自已验收交付，并保留来源 Run 与 Artifact 引用。
+14. Secret 明文不得写入 Graph、Workflow History、Run、日志、Artifact、Evidence 或 AuditEvent；
+15. 任何 `UnknownEffect` 必须先核验 Provider 状态，不能盲目重放；
+16. `accepted` Target 必须可仅从 PostgreSQL 中的版本、Submission、证明、评审和验收事实重建；
+17. Timeline、AttentionItem、StageProgress 和 Outcome 是可重建投影，不是独立命令入口；
+18. 团队可信记忆只能来自已验收 Submission，并保留来源 Run、Artifact 和 Evidence 引用。
 
-## 7. 兼容边界
+## 8. 兼容边界
 
-当前 TypeScript 基座中的 `company`、`project`、`issue`、`agent`、`heartbeat_run`、`approval` 和 `work_product` 是迁移输入。迁移层可以读取或双写兼容投影，但 Verrail 新功能不得继续扩大 CEO、组织图、单指派 Issue 或通用 Board Approval 语义。
+当前 TypeScript 基座中的对象按以下语义迁移：
 
-兼容映射必须版本化、可观测、可回滚，并明确终止条件。任何一次迁移都不能同时改变存储、API、权限和 UI 语义而缺少独立验证。
+| Paperclip 对象 | Verrail 目标语义 |
+| --- | --- |
+| `company` | Workspace 兼容存储 |
+| `project` | Project |
+| `goal` | Objective 或 Context，不自动等于 Target |
+| `pipeline` | ProcessTemplate / StageTemplate，不等于 WorkGraph |
+| `case` | Target 的主要迁移来源 |
+| `issue` | WorkNode/WorkItem；简单模式可投影为 Target |
+| `heartbeat_run` | RunAttempt，迁移期可兼容为 Run |
+| `document` / `document_revision` | Artifact / ArtifactRevision |
+| `work_product` | Materialization 或 ExternalRef |
+| `decision` | HumanDecision |
+| `approval` | ActionApproval，必须补齐参数摘要和失效规则 |
+| `activity_log` | Timeline 与 AuditEvent 来源 |
+| `agent` / `agent_config_revision` | AgentDefinition 草稿历史，不等于已发布 AgentVersion |
+
+兼容映射必须版本化、可观测、可回滚，并明确终止条件。Verrail 新功能不得继续扩大 CEO、组织图、单指派 Issue 或通用 Board Approval 语义。任何一次迁移都不能同时改变存储、API、权限和 UI 语义而缺少独立验证。
