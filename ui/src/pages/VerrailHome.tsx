@@ -42,9 +42,9 @@ export function VerrailHome() {
     enabled: Boolean(selectedCompanyId),
   });
 
-  const attentionItems = attentionQuery.data?.items ?? [];
-  const liveRuns = runsQuery.data ?? [];
-  const projects = projectsQuery.data ?? [];
+  const attentionItems = attentionQuery.error ? [] : (attentionQuery.data?.items ?? []);
+  const liveRuns = runsQuery.error ? [] : (runsQuery.data ?? []);
+  const projects = projectsQuery.error ? [] : (projectsQuery.data ?? []);
   const attentionCount = attentionQuery.data && !attentionQuery.error
     ? attentionQuery.data.totalCount
     : "--";

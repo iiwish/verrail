@@ -130,9 +130,28 @@ describe("VerrailHome", () => {
   });
 
   it("does not present cached totals as current after a failed refetch", async () => {
-    attentionList.mockResolvedValue({ totalCount: 2, items: [] });
-    liveRunsForCompany.mockResolvedValue([{ id: "run-1" }]);
-    projectsList.mockResolvedValue([{ id: "project-1" }]);
+    attentionList.mockResolvedValue({
+      totalCount: 2,
+      items: [{
+        id: "attention-cached",
+        sourceKind: "review",
+        whyNow: "Cached attention",
+        activityAt: new Date().toISOString(),
+        subject: { title: "Cached review", identifier: "LAB-20", href: "/issues/LAB-20" },
+      }],
+    });
+    liveRunsForCompany.mockResolvedValue([{
+      id: "run-cached",
+      agentId: "agent-cached",
+      agentName: "Cached runner",
+      status: "running",
+    }]);
+    projectsList.mockResolvedValue([{
+      id: "project-cached",
+      urlKey: "cached-project-12345678",
+      name: "Cached project",
+      taskCount: 1,
+    }]);
     const queryClient = await renderHome();
 
     expect([...container.querySelectorAll("dl dd")].map((node) => node.textContent)).toEqual([
@@ -154,5 +173,8 @@ describe("VerrailHome", () => {
       "--",
       "--",
     ]);
+    expect(container.textContent).not.toContain("Cached review");
+    expect(container.textContent).not.toContain("Cached runner");
+    expect(container.textContent).not.toContain("Cached project");
   });
 });
