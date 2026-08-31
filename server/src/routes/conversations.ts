@@ -455,6 +455,7 @@ export function conversationRoutes(db: Db, opts: { deploymentMode: DeploymentMod
         timedOut = true;
         terminateRuntime?.();
       }, CHAT_TIMEOUT_MS);
+      if (requestClosed) terminateRuntime();
 
       proc.stderr.on("data", (data: Buffer) => {
         stderrBytes += data.length;
