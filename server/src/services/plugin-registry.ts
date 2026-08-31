@@ -28,7 +28,10 @@ import type {
   PluginWebhookDeliveryStatus,
 } from "@paperclipai/shared";
 import { conflict, notFound } from "../errors.js";
-import { assertPluginCanActivateWithVerrailNavigation } from "./verrail-navigation.js";
+import {
+  assertPluginCanActivateWithVerrailNavigation,
+  lockVerrailNavigationRouteOwnership,
+} from "./verrail-navigation.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -66,12 +69,13 @@ export function pluginRegistryService(db: Db) {
   // Internal helpers
   // -----------------------------------------------------------------------
 
-  async function getById(id: string) {
-    return db
+  async function getById(id: string, database: Db = db, lockForUpdate = false) {
+    const query = database
       .select()
       .from(plugins)
-      .where(eq(plugins.id, id))
-      .then((rows) => rows[0] ?? null);
+      .where(eq(plugins.id, id));
+    const rows = lockForUpdate ? await query.for("update") : await query;
+    return rows[0] ?? null;
   }
 
   async function getByKey(pluginKey: string) {
@@ -204,54 +208,62 @@ export function pluginRegistryService(db: Db) {
         manifest?: PaperclipPluginManifestV1;
       },
     ) => {
-      const plugin = await getById(id);
-      if (!plugin) throw notFound("Plugin not found");
+      return db.transaction(async (tx) => {
+        const txDb = tx as unknown as Db;
+        const plugin = await getById(id, txDb, true);
+        if (!plugin) throw notFound("Plugin not found");
 
-      const setClause: Partial<typeof plugins.$inferInsert> & { updatedAt: Date } = {
-        updatedAt: new Date(),
-      };
-      if (data.packageName !== undefined) setClause.packageName = data.packageName;
-      if (data.version !== undefined) setClause.version = data.version;
-      if (data.manifest !== undefined) {
-        if (plugin.status === "ready") {
-          await assertPluginCanActivateWithVerrailNavigation(db, {
-            pluginKey: plugin.pluginKey,
-            manifestJson: data.manifest,
-          });
+        const setClause: Partial<typeof plugins.$inferInsert> & { updatedAt: Date } = {
+          updatedAt: new Date(),
+        };
+        if (data.packageName !== undefined) setClause.packageName = data.packageName;
+        if (data.version !== undefined) setClause.version = data.version;
+        if (data.manifest !== undefined) {
+          if (plugin.status === "ready") {
+            await lockVerrailNavigationRouteOwnership(txDb);
+            await assertPluginCanActivateWithVerrailNavigation(txDb, {
+              pluginKey: plugin.pluginKey,
+              manifestJson: data.manifest,
+            });
+          }
+          setClause.manifestJson = data.manifest;
+          setClause.apiVersion = data.manifest.apiVersion;
+          setClause.categories = data.manifest.categories;
         }
-        setClause.manifestJson = data.manifest;
-        setClause.apiVersion = data.manifest.apiVersion;
-        setClause.categories = data.manifest.categories;
-      }
 
-      return db
-        .update(plugins)
-        .set(setClause)
-        .where(eq(plugins.id, id))
-        .returning()
-        .then((rows) => rows[0] ?? null);
+        return txDb
+          .update(plugins)
+          .set(setClause)
+          .where(eq(plugins.id, id))
+          .returning()
+          .then((rows) => rows[0] ?? null);
+      });
     },
 
     // ----- Status ---------------------------------------------------------
 
     /** Update a plugin's lifecycle status and optional error message. */
     updateStatus: async (id: string, input: UpdatePluginStatus) => {
-      const plugin = await getById(id);
-      if (!plugin) throw notFound("Plugin not found");
-      if (plugin.status !== "ready" && input.status === "ready") {
-        await assertPluginCanActivateWithVerrailNavigation(db, plugin);
-      }
+      return db.transaction(async (tx) => {
+        const txDb = tx as unknown as Db;
+        const plugin = await getById(id, txDb, true);
+        if (!plugin) throw notFound("Plugin not found");
+        if (plugin.status !== "ready" && input.status === "ready") {
+          await lockVerrailNavigationRouteOwnership(txDb);
+          await assertPluginCanActivateWithVerrailNavigation(txDb, plugin);
+        }
 
-      return db
-        .update(plugins)
-        .set({
-          status: input.status,
-          lastError: input.lastError ?? null,
-          updatedAt: new Date(),
-        })
-        .where(eq(plugins.id, id))
-        .returning()
-        .then((rows) => rows[0] ?? null);
+        return txDb
+          .update(plugins)
+          .set({
+            status: input.status,
+            lastError: input.lastError ?? null,
+            updatedAt: new Date(),
+          })
+          .where(eq(plugins.id, id))
+          .returning()
+          .then((rows) => rows[0] ?? null);
+      });
     },
 
     // ----- Uninstall / Remove --------------------------------------------

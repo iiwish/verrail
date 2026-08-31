@@ -1,7 +1,9 @@
 import { companies, plugins, type Db } from "@paperclipai/db";
 import { VERRAIL_NAVIGATION_ROUTE_ROOTS } from "@paperclipai/shared";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { conflict } from "../errors.js";
+
+const VERRAIL_NAVIGATION_ROUTE_OWNERSHIP_LOCK = "verrail:navigation-route-ownership";
 
 export interface VerrailNavigationRouteConflict {
   pluginKey: string;
@@ -17,6 +19,16 @@ interface PersistedPluginManifestRecord {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+export async function lockVerrailNavigationRouteOwnership(
+  db: Pick<Db, "execute">,
+): Promise<void> {
+  await db.execute(sql`
+    select pg_advisory_xact_lock(
+      hashtextextended(${VERRAIL_NAVIGATION_ROUTE_OWNERSHIP_LOCK}, 0)
+    )
+  `);
 }
 
 export function findVerrailNavigationRouteConflicts(

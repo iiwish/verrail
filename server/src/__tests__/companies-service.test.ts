@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   activityLog,
   agentConfigRevisions,
@@ -227,6 +227,95 @@ describeEmbeddedPostgres("companyService", () => {
     });
 
     expect(await pluginRegistryService(db).getById(plugin!.id)).toMatchObject({ status: "disabled" });
+  });
+
+  it("serializes concurrent navigation activation and conflicting plugin readiness", async () => {
+    const created = await companyService(db).create({ name: "Concurrent Navigation Guard" });
+    const [plugin] = await db.insert(plugins).values({
+      pluginKey: "paperclip.concurrent-home",
+      packageName: "@paperclipai/concurrent-home",
+      version: "1.0.0",
+      apiVersion: 1,
+      categories: ["ui"],
+      manifestJson: {
+        id: "paperclip.concurrent-home",
+        apiVersion: 1,
+        version: "1.0.0",
+        displayName: "Concurrent Home",
+        description: "A disabled plugin used to exercise route ownership serialization.",
+        author: "Paperclip",
+        categories: ["ui"],
+        capabilities: [],
+        entrypoints: { ui: "./dist/ui" },
+        ui: {
+          slots: [{
+            type: "page",
+            id: "concurrent-home-page",
+            displayName: "Concurrent Home",
+            exportName: "ConcurrentHome",
+            routePath: "home",
+          }],
+        },
+      },
+      status: "disabled",
+      installOrder: 1,
+    }).returning();
+
+    let releaseCompanyRow!: () => void;
+    let companyRowLocked!: () => void;
+    const releaseCompanyRowPromise = new Promise<void>((resolve) => {
+      releaseCompanyRow = resolve;
+    });
+    const companyRowLockedPromise = new Promise<void>((resolve) => {
+      companyRowLocked = resolve;
+    });
+    const rowLockTransaction = db.transaction(async (tx) => {
+      await tx.select({ id: companies.id }).from(companies).where(eq(companies.id, created.id)).for("update");
+      companyRowLocked();
+      await releaseCompanyRowPromise;
+    });
+    await companyRowLockedPromise;
+
+    const navigationActivation = companyService(db).update(created.id, { enableVerrailNavigation: true });
+    let activationReachedWrite = false;
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      const [waiting] = await db.execute<{ waiting: boolean }>(sql`
+        SELECT EXISTS (
+          SELECT 1
+          FROM pg_stat_activity
+          WHERE state = 'active'
+            AND wait_event_type = 'Lock'
+            AND query ILIKE '%update%companies%'
+        ) AS waiting
+      `);
+      if (waiting?.waiting) {
+        activationReachedWrite = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    expect(activationReachedWrite).toBe(true);
+
+    const pluginActivation = pluginRegistryService(db).updateStatus(plugin!.id, { status: "ready" });
+    releaseCompanyRow();
+    await rowLockTransaction;
+
+    const results = await Promise.allSettled([navigationActivation, pluginActivation]);
+
+    expect(results.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
+    const rejected = results.find((result) => result.status === "rejected");
+    expect(rejected).toMatchObject({
+      reason: {
+        status: 409,
+        details: { code: "VERRAIL_NAVIGATION_ROUTE_CONFLICT" },
+      },
+    });
+
+    const [company, storedPlugin] = await Promise.all([
+      companyService(db).getById(created.id),
+      pluginRegistryService(db).getById(plugin!.id),
+    ]);
+    expect(Number(company?.enableVerrailNavigation === true) + Number(storedPlugin?.status === "ready")).toBe(1);
   });
 
   it("does not auto-provision bundled built-in agents for a freshly created company", async () => {
