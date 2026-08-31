@@ -5,7 +5,7 @@
     "status": "passed",
     "pull_request_count": 7,
     "merge_order": [2, 3, 4, 5, 6, 7, 8],
-    "changed_file_counts_before_this_record": [78, 44, 84, 48, 77, 56, 64],
+    "changed_file_counts": [78, 44, 84, 48, 77, 56, 68],
     "all_under_100_files": true,
     "pnpm_lock_present": false,
     "template_complete": true,
@@ -58,7 +58,7 @@
     {
       "name": "final Conversation route and service regression",
       "status": "passed",
-      "result": "2 files and 11 tests passed"
+      "result": "Route suite: 8 passed. Service suite: 3 passed on isolated rerun after one transient embedded-database setup timeout."
     },
     {
       "name": "complete UI project baseline",
@@ -84,7 +84,7 @@
     {
       "area": "Conversation lifecycle and runtime capacity",
       "status": "closed",
-      "result": "Capacity is reserved before async setup, lifecycle mutation is row-locked, termination escalates across the runtime process group, and the lease remains held until output streams close."
+      "result": "Capacity is reserved before async setup, lifecycle mutation is row-locked, termination escalates across the runtime process group, the lease remains held until output streams close, and a post-install requestClosed check cancels disconnects during late runtime setup."
     },
     {
       "area": "repository-native screenshot evidence",

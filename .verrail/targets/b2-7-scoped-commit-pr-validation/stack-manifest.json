@@ -1,6 +1,6 @@
 {
   "target_id": "b2-7-scoped-commit-pr-validation",
-  "observed_at": "2026-08-31T06:41:41Z",
+  "observed_at": "2026-08-31T07:00:09Z",
   "repository": "iiwish/verrail",
   "merge_order": [2, 3, 4, 5, 6, 7, 8],
   "review_limit": {
@@ -96,9 +96,8 @@
       "url": "https://github.com/iiwish/verrail/pull/8",
       "base": "codex/verrail-frontend-platform",
       "head": "codex/verrail-conversations",
-      "verified_head": "9a43898eccbcb2737841345de1903ec3f20bb811",
-      "changed_files_before_this_record": 64,
-      "expected_changed_files_after_this_record": 68,
+      "verified_head": "43ae1fad7bf87eddb6b109cedf44acb14a19c826",
+      "changed_files": 68,
       "pnpm_lock_changed": false,
       "mergeable": true,
       "greptile": "5/5",
@@ -115,5 +114,5 @@
     "all_pull_requests_mergeable": true
   },
   "authority": "observational_non_merge",
-  "note": "verified_head is the last behavior-bearing head observed before this immutable B2.7 evidence record. This record does not merge, deploy, release, or authorize shipping."
+  "note": "verified_head is the last behavior-bearing head observed before this final B2.7 evidence refresh. This record does not merge, deploy, release, or authorize shipping."
 }

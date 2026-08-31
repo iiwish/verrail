@@ -28,7 +28,7 @@
     {
       "command": "pnpm --filter @paperclipai/server exec vitest run src/__tests__/conversation-routes.test.ts src/__tests__/conversation-service.test.ts",
       "status": "passed",
-      "summary": "Two files and 11 tests passed after the runtime process-tree cleanup fix."
+      "summary": "The route suite passed eight tests after the final disconnect fix. A combined rerun hit one embedded-database setup timeout; the isolated service rerun then passed all three tests, matching the earlier green two-file run."
     },
     {
       "command": "pnpm check:token-gates && pnpm check:ui-bundle-budget && pnpm check:brand-assets",
@@ -53,7 +53,7 @@
     {
       "command": "PR template, changed-file, lockfile, and commit-trailer audits",
       "status": "passed",
-      "summary": "Every body contains all required template sections; PR sizes are 78, 44, 84, 48, 77, 56, and 64 files before this record; no PR changes pnpm-lock.yaml; every implementation commit contains the required Paperclip co-author trailer."
+      "summary": "Every body contains all required template sections; final PR sizes are 78, 44, 84, 48, 77, 56, and 68 files; no PR changes pnpm-lock.yaml; every implementation commit contains the required Paperclip co-author trailer."
     }
   ],
   "summary": "Converted the cumulative productization work into seven dependency-ordered, reviewable pull requests; fixed every actionable automated-review finding; obtained a green full workflow on the master-based first PR; recorded the downstream CI boundary truthfully; and stopped before merge, deployment, release, or shipping."
