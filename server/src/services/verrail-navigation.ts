@@ -1,6 +1,6 @@
 import { plugins, type Db } from "@paperclipai/db";
 import { VERRAIL_NAVIGATION_ROUTE_ROOTS } from "@paperclipai/shared";
-import { asc, ne } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { conflict } from "../errors.js";
 
 export interface VerrailNavigationRouteConflict {
@@ -53,16 +53,16 @@ export function findVerrailNavigationRouteConflicts(
 export async function assertVerrailNavigationCanEnable(
   db: Pick<Db, "select">,
 ): Promise<void> {
-  const installedPlugins = await db
+  const activePlugins = await db
     .select({ pluginKey: plugins.pluginKey, manifestJson: plugins.manifestJson })
     .from(plugins)
-    .where(ne(plugins.status, "uninstalled"))
+    .where(eq(plugins.status, "ready"))
     .orderBy(asc(plugins.installOrder));
-  const conflicts = findVerrailNavigationRouteConflicts(installedPlugins);
+  const conflicts = findVerrailNavigationRouteConflicts(activePlugins);
   if (conflicts.length === 0) return;
 
   throw conflict(
-    "Verrail navigation cannot be enabled while installed plugins claim reserved route roots",
+    "Verrail navigation cannot be enabled while active plugins claim reserved route roots",
     {
       code: "VERRAIL_NAVIGATION_ROUTE_CONFLICT",
       conflicts,

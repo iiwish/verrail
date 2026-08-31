@@ -91,7 +91,7 @@ describeEmbeddedPostgres("companyService", () => {
     expect(company?.enableVerrailNavigation).toBe(false);
   });
 
-  it("blocks Verrail navigation activation when an installed plugin owns a reserved root", async () => {
+  it("blocks Verrail navigation activation when a ready plugin owns a reserved root", async () => {
     const [created] = await db.insert(companies).values({ name: "Navigation Conflict" }).returning();
     await db.insert(plugins).values({
       pluginKey: "paperclip.legacy-home",
@@ -119,7 +119,7 @@ describeEmbeddedPostgres("companyService", () => {
           }],
         },
       },
-      status: "installed",
+      status: "ready",
       installOrder: 1,
     });
 
@@ -135,6 +135,43 @@ describeEmbeddedPostgres("companyService", () => {
 
     const company = await companyService(db).getById(created!.id);
     expect(company?.enableVerrailNavigation).toBe(false);
+  });
+
+  it("ignores reserved roots from plugins that cannot mount UI", async () => {
+    const [created] = await db.insert(companies).values({ name: "Inactive Navigation Plugin" }).returning();
+    await db.insert(plugins).values({
+      pluginKey: "paperclip.inactive-home",
+      packageName: "@paperclipai/inactive-home",
+      version: "1.0.0",
+      apiVersion: 1,
+      categories: ["ui"],
+      manifestJson: {
+        id: "paperclip.inactive-home",
+        apiVersion: 1,
+        version: "1.0.0",
+        displayName: "Inactive Home",
+        description: "A plugin that cannot mount UI in its current state.",
+        author: "Paperclip",
+        categories: ["ui"],
+        capabilities: [],
+        entrypoints: { ui: "./dist/ui" },
+        ui: {
+          slots: [{
+            type: "page",
+            id: "inactive-home-page",
+            displayName: "Inactive Home",
+            exportName: "InactiveHome",
+            routePath: "home",
+          }],
+        },
+      },
+      status: "disabled",
+      installOrder: 1,
+    });
+
+    const updated = await companyService(db).update(created!.id, { enableVerrailNavigation: true });
+
+    expect(updated?.enableVerrailNavigation).toBe(true);
   });
 
   it("does not auto-provision bundled built-in agents for a freshly created company", async () => {

@@ -193,11 +193,13 @@ describe("company portability", () => {
       logoAssetId: null,
       logoUrl: null,
       requireBoardApprovalForNewAgents: false,
+      enableVerrailNavigation: false,
     });
     companySvc.create.mockResolvedValue({
       id: "company-imported",
       name: "Imported Paperclip",
       requireBoardApprovalForNewAgents: false,
+      enableVerrailNavigation: false,
     });
     agentSvc.list.mockResolvedValue([
       {
@@ -644,6 +646,45 @@ describe("company portability", () => {
     });
 
     expect(asTextFile(exported.files[".paperclip.yaml"])).toContain("requireBoardApprovalForNewAgents: true");
+  });
+
+  it("preserves Verrail navigation when a company is exported and imported", async () => {
+    const portability = companyPortabilityService({} as any);
+    companySvc.getById.mockResolvedValueOnce({
+      id: "company-1",
+      name: "Verrail Workspace",
+      description: null,
+      issuePrefix: "VER",
+      brandColor: "#5c5fff",
+      logoAssetId: null,
+      logoUrl: null,
+      requireBoardApprovalForNewAgents: false,
+      enableVerrailNavigation: true,
+    });
+
+    const exported = await portability.exportBundle("company-1", {
+      include: {
+        company: true,
+        agents: false,
+        projects: false,
+        issues: false,
+      },
+    });
+
+    expect(exported.manifest.company?.enableVerrailNavigation).toBe(true);
+    expect(asTextFile(exported.files[".paperclip.yaml"])).toContain("enableVerrailNavigation: true");
+
+    await portability.importBundle({
+      source: { type: "inline", rootPath: exported.rootPath, files: exported.files },
+      include: { company: true, agents: false, projects: false, issues: false },
+      target: { mode: "new_company", newCompanyName: "Imported Verrail Workspace" },
+      agents: "all",
+      collisionStrategy: "rename",
+    }, "user-1");
+
+    expect(companySvc.create).toHaveBeenCalledWith(expect.objectContaining({
+      enableVerrailNavigation: true,
+    }));
   });
 
   it("exports legacy inline sensitive env values as declarations without values", async () => {
