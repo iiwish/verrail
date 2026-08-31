@@ -113,4 +113,18 @@ describe("VerrailHome", () => {
     expect(container.textContent).toContain("No agents are running.");
     expect(container.textContent).toContain("No projects yet.");
   });
+
+  it("keeps unavailable summary values distinct from confirmed zero totals", async () => {
+    attentionList.mockRejectedValue(new Error("attention unavailable"));
+    liveRunsForCompany.mockRejectedValue(new Error("runs unavailable"));
+    projectsList.mockRejectedValue(new Error("projects unavailable"));
+
+    await renderHome();
+
+    expect([...container.querySelectorAll("dl dd")].map((node) => node.textContent)).toEqual([
+      "--",
+      "--",
+      "--",
+    ]);
+  });
 });

@@ -45,6 +45,9 @@ export function VerrailHome() {
   const attentionItems = attentionQuery.data?.items ?? [];
   const liveRuns = runsQuery.data ?? [];
   const projects = projectsQuery.data ?? [];
+  const attentionCount = attentionQuery.data ? attentionQuery.data.totalCount : "--";
+  const liveRunCount = runsQuery.data ? liveRuns.length : "--";
+  const projectCount = projectsQuery.data ? projects.length : "--";
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
@@ -61,15 +64,15 @@ export function VerrailHome() {
       <dl className="grid grid-cols-1 border-y border-border sm:grid-cols-3">
         <div className="py-4 sm:pr-6">
           <dt className="text-xs font-medium text-muted-foreground">{t("verrailHome.attention")}</dt>
-          <dd className="mt-1 text-2xl font-semibold">{attentionQuery.data?.totalCount ?? 0}</dd>
+          <dd className="mt-1 text-2xl font-semibold">{attentionCount}</dd>
         </div>
         <div className="border-t border-border py-4 sm:border-l sm:border-t-0 sm:px-6">
           <dt className="text-xs font-medium text-muted-foreground">{t("verrailHome.liveRuns")}</dt>
-          <dd className="mt-1 text-2xl font-semibold">{liveRuns.length}</dd>
+          <dd className="mt-1 text-2xl font-semibold">{liveRunCount}</dd>
         </div>
         <div className="border-t border-border py-4 sm:border-l sm:border-t-0 sm:pl-6">
           <dt className="text-xs font-medium text-muted-foreground">{t("nav.projects")}</dt>
-          <dd className="mt-1 text-2xl font-semibold">{projects.length}</dd>
+          <dd className="mt-1 text-2xl font-semibold">{projectCount}</dd>
         </div>
       </dl>
 
