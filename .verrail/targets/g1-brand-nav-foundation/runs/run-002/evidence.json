@@ -1,0 +1,45 @@
+{
+  "target_id": "g1-brand-nav-foundation",
+  "run_id": "run-002",
+  "head_commit": "3cc74798b0f421f65f49185bb3c65febb65dd02f",
+  "pull_request": "https://github.com/iiwish/verrail/pull/2",
+  "ci": {
+    "status": "passed",
+    "workflow_run": "https://github.com/iiwish/verrail/actions/runs/33362223145",
+    "observed_gates": [
+      "policy",
+      "Typecheck + Release Registry",
+      "General tests: all workspace and server shards",
+      "Verify serialized server suites: all shards",
+      "Build",
+      "Canary Dry Run",
+      "e2e: all shards",
+      "aggregate verify and CI"
+    ]
+  },
+  "focused_validation": {
+    "status": "passed",
+    "result": "101 tests passed; server and CLI typecheck passed"
+  },
+  "acceptance_coverage": [
+    {
+      "criterion": 4,
+      "status": "covered",
+      "evidence": "Workspace creation, update, and portability paths preserve the false default and validate every false-to-true navigation transition."
+    },
+    {
+      "criterion": 6,
+      "status": "covered",
+      "evidence": "Ready plugins block workspace activation, inactive plugins do not, and reciprocal plugin readiness and ready-manifest updates are rejected when an enabled workspace owns a reserved route."
+    },
+    {
+      "criterion": 8,
+      "status": "covered",
+      "evidence": "The isolated PR workflow is green at the recorded head commit; run-001 remains an immutable historical record rather than the current merge gate."
+    }
+  ],
+  "remaining_gaps": [
+    "Human brand acceptance and professional trademark clearance remain external product-launch gates.",
+    "Merging, deployment, release, and public announcement remain outside this review."
+  ]
+}

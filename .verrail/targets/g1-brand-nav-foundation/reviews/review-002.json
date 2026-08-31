@@ -1,0 +1,19 @@
+{
+  "target_id": "g1-brand-nav-foundation",
+  "run_id": "run-002",
+  "decision": "approve",
+  "reviewer": "Codex merge-readiness review; advisory only",
+  "rationale": "The isolated pull-request head passes the complete remote PR workflow. Navigation ownership is enforced in both directions across workspace creation, workspace update, portability import, plugin readiness transitions, and ready-manifest updates. This review supersedes review-001 only for current merge-readiness evidence and leaves its historical observations intact.",
+  "linked_evidence": [
+    ".verrail/targets/g1-brand-nav-foundation/runs/run-002/evidence.json",
+    "https://github.com/iiwish/verrail/actions/runs/33362223145",
+    "https://github.com/iiwish/verrail/pull/2"
+  ],
+  "requested_changes": [],
+  "conditions": [
+    "This is approval for human merge consideration of pull request 2, not approval to merge automatically.",
+    "Human brand acceptance and professional trademark clearance remain required before public launch.",
+    "Deployment, release, and public announcement require separate authorization."
+  ],
+  "created_at": "2026-08-31T06:09:59Z"
+}
