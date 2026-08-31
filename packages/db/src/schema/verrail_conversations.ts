@@ -7,6 +7,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -36,7 +37,7 @@ export const verrailConversations = pgTable(
       table.workspaceId,
       table.pinnedAt,
     ),
-    idWorkspaceUq: uniqueIndex("verrail_conversations_id_workspace_uq").on(
+    idWorkspaceUq: unique("verrail_conversations_id_workspace_uq").on(
       table.id,
       table.workspaceId,
     ),

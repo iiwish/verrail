@@ -39998,27 +39998,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "verrail_conversations_id_workspace_uq": {
-          "name": "verrail_conversations_id_workspace_uq",
-          "columns": [
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -40037,7 +40016,16 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "verrail_conversations_id_workspace_uq": {
+          "name": "verrail_conversations_id_workspace_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "workspace_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {
         "verrail_conversations_status_check": {
