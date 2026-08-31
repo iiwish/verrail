@@ -50,6 +50,7 @@ const watchedDirectories = [
   "cli",
   "scripts",
   "server",
+  "services/domain-api",
   "packages/adapter-utils",
   "packages/adapters",
   "packages/db",

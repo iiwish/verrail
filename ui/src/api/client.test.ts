@@ -99,6 +99,19 @@ describe("in-tab GET coalescing", () => {
     await Promise.all([api.post("/mutate", { a: 1 }), api.post("/mutate", { a: 1 })]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it("preserves JSON content type when a mutation adds custom headers", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+
+    await api.post("/idempotent", { title: "Target" }, {
+      headers: { "Idempotency-Key": "target:create:12345678" },
+    });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const headers = new Headers(init.headers);
+    expect(headers.get("Content-Type")).toBe("application/json");
+    expect(headers.get("Idempotency-Key")).toBe("target:create:12345678");
+  });
 });
 
 describe("per-caller abort semantics", () => {

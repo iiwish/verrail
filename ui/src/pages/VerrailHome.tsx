@@ -1,14 +1,14 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Bot, CircleAlert, FolderKanban } from "lucide-react";
+import { ArrowRight, Bot, CircleAlert, Target } from "lucide-react";
 import { Link } from "@/lib/router";
 import { attentionApi } from "../api/attention";
 import { heartbeatsApi } from "../api/heartbeats";
-import { projectsApi } from "../api/projects";
+import { targetsApi } from "../api/targets";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
-import { projectUrl, relativeTime } from "../lib/utils";
+import { relativeTime } from "../lib/utils";
 import { useTranslation } from "@/i18n";
 
 function SectionState({ children }: { children: string }) {
@@ -36,20 +36,24 @@ export function VerrailHome() {
     queryFn: () => heartbeatsApi.liveRunsForCompany(selectedCompanyId!),
     enabled: Boolean(selectedCompanyId),
   });
-  const projectsQuery = useQuery({
-    queryKey: selectedCompanyId ? queryKeys.projects.list(selectedCompanyId) : ["projects", "disabled"],
-    queryFn: () => projectsApi.list(selectedCompanyId!),
+  const targetsQuery = useQuery({
+    queryKey: selectedCompanyId
+      ? queryKeys.targets.list(selectedCompanyId, null, { limit: 100 })
+      : ["targets", "disabled"],
+    queryFn: () => targetsApi.list(selectedCompanyId!, { limit: 100 }),
     enabled: Boolean(selectedCompanyId),
   });
 
   const attentionItems = attentionQuery.error ? [] : (attentionQuery.data?.items ?? []);
   const liveRuns = runsQuery.error ? [] : (runsQuery.data ?? []);
-  const projects = projectsQuery.error ? [] : (projectsQuery.data ?? []);
   const attentionCount = attentionQuery.data && !attentionQuery.error
     ? attentionQuery.data.totalCount
     : "--";
   const liveRunCount = runsQuery.data && !runsQuery.error ? liveRuns.length : "--";
-  const projectCount = projectsQuery.data && !projectsQuery.error ? projects.length : "--";
+  const targets = targetsQuery.error ? [] : (targetsQuery.data?.items ?? []);
+  const targetCount = targetsQuery.data && !targetsQuery.error
+    ? (targetsQuery.data.nextCursor ? `${targets.length}+` : targets.length)
+    : "--";
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
@@ -73,8 +77,8 @@ export function VerrailHome() {
           <dd className="mt-1 text-2xl font-semibold">{liveRunCount}</dd>
         </div>
         <div className="border-t border-border py-4 sm:border-l sm:border-t-0 sm:pl-6">
-          <dt className="text-xs font-medium text-muted-foreground">{t("nav.projects")}</dt>
-          <dd className="mt-1 text-2xl font-semibold">{projectCount}</dd>
+          <dt className="text-xs font-medium text-muted-foreground">{t("targets.title")}</dt>
+          <dd className="mt-1 text-2xl font-semibold">{targetCount}</dd>
         </div>
       </dl>
 
@@ -133,22 +137,22 @@ export function VerrailHome() {
           ))}
         </section>
 
-        <section aria-labelledby="home-projects-title">
+        <section aria-labelledby="home-targets-title">
           <div className="flex items-center justify-between border-b border-border pb-3">
-            <h3 id="home-projects-title" className="text-sm font-semibold">{t("nav.projects")}</h3>
+            <h3 id="home-targets-title" className="text-sm font-semibold">{t("verrailHome.recentTargets")}</h3>
             <Link to="/projects" className="text-xs text-muted-foreground hover:text-foreground">{t("verrailHome.viewAll")}</Link>
           </div>
-          {projectsQuery.isLoading ? <SectionState>{t("verrailHome.loading")}</SectionState> : null}
-          {projectsQuery.error ? <SectionState>{t("verrailHome.unavailable")}</SectionState> : null}
-          {!projectsQuery.isLoading && !projectsQuery.error && projects.length === 0 ? (
-            <SectionState>{t("verrailHome.noProjects")}</SectionState>
+          {targetsQuery.isLoading ? <SectionState>{t("verrailHome.loading")}</SectionState> : null}
+          {targetsQuery.error ? <SectionState>{t("verrailHome.unavailable")}</SectionState> : null}
+          {!targetsQuery.isLoading && !targetsQuery.error && targets.length === 0 ? (
+            <SectionState>{t("verrailHome.noTargets")}</SectionState>
           ) : null}
-          {projects.slice(0, 5).map((project) => (
-            <Link key={project.id} to={projectUrl(project)} className="flex items-center gap-3 border-b border-border py-3 hover:bg-accent/30">
-              <FolderKanban className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate text-sm font-medium">{project.name}</span>
+          {targets.slice(0, 5).map((target) => (
+            <Link key={target.targetId} to={`/targets/${target.targetId}/overview`} className="flex items-center gap-3 border-b border-border py-3 hover:bg-accent/30">
+              <Target className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">{target.title}</span>
               <span className="shrink-0 text-xs text-muted-foreground">
-                {t("verrailHome.taskCount", { count: project.taskCount ?? 0 })}
+                {target.currentStage?.label ?? t("targets.unknownStage")}
               </span>
             </Link>
           ))}

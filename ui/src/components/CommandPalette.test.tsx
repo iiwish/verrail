@@ -29,6 +29,7 @@ const companyState = vi.hoisted(() => ({
 const dialogState = vi.hoisted(() => ({
   openNewIssue: vi.fn(),
   openNewAgent: vi.fn(),
+  openNewTarget: vi.fn(),
 }));
 
 const sidebarState = vi.hoisted(() => ({
@@ -203,6 +204,7 @@ describe("CommandPalette", () => {
     document.body.appendChild(container);
     dialogState.openNewIssue.mockReset();
     dialogState.openNewAgent.mockReset();
+    dialogState.openNewTarget.mockReset();
     sidebarState.setSidebarOpen.mockReset();
     mockIssuesApi.list.mockReset();
     mockIssuesApi.listLabels.mockReset();
@@ -238,6 +240,7 @@ describe("CommandPalette", () => {
         button.textContent?.trim(),
       );
       expect(labels).toEqual(expect.arrayContaining([
+        "Create new Target",
         "Home",
         "Projects",
         "Agents",
@@ -253,6 +256,12 @@ describe("CommandPalette", () => {
     expect(container.textContent).not.toContain("Goals");
     expect(container.textContent).not.toContain("Costs");
     expect(container.textContent).not.toContain("Activity");
+
+    const createTargetButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Create new Target",
+    );
+    act(() => createTargetButton?.click());
+    expect(dialogState.openNewTarget).toHaveBeenCalledTimes(1);
 
     act(() => {
       root.unmount();

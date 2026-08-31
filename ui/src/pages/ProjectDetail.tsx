@@ -15,6 +15,7 @@ import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useToastActions } from "../context/ToastContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { useDialogActions } from "../context/DialogContext";
 import { queryKeys } from "../lib/queryKeys";
 import { ProjectProperties, type ProjectConfigFieldKey, type ProjectFieldSaveState } from "../components/ProjectProperties";
 import { InlineEditor } from "../components/InlineEditor";
@@ -41,6 +42,8 @@ import { cn } from "@/lib/utils";
 import { Tabs } from "@/components/ui/tabs";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { PluginSlotMount, PluginSlotOutlet, usePluginSlots } from "@/plugins/slots";
+import { Target } from "lucide-react";
+import { isVerrailNavigationEnabled } from "../lib/verrail-navigation";
 import {
   isStarred,
   resourceMembershipState,
@@ -380,6 +383,7 @@ export function ProjectDetail() {
   const { pushToast } = useToastActions();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { openNewTarget } = useDialogActions();
   const location = useLocation();
   const [fieldSaveStates, setFieldSaveStates] = useState<Partial<Record<ProjectConfigFieldKey, ProjectFieldSaveState>>>({});
   const [dismissedLeftProjectIds, setDismissedLeftProjectIds] = useState<Set<string>>(() => new Set());
@@ -408,6 +412,9 @@ export function ProjectDetail() {
   const canonicalProjectRef = project ? projectRouteRef(project) : routeProjectRef;
   const projectLookupRef = project?.id ?? routeProjectRef;
   const resolvedCompanyId = project?.companyId ?? selectedCompanyId;
+  const verrailNavigationEnabled = isVerrailNavigationEnabled(
+    companies.find((company) => company.id === resolvedCompanyId),
+  );
   const membershipsQuery = useResourceMemberships(resolvedCompanyId);
   const membershipMutation = useResourceMembershipMutation(resolvedCompanyId);
   const projectMembershipState = project?.id
@@ -826,6 +833,20 @@ export function ProjectDetail() {
           ) : null}
         </div>
         <div className="ml-auto flex items-center gap-2">
+          {verrailNavigationEnabled ? (
+            <>
+              <Button variant="default" size="sm" onClick={() => openNewTarget({ projectId: project.id })}>
+                <Target className="h-4 w-4" />
+                {t("targets.create.submit")}
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <Link to={`/projects/${project.id}/targets`}>
+                  <Target className="h-4 w-4" />
+                  {t("targets.title")}
+                </Link>
+              </Button>
+            </>
+          ) : null}
           <StarToggle
             size="button"
             starred={projectStarred}

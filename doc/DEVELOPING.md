@@ -14,6 +14,8 @@ Current implementation status:
 
 - Node.js 24.11+
 - pnpm 9+
+- Go 1.26+ for the Verrail Domain API and orchestration worker
+- Docker with Compose for the local Temporal development server
 
 ## Dependency Lockfile Policy
 
@@ -38,6 +40,22 @@ This starts:
 - UI: served by the API server in dev middleware mode (same origin as API)
 
 `pnpm dev` runs the server in watch mode and restarts on changes from workspace packages (including adapter packages). Use `pnpm dev:once` to run without file watching.
+
+### Verrail durable orchestration
+
+Use the integrated development stack when exercising the complete Target handoff:
+
+```sh
+pnpm dev:verrail
+```
+
+This command starts a persistent local PostgreSQL container, the pinned Temporal development server, the TypeScript compatibility edge, its managed Go Domain API, and the separate Go orchestration worker with one shared database and task queue. The Web UI listens on `http://127.0.0.1:3100`; the Temporal UI listens on `http://127.0.0.1:58233`. `Ctrl-C` stops the processes and containers while preserving both Docker volumes. Use `pnpm dev:verrail:down` to stop a detached stack.
+
+The default development ports are PostgreSQL `55432`, Temporal gRPC `57233`, and Temporal UI `58233`. Override them with the `VERRAIL_DEV_*` variables in `.env.example`. The integrated compose file is a development dependency, not a production high-availability topology.
+
+The native Target command writes its outbox event even when Temporal is not running. For focused orchestration work, `pnpm temporal:dev:up` and `pnpm dev:orchestration-worker` remain available and require an explicit shared `DATABASE_URL`.
+
+The worker accepts `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`, `VERRAIL_TEMPORAL_TASK_QUEUE`, optional `TEMPORAL_API_KEY` and `TEMPORAL_TLS_SERVER_NAME`, plus the `VERRAIL_OUTBOX_*` polling, lease, retry, and backoff variables documented in `.env.example`. Supplying `TEMPORAL_API_KEY` always enables TLS; `TEMPORAL_TLS_SERVER_NAME` can set the expected certificate name explicitly. Keep the Domain API and orchestration worker as separate processes.
 
 `pnpm dev:once` auto-applies pending local migrations by default before starting the dev server.
 

@@ -102,7 +102,7 @@ export function CommandPalette() {
   const location = useLocation();
   const { selectedCompanyId, selectedCompany } = useCompany();
   const verrailNavigationEnabled = isVerrailNavigationEnabled(selectedCompany);
-  const { openNewIssue, openNewAgent } = useDialogActions();
+  const { openNewIssue, openNewAgent, openNewTarget } = useDialogActions();
   const { isMobile, setSidebarOpen } = useSidebar();
   const searchQuery = query.trim();
   const onIssueDetail = isOnIssueDetail(location.pathname);
@@ -328,6 +328,17 @@ export function CommandPalette() {
         )}
 
         <CommandGroup heading={t("commandPalette.actions")}>
+          {verrailNavigationEnabled ? (
+            <CommandItem
+              onSelect={() => {
+                setOpen(false);
+                openNewTarget();
+              }}
+            >
+              <Target className="mr-2 h-4 w-4" />
+              {t("commandPalette.createTarget")}
+            </CommandItem>
+          ) : null}
           {!verrailNavigationEnabled ? (
             <CommandItem
               onSelect={() => {

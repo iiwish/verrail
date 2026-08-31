@@ -101,6 +101,8 @@ import { filterHiddenInstanceSettingsPath, normalizeRememberedInstanceSettingsPa
 import { isVerrailNavigationEnabled, workspaceLandingRoute } from "./lib/verrail-navigation";
 import { VerrailHome } from "./pages/VerrailHome";
 import { VerrailGovernance, VerrailInfrastructure } from "./pages/VerrailOperationsIndex";
+import { ProjectTargets } from "./pages/ProjectTargets";
+import { TargetWorkbench } from "./pages/TargetWorkbench";
 
 const CompanyExport = lazy(() =>
   import("./pages/CompanyExport").then((module) => ({ default: module.CompanyExport })),
@@ -115,6 +117,10 @@ function boardRoutes() {
       <Route element={<VerrailNavigationGate />}>
         <Route path="home" element={<VerrailHome />} />
         <Route path="targets" element={<Navigate to="/projects" replace />} />
+        <Route path="targets/:targetId" element={<TargetOverviewRedirect />} />
+        <Route path="targets/:targetId/:tab" element={<TargetWorkbench />} />
+        <Route path="targets/:targetId/revisions/:targetRevisionId" element={<TargetWorkbench />} />
+        <Route path="projects/:projectId/targets" element={<ProjectTargets />} />
         <Route path="infrastructure" element={<VerrailInfrastructure />} />
         <Route path="governance" element={<VerrailGovernance />} />
       </Route>
@@ -358,6 +364,11 @@ function WorkspaceIndexRedirect() {
   const { companyPrefix } = useParams<{ companyPrefix?: string }>();
   if (loading) return <VerrailLoading />;
   return <Navigate to={workspaceLandingRoute(routeWorkspace(companies, companyPrefix, selectedCompany))} replace />;
+}
+
+function TargetOverviewRedirect() {
+  const { targetId } = useParams<{ targetId?: string }>();
+  return <Navigate to={targetId ? `/targets/${targetId}/overview` : "/projects"} replace />;
 }
 
 function VerrailNavigationGate() {
@@ -621,6 +632,8 @@ export function App() {
           <Route path="companies" element={<UnprefixedBoardRedirect />} />
           <Route path="home" element={<UnprefixedBoardRedirect />} />
           <Route path="targets" element={<UnprefixedBoardRedirect />} />
+          <Route path="targets/:targetId" element={<UnprefixedBoardRedirect />} />
+          <Route path="targets/:targetId/*" element={<UnprefixedBoardRedirect />} />
           <Route path="infrastructure" element={<UnprefixedBoardRedirect />} />
           <Route path="governance" element={<UnprefixedBoardRedirect />} />
           <Route path="issues" element={<UnprefixedBoardRedirect />} />
@@ -662,6 +675,7 @@ export function App() {
           <Route path="agents/:agentId/runs/:runId" element={<UnprefixedBoardRedirect />} />
           <Route path="projects" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId" element={<UnprefixedBoardRedirect />} />
+          <Route path="projects/:projectId/targets" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/overview" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/issues" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/issues/:filter" element={<UnprefixedBoardRedirect />} />

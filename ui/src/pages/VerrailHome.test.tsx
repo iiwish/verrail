@@ -8,7 +8,7 @@ import { VerrailHome } from "./VerrailHome";
 
 const attentionList = vi.hoisted(() => vi.fn());
 const liveRunsForCompany = vi.hoisted(() => vi.fn());
-const projectsList = vi.hoisted(() => vi.fn());
+const targetsList = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children, ...props }: { to: string; children: React.ReactNode }) => (
@@ -18,7 +18,7 @@ vi.mock("@/lib/router", () => ({
 
 vi.mock("../api/attention", () => ({ attentionApi: { list: attentionList } }));
 vi.mock("../api/heartbeats", () => ({ heartbeatsApi: { liveRunsForCompany } }));
-vi.mock("../api/projects", () => ({ projectsApi: { list: projectsList } }));
+vi.mock("../api/targets", () => ({ targetsApi: { list: targetsList } }));
 vi.mock("../context/CompanyContext", () => ({
   useCompany: () => ({
     selectedCompanyId: "company-1",
@@ -69,7 +69,7 @@ describe("VerrailHome", () => {
     return queryClient;
   }
 
-  it("shows existing attention, run, and project read models without inventing targets", async () => {
+  it("shows attention, run, and server-projected Target read models", async () => {
     attentionList.mockResolvedValue({
       totalCount: 1,
       items: [{
@@ -86,12 +86,17 @@ describe("VerrailHome", () => {
       agentName: "Release reviewer",
       status: "running",
     }]);
-    projectsList.mockResolvedValue([{
-      id: "project-1",
-      urlKey: "delivery-platform-12345678",
-      name: "Delivery platform",
-      taskCount: 3,
-    }]);
+    targetsList.mockResolvedValue({
+      schemaVersion: 1,
+      projectionPolicyVersion: "g1.v1",
+      asOf: new Date().toISOString(),
+      nextCursor: null,
+      items: [{
+        targetId: "target-1",
+        title: "Delivery platform",
+        currentStage: { key: "execute", label: "Execute" },
+      }],
+    });
 
     await renderHome();
 
@@ -99,26 +104,26 @@ describe("VerrailHome", () => {
     expect(container.textContent).toContain("Review release evidence");
     expect(container.textContent).toContain("Release reviewer");
     expect(container.textContent).toContain("Delivery platform");
-    expect(container.textContent).not.toContain("New Target");
+    expect(container.querySelector('a[href="/targets/target-1/overview"]')).not.toBeNull();
     expect(container.querySelector('a[href="/issues/LAB-12"]')).not.toBeNull();
   });
 
   it("renders explicit empty states for every operational section", async () => {
     attentionList.mockResolvedValue({ totalCount: 0, items: [] });
     liveRunsForCompany.mockResolvedValue([]);
-    projectsList.mockResolvedValue([]);
+    targetsList.mockResolvedValue({ items: [], nextCursor: null });
 
     await renderHome();
 
     expect(container.textContent).toContain("Nothing needs attention.");
     expect(container.textContent).toContain("No agents are running.");
-    expect(container.textContent).toContain("No projects yet.");
+    expect(container.textContent).toContain("No mapped targets yet.");
   });
 
   it("keeps unavailable summary values distinct from confirmed zero totals", async () => {
     attentionList.mockRejectedValue(new Error("attention unavailable"));
     liveRunsForCompany.mockRejectedValue(new Error("runs unavailable"));
-    projectsList.mockRejectedValue(new Error("projects unavailable"));
+    targetsList.mockRejectedValue(new Error("targets unavailable"));
 
     await renderHome();
 
@@ -146,12 +151,10 @@ describe("VerrailHome", () => {
       agentName: "Cached runner",
       status: "running",
     }]);
-    projectsList.mockResolvedValue([{
-      id: "project-cached",
-      urlKey: "cached-project-12345678",
-      name: "Cached project",
-      taskCount: 1,
-    }]);
+    targetsList.mockResolvedValue({
+      items: [{ targetId: "target-cached", title: "Cached target", currentStage: null }],
+      nextCursor: null,
+    });
     const queryClient = await renderHome();
 
     expect([...container.querySelectorAll("dl dd")].map((node) => node.textContent)).toEqual([
@@ -162,7 +165,7 @@ describe("VerrailHome", () => {
 
     attentionList.mockRejectedValue(new Error("attention refetch unavailable"));
     liveRunsForCompany.mockRejectedValue(new Error("runs refetch unavailable"));
-    projectsList.mockRejectedValue(new Error("projects refetch unavailable"));
+    targetsList.mockRejectedValue(new Error("targets refetch unavailable"));
     await act(async () => {
       await queryClient.refetchQueries({ type: "active" });
     });
@@ -175,6 +178,6 @@ describe("VerrailHome", () => {
     ]);
     expect(container.textContent).not.toContain("Cached review");
     expect(container.textContent).not.toContain("Cached runner");
-    expect(container.textContent).not.toContain("Cached project");
+    expect(container.textContent).not.toContain("Cached target");
   });
 });

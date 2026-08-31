@@ -55,6 +55,7 @@ const apiPrefixes: Record<string, string> = {
   "sidebar-badges.ts": "/api",
   "sidebar-preferences.ts": "/api",
   "summary-slots.ts": "/api",
+  "targets.ts": "/api",
   "status-cards.ts": "/api",
   "teams-catalog.ts": "/api",
   "tool-access.ts": "/api",
@@ -210,6 +211,25 @@ describe("openapi routes", () => {
       },
     });
     expect(res.body.paths["/api/companies/{companyId}/folders"].post.responses["201"]).toBeDefined();
+    expect(res.body.paths["/api/workspaces/{workspaceId}/targets/{targetId}"].get.responses["503"]).toBeDefined();
+    const createTarget = res.body.paths["/api/workspaces/{workspaceId}/targets"].post;
+    expect(createTarget.parameters).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "workspaceId", in: "path", required: true }),
+      expect.objectContaining({ name: "Idempotency-Key", in: "header", required: true }),
+    ]));
+    expect(createTarget.requestBody.content["application/json"].schema).toMatchObject({
+      type: "object",
+      required: expect.arrayContaining([
+        "projectId",
+        "title",
+        "outcomeOwner",
+        "goal",
+        "constraints",
+        "acceptanceCriteria",
+        "riskLevel",
+      ]),
+      additionalProperties: false,
+    });
     expect(
       Object.keys(
         res.body.paths["/api/issues/{id}/work-products/{workProductId}/review-document"].post.responses,
