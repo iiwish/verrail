@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -189,7 +190,10 @@ describe("skills catalog manifest", () => {
               sha256: "b".repeat(64),
             },
           ],
-          contentHash: `sha256:${"c".repeat(64)}`,
+          contentHash: contentHashForFiles([
+            { path: "SKILL.md", sha256: "a".repeat(64) },
+            { path: "scripts/run.py", sha256: "b".repeat(64) },
+          ]),
           source: {
             type: "github",
             hostname: "github.com",
@@ -256,7 +260,7 @@ describe("skills catalog manifest", () => {
           description: "Research recent discussion from a pinned upstream skill.",
           path: "catalog/optional/research/remote-research",
           entrypoint: "SKILL.md",
-          trustLevel: "scripts_executables",
+          trustLevel: "markdown_only",
           compatibility: "compatible",
           defaultInstall: false,
           recommendedForRoles: ["researcher"],
@@ -270,7 +274,9 @@ describe("skills catalog manifest", () => {
               sha256: "a".repeat(64),
             },
           ],
-          contentHash: `sha256:${"c".repeat(64)}`,
+          contentHash: contentHashForFiles([
+            { path: "SKILL.md", sha256: "a".repeat(64) },
+          ]),
           source: {
             type: "github",
             hostname: "github.com",
@@ -300,6 +306,86 @@ describe("skills catalog manifest", () => {
     expect(result.errors).toEqual([]);
     expect(result.manifest.skills).toHaveLength(1);
     expect(result.manifest.skills[0]?.files.map((file) => file.path)).toEqual(["SKILL.md"]);
+  });
+
+  it("bounds remote reference resolution and reuses a matching integrity-checked entry", async () => {
+    const packageDir = await createCatalogPackage();
+    await writeReference(packageDir, "optional", "research", "remote-research", {
+      source: {
+        type: "github",
+        hostname: "github.com",
+        owner: "example",
+        repo: "remote-skill",
+        ref: "v1.0.0",
+        commit: "0123456789abcdef0123456789abcdef01234567",
+        path: "skills/remote-research",
+      },
+      files: ["SKILL.md"],
+    });
+    await writeExistingReferencedManifest(packageDir, {
+      contentHash: contentHashForFiles([{ path: "SKILL.md", sha256: "a".repeat(64) }]),
+    });
+    const fetchMock = vi.fn((_url: string | URL | Request, init?: RequestInit) => (
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (!signal) {
+          reject(new Error("expected a bounded fetch signal"));
+          return;
+        }
+        if (signal.aborted) {
+          reject(signal.reason);
+          return;
+        }
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      })
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const startedAt = Date.now();
+    const result = await buildCatalogManifest({
+      packageDir,
+      generatedAt: "2026-05-26T00:00:00.000Z",
+      referenceFetchTimeoutMs: 20,
+    });
+
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    expect(result.errors).toEqual([]);
+    expect(result.manifest.skills[0]?.name).toBe("Remote Research");
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("does not reuse a referenced manifest entry with an invalid content hash", async () => {
+    const packageDir = await createCatalogPackage();
+    await writeReference(packageDir, "optional", "research", "remote-research", {
+      source: {
+        type: "github",
+        hostname: "github.com",
+        owner: "example",
+        repo: "remote-skill",
+        ref: "v1.0.0",
+        commit: "0123456789abcdef0123456789abcdef01234567",
+        path: "skills/remote-research",
+      },
+      files: ["SKILL.md"],
+    });
+    await writeExistingReferencedManifest(packageDir, {
+      contentHash: `sha256:${"0".repeat(64)}`,
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+
+    const result = await buildCatalogManifest({
+      packageDir,
+      generatedAt: "2026-05-26T00:00:00.000Z",
+      referenceFetchTimeoutMs: 20,
+    });
+
+    expect(result.manifest.skills).toEqual([]);
+    expect(result.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining("failed to fetch GitHub tree: HTTP 503"),
+    ]));
   });
 
   it("reports frontmatter, directory, uniqueness, and inventory errors together", async () => {
@@ -419,6 +505,62 @@ async function writeReference(
   await fs.writeFile(
     path.join(skillDir, "catalog-ref.json"),
     `${JSON.stringify(descriptor, null, 2)}\n`,
+    "utf8",
+  );
+}
+
+function contentHashForFiles(files: Array<{ path: string; sha256: string }>) {
+  const value = createHash("sha256").update(JSON.stringify(files)).digest("hex");
+  return `sha256:${value}`;
+}
+
+async function writeExistingReferencedManifest(
+  packageDir: string,
+  options: { contentHash: string },
+) {
+  await fs.mkdir(path.join(packageDir, "generated"), { recursive: true });
+  await fs.writeFile(
+    path.join(packageDir, "generated", "catalog.json"),
+    formatCatalogManifest({
+      schemaVersion: 1,
+      packageName: "@paperclipai/skills-catalog",
+      packageVersion: "0.3.1",
+      generatedAt: "2026-05-26T00:00:00.000Z",
+      skills: [{
+        id: "paperclipai:optional:research:remote-research",
+        key: "paperclipai/optional/research/remote-research",
+        kind: "optional",
+        category: "research",
+        slug: "remote-research",
+        name: "Remote Research",
+        description: "Research recent discussion from a pinned upstream skill.",
+        path: "catalog/optional/research/remote-research",
+        entrypoint: "SKILL.md",
+        trustLevel: "markdown_only",
+        compatibility: "compatible",
+        defaultInstall: false,
+        recommendedForRoles: [],
+        requires: [],
+        tags: [],
+        files: [{
+          path: "SKILL.md",
+          kind: "skill",
+          sizeBytes: 128,
+          sha256: "a".repeat(64),
+        }],
+        contentHash: options.contentHash,
+        source: {
+          type: "github",
+          hostname: "github.com",
+          owner: "example",
+          repo: "remote-skill",
+          ref: "v1.0.0",
+          commit: "0123456789abcdef0123456789abcdef01234567",
+          path: "skills/remote-research",
+          url: "https://github.com/example/remote-skill/tree/v1.0.0/skills/remote-research",
+        },
+      }],
+    }),
     "utf8",
   );
 }
