@@ -123,7 +123,7 @@ describe("VerrailHome", () => {
   it("keeps unavailable summary values distinct from confirmed zero totals", async () => {
     attentionList.mockRejectedValue(new Error("attention unavailable"));
     liveRunsForCompany.mockRejectedValue(new Error("runs unavailable"));
-    projectsList.mockRejectedValue(new Error("projects unavailable"));
+    targetsList.mockRejectedValue(new Error("targets unavailable"));
 
     await renderHome();
 
@@ -151,12 +151,10 @@ describe("VerrailHome", () => {
       agentName: "Cached runner",
       status: "running",
     }]);
-    projectsList.mockResolvedValue([{
-      id: "project-cached",
-      urlKey: "cached-project-12345678",
-      name: "Cached project",
-      taskCount: 1,
-    }]);
+    targetsList.mockResolvedValue({
+      items: [{ targetId: "target-cached", title: "Cached target", currentStage: null }],
+      nextCursor: null,
+    });
     const queryClient = await renderHome();
 
     expect([...container.querySelectorAll("dl dd")].map((node) => node.textContent)).toEqual([
@@ -167,7 +165,7 @@ describe("VerrailHome", () => {
 
     attentionList.mockRejectedValue(new Error("attention refetch unavailable"));
     liveRunsForCompany.mockRejectedValue(new Error("runs refetch unavailable"));
-    projectsList.mockRejectedValue(new Error("projects refetch unavailable"));
+    targetsList.mockRejectedValue(new Error("targets refetch unavailable"));
     await act(async () => {
       await queryClient.refetchQueries({ type: "active" });
     });
@@ -180,6 +178,6 @@ describe("VerrailHome", () => {
     ]);
     expect(container.textContent).not.toContain("Cached review");
     expect(container.textContent).not.toContain("Cached runner");
-    expect(container.textContent).not.toContain("Cached project");
+    expect(container.textContent).not.toContain("Cached target");
   });
 });
