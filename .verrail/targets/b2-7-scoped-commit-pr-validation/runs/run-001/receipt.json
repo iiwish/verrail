@@ -1,0 +1,60 @@
+{
+  "id": "run-001",
+  "target_id": "b2-7-scoped-commit-pr-validation",
+  "agent": "codex",
+  "runner": "Codex desktop local worktree and GitHub remote checks",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "6e523139fc901627e1825123f969315279a5a54c",
+  "output_commit": null,
+  "branch": "codex/verrail-conversations",
+  "working_tree": "The implementation stack is committed and pushed. This receipt, evidence, review, manifest, and target transition form the final evidence-only commit.",
+  "commands": [
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "All workspace typechecks passed for the cumulative stack. The server typecheck was rerun after the final Conversation lifecycle correction and passed."
+    },
+    {
+      "command": "pnpm build",
+      "status": "passed_with_existing_warnings",
+      "summary": "The production build passed with the existing CSS highlight, font resolution, mixed-import, and chunk-size warnings."
+    },
+    {
+      "command": "pnpm test:e2e:verrail-acceptance",
+      "status": "passed",
+      "summary": "Four browser projects passed at desktop and narrow-desktop widths in 4.5 minutes."
+    },
+    {
+      "command": "pnpm --filter @paperclipai/server exec vitest run src/__tests__/conversation-routes.test.ts src/__tests__/conversation-service.test.ts",
+      "status": "passed",
+      "summary": "Two files and 11 tests passed after the runtime process-tree cleanup fix."
+    },
+    {
+      "command": "pnpm check:token-gates && pnpm check:ui-bundle-budget && pnpm check:brand-assets",
+      "status": "passed",
+      "summary": "Design-token, bundle-budget, and brand-asset integrity gates passed."
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "summary": "No whitespace errors were present."
+    },
+    {
+      "command": "gh run view 33363179644 --repo iiwish/verrail",
+      "status": "passed",
+      "summary": "The complete PR workflow for PR 2 concluded success after rerunning the one transient server shard failure."
+    },
+    {
+      "command": "gh pr view and gh api review inspection for PRs 2-8",
+      "status": "passed",
+      "summary": "All seven PRs are mergeable, all current Greptile reviews are 5/5, and no unresolved review thread remains."
+    },
+    {
+      "command": "PR template, changed-file, lockfile, and commit-trailer audits",
+      "status": "passed",
+      "summary": "Every body contains all required template sections; PR sizes are 78, 44, 84, 48, 77, 56, and 64 files before this record; no PR changes pnpm-lock.yaml; every implementation commit contains the required Paperclip co-author trailer."
+    }
+  ],
+  "summary": "Converted the cumulative productization work into seven dependency-ordered, reviewable pull requests; fixed every actionable automated-review finding; obtained a green full workflow on the master-based first PR; recorded the downstream CI boundary truthfully; and stopped before merge, deployment, release, or shipping."
+}

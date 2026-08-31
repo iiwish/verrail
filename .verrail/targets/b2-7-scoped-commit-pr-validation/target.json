@@ -18,7 +18,7 @@
     "Required remote CI and automated review status are observed for every pull request; actionable failures are fixed within scope or recorded as precise blockers.",
     "Repo-native receipt, evidence, stack manifest, timeline, and advisory review state whether the stack is ready for human merge decisions without merging it."
   ],
-  "status": "in_progress",
+  "status": "needs_review",
   "created_at": "2026-08-31T04:41:45Z",
-  "updated_at": "2026-08-31T04:41:45Z"
+  "updated_at": "2026-08-31T06:41:41Z"
 }

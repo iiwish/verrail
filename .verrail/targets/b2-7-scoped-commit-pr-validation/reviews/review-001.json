@@ -1,0 +1,22 @@
+{
+  "target_id": "b2-7-scoped-commit-pr-validation",
+  "run_id": "run-001",
+  "decision": "approve",
+  "readiness": "ready_for_sequential_human_merge_review",
+  "authority": "advisory_non_final",
+  "reviewer": "Codex implementation self-review; independent human approval required",
+  "rationale": "The cumulative change is no longer an opaque oversized batch. Seven dependency-ordered PRs are individually reviewable, template-complete, free of pnpm-lock.yaml changes, mergeable, and at 5/5 automated review with no unresolved threads. The master-based first PR has a green complete remote workflow. Local typecheck, build, focused Conversation regression, browser acceptance, token, bundle, brand, and diff gates pass. The remaining constraint is procedural rather than hidden: PRs 3-8 do not receive the full workflow while based on another stack branch, so each must be retargeted and reach green CI before its own merge.",
+  "linked_evidence": [
+    ".verrail/targets/b2-7-scoped-commit-pr-validation/runs/run-001/receipt.json",
+    ".verrail/targets/b2-7-scoped-commit-pr-validation/runs/run-001/evidence.json",
+    ".verrail/targets/b2-7-scoped-commit-pr-validation/stack-manifest.json"
+  ],
+  "requested_changes": [],
+  "conditions": [
+    "Merge only in PR order 2, 3, 4, 5, 6, 7, 8.",
+    "After each parent merges, retarget the next PR to master and require its complete remote workflow to pass before merging it.",
+    "Recheck mergeability, current-head automated review, and unresolved threads immediately before each merge.",
+    "A human reviewer must approve each PR; this advisory review does not authorize merge, deployment, release, or shipping."
+  ],
+  "created_at": "2026-08-31T06:41:41Z"
+}

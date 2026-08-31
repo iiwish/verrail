@@ -1,0 +1,119 @@
+{
+  "target_id": "b2-7-scoped-commit-pr-validation",
+  "observed_at": "2026-08-31T06:41:41Z",
+  "repository": "iiwish/verrail",
+  "merge_order": [2, 3, 4, 5, 6, 7, 8],
+  "review_limit": {
+    "maximum_changed_files": 99,
+    "all_pull_requests_within_limit": true
+  },
+  "pull_requests": [
+    {
+      "number": 2,
+      "title": "feat: establish Verrail brand and product contracts",
+      "url": "https://github.com/iiwish/verrail/pull/2",
+      "base": "master",
+      "head": "codex/verrail-brand-foundation",
+      "verified_head": "31b9b43ffc8ae422465626d4fcbf92cce799c175",
+      "changed_files": 78,
+      "pnpm_lock_changed": false,
+      "mergeable": true,
+      "greptile": "5/5",
+      "remote_ci": {
+        "status": "passed",
+        "run": "https://github.com/iiwish/verrail/actions/runs/33363179644",
+        "note": "The first attempt of one server shard hit the known plugin-worker timing flake; the failed job rerun passed and the workflow conclusion is success."
+      }
+    },
+    {
+      "number": 3,
+      "title": "feat: add Verrail product shell and navigation",
+      "url": "https://github.com/iiwish/verrail/pull/3",
+      "base": "codex/verrail-brand-foundation",
+      "head": "codex/verrail-product-shell",
+      "verified_head": "52ad5a44b30e3afd3a80ed6cc695b6233906efc3",
+      "changed_files": 44,
+      "pnpm_lock_changed": false,
+      "mergeable": true,
+      "greptile": "5/5",
+      "remote_ci": { "status": "deferred_by_workflow_base_filter" }
+    },
+    {
+      "number": 4,
+      "title": "feat: add governed Target domain and Temporal workflow",
+      "url": "https://github.com/iiwish/verrail/pull/4",
+      "base": "codex/verrail-product-shell",
+      "head": "codex/verrail-target-domain",
+      "verified_head": "9ecc3cbc44ef4d3dc79722286cf135c2331ebae5",
+      "changed_files": 84,
+      "pnpm_lock_changed": false,
+      "mergeable": true,
+      "greptile": "5/5",
+      "remote_ci": { "status": "deferred_by_workflow_base_filter" }
+    },
+    {
+      "number": 5,
+      "title": "docs: attach Target delivery evidence",
+      "url": "https://github.com/iiwish/verrail/pull/5",
+      "base": "codex/verrail-target-domain",
+      "head": "codex/verrail-target-evidence",
+      "verified_head": "bc1d70408669cce04cf76ea16616925655ff8695",
+      "changed_files": 48,
+      "pnpm_lock_changed": false,
+      "mergeable": true,
+      "greptile": "5/5",
+      "remote_ci": { "status": "deferred_by_workflow_base_filter" }
+    },
+    {
+      "number": 6,
+      "title": "feat: close Project Target Work acceptance",
+      "url": "https://github.com/iiwish/verrail/pull/6",
+      "base": "codex/verrail-target-evidence",
+      "head": "codex/verrail-frontend-acceptance",
+      "verified_head": "3c39e0a4ec5ae4f9ff1e063ea38a3ae1e78417e4",
+      "changed_files": 77,
+      "pnpm_lock_changed": false,
+      "mergeable": true,
+      "greptile": "5/5",
+      "remote_ci": { "status": "deferred_by_workflow_base_filter" }
+    },
+    {
+      "number": 7,
+      "title": "feat: unify Verrail management navigation",
+      "url": "https://github.com/iiwish/verrail/pull/7",
+      "base": "codex/verrail-frontend-acceptance",
+      "head": "codex/verrail-frontend-platform",
+      "verified_head": "c6b09219467c51e31cdb760e379cd6a937537969",
+      "changed_files": 56,
+      "pnpm_lock_changed": false,
+      "mergeable": true,
+      "greptile": "5/5",
+      "remote_ci": { "status": "deferred_by_workflow_base_filter" }
+    },
+    {
+      "number": 8,
+      "title": "feat: add governed Conversation sessions",
+      "url": "https://github.com/iiwish/verrail/pull/8",
+      "base": "codex/verrail-frontend-platform",
+      "head": "codex/verrail-conversations",
+      "verified_head": "9a43898eccbcb2737841345de1903ec3f20bb811",
+      "changed_files_before_this_record": 64,
+      "expected_changed_files_after_this_record": 68,
+      "pnpm_lock_changed": false,
+      "mergeable": true,
+      "greptile": "5/5",
+      "remote_ci": { "status": "deferred_by_workflow_base_filter" }
+    }
+  ],
+  "workflow_boundary": {
+    "source": ".github/workflows/pr.yml",
+    "finding": "The full PR workflow is filtered to pull requests whose base is master. PRs 3 through 8 therefore receive automated review now but must be retargeted to master in dependency order and reach green CI before each merge."
+  },
+  "review_state": {
+    "all_greptile_scores": "5/5",
+    "unresolved_review_threads": 0,
+    "all_pull_requests_mergeable": true
+  },
+  "authority": "observational_non_merge",
+  "note": "verified_head is the last behavior-bearing head observed before this immutable B2.7 evidence record. This record does not merge, deploy, release, or authorize shipping."
+}
