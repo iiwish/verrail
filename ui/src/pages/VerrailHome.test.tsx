@@ -88,7 +88,7 @@ describe("VerrailHome", () => {
     }]);
     targetsList.mockResolvedValue({
       schemaVersion: 1,
-      projectionPolicyVersion: "g1.v1",
+      readModelPolicyVersion: "native.v1",
       asOf: new Date().toISOString(),
       nextCursor: null,
       items: [{

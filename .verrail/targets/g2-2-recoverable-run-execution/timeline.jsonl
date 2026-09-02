@@ -1,0 +1,6 @@
+{"type":"target.created","at":"2026-09-02T06:42:54Z","actor":"user","target_id":"g2-2-recoverable-run-execution","runtime_workspace_id":"45571f9e-90d6-4847-9504-74971defcf6b","runtime_target_id":"45dfb4a5-43ce-48bc-af28-20d8a782e57b","runtime_target_revision_id":"5dba97f9-8adb-4b24-85b9-6e9c1896f0e1","runtime_work_graph_id":"138c1bb4-1c9f-40da-86a5-99245a60c3f7"}
+{"type":"execution.started","at":"2026-09-02T06:43:12Z","actor":"codex","target_id":"g2-2-recoverable-run-execution","run_id":"run-001","branch":"codex/g1-domain-closure","base_commit":"b307b961445632a79acf712600ff1b1736a87112"}
+{"type":"implementation.completed","at":"2026-09-02T07:44:46Z","actor":"codex","target_id":"g2-2-recoverable-run-execution","run_id":"run-001","scope":"HostTrusted recoverable Run execution control slice"}
+{"type":"browser.acceptance.completed","at":"2026-09-02T07:44:46Z","actor":"codex","target_id":"g2-2-recoverable-run-execution","run_id":"run-001","runtime_run_id":"2e75411b-163f-4cef-9c66-1ec400fd0d31","result":"passed"}
+{"type":"evidence.scanned","at":"2026-09-02T07:44:46Z","actor":"codex","target_id":"g2-2-recoverable-run-execution","run_id":"run-001","result":"passed_with_load_adjudication"}
+{"type":"review.drafted","at":"2026-09-02T07:44:46Z","actor":"codex","target_id":"g2-2-recoverable-run-execution","run_id":"run-001","decision":"ready_for_independent_review"}

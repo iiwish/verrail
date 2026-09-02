@@ -72,6 +72,14 @@ func (store *Store) Create(ctx context.Context, command CreateCommand) (CreateRe
 	if err != nil {
 		return CreateResult{}, fmt.Errorf("generate TargetRevision ID: %w", err)
 	}
+	workGraphID, err := NewUUID()
+	if err != nil {
+		return CreateResult{}, fmt.Errorf("generate WorkGraph ID: %w", err)
+	}
+	graphRevisionID, err := NewUUID()
+	if err != nil {
+		return CreateResult{}, fmt.Errorf("generate GraphRevision ID: %w", err)
+	}
 	receiptID, err := NewUUID()
 	if err != nil {
 		return CreateResult{}, fmt.Errorf("generate command receipt ID: %w", err)
@@ -95,13 +103,14 @@ func (store *Store) Create(ctx context.Context, command CreateCommand) (CreateRe
 	}
 	criteriaJSON, _ := json.Marshal(criteria)
 	constraintsJSON, _ := json.Marshal(command.Input.Constraints)
+	resourceRefsJSON, _ := json.Marshal(command.Input.ResourceRefs)
 
 	_, err = tx.Exec(ctx, `
 		insert into verrail_targets (
-			id, workspace_id, project_id, active_target_revision_id, status,
+			id, workspace_id, collection_id, active_target_revision_id, status,
 			created_by_principal_type, created_by_principal_id
 		) values ($1, $2, $3, $4, 'draft', $5, $6)
-	`, targetID, command.WorkspaceID, command.Input.ProjectID, revisionID, command.Principal.Type, command.Principal.ID)
+	`, targetID, command.WorkspaceID, command.Input.CollectionID, revisionID, command.Principal.Type, command.Principal.ID)
 	if err != nil {
 		return CreateResult{}, fmt.Errorf("insert Target: %w", err)
 	}
@@ -110,21 +119,39 @@ func (store *Store) Create(ctx context.Context, command CreateCommand) (CreateRe
 		insert into verrail_target_revisions (
 			id, workspace_id, target_id, revision_number, title, summary,
 			outcome_owner_principal_type, outcome_owner_principal_id, outcome_owner_display_name,
-			goal, constraints, acceptance_criteria, risk_level, deadline, policy_summary, content_hash,
+			goal, constraints, acceptance_criteria, risk_level, deadline, policy_summary, resource_refs, content_hash,
 			created_by_principal_type, created_by_principal_id
-		) values ($1, $2, $3, 1, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13, $14, $15, $16, $17)
+		) values ($1, $2, $3, 1, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13, $14, $15::jsonb, $16, $17, $18)
 	`, revisionID, command.WorkspaceID, targetID, command.Input.Title, command.Input.Summary,
 		command.Input.OutcomeOwner.PrincipalType, command.Input.OutcomeOwner.PrincipalID, displayName,
 		command.Input.Goal, constraintsJSON, criteriaJSON, command.Input.RiskLevel, command.Input.Deadline,
-		command.Input.PolicySummary, command.RequestHash, command.Principal.Type, command.Principal.ID)
+		command.Input.PolicySummary, resourceRefsJSON, command.RequestHash, command.Principal.Type, command.Principal.ID)
 	if err != nil {
 		return CreateResult{}, fmt.Errorf("insert TargetRevision: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		insert into verrail_work_graphs (id, workspace_id, target_id, status)
+		values ($1, $2, $3, 'draft')
+	`, workGraphID, command.WorkspaceID, targetID); err != nil {
+		return CreateResult{}, fmt.Errorf("insert WorkGraph: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		insert into verrail_graph_revisions (
+			id, workspace_id, target_id, target_revision_id, work_graph_id,
+			revision_number, status, content_hash, created_by_principal_type, created_by_principal_id
+		) values ($1, $2, $3, $4, $5, 1, 'draft', $6, $7, $8)
+	`, graphRevisionID, command.WorkspaceID, targetID, revisionID, workGraphID,
+		command.RequestHash, command.Principal.Type, command.Principal.ID); err != nil {
+		return CreateResult{}, fmt.Errorf("insert initial GraphRevision: %w", err)
 	}
 
 	result := CreateResult{
 		SchemaVersion:    SchemaVersion,
 		TargetID:         targetID,
 		TargetRevisionID: revisionID,
+		WorkGraphID:      workGraphID,
+		GraphRevisionID:  graphRevisionID,
 		WorkbenchHref:    "/targets/" + targetID + "/overview",
 		Replayed:         false,
 	}
@@ -133,7 +160,8 @@ func (store *Store) Create(ctx context.Context, command CreateCommand) (CreateRe
 		"schemaVersion":    SchemaVersion,
 		"targetId":         targetID,
 		"targetRevisionId": revisionID,
-		"projectId":        command.Input.ProjectID,
+		"workGraphId":      workGraphID,
+		"graphRevisionId":  graphRevisionID,
 		"requestHash":      command.RequestHash,
 	})
 
@@ -169,20 +197,6 @@ func (store *Store) Create(ctx context.Context, command CreateCommand) (CreateRe
 }
 
 func assertCreateScope(ctx context.Context, tx pgx.Tx, command CreateCommand) error {
-	var projectExists bool
-	if err := tx.QueryRow(ctx, `
-		select exists(
-			select 1 from projects p
-			join companies c on c.id = p.company_id
-			where c.id = $1 and c.status = 'active' and p.id = $2 and p.archived_at is null
-		)
-	`, command.WorkspaceID, command.Input.ProjectID).Scan(&projectExists); err != nil {
-		return fmt.Errorf("validate Target Project: %w", err)
-	}
-	if !projectExists {
-		return NotFound()
-	}
-
 	var membershipRole *string
 	if err := tx.QueryRow(ctx, `
 		select membership_role from company_memberships
@@ -195,6 +209,23 @@ func assertCreateScope(ctx context.Context, tx pgx.Tx, command CreateCommand) er
 	}
 	if membershipRole != nil && *membershipRole == "viewer" {
 		return CreateForbidden()
+	}
+
+	if command.Input.CollectionID != nil {
+		var collectionExists bool
+		if err := tx.QueryRow(ctx, `
+			select exists(
+				select 1 from verrail_collections collection
+				join companies workspace on workspace.id = collection.workspace_id
+				where workspace.id = $1 and workspace.status = 'active'
+				  and collection.id = $2 and collection.archived_at is null
+			)
+		`, command.WorkspaceID, *command.Input.CollectionID).Scan(&collectionExists); err != nil {
+			return fmt.Errorf("validate Target Collection: %w", err)
+		}
+		if !collectionExists {
+			return NotFound()
+		}
 	}
 	return nil
 }

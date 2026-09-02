@@ -1,0 +1,21 @@
+{
+  "target_id": "g1-domain-closure",
+  "run_id": "run-004",
+  "created_at": "2026-09-01T09:58:01Z",
+  "finding": {
+    "symptom": "A newly created conversation persisted the user message but displayed no assistant reply.",
+    "backend_status": "healthy",
+    "root_cause": "Navigation from /chat to /chat/:conversationId changed between two route elements, unmounted VerrailChat, aborted its fetch, and caused the server to terminate the local runtime before it emitted output.",
+    "server_signature": "runtime=codex, exitCode=null, timedOut=false, stderrBytes=0"
+  },
+  "fix": "Register chat/:conversationId? as one route so first-message navigation preserves the component and active SSE request.",
+  "regression_proof": [
+    "A direct live SSE request returned and persisted runtime-ok.",
+    "The isolated acceptance suite passed 4/4 and now requires a visible assistant reply.",
+    "The complete live stack returned browser-runtime-ok through the real first-message UI flow without browser errors."
+  ],
+  "artifact": {
+    "path": ".verrail/targets/g1-domain-closure/runs/run-004/chat-runtime-fixed.png",
+    "sha256": "7dfd1ddc13d2f4725305c707f2128decfe3ddced6352f7be52c530420c07643f"
+  }
+}

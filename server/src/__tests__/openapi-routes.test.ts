@@ -16,6 +16,7 @@ const apiPrefixes: Record<string, string> = {
   "activity.ts": "/api",
   "adapters.ts": "/api",
   "agents.ts": "/api",
+  "agent-lifecycle.ts": "/api",
   "attention.ts": "/api",
   "approvals.ts": "/api",
   "assets.ts": "/api",
@@ -24,6 +25,7 @@ const apiPrefixes: Record<string, string> = {
   "built-in-agents.ts": "/api",
   "cloud.ts": "/api/cloud",
   "companies.ts": "/api/companies",
+  "collections.ts": "/api",
   "conversations.ts": "/api",
   "company-skills.ts": "/api",
   "company-skill-policy.ts": "/api",
@@ -221,7 +223,6 @@ describe("openapi routes", () => {
     expect(createTarget.requestBody.content["application/json"].schema).toMatchObject({
       type: "object",
       required: expect.arrayContaining([
-        "projectId",
         "title",
         "outcomeOwner",
         "goal",

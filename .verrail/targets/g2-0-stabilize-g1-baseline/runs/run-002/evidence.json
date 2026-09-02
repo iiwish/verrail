@@ -1,0 +1,48 @@
+{
+  "target_id": "g2-0-stabilize-g1-baseline",
+  "run_id": "run-002",
+  "purpose": "Resolve the production-rolling-upgrade blocker by implementing the expand phase of the expand/contract sequence for verrail_targets.project_id, authorized by the Outcome Owner.",
+  "change": {
+    "migration_0234": "Removed the DROP of verrail_targets_project_id_projects_id_fk, verrail_targets_workspace_project_updated_idx, and verrail_targets.project_id. All other statements unchanged (collections table, collection FK/index, context-type constraint swap).",
+    "schema": "packages/db/src/schema/verrail_targets.ts re-declares projectId as a nullable compatibility column with the legacy FK and index, documented as expand/contract storage that native Verrail code never reads or writes.",
+    "snapshots": "meta/0234_snapshot.json and meta/0238_snapshot.json re-add the column/FK/index entries copied verbatim from the 0233 snapshot.",
+    "contract_step": "The actual DROP COLUMN is deferred to a future standalone contract migration, to be scheduled only after pre-G1 service retirement with old-path call-volume metrics at zero. Recorded in docs/architecture.md G1 boundary.",
+    "migration_0238": "Removed the same-name constraint swap (DROP/ADD CONSTRAINT verrail_runs_status_check) and the attempt_count DML tail. cancel_requested is now baked into 0235's original constraint definition; 0238 is pure statement-reconcilable DDL. Rationale: no committed code ever wrote attempt_count (column born DEFAULT 0 in this same uncommitted unit), and the seed/restore reconciler (packages/db/src/client.ts migrationStatementAlreadyApplied) can neither prove same-name constraint swaps nor DML, which made worktree seeding from a restored backup fail with 'relation verrail_execution_command_receipts already exists' (cli worktree.test.ts 'lagging source' case). Dev databases that already ran the old 0235-0238 SQL should be reset (rm -rf data/pglite) or manually reconciled."
+  },
+  "verification": [
+    {
+      "scope": "schema-snapshot consistency",
+      "status": "passed",
+      "result": "pnpm db:generate reports 'No schema changes, nothing to migrate' after the edits; drizzle journal registers 0233-0238; packages/db typecheck (migration numbering + safety) passed."
+    },
+    {
+      "scope": "fresh migration probe (throwaway postgres:16-alpine container)",
+      "status": "passed",
+      "result": "DATABASE_URL pointed at an empty database; pnpm db:migrate applied all 237 pending migrations and completed. Verified in information_schema/pg_catalog: project_id is_nullable=YES; constraint verrail_targets_project_id_projects_id_fk present; index verrail_targets_workspace_project_updated_idx present; constraint verrail_targets_collection_workspace_fk present; verrail_conversation_context_bindings_type_check contains 'collection'; 26 verrail_* tables present. Container destroyed after the probe."
+    },
+    {
+      "scope": "pre-G1 compatibility reasoning",
+      "status": "passed_with_note",
+      "result": "Pre-G1 services at base commit b307b961 read verrail_targets.project_id through the legacy read model and can keep running: the column, FK, and index are intact and native-created targets simply have NULL project_id (excluded from project-scoped lists, no errors). Note: this is a schema-level compatibility guarantee; a live old-service smoke against a migrated database was not exercised because no pre-G1 deployment exists in this environment."
+    },
+    {
+      "scope": "worktree seed reconciliation",
+      "status": "passed",
+      "result": "cli worktree.test.ts 'seeds a lagging source whose migration application order differs from filename order' passes after the 0238 fix (was failing deterministically before, independent of the expand/contract edit — proven by reverting the 0234 change and reproducing the failure)."
+    },
+    {
+      "scope": "fresh migration probe (post-0238-fix)",
+      "status": "passed",
+      "result": "Throwaway postgres:16-alpine: 237 migrations applied; verrail_runs_status_check definition includes cancel_requested; cancel_requested_at column present; project_id nullable; 26 verrail_* tables."
+    },
+    {
+      "scope": "final full-pipeline verification",
+      "status": "passed_with_environment_adjudication",
+      "result": "Root pipeline (pnpm test:run): server 411 passed/1 skipped, UI 489 passed, CLI 58 passed (includes the lagging-source fix), shared 66 passed, skills 5 passed. DB project: 24 passed/2 skipped standalone; under full-pipeline load 2 embedded-PostgreSQL initdb infra failures appeared in the inherited connections-v3 test, which pass in isolation and fail before any migration SQL runs — adjudicated as resource-pressure flakiness, same class as the g2-0 concurrency adjudications, not related to the migration changes."
+    }
+  ],
+  "residual_risks": [
+    "The contract DROP migration does not exist yet; scheduling and rehearsing it (or a stopped-write window) remains a production rollout prerequisite tracked in the G1 boundary.",
+    "verrail_targets.status still lacks a CHECK constraint and verrail_runs lacks target/graph FKs — recorded as follow-up targets in reviews/independent-review.md."
+  ]
+}

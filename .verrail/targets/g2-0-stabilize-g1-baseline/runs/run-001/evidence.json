@@ -1,0 +1,77 @@
+{
+  "target_id": "g2-0-stabilize-g1-baseline",
+  "run_id": "run-001",
+  "runtime": {
+    "workspace_id": "74170eed-f251-4ff1-a9b7-6ebe49e1cb0d",
+    "conversation_id": "fe9f2794-24bd-4da2-a265-702aa04fd889",
+    "source_message_id": "4628bbf4-6573-434a-96ec-2562e5aea5a8",
+    "draft_id": "4337b52d-c390-4ac8-b4e7-a20550648758",
+    "target_id": "d637ae28-74c5-4e77-9d06-d433bbdda14c",
+    "target_revision_id": "71870e8f-6167-49ef-afb4-92fbc1e04a80",
+    "graph_revision_id": "37619bf5-f998-4e4c-9878-b7d8d94b1a82",
+    "runtime_status": "draft",
+    "local_delivery_status": "needs_review"
+  },
+  "verification": [
+    {
+      "scope": "repository Vitest",
+      "status": "passed_with_environment_adjudication",
+      "result": "General server: 411 files passed and 1 skipped, 4740 tests passed and 19 skipped. UI: 487 files and 4426 tests passed. CLI: 58 files and 415 tests passed. Shared: 65 files and 574 tests passed. Skills catalog: 5 files and 22 tests passed. DB clean rerun: 25 files passed and 1 skipped, 98 tests passed and 1 skipped. Adapter and plugin source follow-up: 15 files and 112 tests passed. All 141 serialized server suites passed."
+    },
+    {
+      "scope": "Go domain and orchestration",
+      "status": "passed",
+      "result": "go test ./... passed in services/domain-api."
+    },
+    {
+      "scope": "static, build, design, and formatting gates",
+      "status": "passed",
+      "result": "pnpm -r typecheck, pnpm build, pnpm check:token-gates, and git diff --check passed."
+    },
+    {
+      "scope": "browser acceptance",
+      "status": "passed",
+      "result": "Four Verrail Playwright acceptance cases passed against the live stack."
+    },
+    {
+      "scope": "live health",
+      "status": "passed",
+      "result": "http://127.0.0.1:3100/api/health returned status ok, authReady true, and database backup status ok."
+    }
+  ],
+  "migration_proof": {
+    "fresh_database": {
+      "database": "verrail_g2_fresh",
+      "migration_rows": 234,
+      "verrail_tables": 16,
+      "target_has_workspace_id": true,
+      "target_has_project_id": false
+    },
+    "upgrade_from_base_commit": {
+      "base_commit": "b307b961445632a79acf712600ff1b1736a87112",
+      "database": "verrail_g2_upgrade",
+      "pending_migrations_applied": 3,
+      "migration_rows": 234,
+      "verrail_tables": 16,
+      "target_has_workspace_id": true,
+      "target_has_project_id": false
+    },
+    "rollback_boundary": "Before migration, roll back the application directly. After migration but before native writes, restore the pre-migration PostgreSQL backup and roll back the paired TypeScript and Go services. After native writes, preserve facts and repair forward unless an explicitly authorized incident decision accepts loss of post-checkpoint facts."
+  },
+  "resolved_failures": [
+    "Canonicalized the stable Vitest temp parent to prevent path-alias cleanup drift.",
+    "Made skill manifest discovery case-exact and workspace runtime port probing deterministic across macOS and Linux.",
+    "Corrected Verrail navigation tests so inherited Projects and native Targets remain separate.",
+    "Made CLI ZIP fixture CRC computation linear-time and portable database backup fallback restorable without psql.",
+    "Reconciled already-applied constraint drops when migration journal history is incomplete.",
+    "Separated Linux-only sandbox tests from macOS and accepted supported prerelease Codex version strings.",
+    "Raised explicit budgets for OpenCode remote tests that perform filesystem staging under full-suite load.",
+    "Removed stale embedded-Postgres test roots after an ENOSPC run and proved the DB project green on a clean temp budget."
+  ],
+  "residual_risks": [
+    "Production rolling deployment remains blocked because migration 0234 removes verrail_targets.project_id; use expand/contract or a stopped-write maintenance window.",
+    "G2.1 must bind native node responsible principals and Run actors to versioned AgentDefinition or Deployment membership rather than accepting arbitrary IDs.",
+    "A TargetCreationDraft left in converting can only be resumed by the original confirming principal; an administrative recovery path remains future work.",
+    "Independent engineering review and product-owner acceptance are still required before approval or release."
+  ]
+}

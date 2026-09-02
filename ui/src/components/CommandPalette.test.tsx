@@ -242,7 +242,7 @@ describe("CommandPalette", () => {
       expect(labels).toEqual(expect.arrayContaining([
         "Create new Target",
         "Home",
-        "Projects",
+        "Targets",
         "Agents",
         "Infrastructure",
         "Governance",

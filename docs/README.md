@@ -1,10 +1,10 @@
 # Verrail 文档索引
 
-版本：0.2
+版本：0.3
 
 状态：`Confirmed`
 
-最后更新：2026-08-26
+最后更新：2026-09-01
 
 ## 文档职责
 
@@ -20,6 +20,7 @@
 | [`constitution.md`](./constitution.md) | 不可绕过的治理、安全、责任和交付原则 |
 | [`product-design.md`](./product-design.md) | 用户、产品对象、核心旅程、范围与验收标准 |
 | [`operational-ontology.md`](./operational-ontology.md) | 核心实体、状态、关系、授权类型和系统不变量 |
+| [`conversation-target-creation.md`](./conversation-target-creation.md) | 群聊、私聊与 Web Conversation 的目标草拟、补全、确认和幂等创建合同 |
 | [`brand-migration.md`](./brand-migration.md) | Verrail 品牌表达、资产、兼容标识边界与迁移批次 |
 | [`navigation-contract.md`](./navigation-contract.md) | 一级信息架构、Canonical Route、旧深链兼容与首个导航切片 |
 | [`target-read-model.md`](./target-read-model.md) | 首个 Target 只读投影的来源映射、标识、字段、API、权限和重建合同 |
@@ -30,6 +31,7 @@
 | [`adrs/0002-control-and-execution-planes.md`](./adrs/0002-control-and-execution-planes.md) | 控制平面、执行平面与渐进式 Go 演进边界 |
 | [`adrs/0003-temporal-durable-orchestration.md`](./adrs/0003-temporal-durable-orchestration.md) | Temporal 作为耐久编排内核、PostgreSQL 作为业务事实源的决策 |
 | [`adrs/0004-go-control-plane-replatform.md`](./adrs/0004-go-control-plane-replatform.md) | Go 目标内核、重构范围、工作量与迁移决策 |
+| [`adrs/0005-conversation-first-target-creation.md`](./adrs/0005-conversation-first-target-creation.md) | Conversation-first Target 创建与可选 Collection 归类决策 |
 
 ## 权威顺序
 
@@ -39,7 +41,7 @@
 2. `product-goals.md` 中的产品目标、阶段边界和退出门槛；
 3. `product-design.md` 中的用户价值与产品范围；
 4. `operational-ontology.md` 中的对象语义和系统不变量；
-5. `brand-migration.md`、`navigation-contract.md`、`target-read-model.md` 与 `temporal-target-workflow.md` 中的公开品牌、产品表面和首个 Target 纵向合同；
+5. `conversation-target-creation.md`、`brand-migration.md`、`navigation-contract.md`、`target-read-model.md` 与 `temporal-target-workflow.md` 中的交互入口、公开品牌、产品表面和首个 Target 纵向合同；
 6. `architecture.md` 与 `execution-runtime.md` 中的实现边界；
 7. `adrs/` 中已接受的单项技术决策。
 
@@ -58,14 +60,16 @@
 | 产品目标 | `Confirmed` | 领域中心、阶段路线、Go 目标内核和 Temporal 必选决策已确认 |
 | 交付流程与 P0 | `Confirmed` / `Complete` | 交付门禁已确认，P0 中文与表面锁定已完成 |
 | 项目章程 | `Confirmed` | Target/Submission/Evidence/Acceptance 与 Temporal 原则已确认 |
-| 产品设计 | `Confirmed` | v0.2 对象模型、首个纵向闭环与非目标已确认 |
+| 产品设计 | `Confirmed` | v0.4 Conversation-first 对象模型、可选 Collection、首个纵向闭环与非目标已确认 |
 | 运行本体 | `Confirmed` | TargetRevision、Submission、四类节点完成事实、Temporal 与五类授权已确认 |
+| 会话驱动的 Target 创建 | `Confirmed` | 普通消息不创建目标、显式意图启动草稿、多轮补全、人工确认与可选 Collection 已确认 |
 | 品牌与导航合同 | `Confirmed` | 品牌资产、身份兼容、主导航、稳定深链、路由映射与首个切片已确认 |
 | TargetReadModel 合同 | `Confirmed` | 来源资格、稳定标识、状态映射、权限、API、降级和重建规则已确认 |
 | TargetWorkflow 合同 | `Confirmed` | outbox fencing、at-least-once 投递、版本标识、去重、Continue-As-New 与恢复边界已确认 |
 | 架构与执行运行时 | `Confirmed` | Go 迁移边界、Temporal、Runner、Sandbox 候选和 Cloud 扩展边界已确认 |
 | ADR-0001/0002/0003 | `Accepted` | 基座、执行平面和 Temporal 决策已确认，后续变更需新 ADR |
 | ADR-0004 | `Accepted` | Go 目标内核、兼容服务、工作量、迁移方法和停止条件已确认 |
+| ADR-0005 | `Accepted` | Conversation-first Target 创建、Target 直属 Workspace 与可选 Collection 归类已确认 |
 
 ## 维护规则
 

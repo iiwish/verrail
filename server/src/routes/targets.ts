@@ -1,13 +1,16 @@
 import { createHash } from "node:crypto";
 import { Router, type Request } from "express";
 import { and, eq, isNull } from "drizzle-orm";
-import { cases, issues, projects, type Db } from "@paperclipai/db";
+import { verrailCollections, type Db } from "@paperclipai/db";
 import {
   createTargetSchema,
-  registerTargetProjectionSchema,
+  createGraphRevisionSchema,
+  createRunSchema,
+  createRunAttemptSchema,
+  reportRunEventSchema,
   targetIdempotencyKeySchema,
   targetListQuerySchema,
-  TARGET_PROJECTION_POLICY_VERSION,
+  TARGET_READ_MODEL_POLICY_VERSION,
   TARGET_READ_MODEL_SCHEMA_VERSION,
   type TargetListQuery,
   type TargetReadModelV1,
@@ -16,7 +19,7 @@ import { badRequest, HttpError, notFound } from "../errors.js";
 import { privateJsonEtag } from "../middleware/private-json-etag.js";
 import { validate } from "../middleware/validate.js";
 import {
-  accessService,
+  conversationService,
   createVerrailDomainApiClient,
   logActivity,
   targetReadModelService,
@@ -25,7 +28,6 @@ import {
 import {
   assertBoard,
   assertCompanyAccess,
-  assertInstanceAdmin,
   getActorInfo,
   hasCompanyAccess,
 } from "./authz.js";
@@ -46,8 +48,8 @@ function principalKey(req: Request) {
 
 function filterFingerprint(query: TargetListQuery) {
   return createHash("sha256").update(JSON.stringify({
-    projectionPolicyVersion: TARGET_PROJECTION_POLICY_VERSION,
-    projectId: query.projectId ?? null,
+    readModelPolicyVersion: TARGET_READ_MODEL_POLICY_VERSION,
+    collectionId: query.collectionId ?? null,
     status: query.status ?? null,
     ownerId: query.ownerId ?? null,
     attention: query.attention ?? null,
@@ -89,7 +91,7 @@ function sortTargets(left: TargetReadModelV1, right: TargetReadModelV1) {
 
 function applyFilters(items: TargetReadModelV1[], query: TargetListQuery) {
   return items.filter((item) => {
-    if (query.projectId && item.project?.id !== query.projectId) return false;
+    if (query.collectionId && item.collection?.id !== query.collectionId) return false;
     if (query.status && item.status !== query.status) return false;
     if (query.ownerId && item.outcomeOwner?.principalId !== query.ownerId) return false;
     if (query.attention === "true" && item.attentionSummary.total === 0) return false;
@@ -112,7 +114,7 @@ function summarizeTargets(items: TargetReadModelV1[]) {
     total: 0,
     open: 0,
     attention: 0,
-    byProject: {} as Record<string, { total: number; open: number; attention: number }>,
+    byCollection: {} as Record<string, { total: number; open: number; attention: number }>,
   };
 
   for (const item of items) {
@@ -122,13 +124,13 @@ function summarizeTargets(items: TargetReadModelV1[]) {
     if (isOpen) summary.open += 1;
     if (needsAttention) summary.attention += 1;
 
-    const projectId = item.project?.id;
-    if (!projectId) continue;
-    const project = summary.byProject[projectId] ?? { total: 0, open: 0, attention: 0 };
-    project.total += 1;
-    if (isOpen) project.open += 1;
-    if (needsAttention) project.attention += 1;
-    summary.byProject[projectId] = project;
+    const collectionId = item.collection?.id;
+    if (!collectionId) continue;
+    const collection = summary.byCollection[collectionId] ?? { total: 0, open: 0, attention: 0 };
+    collection.total += 1;
+    if (isOpen) collection.open += 1;
+    if (needsAttention) collection.attention += 1;
+    summary.byCollection[collectionId] = collection;
   }
 
   return summary;
@@ -140,76 +142,11 @@ export function targetRoutes(
 ) {
   const router = Router();
   const svc = targetReadModelService(db);
-  const access = accessService(db);
+  const conversations = conversationService(db);
   const domainApi = options.domainApiClient === undefined
     ? createVerrailDomainApiClient()
     : options.domainApiClient;
   const etag = privateJsonEtag(principalKey);
-
-  async function currentSourceProject(item: TargetReadModelV1) {
-    if (item.authority.kind === "native") {
-      if (!item.project) return null;
-      return db
-        .select({ projectId: projects.id })
-        .from(projects)
-        .where(and(
-          eq(projects.companyId, item.workspaceId),
-          eq(projects.id, item.project.id),
-          isNull(projects.archivedAt),
-        ))
-        .limit(1)
-        .then((rows) => rows[0] ?? null);
-    }
-    if (item.source.type === "case") {
-      return db
-        .select({ projectId: cases.projectId })
-        .from(cases)
-        .where(and(eq(cases.companyId, item.workspaceId), eq(cases.id, item.source.id)))
-        .limit(1)
-        .then((rows) => rows[0] ?? null);
-    }
-    return db
-      .select({ projectId: issues.projectId })
-      .from(issues)
-      .where(and(
-        eq(issues.companyId, item.workspaceId),
-        eq(issues.id, item.source.id),
-        isNull(issues.hiddenAt),
-      ))
-      .limit(1)
-      .then((rows) => rows[0] ?? null);
-  }
-
-  async function canRead(
-    req: Request,
-    item: TargetReadModelV1,
-    options: { allowMissingSource?: boolean } = {},
-  ) {
-    if (item.authority.kind === "compatibility" && item.source.type === "case" && req.actor.type === "agent") return false;
-    const currentSource = await currentSourceProject(item);
-    if (!currentSource && !options.allowMissingSource) return false;
-    const projectId = currentSource?.projectId ?? item.project?.id ?? null;
-    if (item.authority.kind === "compatibility" && item.source.type === "issue") {
-      return access.decide({
-        actor: req.actor,
-        action: "issue:read",
-        resource: {
-          type: "issue",
-          companyId: item.workspaceId,
-          issueId: item.source.id,
-          projectId,
-        },
-      }).then((decision) => decision.allowed);
-    }
-    if (projectId) {
-      return access.decide({
-        actor: req.actor,
-        action: "project:read",
-        resource: { type: "project", companyId: item.workspaceId, projectId },
-      }).then((decision) => decision.allowed);
-    }
-    return req.actor.type === "board";
-  }
 
   router.post(
     "/workspaces/:workspaceId/targets",
@@ -218,23 +155,19 @@ export function targetRoutes(
       const workspaceId = req.params.workspaceId as string;
       assertBoard(req);
       assertCompanyAccess(req, workspaceId);
-      const project = await db
-        .select({ id: projects.id })
-        .from(projects)
-        .where(and(
-          eq(projects.companyId, workspaceId),
-          eq(projects.id, req.body.projectId),
-          isNull(projects.archivedAt),
-        ))
-        .limit(1)
-        .then((rows) => rows[0] ?? null);
-      if (!project) throw notFound("Workspace or Project not found");
-      const decision = await access.decide({
-        actor: req.actor,
-        action: "project:read",
-        resource: { type: "project", companyId: workspaceId, projectId: project.id },
-      });
-      if (!decision.allowed) throw notFound("Workspace or Project not found");
+      if (req.body.collectionId) {
+        const collection = await db
+          .select({ id: verrailCollections.id })
+          .from(verrailCollections)
+          .where(and(
+            eq(verrailCollections.workspaceId, workspaceId),
+            eq(verrailCollections.id, req.body.collectionId),
+            isNull(verrailCollections.archivedAt),
+          ))
+          .limit(1)
+          .then((rows) => rows[0] ?? null);
+        if (!collection) throw notFound("Workspace or Collection not found");
+      }
       if (!domainApi) {
         throw new HttpError(503, "Verrail Domain API is unavailable", {
           code: "TARGET_DOMAIN_API_UNAVAILABLE",
@@ -259,9 +192,143 @@ export function targetRoutes(
     },
   );
 
-  async function listForRequest(req: Request, workspaceId: string, projectId?: string) {
+  router.post(
+    "/workspaces/:workspaceId/runs/:runId/attempts",
+    validate(createRunAttemptSchema),
+    async (req, res) => {
+      const workspaceId = req.params.workspaceId as string;
+      assertBoard(req);
+      assertCompanyAccess(req, workspaceId);
+      if (!domainApi) throw new HttpError(503, "Verrail Domain API is unavailable", { code: "TARGET_DOMAIN_API_UNAVAILABLE", retryable: true });
+      const actor = getActorInfo(req);
+      const result = await domainApi.createRunAttempt({
+        workspaceId,
+        runId: req.params.runId as string,
+        principalType: "user",
+        principalId: actor.actorId,
+        idempotencyKey: targetIdempotencyKeySchema.parse(req.header("Idempotency-Key")),
+        input: req.body,
+      });
+      res.status(result.replayed ? 200 : 201).json(result);
+    },
+  );
+
+  router.post(
+    "/workspaces/:workspaceId/runs/:runId/attempts/:runAttemptId/events",
+    validate(reportRunEventSchema),
+    async (req, res) => {
+      const workspaceId = req.params.workspaceId as string;
+      assertBoard(req);
+      assertCompanyAccess(req, workspaceId);
+      if (!domainApi) throw new HttpError(503, "Verrail Domain API is unavailable", { code: "TARGET_DOMAIN_API_UNAVAILABLE", retryable: true });
+      const executorPrincipalId = req.header("X-Verrail-Executor-Id")?.trim();
+      if (!executorPrincipalId) throw badRequest("X-Verrail-Executor-Id is required");
+      const result = await domainApi.reportRunEvent({
+        workspaceId,
+        runId: req.params.runId as string,
+        runAttemptId: req.params.runAttemptId as string,
+        principalType: "service",
+        principalId: executorPrincipalId,
+        idempotencyKey: targetIdempotencyKeySchema.parse(req.header("Idempotency-Key")),
+        input: req.body,
+      });
+      res.status(result.replayed ? 200 : result.authoritative ? 201 : 202).json(result);
+    },
+  );
+
+  router.post(
+    "/workspaces/:workspaceId/runs/:runId/cancel",
+    async (req, res) => {
+      const workspaceId = req.params.workspaceId as string;
+      assertBoard(req);
+      assertCompanyAccess(req, workspaceId);
+      if (!domainApi) throw new HttpError(503, "Verrail Domain API is unavailable", { code: "TARGET_DOMAIN_API_UNAVAILABLE", retryable: true });
+      const actor = getActorInfo(req);
+      const result = await domainApi.requestRunCancellation({
+        workspaceId,
+        runId: req.params.runId as string,
+        principalType: "user",
+        principalId: actor.actorId,
+        idempotencyKey: targetIdempotencyKeySchema.parse(req.header("Idempotency-Key")),
+      });
+      res.json(result);
+    },
+  );
+
+  router.post(
+    "/workspaces/:workspaceId/targets/:targetId/graph-revisions",
+    validate(createGraphRevisionSchema),
+    async (req, res) => {
+      const workspaceId = req.params.workspaceId as string;
+      const targetId = req.params.targetId as string;
+      assertBoard(req);
+      assertCompanyAccess(req, workspaceId);
+      if (!domainApi) throw new HttpError(503, "Verrail Domain API is unavailable", { code: "TARGET_DOMAIN_API_UNAVAILABLE", retryable: true });
+      if (!await svc.getByTargetId(workspaceId, targetId)) throw notFound("Target not found");
+      const actor = getActorInfo(req);
+      const idempotencyKey = targetIdempotencyKeySchema.parse(req.header("Idempotency-Key"));
+      const result = await domainApi.createGraphRevision({
+        workspaceId,
+        targetId,
+        principalType: "user",
+        principalId: actor.actorId,
+        idempotencyKey,
+        input: req.body,
+      });
+      res.status(result.replayed ? 200 : 201).json(result);
+    },
+  );
+
+  router.post(
+    "/workspaces/:workspaceId/targets/:targetId/graph-revisions/:graphRevisionId/activate",
+    async (req, res) => {
+      const workspaceId = req.params.workspaceId as string;
+      const targetId = req.params.targetId as string;
+      assertBoard(req);
+      assertCompanyAccess(req, workspaceId);
+      if (!domainApi) throw new HttpError(503, "Verrail Domain API is unavailable", { code: "TARGET_DOMAIN_API_UNAVAILABLE", retryable: true });
+      if (!await svc.getByTargetId(workspaceId, targetId)) throw notFound("Target not found");
+      const actor = getActorInfo(req);
+      const result = await domainApi.activateGraphRevision({
+        workspaceId,
+        targetId,
+        graphRevisionId: req.params.graphRevisionId as string,
+        principalType: "user",
+        principalId: actor.actorId,
+        idempotencyKey: targetIdempotencyKeySchema.parse(req.header("Idempotency-Key")),
+      });
+      res.json(result);
+    },
+  );
+
+  router.post(
+    "/workspaces/:workspaceId/targets/:targetId/graph-revisions/:graphRevisionId/nodes/:workNodeId/runs",
+    validate(createRunSchema),
+    async (req, res) => {
+      const workspaceId = req.params.workspaceId as string;
+      const targetId = req.params.targetId as string;
+      assertBoard(req);
+      assertCompanyAccess(req, workspaceId);
+      if (!domainApi) throw new HttpError(503, "Verrail Domain API is unavailable", { code: "TARGET_DOMAIN_API_UNAVAILABLE", retryable: true });
+      if (!await svc.getByTargetId(workspaceId, targetId)) throw notFound("Target not found");
+      const actor = getActorInfo(req);
+      const result = await domainApi.createRun({
+        workspaceId,
+        targetId,
+        graphRevisionId: req.params.graphRevisionId as string,
+        workNodeId: req.params.workNodeId as string,
+        principalType: "user",
+        principalId: actor.actorId,
+        idempotencyKey: targetIdempotencyKeySchema.parse(req.header("Idempotency-Key")),
+        input: req.body,
+      });
+      res.status(result.replayed ? 200 : 201).json(result);
+    },
+  );
+
+  async function listForRequest(req: Request, workspaceId: string, collectionId?: string) {
     assertWorkspaceRead(req, workspaceId);
-    const query = targetListQuerySchema.parse({ ...req.query, ...(projectId ? { projectId } : {}) });
+    const query = targetListQuerySchema.parse({ ...req.query, ...(collectionId ? { collectionId } : {}) });
     const principal = principalKey(req);
     const fingerprint = filterFingerprint(query);
     const cursor = query.cursor ? decodeCursor(query.cursor) : null;
@@ -271,9 +338,7 @@ export function targetRoutes(
       || cursor.filter !== fingerprint
     )) throw badRequest("Target cursor does not match this query");
 
-    const candidates = applyFilters(await svc.list(workspaceId), query).sort(sortTargets);
-    const decisions = await Promise.all(candidates.map((item) => canRead(req, item)));
-    const authorized = candidates.filter((_, index) => decisions[index]);
+    const authorized = applyFilters(await svc.list(workspaceId), query).sort(sortTargets);
     const visible = afterCursor(authorized, cursor);
     const items = visible.slice(0, query.limit);
     const last = items.at(-1);
@@ -289,7 +354,7 @@ export function targetRoutes(
       : null;
     return {
       schemaVersion: TARGET_READ_MODEL_SCHEMA_VERSION,
-      projectionPolicyVersion: TARGET_PROJECTION_POLICY_VERSION,
+      readModelPolicyVersion: TARGET_READ_MODEL_POLICY_VERSION,
       asOf: authorized.reduce(
         (latest, item) => item.projectedAt > latest ? item.projectedAt : latest,
         new Date(0).toISOString(),
@@ -305,10 +370,10 @@ export function targetRoutes(
     res.json(await listForRequest(req, workspaceId));
   });
 
-  router.get("/workspaces/:workspaceId/projects/:projectId/targets", etag, async (req, res) => {
+  router.get("/workspaces/:workspaceId/collections/:collectionId/targets", etag, async (req, res) => {
     const workspaceId = req.params.workspaceId as string;
-    const projectId = req.params.projectId as string;
-    res.json(await listForRequest(req, workspaceId, projectId));
+    const collectionId = req.params.collectionId as string;
+    res.json(await listForRequest(req, workspaceId, collectionId));
   });
 
   router.get("/workspaces/:workspaceId/targets/:targetId", etag, async (req, res) => {
@@ -316,8 +381,69 @@ export function targetRoutes(
     const targetId = req.params.targetId as string;
     assertWorkspaceRead(req, workspaceId);
     const model = await svc.getByTargetId(workspaceId, targetId);
-    if (!model || !(await canRead(req, model))) throw notFound("Target not found");
+    if (!model) throw notFound("Target not found");
     res.json(model);
+  });
+
+  router.get("/workspaces/:workspaceId/targets/:targetId/workspace", async (req, res) => {
+    const workspaceId = req.params.workspaceId as string;
+    const targetId = req.params.targetId as string;
+    assertWorkspaceRead(req, workspaceId);
+    const model = await svc.getByTargetId(workspaceId, targetId);
+    if (!model) throw notFound("Target not found");
+    res.json(await svc.workspace(model));
+  });
+
+  router.post("/workspaces/:workspaceId/targets/:targetId/conversation", async (req, res) => {
+    const workspaceId = req.params.workspaceId as string;
+    const targetId = req.params.targetId as string;
+    assertBoard(req);
+    assertCompanyAccess(req, workspaceId);
+    const model = await svc.getByTargetId(workspaceId, targetId);
+    if (!model) throw notFound("Target not found");
+    const actor = getActorInfo(req);
+    const contextBindings = [
+      ...(model.collection ? [{
+        contextType: "collection" as const,
+        contextId: model.collection.id,
+        label: model.collection.name,
+        href: "/collections",
+      }] : []),
+      {
+        contextType: "target" as const,
+        contextId: model.targetId,
+        label: model.title,
+        href: `/targets/${model.targetId}/overview`,
+      },
+      {
+        contextType: "target_revision" as const,
+        contextId: model.activeTargetRevisionId,
+        label: `Target revision ${model.activeTargetRevisionId.slice(0, 8)}`,
+        href: `/targets/${model.targetId}/revisions/${model.activeTargetRevisionId}`,
+      },
+    ];
+    const created = await conversations.create(workspaceId, {
+      title: model.title,
+      contextBindings,
+    }, {
+      principalType: actor.actorType,
+      principalId: actor.actorId,
+    }, { trustedContext: true });
+    await logActivity(db, {
+      companyId: workspaceId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "target.conversation_created",
+      entityType: "target",
+      entityId: model.targetId,
+      details: {
+        conversationId: created.id,
+        targetRevisionId: model.activeTargetRevisionId,
+      },
+    });
+    res.status(201).json(created);
   });
 
   router.get(
@@ -329,60 +455,12 @@ export function targetRoutes(
       const targetRevisionId = req.params.targetRevisionId as string;
       assertWorkspaceRead(req, workspaceId);
       const model = await svc.getByRevisionId(workspaceId, targetId, targetRevisionId);
-      if (!model || !(await canRead(req, model, { allowMissingSource: true }))) {
+      if (!model) {
         throw notFound("Target revision not found");
       }
       res.json(model);
     },
   );
-
-  router.post(
-    "/workspaces/:workspaceId/target-projections",
-    validate(registerTargetProjectionSchema),
-    async (req, res) => {
-      const workspaceId = req.params.workspaceId as string;
-      assertInstanceAdmin(req);
-      assertCompanyAccess(req, workspaceId);
-      const model = await svc.register(workspaceId, req.body);
-      const actor = getActorInfo(req);
-      await logActivity(db, {
-        companyId: workspaceId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        action: "target.projection_registered",
-        entityType: "target",
-        entityId: model.targetId,
-        details: {
-          targetRevisionId: model.activeTargetRevisionId,
-          sourceType: model.source.type,
-          sourceId: model.source.id,
-          eligibilityReason: req.body.eligibilityReason,
-        },
-      });
-      res.status(201).json(model);
-    },
-  );
-
-  router.post("/workspaces/:workspaceId/targets/:targetId/reconcile", async (req, res) => {
-    const workspaceId = req.params.workspaceId as string;
-    const targetId = req.params.targetId as string;
-    assertInstanceAdmin(req);
-    assertCompanyAccess(req, workspaceId);
-    const model = await svc.reconcile(workspaceId, targetId);
-    const actor = getActorInfo(req);
-    await logActivity(db, {
-      companyId: workspaceId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      action: "target.projection_reconciled",
-      entityType: "target",
-      entityId: model.targetId,
-      details: { targetRevisionId: model.activeTargetRevisionId },
-    });
-    res.json(model);
-  });
 
   return router;
 }

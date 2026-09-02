@@ -1,1101 +1,451 @@
-import { createHash } from "node:crypto";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
-  agents,
-  caseIssueLinks,
-  cases,
-  companyMemberships,
-  companies,
-  heartbeatRuns,
-  issues,
-  projects,
-  targetProjectionRevisions,
-  targetProjectionSources,
+  verrailAuditEvents,
+  verrailCollections,
+  verrailGraphRevisions,
+  verrailExecutionLeases,
+  verrailRunAttempts,
+  verrailRunEvents,
+  verrailRuns,
   verrailTargetRevisions,
   verrailTargets,
+  verrailWorkGraphs,
+  verrailWorkNodes,
+  type Db,
 } from "@paperclipai/db";
 import {
-  TARGET_PROJECTION_POLICY_VERSION,
+  TARGET_READ_MODEL_POLICY_VERSION,
   TARGET_READ_MODEL_SCHEMA_VERSION,
-  TARGET_STATUSES,
-  isPluginOperationIssueOriginKind,
-  parseStoredTargetReadModelV1,
-  type RegisterTargetProjectionInput,
+  TARGET_WORKSPACE_SCHEMA_VERSION,
+  type TargetAttentionItemV1,
   type TargetReadModelV1,
-  type TargetRiskLevel,
-  type TargetSourceType,
+  type TargetResourceRefV1,
+  type TargetRunV1,
   type TargetStageKey,
-  type TargetStatus,
+  type TargetStageProgressV1,
+  type TargetTimelineEventV1,
+  type TargetWorkItemV1,
+  type TargetWorkspaceV1,
 } from "@paperclipai/shared";
-import { HttpError, conflict, notFound, unprocessable } from "../errors.js";
-import { logger } from "../middleware/logger.js";
 
-const TARGET_NAMESPACE = "91552506-d624-4f00-97cc-e5b6f4dff680";
-const TARGET_REVISION_NAMESPACE = "ae165b56-f7dd-4ce7-af56-8c5896162dd3";
-const ACTIVE_RUN_STATUSES = new Set(["queued", "running"]);
-const FAILED_RUN_STATUSES = new Set(["failed", "timed_out"]);
-const RISK_LEVELS = new Set<TargetRiskLevel>(["low", "medium", "high", "critical"]);
-const SYSTEM_ISSUE_ORIGINS = new Set([
-  "routine_execution",
-  "harness_liveness_escalation",
-  "stale_active_run_evaluation",
-  "task_watchdog",
-  "task_watchdog_product_bug",
-  "issue_productivity_review",
-  "stranded_issue_recovery",
-  "onboarding_first_task",
-  "built_in_agent_bundle",
-  "skill_test",
-  "pipeline_case_conversation",
-  "pipeline_automation",
-]);
-const reportedProjectionProblems = new Set<string>();
+const STAGES = ["define", "execute", "verify", "accept"] as const;
+const STAGE_LABELS: Record<(typeof STAGES)[number], string> = {
+  define: "Define",
+  execute: "Execute",
+  verify: "Verify",
+  accept: "Accept",
+};
 
-type ProjectionDb = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
+type NativeTargetRow = {
+  target: typeof verrailTargets.$inferSelect;
+  revision: typeof verrailTargetRevisions.$inferSelect;
+  collection: typeof verrailCollections.$inferSelect | null;
+};
 
-function uuidBytes(value: string) {
-  return Buffer.from(value.replaceAll("-", ""), "hex");
+function asIso(value: Date | null | undefined) {
+  return value?.toISOString() ?? null;
 }
 
-export function targetProjectionUuidV5(namespace: string, name: string) {
-  const digest = createHash("sha1").update(uuidBytes(namespace)).update(name, "utf8").digest();
-  digest[6] = (digest[6]! & 0x0f) | 0x50;
-  digest[8] = (digest[8]! & 0x3f) | 0x80;
-  const hex = digest.subarray(0, 16).toString("hex");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
-function sourceTargetId(workspaceId: string, sourceType: TargetSourceType, sourceId: string) {
-  return targetProjectionUuidV5(
-    TARGET_NAMESPACE,
-    `${workspaceId.toLowerCase()}\n${sourceType}\n${sourceId.toLowerCase()}`,
-  );
-}
-
-function targetRevisionId(
-  targetId: string,
-  sourceRevisionKey: string,
-  sourceSnapshotHash: string,
-) {
-  return targetProjectionUuidV5(
-    TARGET_REVISION_NAMESPACE,
-    `${targetId}\n${TARGET_PROJECTION_POLICY_VERSION}\n${sourceRevisionKey}\n${sourceSnapshotHash}`,
-  );
-}
-
-function stageForStatus(status: TargetStatus): { key: TargetStageKey; label: string } | null {
-  if (status === "draft" || status === "ready") return { key: "define", label: "Define" };
-  if (status === "active") return { key: "execute", label: "Execute" };
-  if (status === "verifying") return { key: "verify", label: "Verify" };
-  if (status === "awaiting_acceptance" || status === "accepted") return { key: "accept", label: "Accept" };
-  return { key: "unknown", label: "Unknown" };
-}
-
-function withCompatibilityWarning(model: TargetReadModelV1, warning: string): TargetReadModelV1 {
-  if (!model.compatibility) return model;
-  return {
-    ...model,
-    compatibility: {
-      ...model.compatibility,
-      warnings: [...new Set([...model.compatibility.warnings, warning])],
-    },
-  };
-}
-
-function mapCaseStatus(status: string): { status: TargetStatus; completionUnverified: boolean } {
-  if (status === "draft") return { status: "draft", completionUnverified: false };
-  if (status === "in_progress") return { status: "active", completionUnverified: false };
-  if (status === "in_review") return { status: "verifying", completionUnverified: false };
-  if (status === "approved" || status === "done") {
-    return { status: "awaiting_acceptance", completionUnverified: status === "done" };
-  }
-  if (status === "cancelled") return { status: "canceled", completionUnverified: false };
-  throw unprocessable("Unsupported Case status for Target projection", { status });
-}
-
-function mapIssueStatus(status: string): { status: TargetStatus; completionUnverified: boolean } {
-  if (status === "backlog") return { status: "draft", completionUnverified: false };
-  if (status === "todo") return { status: "ready", completionUnverified: false };
-  if (status === "in_progress") return { status: "active", completionUnverified: false };
-  if (status === "in_review") return { status: "verifying", completionUnverified: false };
-  if (status === "blocked") return { status: "blocked", completionUnverified: false };
-  if (status === "done") return { status: "awaiting_acceptance", completionUnverified: true };
-  if (status === "cancelled") return { status: "canceled", completionUnverified: false };
-  throw unprocessable("Unsupported Issue status for Target projection", { status });
-}
-
-function riskFromFields(fields: Record<string, unknown> | null | undefined): TargetRiskLevel {
-  const value = fields?.riskLevel;
-  return typeof value === "string" && RISK_LEVELS.has(value as TargetRiskLevel)
-    ? value as TargetRiskLevel
-    : "unknown";
-}
-
-function ownerFromFields(fields: Record<string, unknown> | null | undefined) {
-  const value = fields?.outcomeOwner;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const owner = value as Record<string, unknown>;
-  if ((owner.principalType !== "user" && owner.principalType !== "agent") || typeof owner.principalId !== "string") {
-    return null;
-  }
-  return {
-    principalType: owner.principalType,
-    principalId: owner.principalId,
-    displayName: typeof owner.displayName === "string" ? owner.displayName : null,
-  } as const;
-}
-
-async function assertOutcomeOwnerMembership(
-  db: ProjectionDb,
-  workspaceId: string,
-  owner: NonNullable<TargetReadModelV1["outcomeOwner"]>,
-) {
-  const exists = owner.principalType === "user"
-    ? await db
-      .select({ id: companyMemberships.id })
-      .from(companyMemberships)
-      .where(and(
-        eq(companyMemberships.companyId, workspaceId),
-        eq(companyMemberships.principalType, "user"),
-        eq(companyMemberships.principalId, owner.principalId),
-        eq(companyMemberships.status, "active"),
-      ))
-      .limit(1)
-      .then((rows) => rows[0] ?? null)
-    : await db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(and(eq(agents.companyId, workspaceId), eq(agents.id, owner.principalId)))
-      .limit(1)
-      .then((rows) => rows[0] ?? null);
-  if (!exists) {
-    throw unprocessable("Target outcome owner does not belong to the source Workspace");
-  }
-}
-
-function compatibilitySourceHref(
-  workspacePrefix: string,
-  sourceType: TargetSourceType,
-  identifier: string | null,
-  sourceId: string,
-) {
-  return `/${encodeURIComponent(workspacePrefix)}/${sourceType === "case" ? "cases" : "issues"}/${encodeURIComponent(identifier ?? sourceId)}`;
-}
-
-function projectionUnavailable(targetId: string, reason = "snapshot_missing_or_invalid") {
-  return new HttpError(503, "Target projection unavailable", {
-    code: "TARGET_PROJECTION_UNAVAILABLE",
-    retryable: true,
-    targetId,
-    reason,
+function resourceRefs(value: Array<Record<string, unknown>>): TargetResourceRefV1[] {
+  return value.flatMap((entry) => {
+    if (typeof entry.kind !== "string" || typeof entry.id !== "string") return [];
+    return [{
+      kind: entry.kind,
+      id: entry.id,
+      label: typeof entry.label === "string" ? entry.label : null,
+    }];
   });
 }
 
-interface StoredProjectionIdentity {
-  workspaceId: string;
-  targetId: string;
-  targetRevisionId: string;
-  schemaVersion: string;
-  projectionPolicyVersion: string;
-  sourceRevisionKey: string;
-  sourceType?: string;
-  sourceId?: string;
-}
-
-function reportProjectionProblemOnce(
-  code: "legacy_projection_upgraded" | "invalid_projection_snapshot",
-  identity: StoredProjectionIdentity,
-  detail: Record<string, unknown> = {},
-) {
-  const key = `${code}:${identity.workspaceId}:${identity.targetRevisionId}`;
-  if (reportedProjectionProblems.has(key)) return;
-  if (reportedProjectionProblems.size >= 1_000) reportedProjectionProblems.clear();
-  reportedProjectionProblems.add(key);
-  logger.warn({
-    code,
-    workspaceId: identity.workspaceId,
-    targetId: identity.targetId,
-    targetRevisionId: identity.targetRevisionId,
-    ...detail,
-  }, code === "legacy_projection_upgraded"
-    ? "legacy Target projection normalized in memory; operator reconciliation is recommended"
-    : "invalid Target projection isolated from read results");
-}
-
-function parseStoredCompatibilityProjection(
-  value: unknown,
-  identity: StoredProjectionIdentity,
-): TargetReadModelV1 | null {
-  let parsed: ReturnType<typeof parseStoredTargetReadModelV1>;
-  try {
-    parsed = parseStoredTargetReadModelV1(value);
-  } catch (error) {
-    reportProjectionProblemOnce("invalid_projection_snapshot", identity, {
-      reason: "schema_validation_failed",
-      validationError: error instanceof Error ? error.name : typeof error,
-    });
-    return null;
-  }
-
-  const { model } = parsed;
-  const mismatches: string[] = [];
-  if (model.workspaceId !== identity.workspaceId) mismatches.push("workspace_id");
-  if (model.targetId !== identity.targetId) mismatches.push("target_id");
-  if (model.activeTargetRevisionId !== identity.targetRevisionId) mismatches.push("target_revision_id");
-  if (String(model.schemaVersion) !== identity.schemaVersion) mismatches.push("schema_version");
-  if (model.projectionPolicyVersion !== identity.projectionPolicyVersion) mismatches.push("projection_policy_version");
-  if (model.source.revisionKey !== identity.sourceRevisionKey) mismatches.push("source_revision_key");
-  if (model.authority.kind !== "compatibility") mismatches.push("authority");
-  if (model.source.type === "native") mismatches.push("source_type");
-  if (identity.sourceType && model.source.type !== identity.sourceType) mismatches.push("source_type");
-  if (identity.sourceId && model.source.id !== identity.sourceId) mismatches.push("source_id");
-  if (mismatches.length > 0) {
-    reportProjectionProblemOnce("invalid_projection_snapshot", identity, {
-      reason: "relational_identity_mismatch",
-      mismatches,
-    });
-    return null;
-  }
-
-  if (parsed.upgradedFrom) {
-    reportProjectionProblemOnce("legacy_projection_upgraded", identity, {
-      upgradedFrom: parsed.upgradedFrom,
-    });
-  }
-  return model;
-}
-
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([, child]) => child !== undefined)
-    .sort(([left], [right]) => left.localeCompare(right));
-  return `{${entries.map(([key, child]) => `${JSON.stringify(key)}:${canonicalJson(child)}`).join(",")}}`;
-}
-
-function projectionHash(value: Omit<TargetReadModelV1, "activeTargetRevisionId" | "projectedAt">) {
-  return createHash("sha256").update(canonicalJson(value)).digest("hex");
-}
-
-async function issueIdsForSource(db: ProjectionDb, sourceType: TargetSourceType, sourceId: string) {
-  if (sourceType === "issue") return [sourceId];
-  return db
-    .select({ issueId: caseIssueLinks.issueId })
-    .from(caseIssueLinks)
-    .where(and(eq(caseIssueLinks.caseId, sourceId), inArray(caseIssueLinks.role, ["origin", "work"])))
-    .then((rows) => rows.map((row) => row.issueId));
-}
-
-async function assertCaseIssueMemberships(
-  db: ProjectionDb,
-  workspaceId: string,
-  caseId: string,
-  issueIds: string[],
-) {
-  if (issueIds.length === 0) return;
-  const sourceIssues = await db
-    .select({ id: issues.id })
-    .from(issues)
-    .where(and(eq(issues.companyId, workspaceId), inArray(issues.id, issueIds)));
-  if (sourceIssues.length !== new Set(issueIds).size) {
-    throw unprocessable("Case contains a cross-Workspace or missing Issue");
-  }
-  const memberships = await db
-    .select({ issueId: caseIssueLinks.issueId, caseId: caseIssueLinks.caseId })
-    .from(caseIssueLinks)
-    .where(and(
-      inArray(caseIssueLinks.issueId, issueIds),
-      inArray(caseIssueLinks.role, ["origin", "work"]),
-    ));
-  if (memberships.some((membership) => membership.caseId !== caseId)) {
-    throw conflict("Case contains an Issue with ambiguous Target membership");
-  }
-}
-
-async function runSummary(db: ProjectionDb, workspaceId: string, issueIds: string[]) {
-  if (issueIds.length === 0) {
-    return { active: 0, failed: 0, latestRunId: null, latestRunAt: null };
-  }
-  const rows = await db
-    .select({
-      id: heartbeatRuns.id,
-      status: heartbeatRuns.status,
-      createdAt: heartbeatRuns.createdAt,
-    })
-    .from(heartbeatRuns)
-    .where(and(
-      eq(heartbeatRuns.companyId, workspaceId),
-      inArray(sql<string>`${heartbeatRuns.contextSnapshot} ->> 'issueId'`, issueIds),
-    ))
-    .orderBy(desc(heartbeatRuns.createdAt));
-  return {
-    active: rows.filter((row) => ACTIVE_RUN_STATUSES.has(row.status)).length,
-    failed: rows.filter((row) => FAILED_RUN_STATUSES.has(row.status)).length,
-    latestRunId: rows[0]?.id ?? null,
-    latestRunAt: rows[0]?.createdAt.toISOString() ?? null,
-  };
-}
-
-async function blockedAttention(db: ProjectionDb, workspaceId: string, issueIds: string[]) {
-  if (issueIds.length === 0) return { total: 0, highestSeverity: null };
-  const rows = await db
-    .select({ id: issues.id })
-    .from(issues)
-    .where(and(
-      eq(issues.companyId, workspaceId),
-      inArray(issues.id, issueIds),
-      eq(issues.status, "blocked"),
-    ));
-  return { total: rows.length, highestSeverity: rows.length > 0 ? "high" : null };
-}
-
-async function loadCaseProjectionSource(db: ProjectionDb, workspaceId: string, sourceId: string) {
-  return db
-    .select({
-      id: cases.id,
-      workspaceId: cases.companyId,
-      projectId: cases.projectId,
-      projectName: projects.name,
-      workspacePrefix: companies.issuePrefix,
-      identifier: cases.identifier,
-      title: cases.title,
-      summary: cases.summary,
-      status: cases.status,
-      fields: cases.fields,
-      createdAt: cases.createdAt,
-      updatedAt: cases.updatedAt,
-    })
-    .from(cases)
-    .innerJoin(companies, eq(companies.id, cases.companyId))
-    .leftJoin(projects, and(eq(projects.id, cases.projectId), eq(projects.companyId, cases.companyId)))
-    .where(and(eq(cases.companyId, workspaceId), eq(cases.id, sourceId)))
-    .limit(1)
-    .then((rows) => rows[0] ?? null);
-}
-
-async function loadIssueProjectionSource(db: ProjectionDb, workspaceId: string, sourceId: string) {
-  return db
-    .select({
-      id: issues.id,
-      workspaceId: issues.companyId,
-      projectId: issues.projectId,
-      projectName: projects.name,
-      workspacePrefix: companies.issuePrefix,
-      identifier: issues.identifier,
-      title: issues.title,
-      summary: issues.description,
-      status: issues.status,
-      parentId: issues.parentId,
-      originKind: issues.originKind,
-      responsibleUserId: issues.responsibleUserId,
-      createdAt: issues.createdAt,
-      updatedAt: issues.updatedAt,
-    })
-    .from(issues)
-    .innerJoin(companies, eq(companies.id, issues.companyId))
-    .leftJoin(projects, and(eq(projects.id, issues.projectId), eq(projects.companyId, issues.companyId)))
-    .where(and(eq(issues.companyId, workspaceId), eq(issues.id, sourceId), isNull(issues.hiddenAt)))
-    .limit(1)
-    .then((rows) => rows[0] ?? null);
-}
-
-async function assertIndependentIssueEligibility(db: ProjectionDb, issue: {
-  id: string;
-  parentId: string | null;
-  originKind: string;
-  projectId: string | null;
-  responsibleUserId: string | null;
-}) {
-  if (issue.parentId) throw unprocessable("A child Issue cannot be mapped as an independent Target");
-  if (SYSTEM_ISSUE_ORIGINS.has(issue.originKind)) {
-    throw unprocessable("A system-derived Issue cannot be mapped as a Target", { originKind: issue.originKind });
-  }
-  if (isPluginOperationIssueOriginKind(issue.originKind)) {
-    throw unprocessable("A plugin operation Issue cannot be mapped as a Target", { originKind: issue.originKind });
-  }
-  const membership = await db
-    .select({ id: caseIssueLinks.id })
-    .from(caseIssueLinks)
-    .where(and(eq(caseIssueLinks.issueId, issue.id), inArray(caseIssueLinks.role, ["origin", "work"])))
-    .limit(1)
-    .then((rows) => rows[0] ?? null);
-  if (membership) throw conflict("Issue already belongs to a Case Target");
-  if (!issue.projectId) {
-    throw unprocessable("An independent Issue Target requires an explicit Project");
-  }
-  if (!issue.responsibleUserId) {
-    throw unprocessable("An independent Issue Target requires an explicit outcome owner");
-  }
-}
-
-async function buildProjection(
-  db: ProjectionDb,
-  workspaceId: string,
-  sourceType: TargetSourceType,
-  sourceId: string,
-) {
-  const now = new Date();
-  const targetId = sourceTargetId(workspaceId, sourceType, sourceId);
-  const missingFields = [
-    "acceptanceCriteria",
-    "artifactSummary.latestRevisionId",
-    "evidenceSummary",
-  ];
-
-  if (sourceType === "case") {
-    const source = await loadCaseProjectionSource(db, workspaceId, sourceId);
-    if (!source) throw notFound("Case source not found");
-    if (source.projectId && !source.projectName) {
-      throw unprocessable("Case Project does not belong to the source Workspace");
+function stageProgress(nodes: TargetWorkItemV1[]): TargetStageProgressV1[] {
+  let currentAssigned = false;
+  return STAGES.map((key) => {
+    const stageNodes = nodes.filter((node) => node.stage === key);
+    let state: TargetStageProgressV1["state"];
+    if (stageNodes.some((node) => node.status === "blocked")) {
+      state = "blocked";
+      currentAssigned = true;
+    } else if (stageNodes.length > 0 && stageNodes.every((node) => node.status === "completed")) {
+      state = "completed";
+    } else if (!currentAssigned && (
+      stageNodes.some((node) => ["ready", "running"].includes(node.status))
+      || (key === "define" && nodes.length === 0)
+    )) {
+      state = "current";
+      currentAssigned = true;
+    } else {
+      state = "pending";
     }
-    const mapped = mapCaseStatus(source.status);
-    const owner = ownerFromFields(source.fields);
-    const risk = riskFromFields(source.fields);
-    if (!owner) missingFields.push("outcomeOwner");
-    else await assertOutcomeOwnerMembership(db, workspaceId, owner);
-    if (risk === "unknown") missingFields.push("risk");
-    const issueIds = await issueIdsForSource(db, sourceType, sourceId);
-    await assertCaseIssueMemberships(db, workspaceId, sourceId, issueIds);
-    const [attentionSummary, runs] = await Promise.all([
-      blockedAttention(db, workspaceId, issueIds),
-      runSummary(db, workspaceId, issueIds),
-    ]);
-    const sourceRevisionKey = source.updatedAt.toISOString();
-    const base = {
-      schemaVersion: TARGET_READ_MODEL_SCHEMA_VERSION,
-      projectionPolicyVersion: TARGET_PROJECTION_POLICY_VERSION,
-      targetId,
-      workspaceId,
-      authority: { kind: "compatibility" as const, writer: "typescript-compatibility" as const },
-      project: source.projectId && source.projectName ? { id: source.projectId, name: source.projectName } : null,
-      source: {
-        type: sourceType,
-        id: source.id,
-        identifier: source.identifier,
-        href: compatibilitySourceHref(source.workspacePrefix, sourceType, source.identifier, source.id),
-        updatedAt: source.updatedAt.toISOString(),
-        revisionKey: sourceRevisionKey,
-      },
-      title: source.title,
-      summary: source.summary,
-      status: mapped.status,
-      outcomeOwner: owner,
-      currentStage: stageForStatus(mapped.status),
-      risk: { level: risk },
-      attentionSummary,
-      artifactSummary: { count: 0, latestRevisionId: null },
-      evidenceSummary: { count: 0, passed: 0, failed: 0, inconclusive: 0, coverage: "unknown" as const },
-      runSummary: runs,
-      definition: null,
-      compatibility: {
-        readOnly: true as const,
-        completionUnverified: mapped.completionUnverified,
-        missingFields,
-        warnings: [],
-      },
-      createdAt: source.createdAt.toISOString(),
-      updatedAt: source.updatedAt.toISOString(),
-    };
-    const sourceSnapshotHash = projectionHash(base);
-    const activeTargetRevisionId = targetRevisionId(targetId, sourceRevisionKey, sourceSnapshotHash);
-    return {
-      sourceRevisionKey,
-      sourceSnapshotHash,
-      model: { ...base, activeTargetRevisionId, projectedAt: now.toISOString() } satisfies TargetReadModelV1,
-      projectedAt: now,
-    };
-  }
+    return { key, label: STAGE_LABELS[key], state };
+  });
+}
 
-  const source = await loadIssueProjectionSource(db, workspaceId, sourceId);
-  if (!source) throw notFound("Issue source not found");
-  if (source.projectId && !source.projectName) {
-    throw unprocessable("Issue Project does not belong to the source Workspace");
-  }
-  await assertIndependentIssueEligibility(db, source);
-  const mapped = mapIssueStatus(source.status);
-  const owner = {
-    principalType: "user" as const,
-    principalId: source.responsibleUserId!,
-    displayName: null,
-  };
-  await assertOutcomeOwnerMembership(db, workspaceId, owner);
-  missingFields.push("risk");
-  const issueIds = [sourceId];
-  const [attentionSummary, runs] = await Promise.all([
-    blockedAttention(db, workspaceId, issueIds),
-    runSummary(db, workspaceId, issueIds),
-  ]);
-  const sourceRevisionKey = source.updatedAt.toISOString();
-  const base = {
-    schemaVersion: TARGET_READ_MODEL_SCHEMA_VERSION,
-    projectionPolicyVersion: TARGET_PROJECTION_POLICY_VERSION,
-    targetId,
-    workspaceId,
-    authority: { kind: "compatibility" as const, writer: "typescript-compatibility" as const },
-    project: source.projectId && source.projectName ? { id: source.projectId, name: source.projectName } : null,
-    source: {
-      type: sourceType,
-      id: source.id,
-      identifier: source.identifier,
-      href: compatibilitySourceHref(source.workspacePrefix, sourceType, source.identifier, source.id),
-      updatedAt: source.updatedAt.toISOString(),
-      revisionKey: sourceRevisionKey,
-    },
-    title: source.title,
-    summary: source.summary,
-    status: mapped.status,
-    outcomeOwner: owner,
-    currentStage: stageForStatus(mapped.status),
-    risk: { level: "unknown" as const },
-    attentionSummary,
-    artifactSummary: { count: 0, latestRevisionId: null },
-    evidenceSummary: { count: 0, passed: 0, failed: 0, inconclusive: 0, coverage: "unknown" as const },
-    runSummary: runs,
-    definition: null,
-    compatibility: {
-      readOnly: true as const,
-      completionUnverified: mapped.completionUnverified,
-      missingFields,
-      warnings: [],
-    },
-    createdAt: source.createdAt.toISOString(),
-    updatedAt: source.updatedAt.toISOString(),
-  };
-  const sourceSnapshotHash = projectionHash(base);
-  const activeTargetRevisionId = targetRevisionId(targetId, sourceRevisionKey, sourceSnapshotHash);
+function currentStage(stages: TargetStageProgressV1[]): { key: TargetStageKey; label: string } | null {
+  const stage = stages.find((item) => item.state === "current" || item.state === "blocked");
+  return stage ? { key: stage.key, label: stage.label } : null;
+}
+
+function mapWorkNode(row: typeof verrailWorkNodes.$inferSelect): TargetWorkItemV1 {
   return {
-    sourceRevisionKey,
-    sourceSnapshotHash,
-    model: { ...base, activeTargetRevisionId, projectedAt: now.toISOString() } satisfies TargetReadModelV1,
-    projectedAt: now,
+    id: row.id,
+    nodeKey: row.nodeKey,
+    graphRevisionId: row.graphRevisionId,
+    kind: row.kind as TargetWorkItemV1["kind"],
+    stage: row.stageKey as TargetWorkItemV1["stage"],
+    status: row.status as TargetWorkItemV1["status"],
+    title: row.title,
+    responsiblePrincipal: row.responsiblePrincipalType && row.responsiblePrincipalId
+      ? {
+          principalType: row.responsiblePrincipalType as "user" | "agent" | "service",
+          principalId: row.responsiblePrincipalId,
+        }
+      : null,
+    dependencyNodeKeys: row.dependencyNodeKeys,
+    completionDefinition: row.completionDefinition || null,
+    updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+type ExecutionFacts = {
+  attempts: Array<typeof verrailRunAttempts.$inferSelect>;
+  leases: Array<typeof verrailExecutionLeases.$inferSelect>;
+  events: Array<typeof verrailRunEvents.$inferSelect>;
+};
+
+function mapRun(row: typeof verrailRuns.$inferSelect, facts: ExecutionFacts): TargetRunV1 {
+  const attempts = facts.attempts
+    .filter((attempt) => attempt.runId === row.id)
+    .sort((left, right) => left.attemptNumber - right.attemptNumber)
+    .map((attempt) => {
+      const lease = facts.leases.find((candidate) => candidate.runAttemptId === attempt.id) ?? null;
+      const events = facts.events
+        .filter((event) => event.runAttemptId === attempt.id)
+        .sort((left, right) => left.cursor - right.cursor)
+        .map((event) => ({
+          id: event.id,
+          runAttemptId: event.runAttemptId,
+          cursor: event.cursor,
+          fencingToken: event.fencingToken,
+          eventType: event.eventType as TargetRunV1["attempts"][number]["events"][number]["eventType"],
+          payload: event.payload,
+          emittedAt: event.emittedAt.toISOString(),
+          receivedAt: event.receivedAt.toISOString(),
+        }));
+      return {
+        id: attempt.id,
+        runId: attempt.runId,
+        attemptNumber: attempt.attemptNumber,
+        deploymentRevisionId: attempt.deploymentRevisionId,
+        agentVersionId: attempt.agentVersionId,
+        runtimeProfile: attempt.runtimeProfile as "host_trusted",
+        executor: { principalType: "service" as const, principalId: attempt.executorPrincipalId },
+        fencingToken: attempt.fencingToken,
+        status: attempt.status as TargetRunV1["attempts"][number]["status"],
+        lastEventCursor: attempt.lastEventCursor,
+        errorCode: attempt.errorCode,
+        errorMessage: attempt.errorMessage,
+        result: attempt.result,
+        lease: lease ? {
+          id: lease.id,
+          runAttemptId: lease.runAttemptId,
+          executorPrincipalId: lease.executorPrincipalId,
+          runtimeProfile: lease.runtimeProfile as "host_trusted",
+          fencingToken: lease.fencingToken,
+          status: lease.status as NonNullable<TargetRunV1["attempts"][number]["lease"]>["status"],
+          expiresAt: lease.expiresAt.toISOString(),
+          graceExpiresAt: lease.graceExpiresAt.toISOString(),
+          claimedAt: asIso(lease.claimedAt),
+          lastHeartbeatAt: asIso(lease.lastHeartbeatAt),
+          releasedAt: asIso(lease.releasedAt),
+        } : null,
+        events,
+        startedAt: asIso(attempt.startedAt),
+        finishedAt: asIso(attempt.finishedAt),
+        createdAt: attempt.createdAt.toISOString(),
+        updatedAt: attempt.updatedAt.toISOString(),
+      };
+    });
+  return {
+    id: row.id,
+    kind: row.kind === "integration" ? "integration_run" : "agent_run",
+    targetRevisionId: row.targetRevisionId,
+    graphRevisionId: row.graphRevisionId,
+    workNodeId: row.workNodeId,
+    status: row.status as TargetRunV1["status"],
+    actor: {
+      principalType: row.actorPrincipalType as "agent" | "service",
+      principalId: row.actorPrincipalId,
+    },
+    deploymentRevisionId: row.deploymentRevisionId,
+    agentVersionId: row.agentVersionId,
+    attempt: Math.max(0, row.attemptCount),
+    cancelRequestedAt: asIso(row.cancelRequestedAt),
+    attempts,
+    startedAt: asIso(row.startedAt),
+    finishedAt: asIso(row.finishedAt),
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function attentionFor(input: {
+  model: Pick<TargetReadModelV1, "targetId" | "status" | "createdAt">;
+  graph: typeof verrailWorkGraphs.$inferSelect | null;
+  nodes: TargetWorkItemV1[];
+  runs: TargetRunV1[];
+}): TargetAttentionItemV1[] {
+  const items: TargetAttentionItemV1[] = [];
+  if (!input.graph?.activeGraphRevisionId) {
+    items.push({
+      id: `draft-graph:${input.model.targetId}`,
+      severity: "info",
+      kind: "draft_graph",
+      title: "Work graph needs activation",
+      detail: "Define and activate a native graph revision before execution can start.",
+      workNodeId: null,
+      runId: null,
+      createdAt: input.model.createdAt,
+    });
+  }
+  for (const node of input.nodes.filter((item) => item.status === "blocked")) {
+    items.push({
+      id: `blocked-node:${node.id}`,
+      severity: "warning",
+      kind: "blocked_node",
+      title: `${node.title} is blocked`,
+      detail: node.completionDefinition,
+      workNodeId: node.id,
+      runId: null,
+      createdAt: node.updatedAt,
+    });
+  }
+  for (const run of input.runs.filter((item) => item.status === "failed")) {
+    items.push({
+      id: `failed-run:${run.id}`,
+      severity: "critical",
+      kind: "failed_run",
+      title: "A native run failed",
+      detail: null,
+      workNodeId: run.workNodeId,
+      runId: run.id,
+      createdAt: run.finishedAt ?? run.createdAt,
+    });
+  }
+  if (input.model.status === "awaiting_acceptance") {
+    items.push({
+      id: `awaiting-acceptance:${input.model.targetId}`,
+      severity: "warning",
+      kind: "awaiting_acceptance",
+      title: "Human acceptance is required",
+      detail: null,
+      workNodeId: null,
+      runId: null,
+      createdAt: input.model.createdAt,
+    });
+  }
+  return items;
 }
 
 export function targetReadModelService(db: Db) {
-  async function listNative(workspaceId: string): Promise<TargetReadModelV1[]> {
+  async function nativeRows(workspaceId: string, targetId?: string, targetRevisionId?: string): Promise<NativeTargetRow[]> {
+    const conditions = [eq(verrailTargets.workspaceId, workspaceId)];
+    if (targetId) conditions.push(eq(verrailTargets.id, targetId));
+    const revisionJoin = targetRevisionId
+      ? and(
+          eq(verrailTargetRevisions.id, targetRevisionId),
+          eq(verrailTargetRevisions.targetId, verrailTargets.id),
+          eq(verrailTargetRevisions.workspaceId, verrailTargets.workspaceId),
+        )
+      : and(
+          eq(verrailTargetRevisions.id, verrailTargets.activeTargetRevisionId),
+          eq(verrailTargetRevisions.workspaceId, verrailTargets.workspaceId),
+        );
     const rows = await db
-      .select({
-        targetId: verrailTargets.id,
-        activeTargetRevisionId: verrailTargets.activeTargetRevisionId,
-        workspaceId: verrailTargets.workspaceId,
-        projectId: verrailTargets.projectId,
-        projectName: projects.name,
-        status: verrailTargets.status,
-        targetCreatedAt: verrailTargets.createdAt,
-        targetUpdatedAt: verrailTargets.updatedAt,
-        revisionId: verrailTargetRevisions.id,
-        title: verrailTargetRevisions.title,
-        summary: verrailTargetRevisions.summary,
-        ownerType: verrailTargetRevisions.outcomeOwnerPrincipalType,
-        ownerId: verrailTargetRevisions.outcomeOwnerPrincipalId,
-        ownerDisplayName: verrailTargetRevisions.outcomeOwnerDisplayName,
-        goal: verrailTargetRevisions.goal,
-        constraints: verrailTargetRevisions.constraints,
-        acceptanceCriteria: verrailTargetRevisions.acceptanceCriteria,
-        riskLevel: verrailTargetRevisions.riskLevel,
-        deadline: verrailTargetRevisions.deadline,
-        policySummary: verrailTargetRevisions.policySummary,
-        revisionCreatedAt: verrailTargetRevisions.createdAt,
-      })
+      .select({ target: verrailTargets, revision: verrailTargetRevisions, collection: verrailCollections })
       .from(verrailTargets)
-      .innerJoin(projects, and(
-        eq(projects.id, verrailTargets.projectId),
-        eq(projects.companyId, verrailTargets.workspaceId),
-        isNull(projects.archivedAt),
+      .innerJoin(verrailTargetRevisions, revisionJoin)
+      .leftJoin(verrailCollections, and(
+        eq(verrailCollections.id, verrailTargets.collectionId),
+        eq(verrailCollections.workspaceId, verrailTargets.workspaceId),
       ))
-      .innerJoin(verrailTargetRevisions, and(
-        eq(verrailTargetRevisions.workspaceId, verrailTargets.workspaceId),
-        eq(verrailTargetRevisions.targetId, verrailTargets.id),
-        eq(verrailTargetRevisions.id, verrailTargets.activeTargetRevisionId),
-      ))
-      .where(eq(verrailTargets.workspaceId, workspaceId));
-    return rows.map(nativeRowToReadModel);
+      .where(and(...conditions))
+      .orderBy(desc(verrailTargets.updatedAt), asc(verrailTargets.id));
+    return rows;
   }
 
-  function nativeRowToReadModel(row: Awaited<ReturnType<typeof listNative>> extends never ? never : {
-    targetId: string;
-    activeTargetRevisionId: string;
-    workspaceId: string;
-    projectId: string;
-    projectName: string;
-    status: string;
-    targetCreatedAt: Date;
-    targetUpdatedAt: Date;
-    revisionId: string;
-    title: string;
-    summary: string | null;
-    ownerType: string;
-    ownerId: string;
-    ownerDisplayName: string | null;
-    goal: string;
-    constraints: string[];
-    acceptanceCriteria: Array<{ id: string; title: string; description: string | null }>;
-    riskLevel: string;
-    deadline: string | null;
-    policySummary: string | null;
-    revisionCreatedAt: Date;
-  }): TargetReadModelV1 {
-    const status = (TARGET_STATUSES as readonly string[]).includes(row.status)
-      ? row.status as TargetStatus
-      : "draft";
-    const riskLevel = RISK_LEVELS.has(row.riskLevel as TargetRiskLevel)
-      ? row.riskLevel as TargetRiskLevel
-      : "unknown";
+  async function readFacts(workspaceId: string, targetIds: string[]) {
+    if (targetIds.length === 0) return { graphs: [], graphRevisions: [], nodes: [], runs: [], attempts: [], leases: [], events: [] };
+    const [graphs, graphRevisions, nodes, runs] = await Promise.all([
+      db.select().from(verrailWorkGraphs).where(and(
+        eq(verrailWorkGraphs.workspaceId, workspaceId),
+        inArray(verrailWorkGraphs.targetId, targetIds),
+      )),
+      db.select().from(verrailGraphRevisions).where(and(
+        eq(verrailGraphRevisions.workspaceId, workspaceId),
+        inArray(verrailGraphRevisions.targetId, targetIds),
+      )),
+      db.select().from(verrailWorkNodes).where(and(
+        eq(verrailWorkNodes.workspaceId, workspaceId),
+        inArray(verrailWorkNodes.targetId, targetIds),
+      )),
+      db.select().from(verrailRuns).where(and(
+        eq(verrailRuns.workspaceId, workspaceId),
+        inArray(verrailRuns.targetId, targetIds),
+      )).orderBy(desc(verrailRuns.createdAt)),
+    ]);
+    const runIds = runs.map((run) => run.id);
+    if (runIds.length === 0) return { graphs, graphRevisions, nodes, runs, attempts: [], leases: [], events: [] };
+    const [attempts, leases, events] = await Promise.all([
+      db.select().from(verrailRunAttempts).where(and(
+        eq(verrailRunAttempts.workspaceId, workspaceId),
+        inArray(verrailRunAttempts.runId, runIds),
+      )),
+      db.select().from(verrailExecutionLeases).where(and(
+        eq(verrailExecutionLeases.workspaceId, workspaceId),
+        inArray(verrailExecutionLeases.runId, runIds),
+      )),
+      db.select().from(verrailRunEvents).where(and(
+        eq(verrailRunEvents.workspaceId, workspaceId),
+        inArray(verrailRunEvents.runId, runIds),
+      )),
+    ]);
+    return { graphs, graphRevisions, nodes, runs, attempts, leases, events };
+  }
+
+  function buildModel(
+    row: NativeTargetRow,
+    facts: Awaited<ReturnType<typeof readFacts>>,
+    projectedAt: string,
+  ): TargetReadModelV1 {
+    const graph = facts.graphs.find((item) => item.targetId === row.target.id) ?? null;
+    const activeNodes = graph?.activeGraphRevisionId
+      ? facts.nodes.filter((item) => item.graphRevisionId === graph.activeGraphRevisionId).map(mapWorkNode)
+      : [];
+    const runs = facts.runs.filter((item) => item.targetId === row.target.id).map((run) => mapRun(run, facts));
+    const stages = stageProgress(activeNodes);
+    const base = {
+      targetId: row.target.id,
+      status: row.target.status as TargetReadModelV1["status"],
+      createdAt: row.target.createdAt.toISOString(),
+    };
+    const attention = attentionFor({ model: base, graph, nodes: activeNodes, runs });
+    const activeRuns = runs.filter((run) => run.status === "queued" || run.status === "running" || run.status === "cancel_requested");
+    const failedRuns = runs.filter((run) => run.status === "failed");
+    const latestRun = runs[0] ?? null;
     return {
       schemaVersion: TARGET_READ_MODEL_SCHEMA_VERSION,
-      projectionPolicyVersion: "native.v1",
-      targetId: row.targetId,
-      activeTargetRevisionId: row.activeTargetRevisionId,
-      workspaceId: row.workspaceId,
-      authority: { kind: "native", writer: "go-domain-api" },
-      project: { id: row.projectId, name: row.projectName },
-      source: {
-        type: "native",
-        id: row.targetId,
-        identifier: null,
-        href: `/targets/${row.targetId}/overview`,
-        updatedAt: row.targetUpdatedAt.toISOString(),
-        revisionKey: row.revisionId,
+      readModelPolicyVersion: TARGET_READ_MODEL_POLICY_VERSION,
+      targetId: row.target.id,
+      activeTargetRevisionId: row.revision.id,
+      workspaceId: row.target.workspaceId,
+      collection: row.collection ? { id: row.collection.id, name: row.collection.name } : null,
+      title: row.revision.title,
+      summary: row.revision.summary,
+      status: row.target.status as TargetReadModelV1["status"],
+      outcomeOwner: {
+        principalType: row.revision.outcomeOwnerPrincipalType as "user" | "agent",
+        principalId: row.revision.outcomeOwnerPrincipalId,
+        displayName: row.revision.outcomeOwnerDisplayName,
       },
-      title: row.title,
-      summary: row.summary,
-      status,
-      outcomeOwner: row.ownerType === "user" || row.ownerType === "agent"
-        ? { principalType: row.ownerType, principalId: row.ownerId, displayName: row.ownerDisplayName }
-        : null,
-      currentStage: stageForStatus(status),
-      risk: { level: riskLevel },
-      attentionSummary: { total: 0, highestSeverity: null },
+      currentStage: currentStage(stages),
+      risk: { level: row.revision.riskLevel as TargetReadModelV1["risk"]["level"] },
+      attentionSummary: {
+        total: attention.length,
+        highestSeverity: attention.some((item) => item.severity === "critical")
+          ? "critical"
+          : attention.some((item) => item.severity === "warning") ? "warning" : attention.length > 0 ? "info" : null,
+      },
       artifactSummary: { count: 0, latestRevisionId: null },
       evidenceSummary: { count: 0, passed: 0, failed: 0, inconclusive: 0, coverage: "unknown" },
-      runSummary: { active: 0, failed: 0, latestRunId: null, latestRunAt: null },
-      definition: {
-        goal: row.goal,
-        constraints: row.constraints,
-        acceptanceCriteria: row.acceptanceCriteria,
-        deadline: row.deadline,
-        policySummary: row.policySummary,
+      runSummary: {
+        active: activeRuns.length,
+        failed: failedRuns.length,
+        latestRunId: latestRun?.id ?? null,
+        latestRunAt: latestRun ? (latestRun.finishedAt ?? latestRun.startedAt ?? latestRun.createdAt) : null,
       },
-      compatibility: null,
-      createdAt: row.targetCreatedAt.toISOString(),
-      updatedAt: row.targetUpdatedAt.toISOString(),
-      projectedAt: row.revisionCreatedAt.toISOString(),
+      definition: {
+        goal: row.revision.goal,
+        constraints: row.revision.constraints,
+        acceptanceCriteria: row.revision.acceptanceCriteria,
+        deadline: row.revision.deadline,
+        policySummary: row.revision.policySummary,
+        resourceRefs: resourceRefs(row.revision.resourceRefs),
+      },
+      createdAt: row.target.createdAt.toISOString(),
+      updatedAt: row.target.updatedAt.toISOString(),
+      projectedAt,
     };
   }
 
-  async function getNativeByTargetId(workspaceId: string, targetId: string) {
-    return (await listNative(workspaceId)).find((item) => item.targetId === targetId) ?? null;
+  async function modelsFor(workspaceId: string, targetId?: string, targetRevisionId?: string) {
+    const rows = await nativeRows(workspaceId, targetId, targetRevisionId);
+    const facts = await readFacts(workspaceId, rows.map((row) => row.target.id));
+    const projectedAt = new Date().toISOString();
+    return rows.map((row) => buildModel(row, facts, projectedAt));
   }
 
-  async function getNativeByRevisionId(workspaceId: string, targetId: string, revisionId: string) {
-    const rows = await db
-      .select({
-        targetId: verrailTargets.id,
-        activeTargetRevisionId: verrailTargets.activeTargetRevisionId,
-        workspaceId: verrailTargets.workspaceId,
-        projectId: verrailTargets.projectId,
-        projectName: projects.name,
-        status: verrailTargets.status,
-        targetCreatedAt: verrailTargets.createdAt,
-        targetUpdatedAt: verrailTargets.updatedAt,
-        revisionId: verrailTargetRevisions.id,
-        title: verrailTargetRevisions.title,
-        summary: verrailTargetRevisions.summary,
-        ownerType: verrailTargetRevisions.outcomeOwnerPrincipalType,
-        ownerId: verrailTargetRevisions.outcomeOwnerPrincipalId,
-        ownerDisplayName: verrailTargetRevisions.outcomeOwnerDisplayName,
-        goal: verrailTargetRevisions.goal,
-        constraints: verrailTargetRevisions.constraints,
-        acceptanceCriteria: verrailTargetRevisions.acceptanceCriteria,
-        riskLevel: verrailTargetRevisions.riskLevel,
-        deadline: verrailTargetRevisions.deadline,
-        policySummary: verrailTargetRevisions.policySummary,
-        revisionCreatedAt: verrailTargetRevisions.createdAt,
-      })
-      .from(verrailTargets)
-      .innerJoin(projects, and(eq(projects.id, verrailTargets.projectId), eq(projects.companyId, verrailTargets.workspaceId)))
-      .innerJoin(verrailTargetRevisions, and(
-        eq(verrailTargetRevisions.workspaceId, verrailTargets.workspaceId),
-        eq(verrailTargetRevisions.targetId, verrailTargets.id),
-        eq(verrailTargetRevisions.id, revisionId),
-      ))
-      .where(and(eq(verrailTargets.workspaceId, workspaceId), eq(verrailTargets.id, targetId)))
-      .limit(1);
-    return rows[0] ? nativeRowToReadModel(rows[0]) : null;
-  }
+  return {
+    list: (workspaceId: string) => modelsFor(workspaceId),
 
-  async function persistProjection(
-    workspaceId: string,
-    input: RegisterTargetProjectionInput,
-    existingTargetId?: string,
-  ) {
-    return db.transaction(async (tx) => {
-      const built = await buildProjection(tx, workspaceId, input.sourceType, input.sourceId);
-      if (existingTargetId && existingTargetId !== built.model.targetId) {
-        throw conflict("Projection identity changed unexpectedly");
-      }
-      await tx.insert(targetProjectionRevisions).values({
-        workspaceId,
-        targetId: built.model.targetId,
-        targetRevisionId: built.model.activeTargetRevisionId,
-        projectionPolicyVersion: built.model.projectionPolicyVersion,
-        sourceRevisionKey: built.sourceRevisionKey,
-        sourceSnapshotHash: built.sourceSnapshotHash,
-        schemaVersion: String(built.model.schemaVersion),
-        projection: built.model,
-        createdAt: built.projectedAt,
-      }).onConflictDoNothing({ target: targetProjectionRevisions.targetRevisionId });
+    getByTargetId: async (workspaceId: string, targetId: string) =>
+      (await modelsFor(workspaceId, targetId))[0] ?? null,
 
-      const persistedRow = await tx
-        .select({
-          projection: targetProjectionRevisions.projection,
-          schemaVersion: targetProjectionRevisions.schemaVersion,
-          projectionPolicyVersion: targetProjectionRevisions.projectionPolicyVersion,
-          sourceRevisionKey: targetProjectionRevisions.sourceRevisionKey,
-        })
-        .from(targetProjectionRevisions)
-        .where(and(
-          eq(targetProjectionRevisions.workspaceId, workspaceId),
-          eq(targetProjectionRevisions.targetId, built.model.targetId),
-          eq(targetProjectionRevisions.targetRevisionId, built.model.activeTargetRevisionId),
-        ))
-        .limit(1)
-        .then((rows) => rows[0] ?? null);
-      if (!persistedRow) throw projectionUnavailable(built.model.targetId);
-      const persistedModel = parseStoredCompatibilityProjection(persistedRow.projection, {
-        workspaceId,
-        targetId: built.model.targetId,
-        targetRevisionId: built.model.activeTargetRevisionId,
-        schemaVersion: persistedRow.schemaVersion,
-        projectionPolicyVersion: persistedRow.projectionPolicyVersion,
-        sourceRevisionKey: persistedRow.sourceRevisionKey,
-        sourceType: input.sourceType,
-        sourceId: input.sourceId,
+    getByRevisionId: async (workspaceId: string, targetId: string, targetRevisionId: string) =>
+      (await modelsFor(workspaceId, targetId, targetRevisionId))[0] ?? null,
+
+    workspace: async (model: TargetReadModelV1): Promise<TargetWorkspaceV1> => {
+      const facts = await readFacts(model.workspaceId, [model.targetId]);
+      const graph = facts.graphs.find((item) => item.targetId === model.targetId) ?? null;
+      const activeRevision = graph?.activeGraphRevisionId
+        ? facts.graphRevisions.find((item) => item.id === graph.activeGraphRevisionId) ?? null
+        : null;
+      const work = graph?.activeGraphRevisionId
+        ? facts.nodes.filter((item) => item.graphRevisionId === graph.activeGraphRevisionId).map(mapWorkNode)
+        : [];
+      const runs = facts.runs.filter((item) => item.targetId === model.targetId).map((run) => mapRun(run, facts));
+      const stages = stageProgress(work);
+      const attention = attentionFor({ model, graph, nodes: work, runs });
+      const auditRows = await db.select().from(verrailAuditEvents).where(and(
+        eq(verrailAuditEvents.workspaceId, model.workspaceId),
+        eq(verrailAuditEvents.aggregateId, model.targetId),
+      )).orderBy(asc(verrailAuditEvents.occurredAt));
+      const timeline: TargetTimelineEventV1[] = auditRows.flatMap((event) => {
+        const typeMap: Record<string, TargetTimelineEventV1["type"]> = {
+          "target.created": "target_created",
+          "graph.revision_created": "graph_revision_created",
+          "graph.activated": "graph_activated",
+          "run.created": "run_created",
+          "run.updated": "run_updated",
+        };
+        const type = typeMap[event.eventType];
+        return type ? [{
+          id: event.id,
+          type,
+          title: event.eventType,
+          detail: null,
+          occurredAt: event.occurredAt.toISOString(),
+        }] : [];
       });
-      if (!persistedModel) {
-        throw projectionUnavailable(built.model.targetId, "snapshot_schema_or_identity_invalid");
-      }
-
-      await tx.insert(targetProjectionSources).values({
-        workspaceId,
-        targetId: built.model.targetId,
-        sourceType: input.sourceType,
-        sourceId: input.sourceId,
-        projectionPolicyVersion: built.model.projectionPolicyVersion,
-        eligibilityReason: input.eligibilityReason,
-        activeTargetRevisionId: built.model.activeTargetRevisionId,
-        sourceRevisionKey: built.sourceRevisionKey,
-        sourceSnapshotHash: built.sourceSnapshotHash,
-        lastProjectedAt: built.projectedAt,
-        disabledAt: null,
-        errorCode: null,
-        updatedAt: built.projectedAt,
-      }).onConflictDoUpdate({
-        target: [
-          targetProjectionSources.workspaceId,
-          targetProjectionSources.sourceType,
-          targetProjectionSources.sourceId,
-        ],
-        set: {
-          activeTargetRevisionId: built.model.activeTargetRevisionId,
-          sourceRevisionKey: built.sourceRevisionKey,
-          sourceSnapshotHash: built.sourceSnapshotHash,
-          projectionPolicyVersion: built.model.projectionPolicyVersion,
-          eligibilityReason: input.eligibilityReason,
-          lastProjectedAt: built.projectedAt,
-          disabledAt: null,
-          errorCode: null,
-          updatedAt: built.projectedAt,
-        },
-      });
-      return persistedModel;
-    }, { isolationLevel: "repeatable read" });
-  }
-
-  async function register(workspaceId: string, input: RegisterTargetProjectionInput) {
-    return persistProjection(workspaceId, input);
-  }
-
-  async function reconcile(workspaceId: string, targetId: string) {
-    const source = await db
-      .select()
-      .from(targetProjectionSources)
-      .where(and(
-        eq(targetProjectionSources.workspaceId, workspaceId),
-        eq(targetProjectionSources.targetId, targetId),
-      ))
-      .limit(1)
-      .then((rows) => rows[0] ?? null);
-    if (!source) throw notFound("Target projection not found");
-    try {
-      return await persistProjection(workspaceId, {
-        sourceType: source.sourceType as TargetSourceType,
-        sourceId: source.sourceId,
-        eligibilityReason: source.eligibilityReason as RegisterTargetProjectionInput["eligibilityReason"],
-      }, source.targetId);
-    } catch (error) {
-      await db.update(targetProjectionSources).set({
-        disabledAt: new Date(),
-        errorCode: error instanceof Error ? error.message.slice(0, 200) : "projection_failed",
-        updatedAt: new Date(),
-      }).where(eq(targetProjectionSources.id, source.id));
-      throw error;
-    }
-  }
-
-  async function listCompatibility(workspaceId: string) {
-    const sources = await db
-      .select({
-        targetId: targetProjectionSources.targetId,
-        activeTargetRevisionId: targetProjectionSources.activeTargetRevisionId,
-        sourceType: targetProjectionSources.sourceType,
-        sourceId: targetProjectionSources.sourceId,
-        sourceRevisionKey: targetProjectionSources.sourceRevisionKey,
-        projectionPolicyVersion: targetProjectionSources.projectionPolicyVersion,
-      })
-      .from(targetProjectionSources)
-      .where(and(eq(targetProjectionSources.workspaceId, workspaceId), isNull(targetProjectionSources.disabledAt)));
-    if (sources.length === 0) return [];
-    const revisions = await db
-      .select({
-        targetRevisionId: targetProjectionRevisions.targetRevisionId,
-        targetId: targetProjectionRevisions.targetId,
-        schemaVersion: targetProjectionRevisions.schemaVersion,
-        projectionPolicyVersion: targetProjectionRevisions.projectionPolicyVersion,
-        sourceRevisionKey: targetProjectionRevisions.sourceRevisionKey,
-        projection: targetProjectionRevisions.projection,
-      })
-      .from(targetProjectionRevisions)
-      .where(and(
-        eq(targetProjectionRevisions.workspaceId, workspaceId),
-        inArray(
-          targetProjectionRevisions.targetRevisionId,
-          sources.map((source) => source.activeTargetRevisionId),
-        ),
-      ));
-    const revisionsById = new Map(revisions.map((revision) => [revision.targetRevisionId, revision]));
-    const rows = sources.flatMap((source) => {
-      const revision = revisionsById.get(source.activeTargetRevisionId);
-      if (!revision) {
-        reportProjectionProblemOnce("invalid_projection_snapshot", {
-          workspaceId,
-          targetId: source.targetId,
-          targetRevisionId: source.activeTargetRevisionId,
-          schemaVersion: "unknown",
-          projectionPolicyVersion: source.projectionPolicyVersion,
-          sourceRevisionKey: source.sourceRevisionKey,
-          sourceType: source.sourceType,
-          sourceId: source.sourceId,
-        }, { reason: "active_snapshot_missing" });
-        return [];
-      }
-      if (
-        revision.targetId !== source.targetId
-        || revision.projectionPolicyVersion !== source.projectionPolicyVersion
-        || revision.sourceRevisionKey !== source.sourceRevisionKey
-      ) {
-        reportProjectionProblemOnce("invalid_projection_snapshot", {
-          workspaceId,
-          targetId: source.targetId,
-          targetRevisionId: source.activeTargetRevisionId,
-          schemaVersion: revision.schemaVersion,
-          projectionPolicyVersion: source.projectionPolicyVersion,
-          sourceRevisionKey: source.sourceRevisionKey,
-          sourceType: source.sourceType,
-          sourceId: source.sourceId,
-        }, {
-          reason: "active_revision_metadata_mismatch",
-        });
-        return [];
-      }
-      const projection = parseStoredCompatibilityProjection(revision.projection, {
-        workspaceId,
-        targetId: source.targetId,
-        targetRevisionId: source.activeTargetRevisionId,
-        schemaVersion: revision.schemaVersion,
-        projectionPolicyVersion: revision.projectionPolicyVersion,
-        sourceRevisionKey: revision.sourceRevisionKey,
-        sourceType: source.sourceType,
-        sourceId: source.sourceId,
-      });
-      return projection ? [{ ...source, projection }] : [];
-    });
-    const checked = await Promise.all(rows.map(async (row) => {
-      const source = row.sourceType === "case"
-        ? await loadCaseProjectionSource(db, workspaceId, row.sourceId)
-        : await loadIssueProjectionSource(db, workspaceId, row.sourceId);
-      if (!source || (source.projectId && !source.projectName)) return null;
-      if (row.sourceType === "case") {
-        try {
-          const issueIds = await issueIdsForSource(db, "case", row.sourceId);
-          await assertCaseIssueMemberships(db, workspaceId, row.sourceId, issueIds);
-        } catch {
-          return null;
-        }
-      } else {
-        try {
-          await assertIndependentIssueEligibility(db, source as Awaited<ReturnType<typeof loadIssueProjectionSource>> & {});
-        } catch {
-          return null;
-        }
-      }
-      if (source.updatedAt.toISOString() !== row.sourceRevisionKey) {
-        return withCompatibilityWarning(row.projection, "projection_stale");
-      }
-      return row.projection;
-    }));
-    return checked.filter((item): item is TargetReadModelV1 => item !== null);
-  }
-
-  async function list(workspaceId: string) {
-    const [native, compatibility] = await Promise.all([
-      listNative(workspaceId),
-      listCompatibility(workspaceId),
-    ]);
-    const nativeIds = new Set(native.map((item) => item.targetId));
-    return [...native, ...compatibility.filter((item) => !nativeIds.has(item.targetId))];
-  }
-
-  async function getByTargetId(workspaceId: string, targetId: string) {
-    const native = await getNativeByTargetId(workspaceId, targetId);
-    if (native) return native;
-    const sourceRow = await db
-      .select({
-        sourceType: targetProjectionSources.sourceType,
-        sourceId: targetProjectionSources.sourceId,
-        sourceRevisionKey: targetProjectionSources.sourceRevisionKey,
-        activeTargetRevisionId: targetProjectionSources.activeTargetRevisionId,
-        projectionPolicyVersion: targetProjectionSources.projectionPolicyVersion,
-      })
-      .from(targetProjectionSources)
-      .where(and(
-        eq(targetProjectionSources.workspaceId, workspaceId),
-        eq(targetProjectionSources.targetId, targetId),
-        isNull(targetProjectionSources.disabledAt),
-      ))
-      .limit(1)
-      .then((rows) => rows[0] ?? null);
-    if (!sourceRow) return null;
-    const revision = await db
-      .select({
-        projection: targetProjectionRevisions.projection,
-        schemaVersion: targetProjectionRevisions.schemaVersion,
-        projectionPolicyVersion: targetProjectionRevisions.projectionPolicyVersion,
-        sourceRevisionKey: targetProjectionRevisions.sourceRevisionKey,
-      })
-      .from(targetProjectionRevisions)
-      .where(and(
-        eq(targetProjectionRevisions.workspaceId, workspaceId),
-        eq(targetProjectionRevisions.targetId, targetId),
-        eq(targetProjectionRevisions.targetRevisionId, sourceRow.activeTargetRevisionId),
-      ))
-      .limit(1)
-      .then((rows) => rows[0] ?? null);
-    if (!revision) throw projectionUnavailable(targetId);
-    if (
-      revision.projectionPolicyVersion !== sourceRow.projectionPolicyVersion
-      || revision.sourceRevisionKey !== sourceRow.sourceRevisionKey
-    ) {
-      reportProjectionProblemOnce("invalid_projection_snapshot", {
-        workspaceId,
-        targetId,
-        targetRevisionId: sourceRow.activeTargetRevisionId,
-        schemaVersion: revision.schemaVersion,
-        projectionPolicyVersion: sourceRow.projectionPolicyVersion,
-        sourceRevisionKey: sourceRow.sourceRevisionKey,
-        sourceType: sourceRow.sourceType,
-        sourceId: sourceRow.sourceId,
-      }, { reason: "active_revision_metadata_mismatch" });
-      throw projectionUnavailable(targetId, "active_revision_metadata_mismatch");
-    }
-    const projection = parseStoredCompatibilityProjection(revision.projection, {
-      workspaceId,
-      targetId,
-      targetRevisionId: sourceRow.activeTargetRevisionId,
-      schemaVersion: revision.schemaVersion,
-      projectionPolicyVersion: revision.projectionPolicyVersion,
-      sourceRevisionKey: revision.sourceRevisionKey,
-      sourceType: sourceRow.sourceType,
-      sourceId: sourceRow.sourceId,
-    });
-    if (!projection) throw projectionUnavailable(targetId, "snapshot_schema_or_identity_invalid");
-    const row = { ...sourceRow, projection };
-    const source = row.sourceType === "case"
-      ? await loadCaseProjectionSource(db, workspaceId, row.sourceId)
-      : await loadIssueProjectionSource(db, workspaceId, row.sourceId);
-    if (!source || (source.projectId && !source.projectName)) return null;
-    if (row.sourceType === "case") {
-      try {
-        const issueIds = await issueIdsForSource(db, "case", row.sourceId);
-        await assertCaseIssueMemberships(db, workspaceId, row.sourceId, issueIds);
-      } catch {
-        return null;
-      }
-    } else {
-      try {
-        await assertIndependentIssueEligibility(db, source as Awaited<ReturnType<typeof loadIssueProjectionSource>> & {});
-      } catch {
-        return null;
-      }
-    }
-    if (source.updatedAt.toISOString() !== row.sourceRevisionKey) {
-      return withCompatibilityWarning(row.projection, "projection_stale");
-    }
-    return row.projection;
-  }
-
-  async function getByRevisionId(workspaceId: string, targetId: string, targetRevisionIdValue: string) {
-    const native = await getNativeByRevisionId(workspaceId, targetId, targetRevisionIdValue);
-    if (native) return native;
-    const [revision, sourceRow] = await Promise.all([
-      db
-      .select({
-        projection: targetProjectionRevisions.projection,
-        schemaVersion: targetProjectionRevisions.schemaVersion,
-        projectionPolicyVersion: targetProjectionRevisions.projectionPolicyVersion,
-        sourceRevisionKey: targetProjectionRevisions.sourceRevisionKey,
-      })
-      .from(targetProjectionRevisions)
-      .where(and(
-        eq(targetProjectionRevisions.workspaceId, workspaceId),
-        eq(targetProjectionRevisions.targetId, targetId),
-        eq(targetProjectionRevisions.targetRevisionId, targetRevisionIdValue),
-      ))
-      .limit(1)
-      .then((rows) => rows[0] ?? null),
-      db
-        .select({
-          sourceType: targetProjectionSources.sourceType,
-          sourceId: targetProjectionSources.sourceId,
-        })
-        .from(targetProjectionSources)
-        .where(and(
-          eq(targetProjectionSources.workspaceId, workspaceId),
-          eq(targetProjectionSources.targetId, targetId),
-        ))
-        .limit(1)
-        .then((rows) => rows[0] ?? null),
-    ]);
-    if (!revision) return null;
-    const projection = parseStoredCompatibilityProjection(revision.projection, {
-      workspaceId,
-      targetId,
-      targetRevisionId: targetRevisionIdValue,
-      schemaVersion: revision.schemaVersion,
-      projectionPolicyVersion: revision.projectionPolicyVersion,
-      sourceRevisionKey: revision.sourceRevisionKey,
-      sourceType: sourceRow?.sourceType,
-      sourceId: sourceRow?.sourceId,
-    });
-    if (!projection) throw projectionUnavailable(targetId, "snapshot_schema_or_identity_invalid");
-    const source = projection.source.type === "case"
-      ? await loadCaseProjectionSource(db, workspaceId, projection.source.id)
-      : await loadIssueProjectionSource(db, workspaceId, projection.source.id);
-    if (source) return projection;
-    return withCompatibilityWarning(projection, "source_missing");
-  }
-
-  return { register, reconcile, list, getByTargetId, getByRevisionId };
+      return {
+        schemaVersion: TARGET_WORKSPACE_SCHEMA_VERSION,
+        targetId: model.targetId,
+        targetRevisionId: model.activeTargetRevisionId,
+        workspaceId: model.workspaceId,
+        generatedAt: new Date().toISOString(),
+        graph: graph ? {
+          workGraphId: graph.id,
+          activeGraphRevisionId: graph.activeGraphRevisionId,
+          status: graph.status as "draft" | "active" | "completed" | "canceled",
+          revisionNumber: activeRevision?.revisionNumber ?? null,
+        } : null,
+        stages,
+        work,
+        attention,
+        submissions: [],
+        artifacts: [],
+        evidence: [],
+        runs,
+        timeline,
+      };
+    },
+  };
 }

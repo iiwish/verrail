@@ -1,0 +1,18 @@
+{
+  "target_id": "g1-domain-closure",
+  "run_id": "run-002",
+  "decision": "request_changes",
+  "reviewer": "Codex maintainer preflight self-review; advisory only",
+  "rationale": "The scoped G1 implementation covers the native Target boundary, conversation-first confirmation, and minimal Graph/Stage/Attention/Run loop with focused, Go, integration, build, type, migration, locale, token, and browser evidence. Final approval is withheld because self-review cannot approve the work, the repository-wide suite still has 22 recorded non-G1 failures, and product-owner manual acceptance has not occurred.",
+  "linked_evidence": [
+    ".verrail/targets/g1-domain-closure/runs/run-002/receipt.json",
+    ".verrail/targets/g1-domain-closure/runs/run-002/evidence.json",
+    "tests/verrail-acceptance/playwright-report/index.html"
+  ],
+  "requested_changes": [
+    "Obtain independent engineering review of the native authority, migration, transaction, and idempotency boundaries.",
+    "Obtain product-owner manual acceptance of the conversation draft and Target Workbench flow.",
+    "Adjudicate or fix the recorded non-G1 repository-wide test failures before merge according to maintainer policy."
+  ],
+  "created_at": "2026-09-01T09:33:31Z"
+}

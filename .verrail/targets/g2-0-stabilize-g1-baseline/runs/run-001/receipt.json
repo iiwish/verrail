@@ -1,0 +1,103 @@
+{
+  "id": "run-001",
+  "target_id": "g2-0-stabilize-g1-baseline",
+  "agent": "codex",
+  "runner": "Codex desktop local checkout",
+  "model": "gpt-5.6-sol",
+  "status": "completed_needs_independent_review",
+  "base_commit": "b307b961445632a79acf712600ff1b1736a87112",
+  "output_commit": "",
+  "branch": "codex/g1-domain-closure",
+  "working_tree": "uncommitted G1 closure and G2.0 stabilization change set",
+  "changed_files": [
+    "scripts/run-vitest-stable.mjs",
+    "server/src/services/company-skills.ts",
+    "server/src/services/workspace-runtime.ts",
+    "server/src/__tests__/workspace-runtime.test.ts",
+    "cli/src/__tests__/company-import-transfer.test.ts",
+    "packages/db/src/client.ts",
+    "packages/db/src/backup-lib.ts",
+    "packages/db/src/backup-lib.test.ts",
+    "packages/adapter-utils/src/local-process-sandbox.test.ts",
+    "packages/adapter-utils/src/mcp-isolation.integration.test.ts",
+    "packages/adapters/opencode-local/src/server/execute.remote.test.ts",
+    "packages/adapters/opencode-local/src/server/test.remote.test.ts",
+    "ui/src/components/Sidebar.test.tsx",
+    "ui/src/components/VerrailProjectsSidebar.test.tsx",
+    "ui/src/pages/ProjectDetail.tsx",
+    "ui/src/pages/ProjectDetail.test.tsx",
+    "ui/src/pages/Projects.test.tsx",
+    "docs/architecture.md",
+    ".verrail/targets/g2-0-stabilize-g1-baseline/**"
+  ],
+  "commands": [
+    {
+      "command": "pnpm test:run",
+      "status": "adjudicated_composite_pass",
+      "summary": "The general server, UI, CLI, shared, catalog, DB, adapter, and plugin projects plus all 141 serialized server suites passed across the final full attempts and clean follow-up runs. One full attempt exposed OpenCode test-budget flakiness, which was fixed; the next reached ENOSPC from stale embedded-Postgres temp roots. After cleanup, the complete DB project and all remaining projects passed. No product assertion remains failing."
+    },
+    {
+      "command": "pnpm exec vitest run --project @paperclipai/db",
+      "status": "passed",
+      "summary": "All 26 DB files completed: 25 passed, 1 skipped; 98 tests passed, 1 skipped."
+    },
+    {
+      "command": "pnpm exec vitest run --exclude '**/dist/**' --project @paperclipai/adapter-opencode-local --project @paperclipai/plugin-sdk --project @paperclipai/create-paperclip-plugin",
+      "status": "passed",
+      "summary": "All 15 source test files and 112 tests passed."
+    },
+    {
+      "command": "node scripts/run-vitest-stable.mjs --mode serialized",
+      "status": "passed",
+      "summary": "All 141 serialized server suites passed."
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "All 34 participating workspace projects passed TypeScript, Rust, protocol, and migration checks."
+    },
+    {
+      "command": "pnpm build",
+      "status": "passed",
+      "summary": "The full workspace build passed with existing non-fatal CSS, font, dynamic-import, and chunk-size warnings."
+    },
+    {
+      "command": "cd services/domain-api && go test ./...",
+      "status": "passed",
+      "summary": "All Go domain API and Temporal workflow packages passed."
+    },
+    {
+      "command": "pnpm test:e2e:verrail-acceptance",
+      "status": "passed",
+      "summary": "Four Playwright acceptance cases passed against the live G1 stack."
+    },
+    {
+      "command": "fresh and base-commit PostgreSQL migration probes",
+      "status": "passed",
+      "summary": "Both paths reached 234 journal rows and 16 native Verrail tables; target workspace_id exists and legacy project_id is absent."
+    },
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "summary": "All four UI token gates were clean across 814 files."
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "summary": "The complete working diff contains no whitespace errors."
+    },
+    {
+      "command": "curl -fsS http://127.0.0.1:3100/api/health",
+      "status": "passed",
+      "summary": "The local acceptance stack is healthy, authenticated, and has a current successful database backup."
+    }
+  ],
+  "artifacts": [
+    ".verrail/targets/g2-0-stabilize-g1-baseline/runs/run-001/evidence.json",
+    ".verrail/targets/g2-0-stabilize-g1-baseline/reviews/maintainer-review.md",
+    "docs/architecture.md",
+    "tests/verrail-acceptance/playwright-report/index.html"
+  ],
+  "errors": [],
+  "summary": "G2.0 stabilizes the G1 development baseline and closes the previously unexplained repository verification gap. It does not grant independent approval or production release authority."
+}

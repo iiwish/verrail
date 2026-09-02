@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, CircleAlert, MessageSquare, RotateCcw, Square } from "lucide-react";
+import { Bot, CircleAlert, MessageSquare, RotateCcw, Square, Target } from "lucide-react";
 import type { ConversationMessage } from "@paperclipai/shared";
 import { useNavigate, useParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
@@ -9,12 +9,18 @@ import { MarkdownBody } from "../components/MarkdownBody";
 import { conversationsApi } from "../api/conversations";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { useDialogActions } from "../context/DialogContext";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
 import { useTranslation } from "@/i18n";
 
 const CHAT_MARKDOWN_CLASS =
   "max-w-full overflow-visible [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto";
+
+function messageAssistantName(message: ConversationMessage) {
+  const value = message.metadata?.assistantAgentName;
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
 
 function Message({ message }: { message: ConversationMessage }) {
   const { t } = useTranslation();
@@ -37,7 +43,9 @@ function Message({ message }: { message: ConversationMessage }) {
         )}
       >
         {!isUser ? (
-          <p className="mb-1 text-xs font-medium text-muted-foreground">{t("chat.assistant")}</p>
+          <p className="mb-1 text-xs font-medium text-muted-foreground">
+            {messageAssistantName(message) ?? t("chat.assistant")}
+          </p>
         ) : null}
         {isUser ? message.body : (
           <MarkdownBody className={CHAT_MARKDOWN_CLASS}>{message.body}</MarkdownBody>
@@ -58,6 +66,7 @@ export function VerrailChat() {
   const { conversationId: routeConversationId } = useParams<{ conversationId?: string }>();
   const { selectedCompany, selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const { openNewTarget } = useDialogActions();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [createdConversationId, setCreatedConversationId] = useState<string | null>(null);
@@ -65,6 +74,7 @@ export function VerrailChat() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [streamingText, setStreamingText] = useState("");
+  const [streamingAssistantName, setStreamingAssistantName] = useState("");
   const [optimisticMessage, setOptimisticMessage] = useState<string | null>(null);
   const [errorText, setErrorText] = useState("");
   const [lastSubmitted, setLastSubmitted] = useState("");
@@ -93,6 +103,7 @@ export function VerrailChat() {
     setCreatedConversationId(null);
     setSending(false);
     setStreamingText("");
+    setStreamingAssistantName("");
     setOptimisticMessage(null);
     setErrorText("");
   }, [routeConversationId]);
@@ -128,6 +139,7 @@ export function VerrailChat() {
     setLastSubmitted(trimmed);
     setOptimisticMessage(trimmed);
     setStreamingText("");
+    setStreamingAssistantName("");
     setErrorText("");
 
     let targetConversationId = conversationId;
@@ -180,8 +192,13 @@ export function VerrailChat() {
               type?: string;
               text?: string;
               message?: string;
+              assistantAgentName?: string | null;
             };
-            if (event.type === "chunk" && event.text) {
+            if (event.type === "start" && event.assistantAgentName) {
+              if (requestSequenceRef.current === requestSequence) {
+                setStreamingAssistantName(event.assistantAgentName);
+              }
+            } else if (event.type === "chunk" && event.text) {
               accumulated += event.text;
               if (requestSequenceRef.current === requestSequence) {
                 setStreamingText(accumulated);
@@ -219,6 +236,7 @@ export function VerrailChat() {
       if (requestSequenceRef.current === requestSequence) {
         setSending(false);
         setStreamingText("");
+        setStreamingAssistantName("");
         setOptimisticMessage(null);
         composerRef.current?.focus();
       }
@@ -288,6 +306,15 @@ export function VerrailChat() {
           </p>
         </div>
         <div className="flex min-w-0 items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => openNewTarget(conversationId ? { conversationId } : undefined)}
+          >
+            <Target className="h-4 w-4" />
+            {t("targets.create.title")}
+          </Button>
           {conversation?.contextBindings.map((binding) => (
             <span
               key={binding.id}
@@ -339,7 +366,9 @@ export function VerrailChat() {
                       <Bot className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                     </div>
                     <div className="min-w-0 flex-1 py-1 text-sm">
-                      <p className="mb-1 text-xs font-medium text-muted-foreground">{t("chat.assistant")}</p>
+                      <p className="mb-1 text-xs font-medium text-muted-foreground">
+                        {streamingAssistantName || t("chat.assistant")}
+                      </p>
                       {streamingText ? (
                         <MarkdownBody className={CHAT_MARKDOWN_CLASS}>{streamingText}</MarkdownBody>
                       ) : (

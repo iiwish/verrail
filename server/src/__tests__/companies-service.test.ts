@@ -18,12 +18,20 @@ import {
   plugins,
   routines,
   routineTriggers,
+  verrailAgentCommandReceipts,
+  verrailAgentDefinitions,
+  verrailAgentVersions,
+  verrailAuditEvents,
+  verrailDeploymentRevisions,
+  verrailDeployments,
+  verrailEvaluationRuns,
 } from "@paperclipai/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
 import { companyService } from "../services/companies.js";
+import { agentService } from "../services/agents.js";
 import { pluginRegistryService } from "../services/plugin-registry.js";
 import { readBuiltInAgentMarker } from "../services/built-in-agent-metadata.js";
 import { builtInAgentService, reconcileBuiltInAgentsOnStartup } from "../services/built-in-agents.js";
@@ -58,6 +66,13 @@ describeEmbeddedPostgres("companyService", () => {
     await db.delete(agentWakeupRequests);
     await db.delete(agentConfigRevisions);
     await db.delete(activityLog);
+    await db.delete(verrailAgentCommandReceipts);
+    await db.delete(verrailDeploymentRevisions);
+    await db.delete(verrailDeployments);
+    await db.delete(verrailEvaluationRuns);
+    await db.delete(verrailAgentVersions);
+    await db.delete(verrailAgentDefinitions);
+    await db.delete(verrailAuditEvents);
     await db.delete(agents);
     await db.delete(principalPermissionGrants);
     await db.delete(companyMemberships);
@@ -375,20 +390,81 @@ describeEmbeddedPostgres("companyService", () => {
     expect(Number(company?.enableVerrailNavigation === true) + Number(storedPlugin?.status === "ready")).toBe(1);
   });
 
-  it("does not auto-provision bundled built-in agents for a freshly created company", async () => {
+  it("auto-provisions the workspace Director while leaving optional built-in agents disabled", async () => {
     const created = await companyService(db).create({
       name: "Fresh Company",
     });
 
-    // A new company starts clean: the Reflection Coach and Summarizer are
-    // opt-in, not seeded by default for a new user.
+    // Every workspace has one default Director. Optional helpers such as the
+    // Reflection Coach and Summarizer remain opt-in.
     const agentRows = await db.select().from(agents).where(eq(agents.companyId, created.id));
-    expect(agentRows.filter((row) => readBuiltInAgentMarker(row.metadata))).toHaveLength(0);
+    expect(agentRows).toHaveLength(1);
+    expect(agentRows[0]).toMatchObject({
+      name: "Director",
+      role: "ceo",
+      title: "Workspace Director",
+      reportsTo: null,
+      permissions: {
+        canCreateAgents: true,
+        canCreateSkills: true,
+      },
+    });
+    expect(readBuiltInAgentMarker(agentRows[0]?.metadata)).toEqual({
+      key: "director",
+      featureKeys: ["workspace-default-agent"],
+    });
+    const [definitionRows, versionRows, evaluationRows, deploymentRows, revisionRows] = await Promise.all([
+      db.select().from(verrailAgentDefinitions).where(eq(verrailAgentDefinitions.workspaceId, created.id)),
+      db.select().from(verrailAgentVersions).where(eq(verrailAgentVersions.workspaceId, created.id)),
+      db.select().from(verrailEvaluationRuns).where(eq(verrailEvaluationRuns.workspaceId, created.id)),
+      db.select().from(verrailDeployments).where(eq(verrailDeployments.workspaceId, created.id)),
+      db.select().from(verrailDeploymentRevisions).where(eq(verrailDeploymentRevisions.workspaceId, created.id)),
+    ]);
+    expect(definitionRows).toHaveLength(1);
+    expect(definitionRows[0]).toMatchObject({ compatibilityAgentId: agentRows[0]!.id, status: "published" });
+    expect(versionRows).toHaveLength(1);
+    expect(evaluationRows).toEqual([expect.objectContaining({ status: "inconclusive", safetyStatus: "not_run" })]);
+    expect(deploymentRows).toEqual([expect.objectContaining({ status: "paused", isDefault: true })]);
+    expect(revisionRows).toEqual([expect.objectContaining({ state: "paused", agentVersionId: versionRows[0]!.id })]);
+    const directorGrantRows = await db
+      .select({ permissionKey: principalPermissionGrants.permissionKey })
+      .from(principalPermissionGrants)
+      .where(eq(principalPermissionGrants.principalId, agentRows[0]!.id));
+    expect(directorGrantRows.map((row) => row.permissionKey)).toEqual(expect.arrayContaining([
+      "agents:create",
+      "agents:configure",
+      "skills:create",
+    ]));
 
-    // Startup reconcile leaves a fresh company untouched — nothing is created.
+    const child = await agentService(db).create(created.id, {
+      name: "Delivery Specialist",
+      role: "engineer",
+      status: "idle",
+      adapterType: "process",
+      adapterConfig: { command: "echo" },
+      runtimeConfig: {},
+      permissions: {},
+    });
+    expect(child.reportsTo).toBe(agentRows[0]!.id);
+
+    const explicitRoot = await agentService(db).create(created.id, {
+      name: "Independent Specialist",
+      role: "engineer",
+      status: "idle",
+      reportsTo: null,
+      adapterType: "process",
+      adapterConfig: { command: "echo" },
+      runtimeConfig: {},
+      permissions: {},
+    });
+    expect(explicitRoot.reportsTo).toBeNull();
+
+    // Startup reconcile is idempotent and keeps exactly one Director.
     await reconcileBuiltInAgentsOnStartup(db);
     const afterReconcileRows = await db.select().from(agents).where(eq(agents.companyId, created.id));
-    expect(afterReconcileRows.filter((row) => readBuiltInAgentMarker(row.metadata))).toHaveLength(0);
+    expect(afterReconcileRows.filter(
+      (row) => readBuiltInAgentMarker(row.metadata)?.key === "director",
+    )).toHaveLength(1);
 
     // The Reflection Coach remains available to enable on demand, and enabling
     // it materializes its bundled skill + paused routine.
@@ -397,6 +473,7 @@ describeEmbeddedPostgres("companyService", () => {
       name: "Reflection Coach",
       status: "paused",
       budgetMonthlyCents: 0,
+      reportsTo: agentRows[0]!.id,
     });
 
     const [skill] = await db

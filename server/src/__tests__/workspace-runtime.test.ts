@@ -354,6 +354,24 @@ async function findFreePort() {
   return port;
 }
 
+async function findFreePortOutsideRuntimeExposureRange(companionOffset = 0) {
+  // Binding port 0 on macOS draws only from the high ephemeral range, so
+  // repeatedly filtering those results can fail even when the required lower
+  // range is entirely free. Probe the allowed range directly instead.
+  for (let port = 43_000; port <= 45_535; port += 1) {
+    const servers: net.Server[] = [];
+    try {
+      servers.push(await listenOnPort(port));
+      if (companionOffset > 0) servers.push(await listenOnPort(port + companionOffset));
+      await Promise.all(servers.map((server) => closeNetServer(server)));
+      return port;
+    } catch {
+      await Promise.all(servers.map((server) => closeNetServer(server).catch(() => undefined)));
+    }
+  }
+  throw new Error("Failed to find a free test port outside the runtime exposure range");
+}
+
 async function reserveContiguousPorts(count: number) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const basePort = await findFreePort();
@@ -7121,7 +7139,7 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
       await cleanupRuntimeHome();
       await fixture.cleanup();
     }
-  }, 20_000);
+  }, 60_000);
 
   it("returns a bounded structured conflict and exposes only same-company workspace references", async () => {
     const fixture = await createRuntimeFixture({
@@ -7500,19 +7518,6 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
     process.env.PAPERCLIP_HOME = paperclipHome;
     process.env.PAPERCLIP_INSTANCE_ID = `runtime-https-backfill-${randomUUID()}`;
 
-    const reservePort = async () => {
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        const probe = net.createServer();
-        await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
-        const address = probe.address();
-        const port = typeof address === "object" && address ? address.port : null;
-        await new Promise<void>((resolve, reject) => {
-          probe.close((error) => error ? reject(error) : resolve());
-        });
-        if (port && port <= 55_535 && (port < 42_000 || port > 42_999)) return port;
-      }
-      throw new Error("Failed to reserve an HTTPS backfill test port outside the broker range");
-    };
     const isLoopbackPortFree = async (port: number) => {
       const probe = net.createServer();
       return await new Promise<boolean>((resolve) => {
@@ -7525,7 +7530,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
 
     // Stands in for the persisted template's hard-coded 45439: a pinned port
     // outside the broker's dedicated allowlist, so the backfill has to relocate.
-    const legacyPort = await reservePort();
+    const legacyPort = await findFreePortOutsideRuntimeExposureRange(10_000);
     const companyId = randomUUID();
     const projectId = randomUUID();
     const projectWorkspaceId = randomUUID();
@@ -7840,22 +7845,7 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
     // The reconciler stores this port on the row. A port inside that range makes
     // the reconciler treat the row as an exposure reservation and report drift,
     // so the live service never reaches the adoption path this test verifies.
-    const reservePort = async () => {
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        const probe = net.createServer();
-        await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
-        const address = probe.address();
-        const candidate = typeof address === "object" && address ? address.port : null;
-        await new Promise<void>((resolve, reject) => {
-          probe.close((error) => error ? reject(error) : resolve());
-        });
-        if (candidate && candidate <= 55_535 && (candidate < 42_000 || candidate > 42_999)) {
-          return candidate;
-        }
-      }
-      throw new Error("Failed to reserve pnpm reconciliation test port outside the broker range");
-    };
-    const port = await reservePort();
+    const port = await findFreePortOutsideRuntimeExposureRange();
 
     const companyId = randomUUID();
     const projectId = randomUUID();

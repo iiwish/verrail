@@ -99,3 +99,21 @@ func TestTemporalDelivererClassifiesContractsAndAvailability(t *testing.T) {
 	require.False(t, isPermanent(err))
 	require.ErrorIs(t, err, unavailable)
 }
+
+func TestTemporalDelivererRoutesRunEventsToRunWorkflow(t *testing.T) {
+	event := OutboxEvent{
+		ID: "run-event-1", WorkspaceID: testWorkspaceID, AggregateType: "run", AggregateID: testTargetID,
+		EventType: RunAttemptChangedEventType,
+		Payload:   []byte(`{"schemaVersion":1,"targetId":"` + testRevisionID + `","runId":"` + testTargetID + `","runAttemptId":"attempt-1","eventType":"run.event_started"}`),
+	}
+	recorded := &recordedSignalWithStartClient{run: fakeWorkflowRun{id: RunWorkflowID(testWorkspaceID, testTargetID), runID: "temporal-run-1"}}
+	result, err := NewTemporalDeliverer(recorded, DefaultTargetTaskQueue).Deliver(context.Background(), event)
+	require.NoError(t, err)
+	require.Equal(t, RunWorkflowID(testWorkspaceID, testTargetID), result.WorkflowID)
+	require.Equal(t, RunEventSignalName, recorded.signalName)
+	require.Equal(t, RunWorkflowName, recorded.workflowType)
+	require.Equal(t, RunEvent{
+		SchemaVersion: SchemaVersion, EventID: event.ID, EventType: "run.event_started", WorkspaceID: testWorkspaceID,
+		TargetID: testRevisionID, RunID: testTargetID, RunAttemptID: "attempt-1",
+	}, recorded.signal)
+}

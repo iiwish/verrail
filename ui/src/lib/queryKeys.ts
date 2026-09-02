@@ -9,13 +9,18 @@ export const queryKeys = {
   targets: {
     list: (
       workspaceId: string,
-      projectId?: string | null,
+      collectionId?: string | null,
       options: Record<string, unknown> = {},
-    ) => ["targets", workspaceId, "list", projectId ?? "__all-projects__", options] as const,
+    ) => ["targets", workspaceId, "list", collectionId ?? "__all-collections__", options] as const,
     detail: (workspaceId: string, targetId: string) =>
       ["targets", workspaceId, "detail", targetId] as const,
+    workspace: (workspaceId: string, targetId: string) =>
+      ["targets", workspaceId, "detail", targetId, "workspace"] as const,
     revision: (workspaceId: string, targetId: string, targetRevisionId: string) =>
       ["targets", workspaceId, "detail", targetId, "revision", targetRevisionId] as const,
+  },
+  collections: {
+    list: (workspaceId: string) => ["collections", workspaceId] as const,
   },
   companies: {
     /**
@@ -493,4 +498,5 @@ export const queryKeys = {
   adapters: {
     all: ["adapters"] as const,
   },
+  agentLifecycle: (workspaceId: string) => ["agent-lifecycle", workspaceId] as const,
 };

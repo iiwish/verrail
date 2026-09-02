@@ -1,4 +1,4 @@
-export type VerrailManagementSection = "projects" | "agents" | "infrastructure" | "governance";
+export type VerrailManagementSection = "targets" | "projects" | "agents" | "infrastructure" | "governance";
 
 function workspaceRelativePath(pathname: string, companyPrefix: string | undefined): string {
   const segments = pathname.split("/").filter(Boolean);
@@ -15,11 +15,15 @@ export function resolveVerrailManagementSection(
   const path = workspaceRelativePath(pathname, companyPrefix).toLowerCase();
 
   if (
-    path === "/projects" ||
-    path.startsWith("/projects/") ||
-    path === "/targets" ||
-    path.startsWith("/targets/")
+    path === "/targets"
+    || path.startsWith("/targets/")
+    || path === "/collections"
+    || path.startsWith("/collections/")
   ) {
+    return "targets";
+  }
+
+  if (path === "/projects" || path.startsWith("/projects/")) {
     return "projects";
   }
 

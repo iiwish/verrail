@@ -36,18 +36,18 @@ function TargetRow({ target }: { target: TargetReadModelV1 }) {
 
 export function TargetList({
   workspaceId,
-  projectId,
+  collectionId,
   limit = 50,
 }: {
   workspaceId: string;
-  projectId?: string | null;
+  collectionId?: string | null;
   limit?: number;
 }) {
   const { t } = useTranslation();
   const query = useQuery({
-    queryKey: queryKeys.targets.list(workspaceId, projectId, { limit }),
-    queryFn: () => projectId
-      ? targetsApi.listForProject(workspaceId, projectId, { limit })
+    queryKey: queryKeys.targets.list(workspaceId, collectionId, { limit }),
+    queryFn: () => collectionId
+      ? targetsApi.listForCollection(workspaceId, collectionId, { limit })
       : targetsApi.list(workspaceId, { limit }),
   });
 

@@ -1,5 +1,9 @@
 export { companyService } from "./companies.js";
 export { conversationService } from "./conversations.js";
+export {
+  providerConversationBindingService,
+  targetCreationDraftService,
+} from "./conversation-target-drafts.js";
 export { companyArtifactsService } from "./company-artifacts.js";
 export { companySearchService } from "./company-search.js";
 export { companySearchExtractService } from "./company-search-extract.js";
@@ -35,11 +39,14 @@ export {
   refreshIssueContinuationSummary,
 } from "./issue-continuation-summary.js";
 export { projectService } from "./projects.js";
-export { targetReadModelService, targetProjectionUuidV5 } from "./target-read-model.js";
+export { targetReadModelService } from "./target-read-model.js";
 export {
   createVerrailDomainApiClient,
   type VerrailDomainApiClient,
   type CreateNativeTargetCommand,
+  type CreateNativeGraphRevisionCommand,
+  type ActivateNativeGraphRevisionCommand,
+  type CreateNativeRunCommand,
 } from "./verrail-domain-api-client.js";
 export {
   clampIssueListLimit,
@@ -200,3 +207,4 @@ export {
 } from "./codex-auth-reconciliation.js";
 export { reconcilePersistedRuntimeServicesOnStartup, restartDesiredRuntimeServicesOnStartup } from "./workspace-runtime.js";
 export { createStorageServiceFromConfig, getStorageService } from "../storage/index.js";
+export { agentLifecycleService } from "./agent-lifecycle.js";

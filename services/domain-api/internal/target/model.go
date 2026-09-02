@@ -35,8 +35,14 @@ type AcceptanceCriterionInput struct {
 	Description *string `json:"description,omitempty"`
 }
 
+type ResourceRef struct {
+	Kind  string  `json:"kind"`
+	ID    string  `json:"id"`
+	Label *string `json:"label"`
+}
+
 type CreateInput struct {
-	ProjectID          string                     `json:"projectId"`
+	CollectionID       *string                    `json:"collectionId,omitempty"`
 	Title              string                     `json:"title"`
 	Summary            *string                    `json:"summary,omitempty"`
 	OutcomeOwner       OutcomeOwner               `json:"outcomeOwner"`
@@ -46,6 +52,7 @@ type CreateInput struct {
 	RiskLevel          string                     `json:"riskLevel"`
 	Deadline           *string                    `json:"deadline,omitempty"`
 	PolicySummary      *string                    `json:"policySummary,omitempty"`
+	ResourceRefs       []ResourceRef              `json:"resourceRefs,omitempty"`
 }
 
 type AcceptanceCriterion struct {
@@ -66,6 +73,8 @@ type CreateResult struct {
 	SchemaVersion    int    `json:"schemaVersion"`
 	TargetID         string `json:"targetId"`
 	TargetRevisionID string `json:"targetRevisionId"`
+	WorkGraphID      string `json:"workGraphId"`
+	GraphRevisionID  string `json:"graphRevisionId"`
 	WorkbenchHref    string `json:"workbenchHref"`
 	Replayed         bool   `json:"replayed"`
 }
@@ -85,15 +94,21 @@ func ValidateCommand(command *CreateCommand) error {
 	command.Principal.ID = strings.TrimSpace(command.Principal.ID)
 	command.IdempotencyKey = strings.TrimSpace(command.IdempotencyKey)
 	input := &command.Input
-	input.ProjectID = strings.TrimSpace(input.ProjectID)
+	if input.CollectionID != nil {
+		value := strings.TrimSpace(*input.CollectionID)
+		input.CollectionID = &value
+	}
 	input.Title = strings.TrimSpace(input.Title)
 	input.Goal = strings.TrimSpace(input.Goal)
 	input.RiskLevel = strings.TrimSpace(input.RiskLevel)
 	input.OutcomeOwner.PrincipalType = strings.TrimSpace(input.OutcomeOwner.PrincipalType)
 	input.OutcomeOwner.PrincipalID = strings.TrimSpace(input.OutcomeOwner.PrincipalID)
 
-	if !uuidPattern.MatchString(command.WorkspaceID) || !uuidPattern.MatchString(input.ProjectID) {
-		return validation("workspaceId and projectId must be UUIDs")
+	if !uuidPattern.MatchString(command.WorkspaceID) {
+		return validation("workspaceId must be a UUID")
+	}
+	if input.CollectionID != nil && !uuidPattern.MatchString(*input.CollectionID) {
+		return validation("collectionId must be a UUID when provided")
 	}
 	if command.Principal.Type != "user" || command.Principal.ID == "" || utf8.RuneCountInString(command.Principal.ID) > 200 {
 		return forbidden("TARGET_CREATE_FORBIDDEN", "A human Workspace member is required")
@@ -160,6 +175,24 @@ func ValidateCommand(command *CreateCommand) error {
 		}
 		input.PolicySummary = &value
 	}
+	if len(input.ResourceRefs) > 100 {
+		return validation("resourceRefs may contain at most 100 entries")
+	}
+	for index := range input.ResourceRefs {
+		ref := &input.ResourceRefs[index]
+		ref.Kind = strings.TrimSpace(ref.Kind)
+		ref.ID = strings.TrimSpace(ref.ID)
+		if ref.Kind == "" || utf8.RuneCountInString(ref.Kind) > 100 || ref.ID == "" || utf8.RuneCountInString(ref.ID) > 500 {
+			return validation("each resourceRef must contain a bounded kind and id")
+		}
+		if ref.Label != nil {
+			value := strings.TrimSpace(*ref.Label)
+			if value == "" || utf8.RuneCountInString(value) > 500 {
+				return validation("resourceRef label must contain 1 to 500 characters")
+			}
+			ref.Label = &value
+		}
+	}
 
 	payload, err := json.Marshal(input)
 	if err != nil {
@@ -195,7 +228,7 @@ func validation(message string) error {
 func forbidden(code, message string) error { return &Error{Status: 403, Code: code, Message: message} }
 
 func NotFound() error {
-	return &Error{Status: 404, Code: "TARGET_CREATE_SCOPE_NOT_FOUND", Message: "Workspace or Project not found"}
+	return &Error{Status: 404, Code: "TARGET_CREATE_SCOPE_NOT_FOUND", Message: "Workspace or Collection not found"}
 }
 func OwnerInvalid() error {
 	return &Error{Status: 422, Code: "TARGET_OWNER_INVALID", Message: "Outcome owner is not active in this Workspace"}

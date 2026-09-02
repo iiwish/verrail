@@ -32,6 +32,31 @@ import {
   routineTriggers,
   routineRevisions,
   routines,
+  verrailAgentCommandReceipts,
+  verrailAgentDefinitions,
+  verrailAgentVersions,
+  verrailAuditEvents,
+  verrailCollections,
+  verrailCommandReceipts,
+  verrailConversationContextBindings,
+  verrailConversationMessages,
+  verrailConversations,
+  verrailDeploymentRevisions,
+  verrailDeployments,
+  verrailEvaluationRuns,
+  verrailExecutionCommandReceipts,
+  verrailExecutionLeases,
+  verrailGraphRevisions,
+  verrailOutboxEvents,
+  verrailProviderConversationBindings,
+  verrailRunAttempts,
+  verrailRunEvents,
+  verrailRuns,
+  verrailTargetCreationDraftRevisions,
+  verrailTargetCreationDrafts,
+  verrailTargets,
+  verrailWorkGraphs,
+  verrailWorkNodes,
 } from "@paperclipai/db";
 import { notFound, unprocessable } from "../errors.js";
 import { environmentService } from "./environments.js";
@@ -42,6 +67,7 @@ import {
   assertVerrailNavigationCanEnable,
   lockVerrailNavigationRouteOwnership,
 } from "./verrail-navigation.js";
+import { agentLifecycleService } from "./agent-lifecycle.js";
 
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -64,6 +90,7 @@ export function companyService(db: Db) {
   const environmentsSvc = environmentService(db);
   const heartbeat = heartbeatService(db);
   const builtInAgents = builtInAgentService(db);
+  const agentLifecycle = agentLifecycleService(db);
 
   type CompanyTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -295,6 +322,7 @@ export function companyService(db: Db) {
         : await createCompanyWithUniquePrefix(data);
       await environmentsSvc.ensureLocalEnvironment(created.id);
       await builtInAgents.autoProvisionBundledAgents(created.id);
+      await agentLifecycle.ensurePausedDefault(created.id);
       const row = await getCompanyQuery(db)
         .where(eq(companies.id, created.id))
         .then((rows) => rows[0] ?? null);
@@ -511,6 +539,34 @@ export function companyService(db: Db) {
         await tx.delete(goals).where(eq(goals.companyId, id));
         await tx.delete(projects).where(eq(projects.companyId, id));
         await tx.delete(agents).where(eq(agents.companyId, id));
+        // Governed Verrail domain facts. Deleting a Workspace removes every
+        // native delivery fact with it; children go first because the native
+        // foreign keys restrict orphaning instead of cascading.
+        await tx.delete(verrailRunEvents).where(eq(verrailRunEvents.workspaceId, id));
+        await tx.delete(verrailExecutionLeases).where(eq(verrailExecutionLeases.workspaceId, id));
+        await tx.delete(verrailRunAttempts).where(eq(verrailRunAttempts.workspaceId, id));
+        await tx.delete(verrailRuns).where(eq(verrailRuns.workspaceId, id));
+        await tx.delete(verrailWorkNodes).where(eq(verrailWorkNodes.workspaceId, id));
+        await tx.delete(verrailGraphRevisions).where(eq(verrailGraphRevisions.workspaceId, id));
+        await tx.delete(verrailWorkGraphs).where(eq(verrailWorkGraphs.workspaceId, id));
+        await tx.delete(verrailCommandReceipts).where(eq(verrailCommandReceipts.workspaceId, id));
+        await tx.delete(verrailOutboxEvents).where(eq(verrailOutboxEvents.workspaceId, id));
+        await tx.delete(verrailExecutionCommandReceipts).where(eq(verrailExecutionCommandReceipts.workspaceId, id));
+        await tx.delete(verrailAgentCommandReceipts).where(eq(verrailAgentCommandReceipts.workspaceId, id));
+        await tx.delete(verrailAuditEvents).where(eq(verrailAuditEvents.workspaceId, id));
+        await tx.delete(verrailTargetCreationDraftRevisions).where(eq(verrailTargetCreationDraftRevisions.workspaceId, id));
+        await tx.delete(verrailTargetCreationDrafts).where(eq(verrailTargetCreationDrafts.workspaceId, id));
+        await tx.delete(verrailConversationContextBindings).where(eq(verrailConversationContextBindings.workspaceId, id));
+        await tx.delete(verrailProviderConversationBindings).where(eq(verrailProviderConversationBindings.workspaceId, id));
+        await tx.delete(verrailConversationMessages).where(eq(verrailConversationMessages.workspaceId, id));
+        await tx.delete(verrailConversations).where(eq(verrailConversations.workspaceId, id));
+        await tx.delete(verrailDeploymentRevisions).where(eq(verrailDeploymentRevisions.workspaceId, id));
+        await tx.delete(verrailDeployments).where(eq(verrailDeployments.workspaceId, id));
+        await tx.delete(verrailEvaluationRuns).where(eq(verrailEvaluationRuns.workspaceId, id));
+        await tx.delete(verrailAgentVersions).where(eq(verrailAgentVersions.workspaceId, id));
+        await tx.delete(verrailAgentDefinitions).where(eq(verrailAgentDefinitions.workspaceId, id));
+        await tx.delete(verrailTargets).where(eq(verrailTargets.workspaceId, id));
+        await tx.delete(verrailCollections).where(eq(verrailCollections.workspaceId, id));
         const rows = await tx
           .delete(companies)
           .where(eq(companies.id, id))

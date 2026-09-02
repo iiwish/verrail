@@ -1,0 +1,74 @@
+{
+  "target_id": "g1-domain-closure",
+  "run_id": "run-002",
+  "tests": [
+    {
+      "scope": "Focused G1 TypeScript and UI contracts",
+      "status": "passed",
+      "result": "12 files, 43 tests passed."
+    },
+    {
+      "scope": "Go Domain API and orchestration",
+      "status": "passed",
+      "result": "go test ./... passed, including atomic Target creation, graph activation replay/conflict, Run replay/conflict, rollback, and authority boundaries."
+    },
+    {
+      "scope": "Browser acceptance",
+      "status": "passed",
+      "result": "Four Playwright cases passed across 1440x900 and 1024x768 after the test selectors were aligned with current accessible names."
+    },
+    {
+      "scope": "Repository-wide Vitest",
+      "status": "gap_recorded",
+      "result": "403 files passed and one skipped; eight inherited/platform groups remain failed with 22 non-G1 test failures after all G1 failures were fixed and rerun."
+    }
+  ],
+  "build": {
+    "status": "passed",
+    "result": "Full workspace build passed with non-fatal pre-existing warning categories."
+  },
+  "typecheck": {
+    "status": "passed",
+    "result": "Recursive workspace typecheck passed."
+  },
+  "lint": {
+    "status": "not_configured",
+    "result": "No separate repository-wide lint command is part of the G1 execution packet; token, migration, format, type, and diff gates were used."
+  },
+  "contracts": {
+    "native_write_owner": "Go Domain API",
+    "business_truth": "PostgreSQL",
+    "orchestration_owner": "Temporal for durable workflow only",
+    "read_model_policy": "native.v1",
+    "conversation_boundary": "Explicit source message -> immutable TargetCreationDraft revisions -> same-human confirmation -> deterministic idempotent Target command",
+    "compatibility_boundary": "Project, Case, Issue, inherited Artifact, and Heartbeat facts do not enter TargetReadModel, WorkNode, or native Run"
+  },
+  "acceptance_coverage": [
+    "Workspace-scoped Target and optional native Collection",
+    "No compatibility projection or projection mutation routes",
+    "Ordinary message non-creation",
+    "Immutable draft revisions and optimistic confirmation version",
+    "Human confirmation ownership and complete idempotent replay response",
+    "Atomic Target plus initial WorkGraph facts",
+    "Acyclic graph validation and idempotent activation",
+    "Ready-node native Run creation and idempotency conflict",
+    "Native Stage, Work, Attention, Run, and Timeline read model",
+    "OpenAPI, locale, UI token, migration, typecheck, build, and browser parity"
+  ],
+  "links": [
+    "tests/verrail-acceptance/playwright-report/index.html",
+    "docs/conversation-target-creation.md",
+    "docs/target-read-model.md",
+    "docs/adrs/0005-conversation-first-target-creation.md"
+  ],
+  "manual_notes": [
+    "The default acceptance port 3203 was occupied by an existing Domain API process, so the successful isolated run used VERRAIL_ACCEPTANCE_PORT=3211.",
+    "No inherited process was terminated and no pre-existing user change was reverted."
+  ],
+  "missing": [
+    "Independent engineering review.",
+    "Product-owner manual acceptance of G1 semantics and UX.",
+    "A fully green repository-wide Vitest run or maintainer adjudication of the 22 recorded non-G1 failures.",
+    "Commit, pull request, CI result, merge, deployment, release, and explicit ship approval."
+  ]
+}

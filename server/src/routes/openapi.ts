@@ -193,16 +193,30 @@ import {
   workspaceFileAvailabilityResponseSchema,
   workspaceFileListQuerySchema,
   workspaceFileResourceQuerySchema,
-  // Target domain and compatibility read model
+  // Native Target domain read model
+  createAgentDefinitionSchema,
+  createCollectionSchema,
+  createDeploymentSchema,
+  createGraphRevisionSchema,
+  createRunAttemptSchema,
+  createRunSchema,
   createTargetSchema,
-  registerTargetProjectionSchema,
+  publishAgentVersionSchema,
+  recordEvaluationRunSchema,
+  reportRunEventSchema,
+  reviseDeploymentSchema,
   targetIdempotencyKeySchema,
   targetListQuerySchema,
+  updateAgentDefinitionSchema,
   // Workspace conversations
   conversationListQuerySchema,
   createConversationSchema,
   updateConversationSchema,
   sendConversationMessageSchema,
+  confirmTargetCreationDraftSchema,
+  createProviderConversationBindingSchema,
+  createTargetCreationDraftSchema,
+  updateTargetCreationDraftSchema,
   // Tool access
   connectToolAppSchema,
   createToolApplicationSchema,
@@ -2897,7 +2911,82 @@ registry.registerPath({
   },
 });
 
-// ─── Target domain and compatibility read model ─────────────────────────────
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/messages",
+  tags: ["conversations"],
+  summary: "Append a structured user message without invoking the model runtime",
+  request: { params: z.object({ workspaceId: z.string().uuid(), conversationId: z.string().uuid() }), body: jsonBody(sendConversationMessageSchema) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/provider-conversation-bindings",
+  tags: ["conversations"],
+  summary: "Bind a provider group or direct chat to a persistent Conversation",
+  request: { params: z.object({ workspaceId: z.string().uuid() }), body: jsonBody(createProviderConversationBindingSchema) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/provider-conversation-bindings/resolve",
+  tags: ["conversations"],
+  summary: "Resolve a provider conversation identity to its persistent Conversation",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    query: z.object({ connectionId: z.string().min(1), externalConversationId: z.string().min(1) }),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/target-drafts",
+  tags: ["conversations", "targets"],
+  summary: "List TargetCreationDrafts in a Conversation",
+  request: { params: z.object({ workspaceId: z.string().uuid(), conversationId: z.string().uuid() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/target-drafts",
+  tags: ["conversations", "targets"],
+  summary: "Start a versioned TargetCreationDraft from an explicit user message",
+  request: { params: z.object({ workspaceId: z.string().uuid(), conversationId: z.string().uuid() }), body: jsonBody(createTargetCreationDraftSchema) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/target-drafts/{draftId}",
+  tags: ["conversations", "targets"],
+  summary: "Create an immutable TargetCreationDraft revision",
+  request: { params: z.object({ workspaceId: z.string().uuid(), conversationId: z.string().uuid(), draftId: z.string().uuid() }), body: jsonBody(updateTargetCreationDraftSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/target-drafts/{draftId}/confirm",
+  tags: ["conversations", "targets"],
+  summary: "Confirm one fixed Draft revision and idempotently create its native Target",
+  request: { params: z.object({ workspaceId: z.string().uuid(), conversationId: z.string().uuid(), draftId: z.string().uuid() }), body: jsonBody(confirmTargetCreationDraftSchema) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/target-drafts/{draftId}/cancel",
+  tags: ["conversations", "targets"],
+  summary: "Cancel a TargetCreationDraft before conversion starts",
+  request: { params: z.object({ workspaceId: z.string().uuid(), conversationId: z.string().uuid(), draftId: z.string().uuid() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+// ─── Native Target domain read model ────────────────────────────────────────
 
 registry.registerPath({
   method: "post",
@@ -2923,10 +3012,176 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/targets/{targetId}/graph-revisions",
+  tags: ["targets"],
+  summary: "Create an immutable native GraphRevision and its WorkNodes",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(createGraphRevisionSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/targets/{targetId}/graph-revisions/{graphRevisionId}/activate",
+  tags: ["targets"],
+  summary: "Activate a native GraphRevision for the active TargetRevision",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid(), graphRevisionId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/targets/{targetId}/graph-revisions/{graphRevisionId}/nodes/{workNodeId}/runs",
+  tags: ["targets"],
+  summary: "Queue a native Agent or Integration Run for a ready WorkNode",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid(), graphRevisionId: z.string().uuid(), workNodeId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(createRunSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/runs/{runId}/attempts",
+  tags: ["targets"],
+  summary: "Create a fenced RunAttempt with an execution lease for a Run",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), runId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(createRunAttemptSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/runs/{runId}/attempts/{runAttemptId}/events",
+  tags: ["targets"],
+  summary: "Report a fenced RunEvent for a RunAttempt",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), runId: z.string().uuid(), runAttemptId: z.string().uuid() }),
+    headers: z.object({
+      "Idempotency-Key": targetIdempotencyKeySchema,
+      "X-Verrail-Executor-Id": z.string().min(1),
+    }),
+    body: jsonBody(reportRunEventSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/runs/{runId}/cancel",
+  tags: ["targets"],
+  summary: "Request cancellation of a Run through a governed domain command",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), runId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/agent-lifecycle",
+  tags: ["agents"],
+  summary: "Read the versioned Agent lifecycle facts for a workspace",
+  request: { params: z.object({ workspaceId: z.string().uuid() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/agent-definitions",
+  tags: ["agents"],
+  summary: "Create a governed AgentDefinition",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(createAgentDefinitionSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/workspaces/{workspaceId}/agent-definitions/{definitionId}",
+  tags: ["agents"],
+  summary: "Update an editable AgentDefinition",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), definitionId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(updateAgentDefinitionSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/agent-definitions/{definitionId}/versions",
+  tags: ["agents"],
+  summary: "Publish an immutable, content-addressed AgentVersion",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), definitionId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(publishAgentVersionSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/evaluation-runs",
+  tags: ["agents"],
+  summary: "Record an EvaluationRun that gates production activation",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(recordEvaluationRunSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/deployments",
+  tags: ["agents"],
+  summary: "Create a versioned Deployment for an AgentVersion",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(createDeploymentSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/deployments/{deploymentId}/revisions",
+  tags: ["agents"],
+  summary: "Revise a Deployment with an audited, immutable revision",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), deploymentId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(reviseDeploymentSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
   method: "get",
   path: "/api/workspaces/{workspaceId}/targets",
   tags: ["targets"],
-  summary: "List native and compatibility Targets in a workspace",
+  summary: "List native Targets in a workspace",
   request: {
     params: z.object({ workspaceId: z.string().uuid() }),
     query: targetListQuerySchema,
@@ -2942,12 +3197,12 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/workspaces/{workspaceId}/projects/{projectId}/targets",
+  path: "/api/workspaces/{workspaceId}/collections/{collectionId}/targets",
   tags: ["targets"],
-  summary: "List native and compatibility Targets in a project",
+  summary: "List native Targets in a Collection",
   request: {
-    params: z.object({ workspaceId: z.string().uuid(), projectId: z.string().uuid() }),
-    query: targetListQuerySchema.omit({ projectId: true }),
+    params: z.object({ workspaceId: z.string().uuid(), collectionId: z.string().uuid() }),
+    query: targetListQuerySchema.omit({ collectionId: true }),
   },
   responses: {
     200: r.ok(),
@@ -2960,9 +3215,30 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/workspaces/{workspaceId}/collections",
+  tags: ["targets"],
+  summary: "List active Collections in a workspace",
+  request: { params: z.object({ workspaceId: z.string().uuid() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/collections",
+  tags: ["targets"],
+  summary: "Create a Collection for organizing Targets",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    body: jsonBody(createCollectionSchema),
+  },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/workspaces/{workspaceId}/targets/{targetId}",
   tags: ["targets"],
-  summary: "Get the active native or compatibility Target",
+  summary: "Get the active native Target",
   request: {
     params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid() }),
   },
@@ -2971,9 +3247,27 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/workspaces/{workspaceId}/targets/{targetId}/workspace",
+  tags: ["targets"],
+  summary: "Get native Stage, Work, Attention, Run, and Timeline facts for a Target",
+  request: { params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/targets/{targetId}/conversation",
+  tags: ["targets", "conversations"],
+  summary: "Create a server-bound Conversation for a native Target revision",
+  request: { params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid() }) },
+  responses: { 201: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/workspaces/{workspaceId}/targets/{targetId}/revisions/{targetRevisionId}",
   tags: ["targets"],
-  summary: "Get an immutable native or compatibility Target revision",
+  summary: "Get an immutable native Target revision",
   request: {
     params: z.object({
       workspaceId: z.string().uuid(),
@@ -2982,42 +3276,6 @@ registry.registerPath({
     }),
   },
   responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/workspaces/{workspaceId}/target-projections",
-  tags: ["targets"],
-  summary: "Register an admin-approved Target compatibility projection",
-  request: {
-    params: z.object({ workspaceId: z.string().uuid() }),
-    body: jsonBody(registerTargetProjectionSchema),
-  },
-  responses: {
-    201: r.ok(),
-    400: r.badRequest,
-    401: r.unauthorized,
-    403: r.forbidden,
-    404: r.notFound,
-    409: r.conflict,
-  },
-});
-
-registry.registerPath({
-  method: "post",
-  path: "/api/workspaces/{workspaceId}/targets/{targetId}/reconcile",
-  tags: ["targets"],
-  summary: "Reconcile an admin-approved Target compatibility projection",
-  request: {
-    params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid() }),
-  },
-  responses: {
-    200: r.ok(),
-    401: r.unauthorized,
-    403: r.forbidden,
-    404: r.notFound,
-    409: r.conflict,
-  },
 });
 
 registry.registerPath({

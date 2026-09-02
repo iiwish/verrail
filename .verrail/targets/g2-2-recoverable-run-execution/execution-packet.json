@@ -1,0 +1,57 @@
+{
+  "task_id": "g2-2-recoverable-run-execution",
+  "status": "completed_needs_independent_review",
+  "objective": "Implement and verify the HostTrusted recoverable Run/RunAttempt execution control vertical slice.",
+  "dependencies": [
+    ".verrail/targets/g2-1-versioned-agent-lifecycle",
+    "docs/product-goals.md",
+    "docs/constitution.md",
+    "docs/operational-ontology.md",
+    "docs/architecture.md",
+    "docs/execution-runtime.md",
+    "docs/temporal-target-workflow.md"
+  ],
+  "allowed_files": [
+    "packages/db/src/schema/**",
+    "packages/db/src/migrations/**",
+    "packages/shared/src/types/**",
+    "packages/shared/src/validators/**",
+    "packages/shared/src/index.ts",
+    "services/domain-api/internal/**",
+    "server/src/routes/**",
+    "server/src/services/**",
+    "server/src/app.ts",
+    "ui/src/api/**",
+    "ui/src/pages/**",
+    "ui/src/components/**",
+    "ui/src/lib/queryKeys.ts",
+    "ui/src/i18n/locales/**",
+    "tests/verrail-acceptance/**",
+    "docs/** only when implementation-boundary clarification is required",
+    ".verrail/targets/g2-2-recoverable-run-execution/**"
+  ],
+  "forbidden": [
+    "Destructive git cleanup or reverting unrelated worktree changes",
+    "Remote Runner, Gateway, strong-isolation, or private-execution production claims",
+    "Bypassing Graph Engine, lease, fencing, idempotency, or audit boundaries",
+    "Treating Run success as Artifact, Evidence, Review, or Acceptance",
+    "Independent approval, merge, deploy, release, or ship claims"
+  ],
+  "validation": [
+    "focused DB/shared/server/UI/Go execution tests",
+    "Temporal workflow replay and Continue-As-New tests",
+    "pnpm -r typecheck",
+    "pnpm build",
+    "cd services/domain-api && go test ./...",
+    "pnpm --filter @paperclipai/db check:migrations",
+    "pnpm check:token-gates",
+    "browser RunAttempt fault and recovery acceptance",
+    "git diff --check"
+  ],
+  "evidence_contract": [
+    "Attempt identity, lease, cursor, idempotency, and fencing proof",
+    "Late-result, retry, cancellation, Workspace isolation, and replay results",
+    "Browser notes for Runs projection and recovery controls",
+    "Maintainer review with residual risks and an explicit independent review gate"
+  ]
+}

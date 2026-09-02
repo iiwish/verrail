@@ -495,6 +495,7 @@ describeEmbeddedPostgres("runDatabaseBackup", () => {
 
         const backupSql = gunzipSync(await fs.promises.readFile(result.backupFile)).toString("utf8");
         expect(backupSql.indexOf("-- Data for: public.aaa_child_records")).toBeGreaterThan(-1);
+        expect(backupSql).not.toContain("\nCOPY ");
         expect(backupSql.indexOf("-- Data for: public.aaa_child_records")).toBeLessThan(
           backupSql.indexOf("-- Data for: public.zzz_parent_records"),
         );

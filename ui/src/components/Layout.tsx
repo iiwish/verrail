@@ -27,6 +27,7 @@ import { SidebarAccountMenu } from "./SidebarAccountMenu";
 import { VerrailManagementSidebar } from "./VerrailManagementSidebar";
 import { VerrailConversationSidebar } from "./VerrailConversationSidebar";
 import { VerrailProjectsSidebar } from "./VerrailProjectsSidebar";
+import { VerrailTargetsSidebar } from "./VerrailTargetsSidebar";
 import { useDialogActions } from "../context/DialogContext";
 import { GeneralSettingsProvider } from "../context/GeneralSettingsContext";
 import { usePanel } from "../context/PanelContext";
@@ -188,6 +189,8 @@ export function Layout() {
   // both desktop (SecondarySidebar) and mobile (off-canvas drawer).
   const secondarySidebar = isVerrailChatRoute ? (
     <VerrailConversationSidebar />
+  ) : verrailManagementSection === "targets" ? (
+    <VerrailTargetsSidebar />
   ) : verrailManagementSection === "projects" ? (
     <VerrailProjectsSidebar />
   ) : verrailManagementSection ? (

@@ -6,6 +6,59 @@
       "newCompany": "New Company"
     }
   },
+  "agentLifecycle": {
+    "title": "Agent versions and deployments",
+    "subtitle": "Publish immutable versions from editable definitions, evaluate them, then deploy to production.",
+    "newDefinition": "New definition",
+    "emptyTitle": "No native Agent definitions yet",
+    "emptyBody": "Create a definition and publish its first version, then record an evaluation and create a deployment.",
+    "loadFailed": "Agent lifecycle data could not be loaded.",
+    "commandFailed": "Agent lifecycle command failed",
+    "evaluationRequired": "The current version needs a passing evaluation with passing safety before deployment.",
+    "noDescription": "No description",
+    "publish": "Publish version",
+    "evaluate": "Record evaluation",
+    "deploy": "Create deployment",
+    "deployments": "Deployments",
+    "noDeployments": "No deployments yet.",
+    "default": "Default",
+    "setDefault": "Set default",
+    "pause": "Pause",
+    "resume": "Resume",
+    "rollback": "Rollback",
+    "definitionDialog": "Agent definition",
+    "publishDialog": "Publish immutable version",
+    "evaluateDialog": "Record basic evaluation",
+    "deployDialog": "Create production deployment",
+    "dialogDescription": "This command writes a governed Workspace-scoped domain fact.",
+    "quality": "Quality score",
+    "cost": "Cost (cents)",
+    "latency": "Latency (ms)",
+    "makeDefault": "Make the Workspace default deployment",
+    "publishFields": {
+      "runtime": "Runtime",
+      "model": "Model",
+      "contentHash": "Content hash",
+      "prompt": "Prompt",
+      "skills": "Skills",
+      "tools": "Tools",
+      "capabilities": "Capabilities"
+    },
+    "evaluation": {
+      "status": "Evaluation status",
+      "safetyStatus": "Safety status"
+    },
+    "evaluationStatuses": {
+      "passed": "Passed",
+      "failed": "Failed",
+      "inconclusive": "Inconclusive"
+    },
+    "safetyStatuses": {
+      "passed": "Passed",
+      "failed": "Failed",
+      "not_run": "Not run"
+    }
+  },
   "settings": {
     "title": "Settings",
     "profile": {
@@ -490,6 +543,9 @@
     "default": "Default",
     "unknownError": "Unknown error",
     "name": "Name",
+    "description": "Description",
+    "summary": "Summary",
+    "confirm": "Confirm",
     "project": "Project",
     "optional": "(optional)",
     "justNow": "just now",
@@ -566,6 +622,7 @@
     "skills": "Skills",
     "workspaces": "Workspaces",
     "projects": "Projects",
+    "targets": "Targets",
     "company": "Company",
     "organization": "Org",
     "apps": "Apps",
@@ -649,6 +706,24 @@
     "taskCount_one": "{{count}} task",
     "taskCount_other": "{{count}} tasks"
   },
+  "collections": {
+    "title": "Collections",
+    "description": "Optional groupings for organizing targets without changing their authority or lifecycle.",
+    "selectWorkspace": "Select a workspace to view its collections.",
+    "loadFailed": "Collections could not be loaded.",
+    "empty": "No collections yet. Targets can still be created without one.",
+    "targetCount_one": "{{count}} target",
+    "targetCount_other": "{{count}} targets",
+    "create": {
+      "title": "New Collection",
+      "description": "Create a lightweight grouping for related targets.",
+      "name": "Name",
+      "details": "Description (optional)",
+      "submit": "New Collection",
+      "creating": "Creating...",
+      "failed": "The Collection could not be created. Check the name and try again."
+    }
+  },
   "targets": {
     "title": "Targets",
     "target": "Target",
@@ -659,7 +734,15 @@
     "loadFailed": "Targets could not be loaded.",
     "projectionUnavailable": "The target projection is temporarily unavailable. Retry after reconciliation.",
     "empty": "No targets are available",
-    "emptyDetail": "Create a native Target or map an eligible Case or root Issue.",
+    "emptyDetail": "Create a target in this workspace.",
+    "selectWorkspace": "Select a workspace to view its targets.",
+    "list": {
+      "filterLabel": "Filter targets",
+      "all": "All",
+      "open": "Open",
+      "attention": "Needs attention",
+      "noMatches": "No targets match this view."
+    },
     "notFound": "This target is unavailable or outside your access boundary.",
     "backToActive": "Back to active target",
     "immutableRevision": "Immutable revision",
@@ -668,8 +751,8 @@
     "projectionSchemaUpgraded": "This legacy snapshot was normalized for compatibility. Ask an instance administrator to reconcile it before relying on the active projection.",
     "sourceMissing": "The source is no longer available. This immutable revision remains visible for traceability.",
     "completionUnverified": "The source reports completion, but no version-bound Acceptance exists.",
-    "project": "Project",
-    "noProject": "No project",
+    "collection": "Collection (optional)",
+    "noCollection": "Not classified",
     "outcomeOwner": "Outcome owner",
     "unassigned": "Unassigned",
     "risk": "Risk",
@@ -686,11 +769,37 @@
     "acceptanceCriteria": "Acceptance criteria",
     "deadline": "Deadline",
     "policy": "Applicable policy",
+    "discuss": "Discuss",
+    "conversationCreating": "Opening...",
+    "conversationFailed": "A Target-bound conversation could not be created.",
+    "workspaceLoading": "Loading target facts...",
+    "workspaceLoadFailed": "Target facts could not be loaded.",
+    "compatibilityWork": "Legacy Work · compatibility fact",
+    "compatibilityRun": "Agent run · compatibility fact",
+    "stageNames": {
+      "define": "Define",
+      "execute": "Execute",
+      "verify": "Verify",
+      "accept": "Accept"
+    },
+    "stageStates": {
+      "completed": "Completed",
+      "current": "Current",
+      "pending": "Pending",
+      "blocked": "Blocked"
+    },
+    "timelineEvents": {
+      "target_created": "Target created",
+      "target_revision_created": "Target revision recorded",
+      "work_updated": "Work updated",
+      "run_updated": "Run updated"
+    },
     "create": {
       "title": "New Target",
       "description": "Define the outcome and its proof before execution begins.",
-      "project": "Project",
-      "selectProject": "Select a project",
+      "collection": "Collection (optional)",
+      "selectCollection": "Select a collection",
+      "noCollection": "No collection",
       "name": "Target name",
       "summary": "Summary (optional)",
       "owner": "Outcome owner",
@@ -709,10 +818,12 @@
       "deadline": "Deadline (optional)",
       "policy": "Applicable policy (optional)",
       "submit": "New Target",
+      "review": "Review draft",
+      "confirm": "Confirm Target",
       "creating": "Creating...",
       "errors": {
         "conflict": "This command key is already bound to different Target content. Change the form and submit again.",
-        "permission": "You do not have permission to create a Target in this Workspace or Project.",
+        "permission": "You do not have permission to create a Target in this Workspace.",
         "retryable": "The Domain API is temporarily unavailable. Retry preserves the same command key and cannot duplicate the Target.",
         "failed": "The Target could not be created. Review the fields and try again."
       }
@@ -737,10 +848,11 @@
     "tabs": {
       "overview": "Overview",
       "stages": "Stages",
-      "work": "Work",
+      "work": "Work Graph",
       "submission": "Submission",
       "artifacts": "Artifacts",
       "evidence": "Evidence",
+      "acceptance": "Acceptance",
       "runs": "Runs",
       "timeline": "Timeline"
     },
@@ -750,8 +862,39 @@
       "submission": "No immutable submission exists for this target.",
       "artifacts": "No artifact revisions have been projected.",
       "evidence": "No verification evidence has been projected.",
+      "acceptance": "No version-bound acceptance has been recorded.",
       "runs": "No visible runs are linked to this target.",
       "timeline": "No target-scoped timeline events are available."
+    },
+    "execution": {
+      "runId": "Run {{id}}",
+      "attemptCount": "{{count}} attempts",
+      "attempt": "Attempt {{number}}",
+      "fence": "Fence {{token}}",
+      "cursor": "Cursor {{cursor}}",
+      "lease": "Lease {{status}}",
+      "noLease": "No lease",
+      "start": "Start attempt",
+      "retry": "Retry",
+      "cancel": "Cancel",
+      "commandFailed": "The execution command failed. Review the run state and try again.",
+      "commandFailedDetail": "The execution command failed ({{detail}}). Review the run state and try again.",
+      "statuses": {
+        "queued": "Queued",
+        "running": "Running",
+        "cancel_requested": "Cancel requested",
+        "succeeded": "Succeeded",
+        "failed": "Failed",
+        "canceled": "Canceled"
+      },
+      "leaseStatuses": {
+        "offered": "offered",
+        "active": "active",
+        "suspect": "suspect",
+        "expired": "expired",
+        "released": "released",
+        "revoked": "revoked"
+      }
     }
   },
   "sidebarAgents": {
@@ -1179,6 +1322,7 @@
     "openIssueFile": "Open file in this issue...",
     "createAgent": "Create new agent",
     "createProject": "Create new project",
+    "manageCollections": "Manage Collections",
     "createTarget": "Create new Target",
     "pages": "Pages",
     "tasks": "Tasks",

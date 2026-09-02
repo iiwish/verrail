@@ -3,7 +3,7 @@ import { NavLink, useLocation } from "@/lib/router";
 import {
   House,
   Bot,
-  FolderKanban,
+  Target,
   CircleDot,
   SquarePen,
   Users,
@@ -52,7 +52,7 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
     if (isVerrailNavigationEnabled(selectedCompany)) {
       return [
         { type: "link", to: "/home", label: t("nav.home"), icon: House },
-        { type: "link", to: "/projects", label: t("nav.projects"), icon: FolderKanban },
+        { type: "link", to: "/targets", label: t("nav.targets"), icon: Target },
         { type: "link", to: "/agents", label: t("nav.agents"), icon: Bot },
         { type: "link", to: "/governance", label: t("nav.governance"), icon: ShieldCheck },
         { type: "link", to: "/settings", label: t("nav.settings"), icon: Settings },

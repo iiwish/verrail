@@ -1,0 +1,27 @@
+{
+  "id": "g1-domain-closure",
+  "runtime_target_id": "ff331849-009e-4d09-a3ed-3f4e7c19e9bb",
+  "runtime_target_revision_id": "87611d8d-6952-4369-8d30-c0844fbebe70",
+  "title": "Close G1: native Target and minimal delivery control loop",
+  "intent": "Freeze the native Workspace-scoped Target model, make Target creation conversation-first and human-confirmed, and establish the minimal native WorkGraph, Stage, Attention, and Run loop.",
+  "scope": "Complete items 1, 2, and 3 for G1 without claiming the later Submission, Evidence, Review, Acceptance, or external delivery loop.",
+  "non_goals": [
+    "Implement G2 Run completion, Submission, Artifact, Evidence, DeliveryReview, or Acceptance commands",
+    "Remove inherited Project, Issue, Case, Heartbeat, adapter, plugin, or compatibility storage",
+    "Map compatibility Project, Issue, Case, Artifact, or Heartbeat facts into native Target or Run facts",
+    "Publish, merge, deploy, release, or create a ship record without explicit user approval"
+  ],
+  "acceptance_criteria": [
+    "Target belongs directly to Workspace, may reference a native Collection, and has no Project, Case, Issue, or compatibility projection authority.",
+    "Ordinary Conversation messages create neither TargetCreationDraft nor Target; an explicit source message creates an immutable, versioned draft.",
+    "Only an authorized human can confirm a complete draft; retries use the same deterministic idempotency key and return the original Target, TargetRevision, WorkGraph, and GraphRevision identities.",
+    "CreateTarget atomically creates Target, immutable TargetRevision, empty WorkGraph, draft GraphRevision, audit, outbox, and command receipt facts.",
+    "Graph revisions validate target revision binding, node kinds, stages, dependencies, completion definitions, and acyclicity; activation is transactional and idempotent.",
+    "Run creation accepts only a ready agent or integration node on the active graph revision, records native Run facts, advances the node, and rejects idempotency conflicts.",
+    "TargetReadModel and Target Workbench expose native Stage, Work, Attention, Run, and Timeline facts or honest empty sets without reading compatibility facts.",
+    "Database, shared, Go, server, OpenAPI, UI, tests, canonical docs, and delivery evidence remain synchronized; verification gaps are reported truthfully."
+  ],
+  "status": "needs_review",
+  "created_at": "2026-09-01T02:26:54Z",
+  "updated_at": "2026-09-01T09:58:01Z"
+}

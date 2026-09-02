@@ -64,7 +64,6 @@ import { buildSameOriginWebSocketUrl } from "../lib/websocket-url";
 import { formatCents, formatDate, relativeTime, formatTokens, visibleRunCostUsd } from "../lib/utils";
 import { cn } from "../lib/utils";
 import { describeRunRetryState } from "../lib/runRetryState";
-import { isVerrailNavigationEnabled } from "../lib/verrail-navigation";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs } from "@/components/ui/tabs";
@@ -797,9 +796,6 @@ export function AgentDetail() {
     enabled: canFetchAgent,
   });
   const resolvedCompanyId = agent?.companyId ?? selectedCompanyId;
-  const verrailNavigationEnabled = isVerrailNavigationEnabled(
-    companies.find((company) => company.id === resolvedCompanyId),
-  );
   const canonicalAgentRef = agent ? agentRouteRef(agent) : routeAgentRef;
   const agentLookupRef = agent?.id ?? routeAgentRef;
   const resolvedAgentId = agent?.id ?? null;
@@ -1407,19 +1403,22 @@ export function AgentDetail() {
         />
       )}
 
-      {!urlRunId && !verrailNavigationEnabled && (
+      {!urlRunId && (
         <Tabs
           value={activeView}
           onValueChange={handleAgentTabChange}
         >
-          <PageTabBar
-            items={AGENT_DETAIL_TABS.map((item) => ({
-              ...item,
-              label: t(`agents.detail.tabs.${item.value}`),
-            }))}
-            value={activeView}
-            onValueChange={handleAgentTabChange}
-          />
+          <div className="overflow-x-auto">
+            <PageTabBar
+              items={AGENT_DETAIL_TABS.map((item) => ({
+                ...item,
+                label: t(`agents.detail.tabs.${item.value}`),
+              }))}
+              value={activeView}
+              onValueChange={handleAgentTabChange}
+              align="start"
+            />
+          </div>
         </Tabs>
       )}
 

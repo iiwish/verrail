@@ -300,7 +300,34 @@ const SUMMARIZER_SKILL = readBuiltInTextWithFallback(
   FALLBACK_SUMMARIZER_SKILL,
 );
 
+const WORKSPACE_DIRECTOR_INSTRUCTIONS = [
+  "You are Verrail's default workspace Director.",
+  "Help the user turn delivery intent into governed, inspectable work. Coordinate specialized Agents through explicit assignments and structured product commands rather than an informal org chart.",
+  "You may propose creating Agents, conversations, Targets, and Work Graph changes when the user asks, but never claim a mutation happened without a structured result reference.",
+  "Keep delegated permissions narrower than your own, never approve your own high-risk actions, and never treat conversation text as approval, evidence, review, or acceptance.",
+].join("\n\n");
+
 const DEFINITIONS = validateBuiltInAgentDefinitions([
+  {
+    key: "director",
+    displayName: "Director",
+    featureKeys: ["workspace-default-agent"],
+    shortPurpose:
+      "Handles unbound workspace conversations and coordinates creation of specialized Agents and governed delivery work.",
+    defaultInstructions: WORKSPACE_DIRECTOR_INSTRUCTIONS,
+    // `ceo` remains a compatibility storage key while legacy authorization and
+    // agent hierarchy paths are migrated. The product identity is Director.
+    defaultRole: "ceo",
+    defaultTitle: "Workspace Director",
+    defaultIcon: "target",
+    defaultPermissions: {
+      canCreateAgents: true,
+      canCreateSkills: true,
+    },
+    allowedAdapterTypes: ["codex_local", "claude_local", "gemini_local", "opencode_local", "process"],
+    defaultAdapterType: "codex_local",
+    defaultBudgetMonthlyCents: 0,
+  },
   {
     key: "briefs",
     displayName: "Briefs Agent",
@@ -471,14 +498,14 @@ const DEFINITIONS = validateBuiltInAgentDefinitions([
 
 const DEFINITIONS_BY_KEY = new Map(DEFINITIONS.map((definition) => [definition.key, definition]));
 
-// Bundled built-in agents that should be provisioned automatically when a
-// company is created (and re-ensured on startup reconcile). Empty by default so
-// a new user starts clean — the Reflection Coach and Summarizer are opt-in, not
-// seeded. Add a definition key here to restore automatic provisioning.
-const AUTO_PROVISION_ON_COMPANY_CREATE_KEYS = new Set<string>([]);
+// Built-in agents that should be provisioned automatically when a company is
+// created and re-ensured on startup. The Director is a workspace invariant;
+// optional helpers such as Reflection Coach and Summarizer remain opt-in.
+const AUTO_PROVISION_ON_COMPANY_CREATE_KEYS = new Set<string>(["director"]);
 
 const ROOT_AGENT_DEFAULT_CHANGE_GRANTS: PermissionKey[] = ["agents:configure", "skills:create"];
 const BUILT_IN_AGENT_DEFAULT_GRANTS: Record<string, PermissionKey[]> = {
+  director: ["agents:create", "agents:configure", "skills:create"],
   "reflection-coach": ["agents:suggest-changes", "skills:suggest-changes"],
 };
 
@@ -811,6 +838,11 @@ export function builtInAgentService(db: Db) {
       .select()
       .from(agents)
       .where(and(eq(agents.companyId, companyId), ne(agents.status, "terminated")));
+    const director = roots.find((agent) =>
+      readBuiltInAgentMarker(agent.metadata)?.key === "director"
+      && agent.status !== "pending_approval"
+    );
+    if (director) return director.id;
     const nonBuiltInRoots = roots.filter((agent) => !readBuiltInAgentMarker(agent.metadata) && !agent.reportsTo);
     return nonBuiltInRoots.length === 1 ? nonBuiltInRoots[0]!.id : null;
   }
@@ -1571,6 +1603,45 @@ export function builtInAgentService(db: Db) {
     return agent as Agent | null;
   }
 
+  async function adoptLegacyWorkspaceDirector(companyId: string) {
+    const definition = requireBuiltInAgentDefinition("director");
+    if (await findSingleAgent(companyId, definition)) return null;
+
+    const rows = await db
+      .select()
+      .from(agents)
+      .where(and(eq(agents.companyId, companyId), ne(agents.status, "terminated")));
+    const legacyRoots = rows.filter((agent) =>
+      !readBuiltInAgentMarker(agent.metadata)
+      && !agent.reportsTo
+      && agent.role.trim().toLowerCase() === "ceo"
+      && agent.status !== "pending_approval"
+    );
+    if (legacyRoots.length !== 1) return null;
+
+    const legacy = legacyRoots[0]!;
+    const adopted = await agentSvc.update(legacy.id, {
+      metadata: builtInMetadata(definition, legacy.metadata),
+    }, {
+      allowBuiltInAgentMetadata: true,
+      recordRevision: { source: "built-in-agent:adopt-workspace-director" },
+    });
+    if (!adopted) return null;
+    await logActivity(db, {
+      companyId,
+      actorType: "system",
+      actorId: "built-in-agents",
+      action: "built_in_agent.adopted",
+      entityType: "agent",
+      entityId: adopted.id,
+      details: {
+        key: definition.key,
+        previousRole: legacy.role,
+      },
+    });
+    return adopted as Agent;
+  }
+
   async function state(
     definition: BuiltInAgentDefinition,
     agent: Agent | null,
@@ -1921,16 +1992,15 @@ export function builtInAgentService(db: Db) {
 
   async function autoProvisionBundledAgents(companyId: string) {
     const company = await ensureCompany(companyId);
+    await adoptLegacyWorkspaceDirector(companyId);
     let autoEnsured = 0;
     let pendingApprovals = 0;
-    // A fresh company starts with only its own lead agent — the Reflection
-    // Coach and Summarizer are no longer auto-created for new users. They stay
-    // available to enable on demand (via ensure / provision / the built-in
-    // bundle panel). We still reconcile any bundled agent that already exists
-    // (e.g. one an operator enabled) so its instructions/skill/routine keep
-    // tracking stock. Add a key to AUTO_PROVISION_ON_COMPANY_CREATE_KEYS to
-    // restore automatic creation for that definition.
-    for (const definition of DEFINITIONS.filter((entry) => entry.bundle)) {
+    // Every workspace gets its default Director. Optional bundled agents stay
+    // opt-in, while any already-enabled bundle is still reconciled so its
+    // instructions, skill, and routine continue tracking stock.
+    for (const definition of DEFINITIONS.filter(
+      (entry) => entry.bundle || AUTO_PROVISION_ON_COMPANY_CREATE_KEYS.has(entry.key),
+    )) {
       const existing = await findSingleAgent(companyId, definition);
       const shouldProvision = existing !== null || AUTO_PROVISION_ON_COMPANY_CREATE_KEYS.has(definition.key);
       if (!shouldProvision) continue;

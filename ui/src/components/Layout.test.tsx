@@ -68,6 +68,10 @@ vi.mock("./VerrailProjectsSidebar", () => ({
   VerrailProjectsSidebar: () => <div>Projects sidebar</div>,
 }));
 
+vi.mock("./VerrailTargetsSidebar", () => ({
+  VerrailTargetsSidebar: () => <div>Targets sidebar</div>,
+}));
+
 vi.mock("./VerrailManagementSidebar", () => ({
   VerrailManagementSidebar: ({ section }: { section: string }) => <div>{section} sidebar</div>,
 }));
@@ -487,7 +491,7 @@ describe("Layout", () => {
     });
   });
 
-  it("uses object-list secondary sidebars for Projects and Agents", async () => {
+  it("uses separate object-list secondary sidebars for Targets, Projects, and Agents", async () => {
     currentPathname = "/PAP/projects";
     mockCompanyState.companies = [{
       id: "company-1",
@@ -508,6 +512,7 @@ describe("Layout", () => {
     });
     await flushReact();
     expect(container.textContent).toContain("Projects sidebar");
+    expect(container.textContent).not.toContain("Targets sidebar");
     expect(mockSetForceCollapsed).toHaveBeenCalledWith(true);
 
     currentPathname = "/PAP/targets/target-1/stages";
@@ -519,7 +524,8 @@ describe("Layout", () => {
       );
     });
     await flushReact();
-    expect(container.textContent).toContain("Projects sidebar");
+    expect(container.textContent).toContain("Targets sidebar");
+    expect(container.textContent).not.toContain("Projects sidebar");
 
     currentPathname = "/PAP/agents/definitions";
     await act(async () => {

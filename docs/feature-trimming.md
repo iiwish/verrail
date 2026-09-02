@@ -40,7 +40,7 @@ P0 没有已批准的 `Delete` 对象。未来只有在产品价值、依赖、�
 | --- | --- |
 | Auth、Workspace/Company 数据边界与访问控制 | 所有治理和企业部署的前提 |
 | PostgreSQL/Drizzle、对象存储和 Assets | 领域事实与 Artifact 基座 |
-| Dashboard、Inbox、Tasks/Issues、Projects | 当前可工作的交付入口，G1 替代面尚未完成 |
+| Dashboard、Inbox、Tasks/Issues、Projects | 继承工作流与深链兼容入口；G1 原生 Target 闭环不从这些对象投影领域事实 |
 | Agents、Adapters、Runs、Execution Workspaces | Codex 和未来 Runtime 的执行基础 |
 | Routines、Pipelines、Cases、Goals、Approvals | 可演进为 Stage、Work Graph、Review 和 Gate |
 | Artifacts、Skills、Skill Studio、Teams Catalog | 产物和版本化 Agent 能力的直接基础 |
@@ -57,7 +57,7 @@ Apps、Pipelines、Cases、Conference Room、Status Cards、Decisions、Goals Si
 | 当前表面 | Verrail 目标 | P0 边界 |
 | --- | --- | --- |
 | Company 与 Company Settings | Workspace 与 Workspace Settings | 保留 UI 与存储兼容，不扩张 Company 语义 |
-| Projects + Issues + Goals + Cases | Project + Target + Stage + Work Graph | 保持现有旅程，建立后续兼容映射 |
+| Projects + Issues + Goals + Cases | Compatibility Service | 保持存量旅程和深链；不映射或投影为原生 Target、Collection 或 Work Graph |
 | Approvals | Decision、Action Approval、Review、Acceptance | G1/G2 分离责任类型后迁移 |
 | Dashboard、Inbox、Decisions | Home + Attention Inbox | 新聚合面可用前不移除现有入口 |
 | Artifacts/Work Products | ArtifactRevision + Evidence | 复用文件与存储基础，增加版本合同 |

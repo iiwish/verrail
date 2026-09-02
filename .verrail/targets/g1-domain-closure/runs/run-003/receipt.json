@@ -1,0 +1,55 @@
+{
+  "id": "run-003",
+  "target_id": "g1-domain-closure",
+  "agent": "codex",
+  "runner": "Codex desktop local checkout",
+  "model": "gpt-5.6-sol",
+  "status": "technical_acceptance_passed_with_repository_gap",
+  "base_commit": "b307b961445632a79acf712600ff1b1736a87112",
+  "output_commit": "",
+  "branch": "codex/g1-domain-closure",
+  "working_tree": "uncommitted G1 change set in a pre-existing dirty worktree",
+  "environment": {
+    "application": "http://127.0.0.1:3100",
+    "temporal_ui": "http://127.0.0.1:58234",
+    "postgres_port": 55433,
+    "temporal_grpc_port": 57234,
+    "domain_api": "http://127.0.0.1:3209",
+    "compose_project": "verrail-g1-acceptance"
+  },
+  "commands": [
+    {
+      "command": "VERRAIL_DEV_POSTGRES_PORT=55433 VERRAIL_DEV_TEMPORAL_GRPC_PORT=57234 VERRAIL_DEV_TEMPORAL_UI_PORT=58234 VERRAIL_DEV_COMPOSE_PROJECT=verrail-g1-acceptance VERRAIL_DEV_KEEP_INFRA=true pnpm dev:verrail",
+      "status": "running",
+      "summary": "The complete application, PostgreSQL, Temporal, Go Domain API, and orchestration worker stack started successfully on isolated ports."
+    },
+    {
+      "command": "live API acceptance against http://127.0.0.1:3100",
+      "status": "passed",
+      "summary": "A real Conversation draft paused before confirmation, confirmation created one native Target idempotently, graph activation and Run creation replayed safely, native read models closed the loop, and removed compatibility mutation routes returned 404."
+    },
+    {
+      "command": "Temporal UI API and PostgreSQL outbox inspection",
+      "status": "passed",
+      "summary": "Target-created and graph-activated outbox events were delivered once; the durable target workflow is running on task queue verrail-target-v1."
+    },
+    {
+      "command": "VERRAIL_ACCEPTANCE_PORT=3211 VERRAIL_ACCEPTANCE_OUTPUT_ROOT=/tmp/verrail-g1-acceptance-output pnpm test:e2e:verrail-acceptance",
+      "status": "passed",
+      "summary": "Four conversation-first browser acceptance cases passed at 1440x900 and 1024x768."
+    },
+    {
+      "command": "Playwright live Workbench smoke at 1440x1050 and 390x844",
+      "status": "passed",
+      "summary": "Overview, Work Graph, and Runs rendered native facts without browser errors; mobile had no horizontal overflow."
+    }
+  ],
+  "errors": [
+    {
+      "command": "pnpm test:run",
+      "status": "carried_repository_suite_gap",
+      "summary": "Run-002 recorded 22 non-G1 failures in inherited/platform suites; this live acceptance did not alter or reclassify that release gate."
+    }
+  ],
+  "summary": "G1 technical acceptance passed on the complete live stack. This is test evidence, not independent engineering approval, product-owner signoff, or ship authority."
+}

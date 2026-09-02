@@ -1,0 +1,86 @@
+{
+  "id": "run-002",
+  "target_id": "g1-domain-closure",
+  "agent": "codex",
+  "runner": "Codex desktop local checkout",
+  "model": "gpt-5.6-sol",
+  "status": "completed_with_verification_gap",
+  "base_commit": "b307b961445632a79acf712600ff1b1736a87112",
+  "output_commit": "",
+  "branch": "codex/g1-domain-closure",
+  "working_tree": "uncommitted G1 change set in a pre-existing dirty worktree",
+  "changed_files": [
+    "docs/ canonical product, ontology, architecture, ADR, and contract files",
+    "packages/db/src/schema/verrail_*.ts and migrations 0233-0235",
+    "packages/shared/src/types and validators for Collection, Conversation, Target, Graph, and Run",
+    "server/src/routes and services for native Target, Conversation drafts, read models, and OpenAPI",
+    "services/domain-api/internal/target and orchestration Go packages",
+    "ui/src native Target navigation, creation, read-model, and Workbench surfaces",
+    "tests/verrail-acceptance/project-target-work.spec.ts",
+    ".verrail/targets/g1-domain-closure/**"
+  ],
+  "commands": [
+    {
+      "command": "pnpm exec vitest run <12 focused G1 files> --reporter=verbose",
+      "status": "passed",
+      "summary": "12 files and 43 focused validator, draft, route, OpenAPI, Go integration, client, and UI tests passed."
+    },
+    {
+      "command": "cd services/domain-api && go test ./...",
+      "status": "passed",
+      "summary": "All Go Domain API and orchestration packages passed after graph activation receipt and Run idempotency fixes."
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "All 34 checked workspace projects passed."
+    },
+    {
+      "command": "pnpm build",
+      "status": "passed",
+      "summary": "The full workspace build passed with existing non-fatal CSS highlight, font resolution, dynamic-import, and chunk-size warnings."
+    },
+    {
+      "command": "pnpm exec vitest run --project @paperclipai/ui ui/src/i18n/locale-validation.test.ts",
+      "status": "passed",
+      "summary": "Seven locale parity, placeholder, content-safety, and length tests passed."
+    },
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "summary": "All four UI token gates were clean across 814 files."
+    },
+    {
+      "command": "pnpm --filter @paperclipai/db check:migrations",
+      "status": "passed",
+      "summary": "Migration numbering and safety passed; historical findings remained covered by the repository baseline."
+    },
+    {
+      "command": "VERRAIL_ACCEPTANCE_PORT=3211 pnpm test:e2e:verrail-acceptance",
+      "status": "passed_after_test_fix",
+      "summary": "Four Playwright cases passed on desktop and narrow desktop. Initial attempts exposed stale accessible-name selectors and a busy default port; the selectors were corrected and the suite was rerun on a free port."
+    },
+    {
+      "command": "pnpm test:run",
+      "status": "failed_with_unrelated_repository_gaps",
+      "summary": "403 files passed, one skipped, and eight unrelated inherited/platform groups failed. The four early G1 failures were fixed and rerun in the focused suite; 22 non-G1 failures remain."
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "summary": "The implementation and delivery-record diff contains no whitespace errors."
+    }
+  ],
+  "logs": [
+    "tests/verrail-acceptance/playwright-report/index.html",
+    "tests/verrail-acceptance/screenshots/"
+  ],
+  "errors": [
+    {
+      "command": "pnpm test:run",
+      "status": "unresolved_repository_suite_gap",
+      "summary": "Remaining failures are in inherited company skills/project discovery, temporary path normalization, execution workspace runtime control, workspace cleanup/runtime ports, and worktree seed behavior; they are outside the G1 domain files but still prevent a fully green repository suite."
+    }
+  ],
+  "summary": "Items 1, 2, and 3 are implemented for G1: native domain authority is frozen, Target creation is explicit and human-confirmed, and a minimal native Graph/Stage/Attention/Run loop is operational. No commit, merge, deployment, release, acceptance, or ship record was created."
+}

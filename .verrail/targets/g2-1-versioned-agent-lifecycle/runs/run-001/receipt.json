@@ -1,0 +1,111 @@
+{
+  "id": "run-001",
+  "target_id": "g2-1-versioned-agent-lifecycle",
+  "agent": "codex",
+  "runner": "Codex desktop local checkout",
+  "model": "gpt-5.6-sol",
+  "status": "completed_needs_independent_review",
+  "base_commit": "b307b961445632a79acf712600ff1b1736a87112",
+  "output_commit": "",
+  "branch": "codex/g1-domain-closure",
+  "working_tree": "uncommitted G1, G2.0, and G2.1 delivery change set",
+  "changed_files": [
+    "packages/db/src/schema/verrail_agents.ts",
+    "packages/db/src/schema/verrail_delivery.ts",
+    "packages/db/src/schema/index.ts",
+    "packages/db/src/migrations/0236_grey_quasar.sql",
+    "packages/db/src/migrations/0237_versioned_agent_default_backfill.sql",
+    "packages/db/src/migrations/meta/0236_snapshot.json",
+    "packages/db/src/migrations/meta/_journal.json",
+    "packages/shared/src/types/agent-lifecycle.ts",
+    "packages/shared/src/validators/agent-lifecycle.ts",
+    "packages/shared/src/validators/agent-lifecycle.test.ts",
+    "packages/shared/src/types/target.ts",
+    "packages/shared/src/index.ts",
+    "services/domain-api/internal/httpapi/server.go",
+    "services/domain-api/internal/target/agent_lifecycle.go",
+    "services/domain-api/internal/target/agent_lifecycle_store.go",
+    "services/domain-api/internal/target/agent_lifecycle_test.go",
+    "services/domain-api/internal/target/graph.go",
+    "services/domain-api/internal/target/graph_store.go",
+    "server/src/routes/agent-lifecycle.ts",
+    "server/src/services/agent-lifecycle.ts",
+    "server/src/services/verrail-domain-api-client.ts",
+    "server/src/services/verrail-domain-api-client.test.ts",
+    "server/src/services/companies.ts",
+    "server/src/__tests__/companies-service.test.ts",
+    "server/src/__tests__/verrail-domain-api.integration.test.ts",
+    "server/src/app.ts",
+    "ui/src/api/agentLifecycle.ts",
+    "ui/src/pages/VerrailAgents.tsx",
+    "ui/src/lib/queryKeys.ts",
+    "ui/src/i18n/locales/en.json",
+    "ui/src/i18n/locales/zh-CN.json",
+    "ui/src/App.tsx",
+    "ui/src/App.test.tsx",
+    ".verrail/targets/g2-1-versioned-agent-lifecycle/**"
+  ],
+  "commands": [
+    {
+      "command": "browser acceptance at http://127.0.0.1:3100/MYW/agents and the G2.1 target workbench",
+      "status": "passed",
+      "summary": "Reviewed the live target, created and edited an AgentDefinition, published immutable v1 and v2, recorded evaluations, proved a mismatched evaluation is rejected, deployed, paused, resumed, upgraded, rolled back, and confirmed visible lifecycle state and errors."
+    },
+    {
+      "command": "live Domain API graph and Run acceptance",
+      "status": "passed",
+      "summary": "Rejected cross-Workspace, stale, paused, and arbitrary DeploymentRevision identities. A native Agent Run persisted the responsible DeploymentRevision and fixed AgentVersion exactly."
+    },
+    {
+      "command": "pnpm test:run plus corrected focused follow-up",
+      "status": "adjudicated_composite_pass",
+      "summary": "The repository run passed 410 server files and 4739 tests before one G2.1 integration fixture assertion exposed a missing version-bound test setup. After correcting the fixture, the affected integration suite passed 4 of 4 and the focused lifecycle server set passed 30 of 30."
+    },
+    {
+      "command": "pnpm exec vitest run --project @paperclipai/ui",
+      "status": "passed_with_serial_follow_up",
+      "summary": "The concurrent UI run passed 484 files and 4421 tests; five timing-sensitive inherited cases failed under full load. Their three source files then passed serially with all 51 tests green."
+    },
+    {
+      "command": "pnpm exec vitest run --project @paperclipai/db",
+      "status": "passed_with_serial_follow_up",
+      "summary": "The DB run passed 20 files and 91 tests; two embedded-Postgres suites could not initialize under concurrent resource pressure. Both suites passed serially, 2 of 2."
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "All 34 participating workspace projects passed TypeScript, Rust, protocol, and migration checks."
+    },
+    {
+      "command": "pnpm build",
+      "status": "passed",
+      "summary": "The full workspace build passed with existing non-fatal CSS, font, dynamic-import, and chunk-size warnings."
+    },
+    {
+      "command": "cd services/domain-api && go test ./...",
+      "status": "passed",
+      "summary": "All Go domain API and orchestration packages passed."
+    },
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "summary": "All four UI token gates were clean across 815 files."
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "summary": "The complete working diff contains no whitespace errors."
+    },
+    {
+      "command": "curl -fsS http://127.0.0.1:3100/api/health",
+      "status": "passed_with_warning",
+      "summary": "The local stack returned status ok and authReady true. Its operational health payload warns that the latest local database backup is stale."
+    }
+  ],
+  "artifacts": [
+    ".verrail/targets/g2-1-versioned-agent-lifecycle/runs/run-001/evidence.json",
+    ".verrail/targets/g2-1-versioned-agent-lifecycle/reviews/maintainer-review.md"
+  ],
+  "errors": [],
+  "summary": "G2.1 implements and verifies a Workspace-scoped, version-bound Agent lifecycle. It is ready for independent review but is not independently approved, accepted, merged, deployed, released, or shipped."
+}

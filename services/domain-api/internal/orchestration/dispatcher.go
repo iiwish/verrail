@@ -115,7 +115,7 @@ func (dispatcher *Dispatcher) ProcessOne(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
-	if event.EventType != TargetCreatedEventType {
+	if !supportedOutboxEventType(event.EventType) {
 		return true, dispatcher.store.MarkFailed(ctx, FailureAck{
 			EventID:    event.ID,
 			ClaimToken: event.ClaimToken,
@@ -166,6 +166,15 @@ func (dispatcher *Dispatcher) ProcessOne(ctx context.Context) (bool, error) {
 		return true, fmt.Errorf("schedule outbox retry: %w", err)
 	}
 	return true, nil
+}
+
+func supportedOutboxEventType(eventType string) bool {
+	switch eventType {
+	case TargetCreatedEventType, GraphActivatedEventType, RunCreatedEventType, RunAttemptChangedEventType, RunCancellationRequestedEventType:
+		return true
+	default:
+		return false
+	}
 }
 
 func (dispatcher *Dispatcher) backoff(attempt int) time.Duration {

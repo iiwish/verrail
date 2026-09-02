@@ -1,0 +1,34 @@
+{
+  "id": "g2-1-versioned-agent-lifecycle",
+  "runtime_target_id": "8a25f226-7fce-467e-b3e9-21c46de2ad46",
+  "runtime_target_revision_id": "01ede241-3bb4-4c35-90b2-8b9fbe5e3b93",
+  "runtime_workspace_id": "45571f9e-90d6-4847-9504-74971defcf6b",
+  "previous_runtime_targets": [
+    {
+      "target_id": "835db636-c78e-43be-a752-ec923169b8a6",
+      "target_revision_id": "f7dbcccb-f7ee-42ec-942e-63bcc5ab141c",
+      "reason": "The earlier GLI acceptance database was replaced when the current MYW development stack restarted."
+    }
+  ],
+  "title": "G2.1 - Versioned Agent lifecycle",
+  "intent": "Make governed, version-bound Agent identity the only native production execution identity.",
+  "scope": "Implement Workspace-scoped AgentDefinition, immutable AgentVersion, versioned Deployment, basic EvaluationRun, default Deployment resolution, native graph and Run identity binding, and the corresponding Agents UI.",
+  "non_goals": [
+    "Implement the full Runner, RunAttempt, IntegrationAttempt, Connector, Artifact, Evidence, Submission, DeliveryReview, or Acceptance lifecycle",
+    "Remove inherited Paperclip agents or their compatibility APIs",
+    "Grant implicit capabilities or let an Agent approve its own release or deployment",
+    "Approve, merge, deploy, release, or create a ship record without independent review and explicit user acceptance"
+  ],
+  "acceptance_criteria": [
+    "DB, shared, Go Domain API, TypeScript facade, and UI expose synchronized Workspace-scoped lifecycle contracts.",
+    "Publishing an AgentDefinition creates an immutable, content-addressed, monotonically numbered AgentVersion.",
+    "EvaluationRun fixes candidate and baseline versions, records quality, cost, latency, and safety results, and gates production activation.",
+    "Deployment changes create immutable revisions; default resolution is unique; pause, resume, and rollback are audited.",
+    "Native graph responsibility and Agent Run creation resolve to an active DeploymentRevision and fixed AgentVersion rather than arbitrary IDs.",
+    "The Agents surface supports definition, publish, evaluation, deployment, pause, resume, and rollback workflows with visible failures.",
+    "Fresh and upgrade migrations, focused tests, typecheck, build, Go tests, token gates, and browser acceptance pass with inspectable evidence."
+  ],
+  "status": "needs_review",
+  "created_at": "2026-09-02T02:00:26Z",
+  "updated_at": "2026-09-02T03:24:18Z"
+}

@@ -1,0 +1,103 @@
+{
+  "id": "run-001",
+  "target_id": "g1-domain-closure",
+  "agent": "codex",
+  "runner": "Codex desktop local checkout",
+  "model": "gpt-5.6-sol",
+  "status": "completed_with_verification_gap",
+  "base_commit": "b307b961445632a79acf712600ff1b1736a87112",
+  "output_commit": "",
+  "branch": "codex/g1-domain-closure",
+  "working_tree": "uncommitted G1 closure change set",
+  "changed_files": [
+    "docs/architecture.md",
+    "docs/target-read-model.md",
+    "packages/shared/src/index.ts",
+    "packages/shared/src/types/target.ts",
+    "packages/shared/src/validators/target.ts",
+    "server/src/__tests__/target-read-model.test.ts",
+    "server/src/__tests__/target-routes.test.ts",
+    "server/src/routes/targets.ts",
+    "server/src/services/target-read-model.ts",
+    "tests/verrail-acceptance/project-target-work.spec.ts",
+    "ui/src/api/targets.ts",
+    "ui/src/i18n/locales/en.json",
+    "ui/src/i18n/locales/zh-CN.json",
+    "ui/src/lib/queryKeys.ts",
+    "ui/src/pages/TargetWorkbench.test.tsx",
+    "ui/src/pages/TargetWorkbench.tsx",
+    ".verrail/targets/g1-domain-closure/**"
+  ],
+  "commands": [
+    {
+      "command": "pnpm --filter @paperclipai/shared exec vitest run src/validators/target.test.ts --reporter=verbose",
+      "status": "passed",
+      "summary": "One file and six Target validator tests passed."
+    },
+    {
+      "command": "pnpm --filter @paperclipai/server exec vitest run src/__tests__/target-read-model.test.ts src/__tests__/target-routes.test.ts --reporter=verbose",
+      "status": "passed",
+      "summary": "Two files and 23 Target read-model and route tests passed."
+    },
+    {
+      "command": "pnpm --filter @paperclipai/ui exec vitest run src/pages/TargetWorkbench.test.tsx --reporter=verbose",
+      "status": "passed",
+      "summary": "One file and six Target Workbench tests passed."
+    },
+    {
+      "command": "cd services/domain-api && go test ./...",
+      "status": "passed",
+      "summary": "All Go domain API and Temporal workflow packages passed."
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "The complete workspace typecheck passed after the final client contract correction."
+    },
+    {
+      "command": "pnpm build",
+      "status": "passed",
+      "summary": "The full workspace build passed with existing non-fatal CSS, font, dynamic-import, and chunk-size warnings."
+    },
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "summary": "All four UI token gates were clean."
+    },
+    {
+      "command": "pnpm test:e2e:verrail-acceptance",
+      "status": "passed",
+      "summary": "Four Playwright acceptance cases passed across desktop and narrow-desktop viewports."
+    },
+    {
+      "command": "pnpm test:run",
+      "status": "failed_then_interrupted",
+      "summary": "The repository-wide suite was interrupted after unrelated workspace runtime, skill service, execution conflict, seed-spawn, and cleanup groups failed; no G1-focused suite failed. Baseline equivalence was not independently proven."
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "summary": "The final implementation diff contains no whitespace errors."
+    },
+    {
+      "command": "live health and Target workspace probes",
+      "status": "passed",
+      "summary": "The local server returned healthy and the runtime Target returned schemaVersion 1, four stages, and an inspectable timeline."
+    }
+  ],
+  "artifacts": [
+    ".verrail/targets/g1-domain-closure/runs/run-001/evidence.json",
+    ".verrail/targets/g1-domain-closure/reviews/review-001.json",
+    "tests/verrail-acceptance/playwright-report/index.html",
+    "tests/verrail-acceptance/screenshots/desktop-1440-project-targets.png",
+    "tests/verrail-acceptance/screenshots/narrow-desktop-1024-project-targets.png"
+  ],
+  "errors": [
+    {
+      "command": "pnpm test:run",
+      "status": "unresolved_repository_suite_gap",
+      "summary": "The failing groups do not touch the G1 change set, but their baseline status was not isolated in a clean checkout and therefore remains an explicit review gap."
+    }
+  ],
+  "summary": "G1 implementation is complete and ready for manual acceptance. The native Target owner and durable Temporal handoff remain intact; the new TypeScript surface is read-only except for validated Conversation context creation. No commit, merge, deployment, or ship record was created."
+}

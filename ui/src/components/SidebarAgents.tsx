@@ -12,14 +12,6 @@ import {
   Star,
   Users,
   AlertTriangle,
-  Activity,
-  CircleDollarSign,
-  FileText,
-  KeyRound,
-  LayoutDashboard,
-  Settings2,
-  Sparkles,
-  Wrench,
 } from "lucide-react";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
@@ -124,7 +116,6 @@ function SidebarAgentItem({
   starred = false,
   onToggleStar,
   starPending = false,
-  showDetailNavigation = false,
 }: {
   activeAgentId: string | null;
   activeTab: string | null;
@@ -141,7 +132,6 @@ function SidebarAgentItem({
   starred?: boolean;
   onToggleStar?: (agent: Agent, starred: boolean) => void;
   starPending?: boolean;
-  showDetailNavigation?: boolean;
 }) {
   const { t } = useTranslation();
   const routeRef = agentRouteRef(agent);
@@ -177,11 +167,10 @@ function SidebarAgentItem({
       to={href}
       label={agent.name}
       iconNode={<AgentIcon icon={agent.icon} className="shrink-0 h-4 w-4" />}
-      active={isActive && !showDetailNavigation}
+      active={isActive}
       liveCount={runCount}
       labelClassName={cn(
         showBuiltInLifecycle && "min-w-(--sz-4_5rem) flex-initial",
-        isActive && showDetailNavigation && "font-semibold text-foreground",
       )}
       className={cn(
         "min-w-0 flex-1",
@@ -216,7 +205,7 @@ function SidebarAgentItem({
   // rail row.
   if (rail) return navItem;
 
-  const row = (
+  return (
     <div className="group/agent relative flex items-center">
       {navItem}
 
@@ -309,39 +298,6 @@ function SidebarAgentItem({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-    </div>
-  );
-
-  if (!showDetailNavigation || !isActive) return row;
-
-  const detailItems = [
-    { value: "dashboard", icon: LayoutDashboard },
-    { value: "instructions", icon: FileText },
-    { value: "skills", icon: Sparkles },
-    { value: "configuration", icon: Settings2 },
-    { value: "secrets", icon: KeyRound },
-    { value: "tools", icon: Wrench },
-    { value: "runs", icon: PlayCircle },
-    { value: "audit", icon: Activity },
-    { value: "budget", icon: CircleDollarSign },
-  ] as const;
-  const selectedDetail = activeTab ?? "dashboard";
-
-  return (
-    <div className="flex flex-col gap-0.5">
-      {row}
-      <div className="ml-5 flex flex-col gap-0.5 border-l border-border pl-1">
-        {detailItems.map((item) => (
-          <SidebarNavItem
-            key={item.value}
-            to={`${agentUrl(agent)}/${item.value}`}
-            label={t(`agents.detail.tabs.${item.value}`)}
-            icon={item.icon}
-            end
-            active={selectedDetail === item.value}
-          />
-        ))}
-      </div>
     </div>
   );
 }
@@ -691,7 +647,6 @@ export function SidebarAgents({
       starred={isStarredRow || isStarred(membershipsQuery.data, "agent", agent.id)}
       onToggleStar={toggleStarAgent}
       starPending={agentStarPending(agent)}
-      showDetailNavigation={appearance === "list"}
     />
   );
 

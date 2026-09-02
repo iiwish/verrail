@@ -61,8 +61,8 @@ export function VerrailHome() {
         <div>
           <h2 className="text-xl font-semibold">{selectedCompany?.name ?? t("nav.home")}</h2>
         </div>
-        <Link to="/projects" className="inline-flex items-center gap-1 text-sm font-medium hover:underline">
-          {t("nav.projects")}
+        <Link to="/targets" className="inline-flex items-center gap-1 text-sm font-medium hover:underline">
+          {t("nav.targets")}
           <ArrowRight className="h-4 w-4" />
         </Link>
       </header>
@@ -140,7 +140,7 @@ export function VerrailHome() {
         <section aria-labelledby="home-targets-title">
           <div className="flex items-center justify-between border-b border-border pb-3">
             <h3 id="home-targets-title" className="text-sm font-semibold">{t("verrailHome.recentTargets")}</h3>
-            <Link to="/projects" className="text-xs text-muted-foreground hover:text-foreground">{t("verrailHome.viewAll")}</Link>
+            <Link to="/targets" className="text-xs text-muted-foreground hover:text-foreground">{t("verrailHome.viewAll")}</Link>
           </div>
           {targetsQuery.isLoading ? <SectionState>{t("verrailHome.loading")}</SectionState> : null}
           {targetsQuery.error ? <SectionState>{t("verrailHome.unavailable")}</SectionState> : null}

@@ -4,16 +4,23 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "../api/client";
 import { NewTargetDialog } from "./NewTargetDialog";
 
-const createTarget = vi.hoisted(() => vi.fn());
+const createConversation = vi.hoisted(() => vi.fn());
+const appendStructuredMessage = vi.hoisted(() => vi.fn());
+const createTargetDraft = vi.hoisted(() => vi.fn());
+const confirmTargetDraft = vi.hoisted(() => vi.fn());
 const closeNewTarget = vi.hoisted(() => vi.fn());
 const navigate = vi.hoisted(() => vi.fn());
 
-vi.mock("../api/targets", () => ({ targetsApi: { create: createTarget } }));
-vi.mock("../api/projects", () => ({
-  projectsApi: { list: vi.fn().mockResolvedValue([{ id: "project-1", name: "Control plane", archivedAt: null }]) },
+vi.mock("../api/conversations", () => ({ conversationsApi: {
+  create: createConversation,
+  appendStructuredMessage,
+  createTargetDraft,
+  confirmTargetDraft,
+} }));
+vi.mock("../api/collections", () => ({
+  collectionsApi: { list: vi.fn().mockResolvedValue([{ id: "collection-1", name: "Control plane" }]) },
 }));
 vi.mock("../api/agents", () => ({ agentsApi: { list: vi.fn().mockResolvedValue([]) } }));
 vi.mock("../api/access", () => ({
@@ -32,7 +39,7 @@ vi.mock("../context/CompanyContext", () => ({
 vi.mock("../context/DialogContext", () => ({
   useDialog: () => ({
     newTargetOpen: true,
-    newTargetDefaults: { projectId: "project-1" },
+    newTargetDefaults: { collectionId: "collection-1" },
     closeNewTarget,
   }),
 }));
@@ -92,7 +99,10 @@ describe("NewTargetDialog", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
-    createTarget.mockReset();
+    createConversation.mockReset();
+    appendStructuredMessage.mockReset();
+    createTargetDraft.mockReset();
+    confirmTargetDraft.mockReset();
     closeNewTarget.mockReset();
     navigate.mockReset();
   });
@@ -102,16 +112,25 @@ describe("NewTargetDialog", () => {
     container.remove();
   });
 
-  it("keeps the idempotency key across a retry and opens the issued Workbench URL", async () => {
-    createTarget
-      .mockRejectedValueOnce(new ApiError("Unavailable", 503, { code: "TARGET_DOMAIN_API_UNAVAILABLE" }))
-      .mockResolvedValueOnce({
-        schemaVersion: 1,
-        targetId: "target-1",
-        targetRevisionId: "revision-1",
-        workbenchHref: "/targets/target-1/overview",
-        replayed: false,
-      });
+  it("creates a reviewable draft before human confirmation opens the Workbench", async () => {
+    createConversation.mockResolvedValue({ id: "conversation-1" });
+    appendStructuredMessage.mockResolvedValue({ id: "message-1" });
+    createTargetDraft.mockResolvedValue({
+      id: "draft-1",
+      conversationId: "conversation-1",
+      activeRevisionNumber: 1,
+      status: "ready_for_confirmation",
+      activeRevision: { definition: {} },
+    });
+    confirmTargetDraft.mockResolvedValue({ target: {
+      schemaVersion: 1,
+      targetId: "target-1",
+      targetRevisionId: "revision-1",
+      workGraphId: "graph-1",
+      graphRevisionId: "graph-revision-1",
+      workbenchHref: "/targets/target-1/overview",
+      replayed: false,
+    } });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
     act(() => {
       root.render(<QueryClientProvider client={queryClient}><NewTargetDialog /></QueryClientProvider>);
@@ -121,26 +140,32 @@ describe("NewTargetDialog", () => {
       expect(container.textContent).toContain("Control plane");
       expect(container.textContent).toContain("Owner");
     });
-    setValue(container.querySelector("#new-target-title") as HTMLInputElement, "Governed Target");
-    setValue(container.querySelector("#new-target-goal") as HTMLTextAreaElement, "Deliver a reviewable outcome.");
-    setValue(container.querySelector('[aria-label="Criterion 1"]') as HTMLInputElement, "Evidence is attached");
+    act(() => {
+      setValue(container.querySelector("#new-target-title") as HTMLInputElement, "Governed Target");
+      setValue(container.querySelector("#new-target-goal") as HTMLTextAreaElement, "Deliver a reviewable outcome.");
+      setValue(container.querySelector('[aria-label="Criterion 1"]') as HTMLInputElement, "Evidence is attached");
+    });
     await flush();
 
-    const submit = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.trim() === "New Target")!;
+    const submit = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Review draft")!;
     expect(submit.disabled).toBe(false);
-    act(() => submit.click());
-    await waitFor(() => expect(createTarget).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(container.textContent).toContain("temporarily unavailable"));
+    await act(async () => submit.click());
+    await waitFor(() => expect(createTargetDraft).toHaveBeenCalledTimes(1));
+    expect(confirmTargetDraft).not.toHaveBeenCalled();
+    expect(createTargetDraft).toHaveBeenCalledWith(
+      "workspace-1",
+      "conversation-1",
+      "message-1",
+      expect.objectContaining({ title: "Governed Target" }),
+    );
 
-    act(() => submit.click());
-    await waitFor(() => expect(createTarget).toHaveBeenCalledTimes(2));
-    expect(createTarget.mock.calls[0]?.[2]).toBe(createTarget.mock.calls[1]?.[2]);
-    expect(createTarget.mock.calls[1]?.[1]).toMatchObject({
-      projectId: "project-1",
-      title: "Governed Target",
-      outcomeOwner: { principalType: "user", principalId: "user-1" },
-      acceptanceCriteria: [{ title: "Evidence is attached" }],
+    await waitFor(() => {
+      const button = Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.trim() === "Confirm Target");
+      expect(button).toBeTruthy();
     });
+    const confirm = Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.trim() === "Confirm Target")!;
+    await act(async () => confirm.click());
+    await waitFor(() => expect(confirmTargetDraft).toHaveBeenCalledWith("workspace-1", "conversation-1", "draft-1", 1));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/targets/target-1/overview"));
     expect(closeNewTarget).toHaveBeenCalled();
   });

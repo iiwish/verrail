@@ -1,14 +1,14 @@
-# TargetWorkflow 耐久编排合同
+# TargetWorkflow 与 RunWorkflow 耐久编排合同
 
 版本：0.1
 
 状态：`Confirmed`
 
-最后更新：2026-08-27
+最后更新：2026-09-02
 
 ## 1. 目的
 
-`TargetWorkflow` 把已提交的 Target 领域事件转换为可恢复、可查询的耐久编排历史。PostgreSQL 保存 Target、TargetRevision、AuditEvent 与 outbox 投递事实；Temporal 只保存编排状态，不成为 Target、Graph、Review 或 Acceptance 的事实源。
+`TargetWorkflow` 与 `RunWorkflow` 把已提交的 Target 和 Run 领域事件转换为可恢复、可查询的耐久编排历史。PostgreSQL 保存 Target、TargetRevision、Run、RunAttempt、ExecutionLease、RunEvent、AuditEvent 与 outbox 投递事实；Temporal 只保存编排状态，不成为业务事实源。
 
 ## 2. 版本化标识
 
@@ -19,7 +19,16 @@
 | Task Queue | `verrail-target-v1` |
 | Signal | `verrail.target.event.v1` |
 | Query | `verrail.target.state.v1` |
-| 首个事件 | `verrail.target.created.v1` |
+| 领域事件 | `verrail.target.created.v1`、`verrail.graph.activated.v1` |
+
+| Run 合同 | 值 |
+| --- | --- |
+| Workflow Type | `verrail.run.workflow.v1` |
+| Workflow ID | `verrail-run-v1:{workspaceId}:{runId}` |
+| Task Queue | `verrail-target-v1` |
+| Signal | `verrail.run.event.v1` |
+| Query | `verrail.run.state.v1` |
+| 领域事件 | `verrail.run.created.v1`、`verrail.run.attempt_changed.v1`、`verrail.run.cancellation_requested.v1` |
 
 Workflow 与 Signal Payload 只包含 schema version、Workspace、Target、TargetRevision、outbox event ID、event type 和发生时间。禁止放入 Secret、Prompt、Artifact 正文、日志或大型业务快照。
 
@@ -42,13 +51,15 @@ Dispatcher 只领取已到 `available_at` 的 `pending` 事件或租约过期的
 
 Dispatcher 使用 Temporal `SignalWithStart` 原子地启动或 Signal 稳定 Workflow ID，并把 outbox event ID 作为投递身份。投递语义是 at-least-once：Worker 在 Temporal 成功后、PostgreSQL 确认前失效会导致同一事件再次投递。
 
-`TargetWorkflow` 保存有界的已处理 event ID，重复事件与 Workspace/Target 不一致的事件只增加忽略计数，不改变活动 TargetRevision 或编排阶段。每个 Workflow Run 接受 256 个有效事件后执行 Continue-As-New；携带的状态保持身份、计数、活动 Revision 与有界去重集合。
+两个 Workflow 都保存有界的已处理 event ID。重复事件与聚合身份不一致的事件只增加忽略计数，不改变编排阶段。每个 Workflow Run 接受 256 个有效事件后执行 Continue-As-New；携带状态保持身份、计数、活动 Revision 或 Attempt 与有界去重集合。
 
 ## 5. 当前编排状态
 
-首个事件把 Workflow 的内部 phase 从 `waiting_for_target_event` 推进到 `awaiting_graph`。该 phase 只表示编排器已收到 Target 事件，不是用户可见 Target 状态，也不激活 Graph。UI、权限、TargetReadModel 和完成判断不得把 Temporal Query 当作业务事实。
+`verrail.target.created.v1` 把 Workflow 的内部 phase 从 `waiting_for_target_event` 推进到 `awaiting_graph`。`verrail.graph.activated.v1` 固定活动 TargetRevision 与 GraphRevision，并把 phase 推进到 `orchestrating`。这些 phase 只表示编排器已收到已提交领域事件，不是用户可见 Target 或 WorkNode 状态。UI、权限、TargetReadModel 和完成判断不得把 Temporal Query 当作业务事实。
 
-Graph Engine、RunWorkflow、Activity、执行租约、Submission、Evidence、Review 与 Acceptance 属于后续垂直切片。
+GraphRevision 激活、Run 创建、RunAttempt 创建、ExecutionLease、事件游标、fencing 和取消由 Domain API 裁决。`RunWorkflow` 以 `awaiting_attempt`、`awaiting_executor`、`running`、`canceling`、`succeeded`、`failed` 和 `canceled` 表示已提交事件形成的编排阶段，不直接写业务状态。
+
+G2.2 执行边界采用 `HostTrusted` 本地 service Principal。它提供版本绑定 Attempt、租约、心跳、过期恢复、单调事件游标、旧 fencing token 拒绝和可观察取消。远程 Execution Gateway、Runner Fleet、强隔离 Runtime、Artifact、Evidence、Submission、Review 与 Acceptance 不在本合同的当前实现范围。
 
 ## 6. 失败与恢复
 

@@ -117,3 +117,23 @@ func TestWorkflowIDIsStableAndWorkspaceScoped(t *testing.T) {
 	require.Equal(t, first, second)
 	require.Equal(t, "verrail-target-v1:"+testWorkspaceID+":"+testTargetID, first)
 }
+
+func TestRunWorkflowTracksRecoveryAndObservableCancellation(t *testing.T) {
+	state := RunWorkflowState{SchemaVersion: SchemaVersion, WorkspaceID: testWorkspaceID, RunID: testTargetID, Phase: "awaiting_attempt"}
+	events := []RunEvent{
+		{SchemaVersion: SchemaVersion, EventID: "run-created", EventType: RunCreatedEventType, WorkspaceID: testWorkspaceID, TargetID: testRevisionID, RunID: testTargetID},
+		{SchemaVersion: SchemaVersion, EventID: "attempt-created", EventType: "run.attempt_created", WorkspaceID: testWorkspaceID, TargetID: testRevisionID, RunID: testTargetID, RunAttemptID: "attempt-1"},
+		{SchemaVersion: SchemaVersion, EventID: "started", EventType: "run.event_started", WorkspaceID: testWorkspaceID, TargetID: testRevisionID, RunID: testTargetID, RunAttemptID: "attempt-1"},
+		{SchemaVersion: SchemaVersion, EventID: "cancel", EventType: RunCancellationRequestedEventType, WorkspaceID: testWorkspaceID, TargetID: testRevisionID, RunID: testTargetID, RunAttemptID: "attempt-1"},
+		{SchemaVersion: SchemaVersion, EventID: "terminated", EventType: "run.event_terminated", WorkspaceID: testWorkspaceID, TargetID: testRevisionID, RunID: testTargetID, RunAttemptID: "attempt-1"},
+	}
+	for _, event := range events {
+		require.True(t, applyRunEvent(&state, event))
+	}
+	require.Equal(t, "canceled", state.Phase)
+	require.Equal(t, "attempt-1", state.CurrentAttemptID)
+	require.Equal(t, len(events), state.AcceptedEventCount)
+	require.False(t, applyRunEvent(&state, events[len(events)-1]))
+	require.Equal(t, 1, state.IgnoredEventCount)
+	require.Equal(t, "verrail-run-v1:"+testWorkspaceID+":"+testTargetID, RunWorkflowID(testWorkspaceID, testTargetID))
+}

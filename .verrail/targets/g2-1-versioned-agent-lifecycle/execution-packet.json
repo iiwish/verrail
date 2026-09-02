@@ -1,0 +1,55 @@
+{
+  "task_id": "g2-1-versioned-agent-lifecycle",
+  "status": "completed_needs_independent_review",
+  "objective": "Implement and verify the first governed, version-bound Agent production identity vertical slice.",
+  "dependencies": [
+    ".verrail/targets/g2-0-stabilize-g1-baseline",
+    "docs/constitution.md",
+    "docs/product-design.md",
+    "docs/operational-ontology.md",
+    "docs/architecture.md"
+  ],
+  "allowed_files": [
+    "packages/db/src/schema/**",
+    "packages/db/src/migrations/**",
+    "packages/shared/src/types/**",
+    "packages/shared/src/validators/**",
+    "packages/shared/src/index.ts",
+    "services/domain-api/internal/**",
+    "server/src/routes/**",
+    "server/src/services/**",
+    "server/src/app.ts",
+    "ui/src/api/**",
+    "ui/src/pages/**",
+    "ui/src/components/**",
+    "ui/src/lib/queryKeys.ts",
+    "ui/src/App.tsx",
+    "ui/src/i18n/locales/**",
+    "tests/verrail-acceptance/**",
+    "docs/** only when implementation-boundary clarification is required",
+    ".verrail/targets/g2-1-versioned-agent-lifecycle/**"
+  ],
+  "forbidden": [
+    "Destructive git cleanup or reverting unrelated worktree changes",
+    "Removing inherited Agent compatibility behavior",
+    "Implicit capability grants or Agent self-approval",
+    "Full G2 assurance, connector, runner, or release scope",
+    "Independent approval, merge, deploy, release, or ship claims"
+  ],
+  "validation": [
+    "focused DB/shared/server/UI/Go lifecycle tests",
+    "pnpm -r typecheck",
+    "pnpm build",
+    "cd services/domain-api && go test ./...",
+    "pnpm --filter @paperclipai/db check:migrations",
+    "pnpm check:token-gates",
+    "browser lifecycle acceptance",
+    "git diff --check"
+  ],
+  "evidence_contract": [
+    "Migration and immutability proof",
+    "Workspace isolation, idempotency, evaluation gate, default uniqueness, and rollback test results",
+    "Browser screenshots or manual notes for the lifecycle",
+    "Maintainer review with residual risks and explicit independent review gate"
+  ]
+}

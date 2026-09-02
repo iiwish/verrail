@@ -6,6 +6,59 @@
       "newCompany": "新公司"
     }
   },
+  "agentLifecycle": {
+    "title": "智能体版本与部署",
+    "subtitle": "从可编辑定义发布不可变版本，评测通过后再进入生产部署。",
+    "newDefinition": "新建定义",
+    "emptyTitle": "尚未建立原生智能体定义",
+    "emptyBody": "创建定义并发布首个版本，随后记录评测并创建部署。",
+    "loadFailed": "无法加载智能体生命周期数据。",
+    "commandFailed": "智能体生命周期命令失败",
+    "evaluationRequired": "部署前需要为当前版本记录通过且安全通过的评测。",
+    "noDescription": "未填写说明",
+    "publish": "发布版本",
+    "evaluate": "记录评测",
+    "deploy": "创建部署",
+    "deployments": "部署",
+    "noDeployments": "尚无部署。",
+    "default": "默认",
+    "setDefault": "设为默认",
+    "pause": "暂停",
+    "resume": "恢复",
+    "rollback": "回滚",
+    "definitionDialog": "智能体定义",
+    "publishDialog": "发布不可变版本",
+    "evaluateDialog": "记录基础评测",
+    "deployDialog": "创建生产部署",
+    "dialogDescription": "该操作将写入工作区范围的受治理领域事实。",
+    "quality": "质量分数",
+    "cost": "成本（分）",
+    "latency": "延迟（毫秒）",
+    "makeDefault": "设为工作区默认部署",
+    "publishFields": {
+      "runtime": "运行时",
+      "model": "模型",
+      "contentHash": "内容哈希",
+      "prompt": "提示词",
+      "skills": "技能",
+      "tools": "工具",
+      "capabilities": "能力"
+    },
+    "evaluation": {
+      "status": "评测结果",
+      "safetyStatus": "安全状态"
+    },
+    "evaluationStatuses": {
+      "passed": "通过",
+      "failed": "失败",
+      "inconclusive": "无法判定"
+    },
+    "safetyStatuses": {
+      "passed": "通过",
+      "failed": "失败",
+      "not_run": "未运行"
+    }
+  },
   "settings": {
     "title": "设置",
     "profile": {
@@ -490,6 +543,9 @@
     "default": "默认",
     "unknownError": "未知错误",
     "name": "名称",
+    "description": "说明",
+    "summary": "摘要",
+    "confirm": "确认",
     "project": "项目",
     "optional": "（可选）",
     "justNow": "刚刚",
@@ -566,6 +622,7 @@
     "skills": "技能",
     "workspaces": "工作区",
     "projects": "项目",
+    "targets": "目标",
     "company": "组织",
     "organization": "组织架构",
     "apps": "应用",
@@ -649,6 +706,24 @@
     "taskCount_one": "{{count}} 个任务",
     "taskCount_other": "{{count}} 个任务"
   },
+  "collections": {
+    "title": "目标集合",
+    "description": "用于整理相关目标的可选分组，不改变目标的权威边界和生命周期。",
+    "selectWorkspace": "请选择工作区以查看目标集合。",
+    "loadFailed": "无法加载目标集合。",
+    "empty": "尚无目标集合。你仍然可以直接创建目标。",
+    "targetCount_one": "{{count}} 个目标",
+    "targetCount_other": "{{count}} 个目标",
+    "create": {
+      "title": "新建目标集合",
+      "description": "创建一个用于整理相关目标的轻量分组。",
+      "name": "名称",
+      "details": "说明（可选）",
+      "submit": "新建目标集合",
+      "creating": "正在创建...",
+      "failed": "无法创建目标集合，请检查名称后重试。"
+    }
+  },
   "targets": {
     "title": "目标",
     "target": "目标",
@@ -659,7 +734,15 @@
     "loadFailed": "无法加载目标。",
     "projectionUnavailable": "目标投影暂时不可用，请在完成对账后重试。",
     "empty": "暂无可用目标",
-    "emptyDetail": "你可以创建原生目标，或映射符合条件的案例与根任务。",
+    "emptyDetail": "在当前工作区创建目标。",
+    "selectWorkspace": "请选择工作区以查看目标。",
+    "list": {
+      "filterLabel": "筛选目标",
+      "all": "全部",
+      "open": "进行中",
+      "attention": "需要处理",
+      "noMatches": "当前视图下没有目标。"
+    },
     "notFound": "此目标不可用，或不在你的访问范围内。",
     "backToActive": "返回当前目标",
     "immutableRevision": "不可变修订版本",
@@ -668,8 +751,8 @@
     "projectionSchemaUpgraded": "此历史快照已通过兼容层规范化。将其作为活动投影使用前，请联系实例管理员完成对账。",
     "sourceMissing": "来源已不可用。此不可变修订版本仍保留用于追溯。",
     "completionUnverified": "来源已报告完成，但尚不存在绑定版本的验收记录。",
-    "project": "项目",
-    "noProject": "无项目",
+    "collection": "目标集合（可选）",
+    "noCollection": "未归类",
     "outcomeOwner": "结果负责人",
     "unassigned": "未分配",
     "risk": "风险",
@@ -686,11 +769,37 @@
     "acceptanceCriteria": "验收标准",
     "deadline": "截止日期",
     "policy": "适用策略",
+    "discuss": "讨论",
+    "conversationCreating": "正在打开...",
+    "conversationFailed": "无法创建绑定此目标的会话。",
+    "workspaceLoading": "正在加载目标事实...",
+    "workspaceLoadFailed": "无法加载目标事实。",
+    "compatibilityWork": "旧工作 · 兼容事实",
+    "compatibilityRun": "智能体运行 · 兼容事实",
+    "stageNames": {
+      "define": "定义",
+      "execute": "执行",
+      "verify": "验证",
+      "accept": "验收"
+    },
+    "stageStates": {
+      "completed": "已完成",
+      "current": "当前阶段",
+      "pending": "待开始",
+      "blocked": "已阻塞"
+    },
+    "timelineEvents": {
+      "target_created": "目标已创建",
+      "target_revision_created": "目标修订版本已记录",
+      "work_updated": "工作已更新",
+      "run_updated": "运行已更新"
+    },
     "create": {
       "title": "新建目标",
       "description": "在执行开始前定义结果及其证明方式。",
-      "project": "项目",
-      "selectProject": "选择项目",
+      "collection": "目标集合（可选）",
+      "selectCollection": "选择目标集合",
+      "noCollection": "不归属目标集合",
       "name": "目标名称",
       "summary": "摘要（可选）",
       "owner": "结果负责人",
@@ -709,10 +818,12 @@
       "deadline": "截止日期（可选）",
       "policy": "适用策略（可选）",
       "submit": "新建目标",
+      "review": "检查草稿",
+      "confirm": "确认创建目标",
       "creating": "正在创建...",
       "errors": {
         "conflict": "此命令键已绑定到不同的目标内容。请修改表单后重新提交。",
-        "permission": "你无权在此工作区或项目中创建目标。",
+        "permission": "你无权在此工作区中创建目标。",
         "retryable": "领域 API 暂时不可用。重试会保留同一个命令键，不会重复创建目标。",
         "failed": "无法创建目标。请检查字段后重试。"
       }
@@ -737,10 +848,11 @@
     "tabs": {
       "overview": "概览",
       "stages": "阶段",
-      "work": "工作",
+      "work": "工作图",
       "submission": "提交",
       "artifacts": "产物",
       "evidence": "证据",
+      "acceptance": "验收",
       "runs": "运行",
       "timeline": "时间线"
     },
@@ -750,8 +862,39 @@
       "submission": "此目标尚无不可变提交。",
       "artifacts": "尚未投影产物修订版本。",
       "evidence": "尚未投影验证证据。",
+      "acceptance": "尚未记录绑定版本的验收。",
       "runs": "没有与此目标关联的可见运行。",
       "timeline": "暂无目标范围的时间线事件。"
+    },
+    "execution": {
+      "runId": "运行 {{id}}",
+      "attemptCount": "{{count}} 次尝试",
+      "attempt": "尝试 {{number}}",
+      "fence": "围栏 {{token}}",
+      "cursor": "游标 {{cursor}}",
+      "lease": "租约{{status}}",
+      "noLease": "无租约",
+      "start": "开始尝试",
+      "retry": "重试",
+      "cancel": "取消",
+      "commandFailed": "执行命令失败，请检查运行状态后重试。",
+      "commandFailedDetail": "执行命令失败（{{detail}}），请检查运行状态后重试。",
+      "statuses": {
+        "queued": "排队中",
+        "running": "运行中",
+        "cancel_requested": "已请求取消",
+        "succeeded": "成功",
+        "failed": "失败",
+        "canceled": "已取消"
+      },
+      "leaseStatuses": {
+        "offered": "待领取",
+        "active": "有效",
+        "suspect": "存疑",
+        "expired": "已过期",
+        "released": "已释放",
+        "revoked": "已撤销"
+      }
     }
   },
   "sidebarAgents": {
@@ -1179,6 +1322,7 @@
     "openIssueFile": "打开此任务中的文件...",
     "createAgent": "新建智能体",
     "createProject": "新建项目",
+    "manageCollections": "管理目标集合",
     "createTarget": "新建目标",
     "pages": "页面",
     "tasks": "任务",

@@ -25,7 +25,8 @@ interface NewGoalDefaults {
 }
 
 interface NewTargetDefaults {
-  projectId?: string;
+  collectionId?: string;
+  conversationId?: string;
 }
 
 interface OnboardingOptions {

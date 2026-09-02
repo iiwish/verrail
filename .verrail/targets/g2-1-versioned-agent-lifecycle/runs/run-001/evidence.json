@@ -1,0 +1,81 @@
+{
+  "target_id": "g2-1-versioned-agent-lifecycle",
+  "run_id": "run-001",
+  "runtime_target": {
+    "workspace_id": "45571f9e-90d6-4847-9504-74971defcf6b",
+    "target_id": "8a25f226-7fce-467e-b3e9-21c46de2ad46",
+    "target_revision_id": "01ede241-3bb4-4c35-90b2-8b9fbe5e3b93",
+    "graph_revision_id": "75b38667-de0d-4c29-9b1b-fb7808aaa21b",
+    "runtime_status": "draft",
+    "local_delivery_status": "needs_review"
+  },
+  "browser_acceptance": {
+    "workspace_route": "http://127.0.0.1:3100/MYW/agents",
+    "target_route": "http://127.0.0.1:3100/MYW/targets/8a25f226-7fce-467e-b3e9-21c46de2ad46/overview",
+    "definition_id": "a8360f31-6466-48da-885d-bcde10fa79c0",
+    "version_v1_id": "47275a0d-d953-4177-91e4-ab1e7d2a502f",
+    "version_v2_id": "32bdaa2c-0026-4ef6-856e-0c8f3c306e9a",
+    "passed_v2_evaluation_id": "1fa72163-88f3-4943-ac72-4e7b78771f7a",
+    "deployment_id": "1e4e0745-8508-4a2c-9857-008d4cd39e08",
+    "final_active_revision_id": "020099c3-5dc1-4b9a-bf4d-5a61339dcd22",
+    "final_active_agent_version_id": "47275a0d-d953-4177-91e4-ab1e7d2a502f",
+    "result": "passed"
+  },
+  "native_run_acceptance": {
+    "target_id": "45c4da2c-f12d-4499-8e88-2ef11e419673",
+    "graph_revision_id": "514f6f91-e959-4610-8bd4-c1228489e4b0",
+    "work_node_id": "3175494c-1e05-4d1c-94fd-84dd9bde7926",
+    "run_id": "d1865627-8ab7-4559-aa7b-52bec5fa91b0",
+    "deployment_revision_id": "098181a7-6fc7-4166-8db7-04c878a4b0f5",
+    "agent_version_id": "47275a0d-d953-4177-91e4-ab1e7d2a502f",
+    "identity_equality_assertions": true
+  },
+  "fresh_workspace_acceptance": {
+    "workspace_id": "4081ab9c-f749-4975-8521-02c4b13a683a",
+    "default_deployment_id": "afc854bb-223c-4986-86cf-54ccfe5f0ecf",
+    "deployment_status": "paused",
+    "is_default": true,
+    "evaluation_status": "inconclusive",
+    "safety_status": "not_run"
+  },
+  "negative_acceptance": [
+    "Deploying v2 with a v1 EvaluationRun returned AGENT_EVALUATION_GATE_FAILED.",
+    "A cross-Workspace EvaluationRun command returned a scoped 404.",
+    "Graph creation rejected stale, paused, and arbitrary DeploymentRevision identities with DEPLOYMENT_REVISION_NOT_ACTIVE.",
+    "A Run actor that did not match the WorkNode DeploymentRevision was rejected."
+  ],
+  "verification": [
+    {
+      "scope": "Go lifecycle domain",
+      "status": "passed",
+      "result": "go test ./... passed, including immutable version, idempotency, evaluation gate, default uniqueness, retirement replacement, identity binding, and explicit-null update cases."
+    },
+    {
+      "scope": "shared and server lifecycle",
+      "status": "passed",
+      "result": "Shared lifecycle validators passed 3 of 3. Five focused server files passed 30 of 30; the corrected Domain API integration suite passed 4 of 4."
+    },
+    {
+      "scope": "UI",
+      "status": "passed_with_load_adjudication",
+      "result": "Full UI: 484 files and 4421 tests passed before five inherited timing failures; all 51 tests in the affected files passed serially. Browser lifecycle acceptance passed."
+    },
+    {
+      "scope": "database",
+      "status": "passed_with_load_adjudication",
+      "result": "Full DB: 20 files and 91 tests passed, with two embedded-Postgres startup failures under concurrency; both affected suites passed serially. Migration numbering and safety checks passed through typecheck and build."
+    },
+    {
+      "scope": "static, build, design, format, and health",
+      "status": "passed_with_operational_warning",
+      "result": "pnpm -r typecheck, pnpm build, pnpm check:token-gates, and git diff --check passed. Live health is ok and authReady; the local backup-age warning remains operational follow-up."
+    }
+  ],
+  "residual_risks": [
+    "Independent engineering review and product-owner acceptance are required before approval, release, or ship claims.",
+    "G1 migration 0234 remains a production rolling-upgrade blocker for the combined branch until expand/contract or a stopped-write maintenance window is approved.",
+    "Evaluation results are recorded human assertions in G2.1; governed datasets, evaluator execution, evidence binding, and independent assurance belong to later G2 targets.",
+    "The product-native Artifact, Evidence, Review, and Acceptance write surfaces are not yet available, so this repository-native evidence package does not move the runtime Target beyond draft/Define.",
+    "Runner, RunAttempt, lease, fencing, connector, and acceptance execution controls remain G2.2 and later scope."
+  ]
+}

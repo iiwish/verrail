@@ -1,0 +1,35 @@
+{
+  "workspaceId": "74170eed-f251-4ff1-a9b7-6ebe49e1cb0d",
+  "prefix": "GLI",
+  "collectionId": "2c44edae-e970-4b4d-a953-efb85e57dedf",
+  "conversationId": "98372ab3-6637-4504-b47f-61fbcf72ad79",
+  "draftId": "bbfe8d56-0088-4c7d-9f43-2006f5d81ec5",
+  "draftStatus": "ready_for_confirmation",
+  "targetCountBeforeConfirmation": 0,
+  "targetId": "33f4911b-8118-4d74-9a70-1334d54e66be",
+  "targetRevisionId": "9635ab7d-e202-4103-85bb-ffbe554aabc2",
+  "initialGraphRevisionId": "514baf38-fb81-4a1b-a4ec-51d3e7dc8f8f",
+  "graphRevisionId": "24fd89ee-1048-4b69-bdb1-56ca844f0ba4",
+  "confirmationReplay": {
+    "targetId": "33f4911b-8118-4d74-9a70-1334d54e66be",
+    "replayed": true
+  },
+  "activeGraphStatus": "active",
+  "workStatusBeforeRun": "ready",
+  "run": {
+    "id": "098468ac-d694-4eae-ab2c-73ce9e2ec7f8",
+    "status": "queued",
+    "replayId": "098468ac-d694-4eae-ab2c-73ce9e2ec7f8",
+    "replayed": true
+  },
+  "workStatusAfterRun": "running",
+  "readModel": {
+    "stageCount": 4,
+    "attentionCount": 0,
+    "runCount": 1
+  },
+  "removedCompatibilityRoutes": {
+    "targetProjection": "404",
+    "reconcile": "404"
+  }
+}

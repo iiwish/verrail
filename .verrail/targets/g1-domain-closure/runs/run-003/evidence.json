@@ -1,0 +1,63 @@
+{
+  "target_id": "g1-domain-closure",
+  "run_id": "run-003",
+  "created_at": "2026-09-01T09:50:12Z",
+  "live_acceptance": {
+    "workspace_id": "74170eed-f251-4ff1-a9b7-6ebe49e1cb0d",
+    "workspace_prefix": "GLI",
+    "target_id": "33f4911b-8118-4d74-9a70-1334d54e66be",
+    "target_revision_id": "9635ab7d-e202-4103-85bb-ffbe554aabc2",
+    "active_graph_revision_id": "24fd89ee-1048-4b69-bdb1-56ca844f0ba4",
+    "run_id": "098468ac-d694-4eae-ab2c-73ce9e2ec7f8",
+    "workflow_id": "verrail-target-v1:74170eed-f251-4ff1-a9b7-6ebe49e1cb0d:33f4911b-8118-4d74-9a70-1334d54e66be",
+    "workflow_run_id": "67c54e75-2e72-406f-a516-d64c44a57969",
+    "workflow_status": "WORKFLOW_EXECUTION_STATUS_RUNNING"
+  },
+  "acceptance_results": [
+    {
+      "criterion": "Conversation-first, human-confirmed Target creation",
+      "status": "passed",
+      "result": "The persisted draft reached ready_for_confirmation while Target count remained zero; confirmation created one native Target and replay returned the same identity."
+    },
+    {
+      "criterion": "Minimal native Graph, Stage, Attention, and Run loop",
+      "status": "passed",
+      "result": "Graph activation changed the node from ready to running after Run creation; the native read model returned four stages, zero attention items, and one Run."
+    },
+    {
+      "criterion": "Durable orchestration handoff",
+      "status": "passed",
+      "result": "Both native outbox events were delivered once and the Temporal target workflow remained running on the configured worker task queue."
+    },
+    {
+      "criterion": "Compatibility authority removal",
+      "status": "passed",
+      "result": "The removed Target projection and reconcile mutation endpoints both returned HTTP 404."
+    },
+    {
+      "criterion": "Browser UX",
+      "status": "passed",
+      "result": "Four isolated Playwright cases passed; the live Overview, Work Graph, and Runs surfaces showed native data without console or page errors, and the 390px viewport had no horizontal overflow."
+    }
+  ],
+  "artifacts": [
+    {
+      "path": ".verrail/targets/g1-domain-closure/runs/run-003/live-acceptance.json",
+      "sha256": "944d7934872f9d41700f43baaa9a8237eb300fb73947d72f6695b2d8a2c4cd18"
+    },
+    {
+      "path": ".verrail/targets/g1-domain-closure/runs/run-003/workbench-desktop.png",
+      "sha256": "3a547766862f242b5ffe047cfa659cf0d4e49d627230f5fa7a9d724665c575c0"
+    },
+    {
+      "path": ".verrail/targets/g1-domain-closure/runs/run-003/workbench-mobile.png",
+      "sha256": "5a22b9037b5c982c9895c453b236e0e51e53cc757a129b59945f557f2761cf41"
+    }
+  ],
+  "missing": [
+    "Independent engineering review.",
+    "Explicit product-owner signoff.",
+    "A fully green repository-wide Vitest run or maintainer adjudication of the 22 recorded non-G1 failures.",
+    "Commit, pull request, CI result, merge, deployment, release, and explicit ship approval."
+  ]
+}
