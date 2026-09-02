@@ -4591,7 +4591,12 @@ async function canBindRuntimePort(port: number): Promise<boolean> {
  */
 async function hasLoopbackPortListener(port: number): Promise<boolean> {
   const facts = await readListenerBindFacts(port).catch(() => null);
-  if (facts) return facts.present;
+  if (facts?.present) return true;
+  // Linux /proc is authoritative and must stay read-only under concurrent
+  // managed starts. On hosts that rely on lsof, an empty result is ambiguous:
+  // lsof may be unavailable rather than proving the port is free. A bind probe
+  // distinguishes those cases and keeps ownership checks fail-closed.
+  if (facts && process.platform === "linux") return false;
   return !(await canBindRuntimePort(port));
 }
 

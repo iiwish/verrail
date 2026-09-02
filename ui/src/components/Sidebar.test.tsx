@@ -198,7 +198,7 @@ describe("Sidebar", () => {
     expect(links.map((link) => link.textContent?.trim())).toEqual([
       "Home",
       "Chat",
-      "Projects",
+      "Targets",
       "Agents",
       "Infrastructure",
       "Governance",
@@ -207,7 +207,7 @@ describe("Sidebar", () => {
     expect(links.map((link) => link.getAttribute("href"))).toEqual([
       "/home",
       "/chat",
-      "/projects",
+      "/targets",
       "/agents",
       "/infrastructure",
       "/governance",

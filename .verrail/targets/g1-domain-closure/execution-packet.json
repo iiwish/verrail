@@ -1,0 +1,52 @@
+{
+  "target_id": "g1-domain-closure",
+  "spec_version": "2.0",
+  "repo_path": "/Users/iiwish/self/verrail",
+  "branch": "codex/g1-domain-closure",
+  "base_commit": "b307b961445632a79acf712600ff1b1736a87112",
+  "agent": "codex",
+  "prompt": "Complete items 1, 2, and 3 for G1: freeze the native Target contract, implement explicit conversation-first human-confirmed Target creation, and establish minimal native WorkGraph, Stage, Attention, and Run behavior.",
+  "allowed_actions": [
+    "Add native Workspace-scoped Collection, Target, Conversation draft, WorkGraph, GraphRevision, WorkNode, Run, audit, outbox, and receipt contracts",
+    "Add forward-only PostgreSQL migrations through the repository migration workflow",
+    "Add human-authorized and idempotent Go Domain API commands",
+    "Expose native read contracts and product UI without compatibility projection",
+    "Add focused TypeScript, Go, integration, UI, locale, and browser tests",
+    "Update canonical product, ontology, architecture, ADR, API, and delivery evidence documents"
+  ],
+  "forbidden_actions": [
+    "Make TypeScript a second writer of native Target, Graph, or Run facts",
+    "Treat Conversation, Project, Case, Issue, Artifact, Heartbeat, or Temporal history as native Target truth",
+    "Implement unapproved Submission, Evidence, Review, Acceptance, external Effect, or ship commands",
+    "Delete compatibility storage or user data",
+    "Commit, push, merge, deploy, release, or create a ship record without explicit approval"
+  ],
+  "validation_commands": [
+    "pnpm exec vitest run <12 focused G1 files> --reporter=verbose",
+    "cd services/domain-api && go test ./...",
+    "pnpm -r typecheck",
+    "pnpm test:run",
+    "pnpm build",
+    "pnpm exec vitest run --project @paperclipai/ui ui/src/i18n/locale-validation.test.ts",
+    "pnpm check:token-gates",
+    "pnpm --filter @paperclipai/db check:migrations",
+    "VERRAIL_ACCEPTANCE_PORT=3211 pnpm test:e2e:verrail-acceptance",
+    "git diff --check"
+  ],
+  "expected_evidence": [
+    "Native domain schema and migration safety results",
+    "Draft immutability, confirmation ownership, and conversion replay results",
+    "Atomic Target and initial graph command results",
+    "Graph activation and Run idempotency results",
+    "Native TargetReadModel and Workbench behavior",
+    "Typecheck, focused tests, Go tests, build, browser, locale, token, migration, and diff results",
+    "Truthful repository-wide suite gap and independent review requirements"
+  ],
+  "stop_conditions": [
+    "The implementation requires compatibility facts to enter the native read model",
+    "A second native writer or long-term dual write is required",
+    "Workspace or human authority cannot be enforced",
+    "Idempotency cannot distinguish replay from conflicting payloads",
+    "A migration cannot be forward-only and safety-checked"
+  ]
+}

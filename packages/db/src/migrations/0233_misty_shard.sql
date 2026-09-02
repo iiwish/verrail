@@ -1,0 +1,1 @@
+ALTER TABLE "verrail_targets" ALTER COLUMN "project_id" DROP NOT NULL;

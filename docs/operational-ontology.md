@@ -1,10 +1,10 @@
 # Verrail 运行本体契约
 
-版本：0.3
+版本：0.4
 
 状态：`Confirmed`
 
-最后更新：2026-08-28
+最后更新：2026-09-01
 
 ## 1. 目的
 
@@ -16,7 +16,7 @@ Verrail 的领域中心是可验收交付：Target 固定责任，Submission 固
 
 ### 组织与访问层
 
-`Workspace`、`Principal`、`RoleBinding`、`Project`、`Policy`。
+`Workspace`、`Principal`、`RoleBinding`、`Collection`、`Policy`。
 
 ### 交付责任层
 
@@ -48,7 +48,7 @@ Verrail 的领域中心是可验收交付：Target 固定责任，Submission 固
 
 ### 交互上下文层
 
-`Conversation`、`ConversationMessage`、`ConversationContextBinding`。这些对象保存用户与系统的交互连续性并引用领域对象，不拥有交付、执行、证明、批准或验收事实。
+`Conversation`、`ConversationMessage`、`ProviderConversationBinding`、`ConversationContextBinding`、`TargetCreationDraft`。这些对象保存用户与系统的交互连续性、目标草拟状态并引用领域对象，不拥有交付、执行、证明、批准或验收事实。
 
 ## 3. 核心实体
 
@@ -58,23 +58,29 @@ Verrail 的领域中心是可验收交付：Target 固定责任，Submission 固
 
 默认 Workspace 由部署后端按用户或单租户实例幂等供给。产品可以在只有一个可访问 Workspace 时隐藏选择界面，但不得省略 Workspace ID、权限检查、数据隔离、审计归属或路由兼容语义。
 
+每个 Workspace 必须有且仅有一个可解析的默认 Agent Deployment，用于未显式绑定 Agent 的 Conversation、Invocation 和初始协调请求。该绑定是 Workspace 配置，不是新的 Principal 类型，也不授予隐式权限。默认 Deployment 必须遵守版本固定、Grant、Policy、预算、审计和最小委派规则；管理员替换默认绑定不改变历史 Message、Run 或 Target 的实际 Agent 身份。Target 的活动 Director RoleSlot 可以解析到默认 Deployment，也可以由 GraphRevision 显式绑定其他 Deployment。
+
 ### Conversation、ConversationMessage 与 ContextBinding
 
-Conversation 是 Workspace 内的持久交互线程，记录创建主体、标题、活动或归档状态、置顶状态和最近活动时间。ConversationMessage 是追加式用户或系统消息；更正或重试产生新消息或明确状态，不静默改写已经形成领域决定的历史。
+Conversation 是 Workspace 内的持久交互线程，记录创建主体、标题、活动或归档状态、置顶状态和最近活动时间。一个 Provider 群聊或私聊通过 ProviderConversationBinding 映射为一个 Conversation；Web Chat 创建独立 Conversation。ConversationMessage 是追加式用户或系统消息；更正或重试产生新消息或明确状态，不静默改写已经形成领域决定的历史。
 
-ConversationContextBinding 把会话显式绑定到 Project、Target、TargetRevision、Stage、ArtifactRevision、Review、Run 或其他可检查对象。对话可以查询事实、形成建议或提出 Invocation 和 ActionRequest，但领域改变只由相应命令、权限和版本合同生效。Message 可以引用 Run、ActionRequest、Approval、ArtifactRevision、Evidence、Review 和 Acceptance，不能代替这些对象。
+ConversationContextBinding 把会话显式绑定到 Collection、Target、TargetRevision、Stage、ArtifactRevision、Review、Run 或其他可检查对象。对话可以查询事实、形成建议或提出 Invocation 和 ActionRequest，但领域改变只由相应命令、权限和版本合同生效。Message 可以引用 Run、ActionRequest、Approval、ArtifactRevision、Evidence、Review 和 Acceptance，不能代替这些对象。
+
+Conversation 未显式绑定 Agent 时解析 Workspace 默认 Agent Deployment；每条 Agent 回复记录实际 Deployment/兼容 Agent 身份和运行来源。默认 Agent 可以提出创建专业 Agent、新 Conversation、Target 或 GraphProposal 的结构化命令，但命令仍分别接受 InvocationAuthority、Capability、Policy、人工确认和幂等校验，不能由普通消息直接生效。
+
+TargetCreationDraft 是 Conversation 中由明确创建目标意图启动的结构化草稿，固定发起 Principal、来源 Message、字段来源和 Draft Version。Agent 可以通过多轮消息更新 Draft 建议，但只有具备权限的人类确认完整版本后，幂等 CreateTarget 命令才创建 Target 与首个 TargetRevision。普通消息不创建 Draft；Draft 也不拥有 Target 状态。详细状态与确认合同见 [`conversation-target-creation.md`](./conversation-target-creation.md)。
 
 ### Principal 与 RoleBinding
 
 Principal 是 Human、Group、ServiceAccount、Agent Deployment 或 Runner Identity。RoleBinding 把 Principal 绑定到 Workspace 或明确 ResourceScope 下的角色。身份、工作责任和授权分别计算。
 
-### Project
+### Collection
 
-长期交付方向的组织容器，拥有 Target、默认策略和资源引用。Project 不是自动扩权边界。
+Workspace 内的轻量可选 Target 分组，用于聚合、筛选和保存视图。Collection 不拥有 Target，不承载成员、资源、权限或策略，也不是 Target 创建前置。
 
 ### Target 与 TargetRevision
 
-Target 是可被验收结果的稳定身份。TargetRevision 是不可变的责任合同，固定 Goal、Constraints、AcceptanceCriteria、RiskLevel、Deadline、OutcomeOwner 和适用策略摘要。目标、约束、验收条件或责任边界变化必须创建新 Revision。
+Target 是 Workspace 内可被验收结果的稳定身份，可以不关联任何 Collection。TargetRevision 是不可变的责任合同，固定 Goal、Constraints、AcceptanceCriteria、RiskLevel、Deadline、OutcomeOwner、ResourceRefs 和适用策略摘要。目标、约束、验收条件、资源或责任边界变化必须创建新 Revision。
 
 Target 状态为：
 
@@ -188,16 +194,32 @@ RunWorkflow(run_id)
 
 ## 6. 关系
 
+规范交付层级固定为：
+
 ```text
 Workspace
-  owns Project, AgentDefinition, Deployment, RuntimePool, Connector, Policy, Conversation
+`-- Target
+    |-- Work Graph
+    |   |-- Run
+    |   |-- Artifact
+    |   |-- Evidence
+    |   `-- Acceptance
+    `-- optional association: Collection
+```
+
+箭头表示产品归属与导航上下文，不取代各对象的精确版本绑定。Run、ArtifactRevision、Evidence 和 Acceptance 必须继续绑定对应的 TargetRevision、GraphRevision、WorkNode、Submission 或 Claim；Collection 只建立反向可选归类，不拥有这些事实。
+
+```text
+Workspace
+  owns Target, Collection, AgentDefinition, Deployment, RuntimePool, Connector, Policy, Conversation
 
 Conversation
   owns ConversationMessage
-  binds Project, Target, ArtifactRevision, Review, Run or ActionRequest context
+  binds Provider conversation identity and Collection, Target, ArtifactRevision, Review, Run or ActionRequest context
+  owns TargetCreationDraft interaction state
 
-Project
-  owns Target
+Collection
+  optionally groups Target
 
 Target
   owns immutable TargetRevision and WorkGraph
@@ -247,20 +269,23 @@ TargetRevision + ArtifactRevisions + VerificationResults
 17. Timeline、AttentionItem、StageProgress 和 Outcome 是可重建投影，不是独立命令入口；
 18. 团队可信记忆只能来自已验收 Submission，并保留来源 Run、Artifact 和 Evidence 引用。
 19. Conversation 和 ConversationMessage 不是 Target、Run、Artifact、Evidence、Review、Approval 或 Acceptance 的事实源；所有对话触发的领域变化必须引用独立、可审计的命令或对象。
+20. 普通 ConversationMessage 不创建 TargetCreationDraft 或 Target；只有明确创建目标意图才创建 Draft，完整 Draft 必须由具备权限的人类确认后才能幂等转换；
+21. Target 必须直接属于一个 Workspace，Collection 关联可以为空；修改或归档 Collection 不得改变已有 TargetRevision 的责任、资源、策略、证据或验收语义。
+22. 每个 Workspace 必须解析且只解析一个默认 Agent Deployment；该默认值不产生隐式授权，历史 ConversationMessage、Invocation 和 Run 必须保留实际执行身份。
 
-## 8. 兼容边界
+## 8. 继承实现边界
 
-当前 TypeScript 基座中的对象按以下语义迁移：
+继承 TypeScript 基座中的对象不自动进入 Verrail 领域。只有下列明确对应关系可以被实现层复用；Project、Case 和 Issue 不能投影或提升为 Target：
 
 | Paperclip 对象 | Verrail 目标语义 |
 | --- | --- |
 | `company` | Workspace 兼容存储 |
-| `project` | Project |
+| `project` | 继承实现对象，不属于 Verrail 产品信息架构或 Target 层级 |
 | `goal` | Objective 或 Context，不自动等于 Target |
 | `pipeline` | ProcessTemplate / StageTemplate，不等于 WorkGraph |
-| `case` | Target 的主要迁移来源 |
-| `issue` | WorkNode/WorkItem；简单模式可投影为 Target |
-| `heartbeat_run` | RunAttempt，迁移期可兼容为 Run |
+| `case` | 继承实现对象，不自动转换为 Target |
+| `issue` | 继承实现对象，不自动转换为 Target 或 WorkNode |
+| `heartbeat_run` | Compatibility Service 的继承运行记录，不进入原生 Run 或 TargetReadModel |
 | `document` / `document_revision` | Artifact / ArtifactRevision |
 | `work_product` | Materialization 或 ExternalRef |
 | `decision` | HumanDecision |

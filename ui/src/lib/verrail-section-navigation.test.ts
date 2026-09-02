@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import { resolveVerrailManagementSection } from "./verrail-section-navigation";
 
 describe("resolveVerrailManagementSection", () => {
-  it("recognizes canonical Project, Agent, Infrastructure and Governance routes", () => {
+  it("keeps canonical Target and Project routes in separate sections", () => {
     expect(resolveVerrailManagementSection("/VER/projects", "VER")).toBe("projects");
     expect(resolveVerrailManagementSection("/VER/projects/project-1/targets", "VER")).toBe("projects");
-    expect(resolveVerrailManagementSection("/VER/targets/target-1/stages", "VER")).toBe("projects");
+    expect(resolveVerrailManagementSection("/VER/targets", "VER")).toBe("targets");
+    expect(resolveVerrailManagementSection("/VER/targets/target-1/stages", "VER")).toBe("targets");
     expect(resolveVerrailManagementSection("/VER/agents/definitions", "VER")).toBe("agents");
     expect(resolveVerrailManagementSection("/VER/agents/deployments", "VER")).toBe("agents");
     expect(resolveVerrailManagementSection("/VER/infrastructure/environments", "VER")).toBe("infrastructure");

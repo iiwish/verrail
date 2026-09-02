@@ -73,3 +73,6 @@ tests/storybook-visual/playwright-report/
 .superpowers/
 .claude/worktrees/
 .herenow
+
+# OpenCode orchestration session data
+.omo/

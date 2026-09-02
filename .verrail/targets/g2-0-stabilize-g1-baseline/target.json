@@ -1,0 +1,24 @@
+{
+  "id": "g2-0-stabilize-g1-baseline",
+  "runtime_target_id": "d637ae28-74c5-4e77-9d06-d433bbdda14c",
+  "runtime_target_revision_id": "71870e8f-6167-49ef-afb4-92fbc1e04a80",
+  "title": "G2.0 - Stabilize G1 delivery baseline",
+  "intent": "Make the completed G1 domain skeleton a trustworthy base for G2 implementation.",
+  "scope": "Close or explicitly adjudicate repository verification failures, verify the G1 migration path, freeze rollback and compatibility boundaries, and produce a maintainer-grade review package.",
+  "non_goals": [
+    "Implement G2.1 AgentDefinition, AgentVersion, Deployment, or EvaluationRun capability",
+    "Implement RunAttempt, Runner, GitHub Connector, Artifact, Evidence, Submission, DeliveryReview, or Acceptance capability",
+    "Reinterpret inherited Project, Issue, Heartbeat, Artifact, or Run facts as native Verrail facts",
+    "Publish, merge, deploy, release, or create a ship record without explicit user approval"
+  ],
+  "acceptance_criteria": [
+    "All G1 focused, Go, typecheck, build, migration, token, locale, and browser gates pass.",
+    "Every repository-wide test failure is fixed or explicitly baselined with reproducible evidence and ownership.",
+    "Forward migration, rollback strategy, and compatibility boundaries are canonical and reviewable.",
+    "The complete G1 diff has a maintainer-grade review report with all critical and high findings resolved.",
+    "G2 begins from a documented green or explicitly adjudicated baseline."
+  ],
+  "status": "needs_review",
+  "created_at": "2026-09-01T10:10:17Z",
+  "updated_at": "2026-09-01T12:56:59Z"
+}

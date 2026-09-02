@@ -1,10 +1,10 @@
 # Verrail 后续产品目标与路线
 
-版本：0.3
+版本：0.4
 
 状态：`Confirmed`
 
-最后更新：2026-08-28
+最后更新：2026-09-01
 
 审核要求：确认产品差异化、首个纵向闭环、阶段顺序和企业执行边界后进入实施
 
@@ -15,11 +15,21 @@ Verrail 是面向专业 AI 交付的可信控制平面。它不以“再提供�
 核心结果不是任务完成或 Agent 显示为在线，而是一个目标产生了可审阅产物、独立证据、明确责任和可追溯验收。
 
 ```text
-Project -> Target -> TargetRevision -> Stage / Work Graph
-        -> Agent Run / Human Decision / Integration Run
-        -> ArtifactRevision / Claim / Evidence / VerificationResult
-        -> Submission -> Review -> Acceptance -> Outcome
+Workspace -> Conversation -> explicit create-target intent
+          -> TargetCreationDraft -> human confirmation
+          -> Target
+
+Workspace
+`-- Target
+    |-- Work Graph
+    |   |-- Run
+    |   |-- Artifact
+    |   |-- Evidence
+    |   `-- Acceptance
+    `-- optional association: Collection
 ```
+
+一个钉钉、飞书或企微群聊在 Workspace 中对应一个持久 Conversation，私聊同样对应一个 Conversation。普通对话不创建 Target；只有用户明确要求创建目标时，系统才进入结构化草拟和多轮补全，在具备权限的人类确认后创建 Target 与首个 TargetRevision。
 
 ## 2. 差异化
 
@@ -44,6 +54,8 @@ Codex 等 Harness 负责高质量执行单个编码任务；Verrail 负责跨任
 6. **Temporal 是耐久编排内核**：Target 与 Run 使用 Workflow、Activity、Signal、Timer、Retry 和 Child Workflow；PostgreSQL 仍是业务事实源。
 7. **执行面可替换**：HostTrusted、CubeSandbox、容器或未来 Kubernetes 只实现 Runtime Backend，不拥有业务事实。
 8. **Go 采用目标内核加绞杀迁移**：Go 是 Verrail 新领域与编排内核的目标语言，但不以逐行翻译或一次性重写 Paperclip 全部能力作为路线。
+9. **会话不自动升级为目标**：Conversation 承载长期讨论与多个意图；显式创建目标的请求只启动 TargetCreationDraft，完整草稿经人类确认后才成为 Target。
+10. **Collection 是可选归类**：Target 直接属于 Workspace；Collection 只聚合相关 Target 和视图，不是创建前置、权限边界或可变策略真相源。
 
 ## 4. 基座策略
 
@@ -51,7 +63,7 @@ Codex 等 Harness 负责高质量执行单个编码任务；Verrail 负责跨任
 | --- | --- |
 | 保留 | 认证与用户、PostgreSQL/Drizzle、S3/本地存储、Adapter SDK、Plugin SDK、Secret、成本、运行日志、工作区与 Runtime Service 基础 |
 | 重构 | Company/Tenant 语义、CEO/组织图、Issue 单指派模型、Board 审批、Heartbeat 导航与 AI 公司创建流程 |
-| 新建 | TargetRevision、版本化 Agent 生命周期、Work Graph、Criterion/Claim/Verification、Submission/Acceptance、Temporal 编排、Execution Gateway、Runner Fleet、Cloud Tenant Cell |
+| 新建 | ProviderConversationBinding、TargetCreationDraft、TargetRevision、版本化 Agent 生命周期、Work Graph、Criterion/Claim/Verification、Submission/Acceptance、Temporal 编排、Execution Gateway、Runner Fleet、Cloud Tenant Cell |
 | 迁移 | 进程内 Timer、周期扫描、手工重试与恢复器逐步迁入 Temporal；新 Verrail 领域优先采用稳定语言中立合同并由 Go 内核承接 |
 | 延后 | 通用工作流设计器、插件市场、多区域主动写入、全量 Go 重写、移动端完整工作台、专业文档或代码编辑器 |
 
@@ -110,15 +122,15 @@ GitHub 需求
 
 交付：
 
-- Workspace、Conversation、Project、Target、TargetRevision、Stage、Submission 和 Timeline 基础数据模型；
+- Workspace、Conversation、ProviderConversationBinding、TargetCreationDraft、Target、TargetRevision、可选 Collection、Stage、Submission 和 Timeline 基础数据模型；
 - AcceptanceCriterion、Claim、ArtifactRevision、Evidence 和 VerificationResult 最小合同；
 - PostgreSQL Transactional Outbox、Temporal Namespace、Worker、稳定 Workflow ID 和加密 Payload/Data Converter 基线；
-- Target Workbench 成为主工作面，包含 Overview、Stages、Work、Submission、Artifacts、Evidence、Runs、Timeline；
+- Target Workbench 成为主工作面，包含 Overview、Work Graph、Runs、Artifacts、Evidence、Acceptance、Stages、Submission 和 Timeline；
 - Attention Inbox 汇总待决定、待批准、待评审和待验收事项；
-- 以 [`navigation-contract.md`](./navigation-contract.md) 发布 Home、Chat、Projects、Agents、Infrastructure、Governance 和 Settings 新导航；
-- 现有 Company/Project/Issue 能通过兼容映射逐步迁移，不进行一次性破坏式换表。
+- 以 [`navigation-contract.md`](./navigation-contract.md) 发布 Home、Chat、Targets、Agents、Infrastructure、Governance 和 Settings 新导航；
+- 原生 Workspace、Target、Collection 和 Work Graph 路径形成完整闭环；Project 与 Issue 不进入 Verrail Target 领域合同。
 
-退出门槛：用户不需要理解 CEO、组织图、Heartbeat、Workspace 租户结构或 Temporal，就能通过持久对话进入工作、创建版本化 Target、看到阶段与责任人，并进入真实运行记录；对话不替代领域命令，服务重启不会丢失消息或 Workflow 唤醒。
+退出门槛：用户不需要理解 CEO、组织图、Project、Heartbeat、Workspace 租户结构或 Temporal，就能从 Web Chat 或一个已绑定的企业群聊/私聊持续对话；普通消息不产生 Target，明确创建请求通过可恢复的多轮草拟与人工确认创建版本化 Target，并能看到阶段、责任人和真实运行记录；对话不替代领域命令，服务重启不会丢失消息、Draft 或 Workflow 唤醒。
 
 ### G2：可信交付闭环
 
@@ -137,12 +149,12 @@ GitHub 需求
 
 ### G3：Go 领域内核与企业执行平面
 
-目标：让新 Verrail 领域、Temporal 编排和执行协议由 Go 服务承接，同时保留 TypeScript Compatibility Service，支持 Linux 强隔离试点。
+目标：让 Verrail 领域、Temporal 编排和执行协议由 Go 服务承接，支持 Linux 强隔离试点。
 
 交付：
 
 - Go Domain API、Temporal Worker、Execution Gateway 和 Runner 的语言中立合同；
-- Workspace/Project/Target/Submission 新路径逐切片迁入 Go，TypeScript 旧路径只读化后退役；
+- Workspace/Conversation/Target/Collection/Submission 路径按纵向切片迁入 Go；Collection 只提供可选归类，不进入执行、权限或验收边界；
 - 版本化 Runner Protocol、Execution Gateway、Runner Enrollment 与凭证轮换；
 - Run/Sandbox Lease、fencing token、容量和心跳；
 - HostTrusted 与 ContainerIsolated 两种清晰的信任配置；
@@ -182,15 +194,16 @@ GitHub 需求
 
 1. 完成首批品牌资产、名称冲突筛查和视觉审核，固定新导航路由注册、权限、Plugin 冲突与 TargetReadModel 实施合同；
 2. 完成用户可见品牌切换，保留 package、CLI、环境变量、Plugin、Telemetry 和存量数据兼容标识；
-3. 定义 G1 数据模型、API、状态转换、兼容投影、回填与回滚实施合同；
+3. 定义 G1 原生数据模型、API、状态转换、Collection 归类与回滚实施合同；
 4. 通过 Feature Flag 发布新导航 Shell、Canonical Route 和旧深链别名；
-5. 构建 Target Workbench 的只读真实数据骨架，验证 Workspace/Project/Target/Work 映射；
-6. 完成 Go + Temporal 最小 Spike：Outbox 启动、Signal、Activity 幂等、Worker 重启、Workflow replay 和版本升级；
-7. 打通一个固定 Codex Deployment 的 GitHub 到 Submission/Acceptance 闭环；
-8. 把 Runner Protocol 和 SandboxDriver 从进程实现中抽成稳定接口；
-9. 按 Workspace/Target、Orchestration、Assurance、Execution 的纵向切片迁入 Go；
-10. 在真实 Linux 环境完成 CubeSandbox Spike，再决定生产准入；
-11. 以设计伙伴工作流验证 Cloud/Private Runner 组合。
+5. 构建 Workspace-scoped Target 列表与 Target Workbench 的只读真实数据骨架，验证可选 Collection、Target 与 Work 映射；
+6. 实现 ProviderConversationBinding 与 TargetCreationDraft：普通消息保持会话，显式创建意图进入多轮补全，确认后幂等创建不依赖 Collection 的 Target；
+7. 完成 Go + Temporal 最小 Spike：Outbox 启动、Signal、Activity 幂等、Worker 重启、Workflow replay 和版本升级；
+8. 打通一个固定 Codex Deployment 的 GitHub 到 Submission/Acceptance 闭环；
+9. 把 Runner Protocol 和 SandboxDriver 从进程实现中抽成稳定接口；
+10. 按 Workspace/Target、Orchestration、Assurance、Execution 的纵向切片迁入 Go；
+11. 在真实 Linux 环境完成 CubeSandbox Spike，再决定生产准入；
+12. 以设计伙伴工作流验证 Cloud/Private Runner 组合。
 
 ## 8. 成功指标
 
@@ -198,7 +211,9 @@ GitHub 需求
 - 证明完整率：已验收 Submission 中每个必需 Criterion 都有有效 VerificationResult，且具备版本、权限、环境、CI 与内容 Hash 的比例；
 - 恢复成功率：服务或 Runner 中断后无需人工改库即可收敛的运行比例；
 - 编排恢复率：Temporal Worker、API 或控制平面重启后能够从 Workflow History 和 PostgreSQL 事实自动继续的比例；
-- 人工注意力质量：Inbox 中确实需要责任人处理的项目比例；
+- 人工注意力质量：Inbox 中确实需要责任人处理的事项比例；
+- 会话转目标准确率：明确创建意图成功进入草拟并经确认生成 Target 的比例，以及普通消息被误建为 Target 的数量；
+- 目标草拟完成时间：从用户明确提出创建目标到完整 TargetRevision 被确认创建的时间；
 - 运行时可替换性：同一合同在至少两个 Adapter 或 Runtime Profile 上通过；
 - 企业数据边界：私有 Runner 模式下不允许出站的数据保持在客户网络；
 - 回滚时间：AgentVersion、Deployment 或交付版本发生回归后的恢复时间。

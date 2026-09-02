@@ -882,7 +882,7 @@ describe("SidebarAgents", () => {
     expect(seeAllAgentsLink(container)).toBeNull();
   });
 
-  it("expands the selected agent workspace in Verrail list mode", async () => {
+  it("keeps Verrail list mode focused on switching agents", async () => {
     mockLocation.pathname = "/PAP/agents/alpha/configuration";
     mockAgentsApi.list.mockResolvedValue([
       makeAgent({ id: "agent-a", name: "Alpha", urlKey: "alpha" }),
@@ -893,12 +893,12 @@ describe("SidebarAgents", () => {
     await renderVerrailAgentList();
 
     expect(container.querySelector('[data-testid="verrail-agent-list"]')).not.toBeNull();
-    expect(container.querySelector('a[href="/agents/alpha/dashboard"]')).not.toBeNull();
-    expect(container.querySelector('a[href="/agents/alpha/instructions"]')).not.toBeNull();
     expect(container.querySelector('a[href="/agents/alpha/configuration"]')).not.toBeNull();
-    expect(container.querySelector('a[href="/agents/alpha/runs"]')).not.toBeNull();
     expect(container.querySelector('a[href="/agents/bravo/configuration"]')).not.toBeNull();
     expect(container.querySelector('a[href="/agents/bravo/dashboard"]')).toBeNull();
+    expect(container.querySelector('a[href="/agents/alpha/dashboard"]')).toBeNull();
+    expect(container.querySelector('a[href="/agents/alpha/instructions"]')).toBeNull();
+    expect(container.querySelector('a[href="/agents/alpha/runs"]')).toBeNull();
   });
 
   it("classic mode (flag OFF) shows more than 5 agents without truncation", async () => {

@@ -51,6 +51,7 @@ func main() {
 
 	temporalWorker := worker.New(temporalClient, config.TaskQueue, worker.Options{})
 	temporalWorker.RegisterWorkflowWithOptions(orchestration.TargetWorkflow, workflow.RegisterOptions{Name: orchestration.TargetWorkflowName})
+	temporalWorker.RegisterWorkflowWithOptions(orchestration.RunWorkflow, workflow.RegisterOptions{Name: orchestration.RunWorkflowName})
 	if err := temporalWorker.Start(); err != nil {
 		logger.Error("start Temporal worker", "error", err)
 		os.Exit(1)

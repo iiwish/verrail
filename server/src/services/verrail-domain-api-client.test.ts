@@ -8,7 +8,7 @@ const command = {
   principalId: "user-1",
   idempotencyKey: "target:create:client-test",
   input: {
-    projectId: "f52f936d-c5fb-4457-a023-ad062ef667a5",
+    collectionId: "f52f936d-c5fb-4457-a023-ad062ef667a5",
     title: "Target",
     outcomeOwner: { principalType: "user" as const, principalId: "user-1" },
     goal: "Outcome",

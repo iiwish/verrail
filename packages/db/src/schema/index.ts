@@ -25,7 +25,7 @@ export { agentRuntimeState } from "./agent_runtime_state.js";
 export { agentTaskSessions } from "./agent_task_sessions.js";
 export { agentWakeupRequests } from "./agent_wakeup_requests.js";
 export { projects } from "./projects.js";
-export { targetProjectionSources, targetProjectionRevisions } from "./target_projections.js";
+export { verrailCollections } from "./verrail_collections.js";
 export {
   verrailTargets,
   verrailTargetRevisions,
@@ -37,7 +37,31 @@ export {
   verrailConversations,
   verrailConversationMessages,
   verrailConversationContextBindings,
+  verrailProviderConversationBindings,
+  verrailTargetCreationDrafts,
+  verrailTargetCreationDraftRevisions,
+  type VerrailTargetDraftDefinitionRecord,
 } from "./verrail_conversations.js";
+export {
+  verrailWorkGraphs,
+  verrailGraphRevisions,
+  verrailWorkNodes,
+  verrailRuns,
+} from "./verrail_delivery.js";
+export {
+  verrailAgentDefinitions,
+  verrailAgentVersions,
+  verrailEvaluationRuns,
+  verrailDeployments,
+  verrailDeploymentRevisions,
+  verrailAgentCommandReceipts,
+} from "./verrail_agents.js";
+export {
+  verrailRunAttempts,
+  verrailExecutionLeases,
+  verrailRunEvents,
+  verrailExecutionCommandReceipts,
+} from "./verrail_execution.js";
 export { projectMemberships } from "./project_memberships.js";
 export { documentMemberships } from "./document_memberships.js";
 export { projectWorkspaces } from "./project_workspaces.js";

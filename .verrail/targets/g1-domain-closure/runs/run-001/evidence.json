@@ -1,0 +1,67 @@
+{
+  "target_id": "g1-domain-closure",
+  "run_id": "run-001",
+  "runtime": {
+    "workspace_id": "74eda0be-a230-4f51-ade0-e104e0d95126",
+    "project_id": "f132c503-ba7c-42a2-a511-eaa8fac5263a",
+    "target_id": "ff331849-009e-4d09-a3ed-3f4e7c19e9bb",
+    "target_revision_id": "87611d8d-6952-4369-8d30-c0844fbebe70",
+    "workflow_id": "verrail-target-v1:74eda0be-a230-4f51-ade0-e104e0d95126:ff331849-009e-4d09-a3ed-3f4e7c19e9bb",
+    "workflow_run_id": "3c648b76-7e5c-43d6-88c8-69c3d90b7286",
+    "outbox_delivery_attempts": 1,
+    "workflow_state": "open",
+    "workflow_type": "verrail.target.workflow.v1",
+    "task_queue": "verrail-target-v1"
+  },
+  "contracts": {
+    "workspace_response": "TargetWorkspaceV1, schemaVersion 1",
+    "native_write_owner": "Go domain API",
+    "workspace_read_owner": "TypeScript TargetReadModel projection",
+    "orchestration_owner": "Temporal TargetWorkflow",
+    "conversation_boundary": "Server-validated Project, Target, and TargetRevision ContextBinding rows",
+    "compatibility_boundary": "Inherited Issues, Artifacts, and Heartbeat runs remain source-labeled and cannot imply native verification or acceptance"
+  },
+  "live_probe": {
+    "health": "passed",
+    "workspace_http_status": 200,
+    "schema_version": 1,
+    "stage_count": 4,
+    "work_count": 0,
+    "run_count": 0,
+    "timeline_count": 2,
+    "assessment": "The native runtime Target correctly renders honest empty fact sets while preserving its real Target and revision timeline. Populated compatibility facts are covered by service, route, UI, and browser tests."
+  },
+  "verification": [
+    {
+      "scope": "Target validators, read model, routes, and Workbench",
+      "status": "passed",
+      "result": "Four focused files and 35 tests passed."
+    },
+    {
+      "scope": "Go domain API and workflow packages",
+      "status": "passed",
+      "result": "go test ./... passed."
+    },
+    {
+      "scope": "workspace typecheck, build, token gates, and diff",
+      "status": "passed",
+      "result": "All required static and build gates passed; build warnings were non-fatal and pre-existing in category."
+    },
+    {
+      "scope": "Verrail browser acceptance",
+      "status": "passed",
+      "result": "Four Playwright cases passed on desktop and narrow desktop, including Work, Stages, Timeline, and Target-bound Discuss behavior."
+    },
+    {
+      "scope": "repository-wide Vitest",
+      "status": "gap_recorded",
+      "result": "The run was interrupted after unrelated runtime and skills test groups failed. No changed or G1-focused suite failed, but clean-baseline equivalence remains unproven."
+    }
+  ],
+  "missing": [
+    "User manual acceptance of the live Target Workbench.",
+    "Independent engineering review.",
+    "A clean-host green repository-wide Vitest run or maintainer acceptance of the recorded unrelated failures.",
+    "Commit, pull request, CI adjudication, merge, deployment, release, and ship record."
+  ]
+}

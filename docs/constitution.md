@@ -1,9 +1,9 @@
 # Verrail 项目章程
 
-版本：1.1
+版本：1.2
 状态：`Confirmed`
 
-最后更新：2026-08-26
+最后更新：2026-09-01
 审核要求：产品、架构、实现与验收必须遵守本章程
 
 ## 1. 目的
@@ -21,7 +21,7 @@ Engine 负责校验、角色解析、调度、恢复和记录权威状态。平�
 
 钉钉、飞书、企微、REST API、Webhook、Schedule 和 A2A 都是调用、协作或通知入口。
 Channel 消息、Agent Transcript、Temporal History 和 Harness Session 都不是业务真相源。
-Verrail 中持久化的 Project、Target、TargetRevision、GraphRevision、WorkNode、Invocation、Run、RunAttempt、IntegrationRun、IntegrationAttempt、HumanWorkResult、
+Verrail 中持久化的 Conversation、TargetCreationDraft、Target、TargetRevision、GraphRevision、WorkNode、Invocation、Run、RunAttempt、IntegrationRun、IntegrationAttempt、HumanWorkResult、
 ActionRequest、ArtifactRevision、Evidence、VerificationResult、Submission、HumanDecision、ActionApproval、
 DeliveryReview、Acceptance、Outcome 和 AuditEvent 才是系统记录。
 
@@ -93,7 +93,7 @@ CI/CD、文档与设计平台中深度编辑和查看产物。Verrail 仍是产�
 权威记录。一个 Channel 可以承载多个 Target 投影，一个 Target 可以产生
 多个按角色隔离的 AgentSession。新 AgentSession 通过带来源引用的 ContextSnapshot 接续历史，不默认重放
 全部 Channel 或 Transcript。Agent 不管理 Channel；Channel 消息顺序不能隐式推进流程。Verrail Web 端提供
-Attention Inbox、Project、Target、Graph、Artifact 与 Evidence 工作台。
+Attention Inbox、Chat、Target、Graph、Artifact 与 Evidence 工作台。Collection 是可选聚合表面，不是进入 Target 的必经层级。
 Verrail 不建设通用项目管理排期与工时看板，也不做脱离 Target、Graph 和 Artifact 的通用闲聊框。
 
 ### P-012：团队知识与经验必须经过人类验收门禁
@@ -149,6 +149,12 @@ Target 和 Run 的长生命周期编排必须使用 Temporal Workflow，禁止�
 只恢复编排决策；所有数据库写入、Provider 调用、LLM 调用和文件操作通过幂等 Activity 或受治理的执行协议完成。
 PostgreSQL 与 Temporal 之间通过 Transactional Outbox、稳定 Workflow ID 和幂等命令收敛，不宣称跨系统 exactly-once。
 
+### P-018：会话不自动创建目标，Collection 不阻塞目标成立
+
+一个企业 Provider 群聊或私聊在一个 Workspace 中映射为一个持久 Conversation。普通消息、@Agent、Agent 建议和一次性调用都不能自动创建 Target。只有用户明确要求创建目标时，系统才创建绑定来源 Conversation、Message 和发起人的 TargetCreationDraft；Agent 通过后续多轮消息补齐目标、责任人、验收条件、风险、资源和策略上下文，并向用户展示版本化确认摘要。
+
+完整 Draft 必须由具备 InvocationAuthority 和 Target 创建权限的人类明确确认，随后才可通过幂等领域命令创建 Target 与首个 TargetRevision。Agent 不得代表人类确认，初始消息即使字段完整也不得静默创建。Target 直接属于 Workspace；Collection 只作为可选归类和视图，不是权限边界、创建前置或可变策略真相源。详细合同见 [`conversation-target-creation.md`](./conversation-target-creation.md)。
+
 ## 3. 质量与架构原则
 
 - 核心状态转换必须可测试、可重放或可解释。
@@ -177,7 +183,7 @@ PostgreSQL 与 Temporal 之间通过 Transactional Outbox、稳定 Workflow ID �
 ## 5. UX 与可访问性原则
 
 - 管理控制台面向 1280 CSS px 及以上桌面视口，并保证常见较窄桌面窗口可用。
-- 日常界面围绕 Attention Inbox、Project、Target、Stage、Graph、Artifact、Evidence 和 Outcome 组织；Agent、
+- 日常界面围绕 Attention Inbox、Chat、Target、Stage、Graph、Artifact、Evidence 和 Outcome 组织；Collection 只作为可选筛选和聚合；Agent、
   Deployment、Integration、Runtime 和 Access 属于管理表面。
 - Artifact Review 必须支持文档和代码产物的安全预览、Base/Head Revision 对比、Git Diff、评论、Evidence、
   外部打开与验收，并持续显示绑定的 Revision、Hash、Renderer 状态和截断范围。

@@ -132,7 +132,7 @@ export function CommandPalette() {
   const { data: agents = [] } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
     queryFn: () => agentsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId && open,
+    enabled: !!selectedCompanyId && open && !verrailNavigationEnabled,
   });
 
   const { data: allProjects = [] } = useQuery({
@@ -372,10 +372,17 @@ export function CommandPalette() {
             <Plus className="mr-2 h-4 w-4" />
             {t("commandPalette.createAgent")}
           </CommandItem>
-          <CommandItem onSelect={() => go("/projects")}>
-            <Plus className="mr-2 h-4 w-4" />
-            {t("commandPalette.createProject")}
-          </CommandItem>
+          {verrailNavigationEnabled ? (
+            <CommandItem onSelect={() => go("/collections")}>
+              <FolderKanban className="mr-2 h-4 w-4" />
+              {t("commandPalette.manageCollections")}
+            </CommandItem>
+          ) : (
+            <CommandItem onSelect={() => go("/projects")}>
+              <Plus className="mr-2 h-4 w-4" />
+              {t("commandPalette.createProject")}
+            </CommandItem>
+          )}
         </CommandGroup>
 
         <CommandSeparator />
@@ -387,9 +394,13 @@ export function CommandPalette() {
                 <House className="mr-2 h-4 w-4" />
                 {t("nav.home")}
               </CommandItem>
-              <CommandItem onSelect={() => go("/projects")}>
+              <CommandItem onSelect={() => go("/targets")}>
+                <Target className="mr-2 h-4 w-4" />
+                {t("nav.targets")}
+              </CommandItem>
+              <CommandItem onSelect={() => go("/collections")}>
                 <FolderKanban className="mr-2 h-4 w-4" />
-                {t("nav.projects")}
+                {t("collections.title")}
               </CommandItem>
               <CommandItem onSelect={() => go("/agents")}>
                 <Bot className="mr-2 h-4 w-4" />

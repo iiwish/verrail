@@ -13,7 +13,6 @@ import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useToastActions } from "../context/ToastContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
-import { useDialogActions } from "../context/DialogContext";
 import { queryKeys } from "../lib/queryKeys";
 import { ProjectProperties, type ProjectConfigFieldKey, type ProjectFieldSaveState } from "../components/ProjectProperties";
 import { InlineEditor } from "../components/InlineEditor";
@@ -25,7 +24,6 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { PageTabBar } from "../components/PageTabBar";
 import { ProjectWorkspacesContent } from "../components/ProjectWorkspacesContent";
 import { SummarySlotCard } from "../components/SummarySlotCard";
-import { TargetList } from "../components/TargetList";
 import { MembershipAction } from "../components/MembershipAction";
 import { StarToggle } from "../components/StarToggle";
 import { collectLiveIssueIds } from "../lib/liveIssueIds";
@@ -41,7 +39,6 @@ import { cn } from "@/lib/utils";
 import { Tabs } from "@/components/ui/tabs";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { PluginSlotMount, PluginSlotOutlet, usePluginSlots } from "@/plugins/slots";
-import { Target } from "lucide-react";
 import { isVerrailNavigationEnabled } from "../lib/verrail-navigation";
 import {
   isStarred,
@@ -384,7 +381,6 @@ export function ProjectDetail() {
   const { pushToast } = useToastActions();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const { openNewTarget } = useDialogActions();
   const location = useLocation();
   const [fieldSaveStates, setFieldSaveStates] = useState<Partial<Record<ProjectConfigFieldKey, ProjectFieldSaveState>>>({});
   const [dismissedLeftProjectIds, setDismissedLeftProjectIds] = useState<Set<string>>(() => new Set());
@@ -720,6 +716,9 @@ export function ProjectDetail() {
   if (isLoading) return <PageSkeleton variant="detail" />;
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
   if (!project) return null;
+  if (verrailNavigationEnabled && activeTab === "targets") {
+    return <Navigate to="/targets" replace />;
+  }
   const showLeftProjectNotice =
     projectMembershipState === "left" && !dismissedLeftProjectIds.has(project.id);
   const projectMembershipPending =
@@ -822,12 +821,6 @@ export function ProjectDetail() {
           ) : null}
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {verrailNavigationEnabled ? (
-            <Button variant="default" size="sm" onClick={() => openNewTarget({ projectId: project.id })}>
-              <Target className="h-4 w-4" />
-              {t("targets.create.submit")}
-            </Button>
-          ) : null}
           <StarToggle
             size="button"
             starred={projectStarred}
@@ -921,23 +914,8 @@ export function ProjectDetail() {
               return asset.contentPath;
             }}
           />
-          {verrailNavigationEnabled && resolvedCompanyId ? (
-            <section className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold">{t("projects.detail.recentTargets")}</h3>
-                <Button asChild variant="ghost" size="sm">
-                  <Link to={`/projects/${canonicalProjectRef}/targets`}>{t("projects.detail.viewAllTargets")}</Link>
-                </Button>
-              </div>
-              <TargetList workspaceId={resolvedCompanyId} projectId={project.id} limit={5} />
-            </section>
-          ) : null}
         </div>
       )}
-
-      {activeTab === "targets" && resolvedCompanyId ? (
-        <TargetList workspaceId={resolvedCompanyId} projectId={project.id} />
-      ) : null}
 
       {activeTab === "list" && project?.id && resolvedCompanyId && (
         <div className="space-y-4">

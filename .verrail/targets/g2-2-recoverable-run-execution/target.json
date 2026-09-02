@@ -1,0 +1,29 @@
+{
+  "id": "g2-2-recoverable-run-execution",
+  "runtime_target_id": "45dfb4a5-43ce-48bc-af28-20d8a782e57b",
+  "runtime_target_revision_id": "5dba97f9-8adb-4b24-85b9-6e9c1896f0e1",
+  "runtime_workspace_id": "45571f9e-90d6-4847-9504-74971defcf6b",
+  "runtime_work_graph_id": "138c1bb4-1c9f-40da-86a5-99245a60c3f7",
+  "title": "G2.2 - Recoverable Run execution",
+  "intent": "Make Run execution recoverable and fenced across failure, retry, cancellation, and delayed callbacks.",
+  "scope": "Implement Workspace-scoped RunAttempt, ExecutionLease, monotonic RunEvent cursor, fencing, observable cancellation, retry, RunWorkflow orchestration, read model, and Runs UI for the HostTrusted local execution slice.",
+  "non_goals": [
+    "Implement remote Execution Gateway or Runner Fleet enrollment and transport",
+    "Claim ContainerIsolated, PrivateIsolated, KubernetesJob, or enterprise strong-isolation readiness",
+    "Implement IntegrationRun, HumanWorkResult, Artifact, Evidence, Submission, Review, or Acceptance closure",
+    "Replace inherited Paperclip heartbeat execution or Adapter implementations",
+    "Approve, merge, deploy, release, or create a ship record without independent review"
+  ],
+  "acceptance_criteria": [
+    "Run, RunAttempt, ExecutionLease, and RunEvent contracts are synchronized across DB, shared types, Go Domain API, TypeScript read model, and UI.",
+    "Each Attempt fixes Run, DeploymentRevision, AgentVersion, RuntimeProfile, executor identity, and a monotonically increasing fencing token.",
+    "An active lease can be claimed and heartbeated; expiry permits a new Attempt while stale tokens cannot advance authoritative state.",
+    "RunEvent cursors are monotonic, duplicate delivery is idempotent, and gaps are explicitly rejected and audited.",
+    "Completion, failure, retry, and observable cancellation advance RunAttempt, Run, and WorkNode only through domain commands.",
+    "RunWorkflow uses a stable ID, versioned signals, retry-safe commands, cancellation coordination, replay-safe state, and Continue-As-New.",
+    "The Runs surface shows Attempts, lease, fencing, cursor, cancellation, retry, and failure state; migration, tests, replay, typecheck, build, and browser fault acceptance pass."
+  ],
+  "status": "needs_review",
+  "created_at": "2026-09-02T06:42:54Z",
+  "updated_at": "2026-09-02T07:44:46Z"
+}

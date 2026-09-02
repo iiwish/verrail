@@ -1,23 +1,90 @@
-import type { CreateTargetInputV1, CreateTargetResponseV1 } from "@paperclipai/shared";
+import type {
+  ActivateGraphRevisionResponseV1,
+  CreateGraphRevisionInputV1,
+  CreateGraphRevisionResponseV1,
+  CreateRunInputV1,
+  CreateRunResponseV1,
+  CreateTargetInputV1,
+  CreateTargetResponseV1,
+  AgentLifecycleCommandResponseV1,
+  CreateAgentDefinitionInputV1,
+  UpdateAgentDefinitionInputV1,
+  PublishAgentVersionInputV1,
+  RecordEvaluationRunInputV1,
+  CreateDeploymentInputV1,
+  ReviseDeploymentInputV1,
+  CreateRunAttemptInputV1,
+  CreateRunAttemptResponseV1,
+  ReportRunEventInputV1,
+  ReportRunEventResponseV1,
+  RequestRunCancellationResponseV1,
+} from "@paperclipai/shared";
 import { HttpError } from "../errors.js";
 
-export interface CreateNativeTargetCommand {
+type HumanCommand = {
   workspaceId: string;
   principalType: "user";
   principalId: string;
   idempotencyKey: string;
+};
+
+type ServiceCommand = Omit<HumanCommand, "principalType"> & {
+  principalType: "service";
+};
+
+export interface CreateNativeTargetCommand extends HumanCommand {
   input: CreateTargetInputV1;
+}
+
+export interface CreateNativeGraphRevisionCommand extends HumanCommand {
+  targetId: string;
+  input: CreateGraphRevisionInputV1;
+}
+
+export interface ActivateNativeGraphRevisionCommand extends HumanCommand {
+  targetId: string;
+  graphRevisionId: string;
+}
+
+export interface CreateNativeRunCommand extends HumanCommand {
+  targetId: string;
+  graphRevisionId: string;
+  workNodeId: string;
+  input: CreateRunInputV1;
+}
+
+export interface CreateNativeRunAttemptCommand extends HumanCommand {
+  runId: string;
+  input: CreateRunAttemptInputV1;
+}
+
+export interface ReportNativeRunEventCommand extends ServiceCommand {
+  runId: string;
+  runAttemptId: string;
+  input: ReportRunEventInputV1;
+}
+
+export interface RequestNativeRunCancellationCommand extends HumanCommand {
+  runId: string;
 }
 
 export interface VerrailDomainApiClient {
   createTarget(command: CreateNativeTargetCommand): Promise<CreateTargetResponseV1>;
+  createGraphRevision(command: CreateNativeGraphRevisionCommand): Promise<CreateGraphRevisionResponseV1>;
+  activateGraphRevision(command: ActivateNativeGraphRevisionCommand): Promise<ActivateGraphRevisionResponseV1>;
+  createRun(command: CreateNativeRunCommand): Promise<CreateRunResponseV1>;
+  createRunAttempt(command: CreateNativeRunAttemptCommand): Promise<CreateRunAttemptResponseV1>;
+  reportRunEvent(command: ReportNativeRunEventCommand): Promise<ReportRunEventResponseV1>;
+  requestRunCancellation(command: RequestNativeRunCancellationCommand): Promise<RequestRunCancellationResponseV1>;
+  createAgentDefinition(command: HumanCommand & { input: CreateAgentDefinitionInputV1 }): Promise<AgentLifecycleCommandResponseV1>;
+  updateAgentDefinition(command: HumanCommand & { definitionId: string; input: UpdateAgentDefinitionInputV1 }): Promise<AgentLifecycleCommandResponseV1>;
+  publishAgentVersion(command: HumanCommand & { definitionId: string; input: PublishAgentVersionInputV1 }): Promise<AgentLifecycleCommandResponseV1>;
+  recordEvaluationRun(command: HumanCommand & { input: RecordEvaluationRunInputV1 }): Promise<AgentLifecycleCommandResponseV1>;
+  createDeployment(command: HumanCommand & { input: CreateDeploymentInputV1 }): Promise<AgentLifecycleCommandResponseV1>;
+  reviseDeployment(command: HumanCommand & { deploymentId: string; input: ReviseDeploymentInputV1 }): Promise<AgentLifecycleCommandResponseV1>;
 }
 
-type DomainApiErrorPayload = {
-  error?: unknown;
-  code?: unknown;
-  retryable?: unknown;
-};
+type DomainApiErrorPayload = { error?: unknown; code?: unknown; retryable?: unknown };
 
 export function createVerrailDomainApiClient(options: {
   baseUrl?: string;
@@ -31,50 +98,56 @@ export function createVerrailDomainApiClient(options: {
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? 15_000;
 
-  return {
-    async createTarget(command) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      let response: Response;
-      try {
-        response = await fetchImpl(
-          `${baseUrl}/v1/workspaces/${encodeURIComponent(command.workspaceId)}/targets`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-              "Idempotency-Key": command.idempotencyKey,
-              "X-Verrail-Principal-Type": command.principalType,
-              "X-Verrail-Principal-Id": command.principalId,
-            },
-            body: JSON.stringify(command.input),
-            signal: controller.signal,
-          },
-        );
-      } catch (error) {
-        throw new HttpError(503, "Verrail Domain API is unavailable", {
-          code: "TARGET_DOMAIN_API_UNAVAILABLE",
-          retryable: true,
-          cause: error instanceof Error ? error.message : String(error),
-        });
-      } finally {
-        clearTimeout(timer);
-      }
+  async function send<T>(command: HumanCommand | ServiceCommand, path: string, body?: unknown, method = "POST"): Promise<T> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let response: Response;
+    try {
+      response = await fetchImpl(`${baseUrl}${path}`, {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          "Idempotency-Key": command.idempotencyKey,
+          "X-Verrail-Principal-Type": command.principalType,
+          "X-Verrail-Principal-Id": command.principalId,
+        },
+        body: JSON.stringify(body ?? {}),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      throw new HttpError(503, "Verrail Domain API is unavailable", {
+        code: "TARGET_DOMAIN_API_UNAVAILABLE",
+        retryable: true,
+        cause: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    const payload = await response.json().catch(() => ({})) as DomainApiErrorPayload | T;
+    if (!response.ok) {
+      const error = payload as DomainApiErrorPayload;
+      throw new HttpError(response.status, typeof error.error === "string" ? error.error : "Domain command failed", {
+        code: typeof error.code === "string" ? error.code : "DOMAIN_COMMAND_FAILED",
+        retryable: error.retryable === true,
+      });
+    }
+    return payload as T;
+  }
 
-      const payload = await response.json().catch(() => ({})) as DomainApiErrorPayload | CreateTargetResponseV1;
-      if (!response.ok) {
-        const error = payload as DomainApiErrorPayload;
-        throw new HttpError(
-          response.status,
-          typeof error.error === "string" ? error.error : "Target creation failed",
-          {
-            code: typeof error.code === "string" ? error.code : "TARGET_CREATE_FAILED",
-            retryable: error.retryable === true,
-          },
-        );
-      }
-      return payload as CreateTargetResponseV1;
-    },
+  return {
+    createTarget: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/targets`, command.input),
+    createGraphRevision: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/targets/${encodeURIComponent(command.targetId)}/graph-revisions`, command.input),
+    activateGraphRevision: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/targets/${encodeURIComponent(command.targetId)}/graph-revisions/${encodeURIComponent(command.graphRevisionId)}/activate`),
+    createRun: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/targets/${encodeURIComponent(command.targetId)}/graph-revisions/${encodeURIComponent(command.graphRevisionId)}/nodes/${encodeURIComponent(command.workNodeId)}/runs`, command.input),
+    createRunAttempt: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/runs/${encodeURIComponent(command.runId)}/attempts`, command.input),
+    reportRunEvent: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/runs/${encodeURIComponent(command.runId)}/attempts/${encodeURIComponent(command.runAttemptId)}/events`, command.input),
+    requestRunCancellation: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/runs/${encodeURIComponent(command.runId)}/cancel`),
+    createAgentDefinition: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/agent-definitions`, command.input),
+    updateAgentDefinition: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/agent-definitions/${encodeURIComponent(command.definitionId)}`, command.input, "PATCH"),
+    publishAgentVersion: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/agent-definitions/${encodeURIComponent(command.definitionId)}/versions`, command.input),
+    recordEvaluationRun: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/evaluation-runs`, command.input),
+    createDeployment: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/deployments`, command.input),
+    reviseDeployment: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/deployments/${encodeURIComponent(command.deploymentId)}/revisions`, command.input),
   };
 }

@@ -102,7 +102,10 @@ import { filterHiddenInstanceSettingsPath, normalizeRememberedInstanceSettingsPa
 import { isVerrailNavigationEnabled, workspaceLandingRoute } from "./lib/verrail-navigation";
 import { VerrailHome } from "./pages/VerrailHome";
 import { VerrailChat } from "./pages/VerrailChat";
+import { Targets } from "./pages/Targets";
+import { Collections } from "./pages/Collections";
 import { TargetWorkbench } from "./pages/TargetWorkbench";
+import { VerrailAgents } from "./pages/VerrailAgents";
 
 const CompanyExport = lazy(() =>
   import("./pages/CompanyExport").then((module) => ({ default: module.CompanyExport })),
@@ -116,13 +119,14 @@ function boardRoutes() {
       <Route path="dashboard/live" element={<DashboardLive />} />
       <Route element={<VerrailNavigationGate />}>
         <Route path="home" element={<VerrailHome />} />
-        <Route path="chat" element={<VerrailChat />} />
-        <Route path="chat/:conversationId" element={<VerrailChat />} />
-        <Route path="targets" element={<Navigate to="/projects" replace />} />
+        <Route path="chat/:conversationId?" element={<VerrailChat />} />
+        <Route path="targets" element={<Targets />} />
+        <Route path="collections" element={<Collections />} />
         <Route path="targets/:targetId" element={<TargetOverviewRedirect />} />
         <Route path="targets/:targetId/:tab" element={<TargetWorkbench />} />
         <Route path="targets/:targetId/revisions/:targetRevisionId" element={<TargetWorkbench />} />
-        <Route path="projects/:projectId/targets" element={<ProjectDetail />} />
+        <Route path="agents" element={<VerrailAgents />} />
+        <Route path="projects/:projectId/targets" element={<Navigate to="/collections" replace />} />
         <Route path="projects/:projectId/legacy-work" element={<ProjectDetail />} />
         <Route path="infrastructure" element={<Navigate to="/infrastructure/secrets" replace />} />
         <Route
@@ -422,7 +426,7 @@ function WorkspaceIndexRedirect() {
 
 function TargetOverviewRedirect() {
   const { targetId } = useParams<{ targetId?: string }>();
-  return <Navigate to={targetId ? `/targets/${targetId}/overview` : "/projects"} replace />;
+  return <Navigate to={targetId ? `/targets/${targetId}/overview` : "/targets"} replace />;
 }
 
 function VerrailNavigationGate() {
@@ -688,6 +692,7 @@ export function App() {
           <Route path="chat" element={<UnprefixedBoardRedirect />} />
           <Route path="chat/:conversationId" element={<UnprefixedBoardRedirect />} />
           <Route path="targets" element={<UnprefixedBoardRedirect />} />
+          <Route path="collections" element={<UnprefixedBoardRedirect />} />
           <Route path="targets/:targetId" element={<UnprefixedBoardRedirect />} />
           <Route path="targets/:targetId/*" element={<UnprefixedBoardRedirect />} />
           <Route path="infrastructure" element={<UnprefixedBoardRedirect />} />

@@ -773,14 +773,26 @@ export function agentService(db: Db) {
 
     create: async (companyId: string, data: Omit<typeof agents.$inferInsert, "companyId">, options?: CreateAgentOptions) => {
       assertBuiltInAgentMetadataMutationAllowed(null, data.metadata, options);
-      if (data.reportsTo) {
-        await ensureManager(companyId, data.reportsTo);
-      }
 
       const existingAgents = await db
-        .select({ id: agents.id, name: agents.name, status: agents.status })
+        .select({
+          id: agents.id,
+          name: agents.name,
+          status: agents.status,
+          metadata: agents.metadata,
+        })
         .from(agents)
         .where(eq(agents.companyId, companyId));
+      const reportsTo = data.reportsTo === undefined
+        ? existingAgents.find((agent) =>
+            readBuiltInAgentMarker(agent.metadata)?.key === "director"
+            && agent.status !== "pending_approval"
+            && agent.status !== "terminated"
+          )?.id ?? null
+        : data.reportsTo;
+      if (reportsTo) {
+        await ensureManager(companyId, reportsTo);
+      }
       const uniqueName = deduplicateAgentName(data.name, existingAgents);
 
       const role = data.role ?? "general";
@@ -815,6 +827,7 @@ export function agentService(db: Db) {
             ...data,
             name: uniqueName,
             companyId,
+            reportsTo,
             role,
             adapterType,
             adapterConfig,

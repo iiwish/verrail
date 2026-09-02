@@ -14,7 +14,7 @@ import type {
   CreateConversationInput,
   UpdateConversationInput,
 } from "@paperclipai/shared";
-import { conflict } from "../errors.js";
+import { conflict, forbidden } from "../errors.js";
 
 type ConversationActor = {
   principalType: "user" | "agent";
@@ -89,7 +89,13 @@ export function conversationService(db: Db) {
       workspaceId: string,
       input: CreateConversationInput,
       actor: ConversationActor,
+      options: { trustedContext?: boolean } = {},
     ): Promise<ConversationDetail> => {
+      if (input.contextBindings.length > 0 && !options.trustedContext) {
+        throw forbidden("Conversation context bindings are server-owned", {
+          code: "CONVERSATION_CONTEXT_BINDING_FORBIDDEN",
+        });
+      }
       return db.transaction(async (tx) => {
         const conversation = await tx
           .insert(verrailConversations)

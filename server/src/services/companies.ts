@@ -42,6 +42,7 @@ import {
   assertVerrailNavigationCanEnable,
   lockVerrailNavigationRouteOwnership,
 } from "./verrail-navigation.js";
+import { agentLifecycleService } from "./agent-lifecycle.js";
 
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -64,6 +65,7 @@ export function companyService(db: Db) {
   const environmentsSvc = environmentService(db);
   const heartbeat = heartbeatService(db);
   const builtInAgents = builtInAgentService(db);
+  const agentLifecycle = agentLifecycleService(db);
 
   type CompanyTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -295,6 +297,7 @@ export function companyService(db: Db) {
         : await createCompanyWithUniquePrefix(data);
       await environmentsSvc.ensureLocalEnvironment(created.id);
       await builtInAgents.autoProvisionBundledAgents(created.id);
+      await agentLifecycle.ensurePausedDefault(created.id);
       const row = await getCompanyQuery(db)
         .where(eq(companies.id, created.id))
         .then((rows) => rows[0] ?? null);

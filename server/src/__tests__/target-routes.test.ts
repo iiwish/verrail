@@ -1,334 +1,141 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { TargetReadModelV1 } from "@paperclipai/shared";
-import { HttpError } from "../errors.js";
+import type { TargetReadModelV1, TargetWorkspaceV1 } from "@paperclipai/shared";
 
-const mockTargetService = vi.hoisted(() => ({
-  list: vi.fn(),
-  getByTargetId: vi.fn(),
-  getByRevisionId: vi.fn(),
-  register: vi.fn(),
-  reconcile: vi.fn(),
-}));
-const mockAccessService = vi.hoisted(() => ({ decide: vi.fn() }));
-const mockLogActivity = vi.hoisted(() => vi.fn());
-const mockCurrentSourceRows = vi.hoisted(() => vi.fn());
-const mockCreateNativeTarget = vi.hoisted(() => vi.fn());
+const targetService = vi.hoisted(() => ({ list: vi.fn(), getByTargetId: vi.fn(), getByRevisionId: vi.fn(), workspace: vi.fn() }));
+const conversationService = vi.hoisted(() => ({ create: vi.fn() }));
+const logActivity = vi.hoisted(() => vi.fn());
 
 vi.mock("../services/index.js", () => ({
-  targetReadModelService: () => mockTargetService,
-  accessService: () => mockAccessService,
+  targetReadModelService: () => targetService,
+  conversationService: () => conversationService,
   createVerrailDomainApiClient: () => null,
-  logActivity: mockLogActivity,
+  logActivity,
 }));
 
 const WORKSPACE_ID = "4f9f7195-e5ce-4fd0-b8c7-ed151347e6e0";
-const TARGET_ID = "b80f266a-87ea-57f0-81bd-c4f04e4d576e";
-const REVISION_ID = "0de2d166-850e-5c74-ab63-beb86129b52a";
-const SOURCE_ID = "41c96b31-d0d9-420a-84dd-34638354040c";
+const TARGET_ID = "b80f266a-87ea-47f0-81bd-c4f04e4d576e";
+const REVISION_ID = "0de2d166-850e-4c74-ab63-beb86129b52a";
+const GRAPH_ID = "2de2d166-850e-4c74-ab63-beb86129b52a";
+const GRAPH_REVISION_ID = "3de2d166-850e-4c74-ab63-beb86129b52a";
+const NODE_ID = "4de2d166-850e-4c74-ab63-beb86129b52a";
 
-function model(overrides: Partial<TargetReadModelV1> = {}): TargetReadModelV1 {
+function model(): TargetReadModelV1 {
   return {
     schemaVersion: 1,
-    projectionPolicyVersion: "g1.v1",
+    readModelPolicyVersion: "native.v1",
     targetId: TARGET_ID,
     activeTargetRevisionId: REVISION_ID,
     workspaceId: WORKSPACE_ID,
-    authority: { kind: "compatibility", writer: "typescript-compatibility" },
-    project: { id: "f52f936d-c5fb-4457-a023-ad062ef667a5", name: "Project" },
-    source: {
-      type: "issue",
-      id: SOURCE_ID,
-      identifier: "VER-1",
-      href: "/VER/issues/VER-1",
-      updatedAt: "2026-08-26T10:00:00.000Z",
-      revisionKey: "2026-08-26T10:00:00.000Z",
-    },
-    title: "Target",
+    collection: null,
+    title: "Native Target",
     summary: null,
-    status: "active",
-    outcomeOwner: null,
-    currentStage: { key: "execute", label: "Execute" },
-    risk: { level: "unknown" },
-    attentionSummary: { total: 0, highestSeverity: null },
+    status: "draft",
+    outcomeOwner: { principalType: "user", principalId: "user-1", displayName: "Owner" },
+    currentStage: { key: "define", label: "Define" },
+    risk: { level: "medium" },
+    attentionSummary: { total: 1, highestSeverity: "info" },
     artifactSummary: { count: 0, latestRevisionId: null },
     evidenceSummary: { count: 0, passed: 0, failed: 0, inconclusive: 0, coverage: "unknown" },
     runSummary: { active: 0, failed: 0, latestRunId: null, latestRunAt: null },
-    definition: null,
-    compatibility: { readOnly: true, completionUnverified: false, missingFields: [], warnings: [] },
-    createdAt: "2026-08-26T09:00:00.000Z",
-    updatedAt: "2026-08-26T10:00:00.000Z",
-    projectedAt: "2026-08-26T10:00:01.000Z",
-    ...overrides,
+    definition: { goal: "Deliver", constraints: [], acceptanceCriteria: [{ id: "criterion-1", title: "Done", description: null }], deadline: null, policySummary: null, resourceRefs: [] },
+    createdAt: "2026-09-01T08:00:00.000Z",
+    updatedAt: "2026-09-01T08:00:00.000Z",
+    projectedAt: "2026-09-01T08:00:01.000Z",
   };
 }
 
-async function createApp(actorOverrides: Record<string, unknown> = {}) {
-  const { errorHandler } = await vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js");
-  const { targetRoutes } = await vi.importActual<typeof import("../routes/targets.js")>("../routes/targets.js");
+function workspace(): TargetWorkspaceV1 {
+  return { schemaVersion: 1, targetId: TARGET_ID, targetRevisionId: REVISION_ID, workspaceId: WORKSPACE_ID, generatedAt: "2026-09-01T08:00:01.000Z", graph: null, stages: [], work: [], attention: [], submissions: [], artifacts: [], evidence: [], runs: [], timeline: [] };
+}
+
+async function createApp(domainApi: any) {
+  const [{ targetRoutes }, { errorHandler }] = await Promise.all([import("../routes/targets.js"), import("../middleware/index.js")]);
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
-    (req as any).actor = {
-      type: "board",
-      userId: "user-1",
-      companyIds: [WORKSPACE_ID],
-      memberships: [{ companyId: WORKSPACE_ID, membershipRole: "owner", status: "active" }],
-      source: "session",
-      isInstanceAdmin: true,
-      ...actorOverrides,
-    };
+    (req as any).actor = { type: "board", userId: "user-1", companyIds: [WORKSPACE_ID], memberships: [{ companyId: WORKSPACE_ID, membershipRole: "owner", status: "active" }], source: "session", isInstanceAdmin: true };
     next();
   });
-  const db = {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: () => Promise.resolve(mockCurrentSourceRows()),
-        }),
-      }),
-    }),
-  };
-  app.use("/api", targetRoutes(db as any, {
-    domainApiClient: { createTarget: mockCreateNativeTarget },
-  }));
+  app.use("/api", targetRoutes({} as any, { domainApiClient: domainApi }));
   app.use(errorHandler);
   return app;
 }
 
-describe("Target read routes", () => {
+describe("native Target routes", () => {
+  const domainApi = {
+    createTarget: vi.fn(),
+    createGraphRevision: vi.fn(),
+    activateGraphRevision: vi.fn(),
+    createRun: vi.fn(),
+    createRunAttempt: vi.fn(),
+    reportRunEvent: vi.fn(),
+    requestRunCancellation: vi.fn(),
+  };
   beforeEach(() => {
     vi.clearAllMocks();
-    mockTargetService.list.mockResolvedValue([model()]);
-    mockTargetService.getByTargetId.mockResolvedValue(model());
-    mockTargetService.getByRevisionId.mockResolvedValue(model());
-    mockTargetService.register.mockResolvedValue(model());
-    mockTargetService.reconcile.mockResolvedValue(model());
-    mockAccessService.decide.mockResolvedValue({ allowed: true });
-    mockLogActivity.mockResolvedValue(undefined);
-    mockCreateNativeTarget.mockResolvedValue({
-      schemaVersion: 1,
-      targetId: TARGET_ID,
-      targetRevisionId: REVISION_ID,
-      workbenchHref: `/targets/${TARGET_ID}/overview`,
-      replayed: false,
-    });
-    mockCurrentSourceRows.mockReturnValue([{ projectId: model().project!.id }]);
+    targetService.list.mockResolvedValue([model()]);
+    targetService.getByTargetId.mockResolvedValue(model());
+    targetService.getByRevisionId.mockResolvedValue(model());
+    targetService.workspace.mockResolvedValue(workspace());
+    domainApi.createTarget.mockResolvedValue({ schemaVersion: 1, targetId: TARGET_ID, targetRevisionId: REVISION_ID, workGraphId: GRAPH_ID, graphRevisionId: GRAPH_REVISION_ID, workbenchHref: `/targets/${TARGET_ID}/overview`, replayed: false });
+    domainApi.createGraphRevision.mockResolvedValue({ schemaVersion: 1, targetId: TARGET_ID, targetRevisionId: REVISION_ID, workGraphId: GRAPH_ID, graphRevisionId: GRAPH_REVISION_ID, revisionNumber: 2, replayed: false });
+    domainApi.activateGraphRevision.mockResolvedValue({ schemaVersion: 1, targetId: TARGET_ID, targetRevisionId: REVISION_ID, workGraphId: GRAPH_ID, graphRevisionId: GRAPH_REVISION_ID, revisionNumber: 2, replayed: false, activatedAt: "2026-09-01T08:00:00Z" });
+    domainApi.createRun.mockResolvedValue({ schemaVersion: 1, runId: "5de2d166-850e-4c74-ab63-beb86129b52a", targetId: TARGET_ID, targetRevisionId: REVISION_ID, graphRevisionId: GRAPH_REVISION_ID, workNodeId: NODE_ID, status: "queued", replayed: false });
+    domainApi.createRunAttempt.mockResolvedValue({ schemaVersion: 1, runId: "5de2d166-850e-4c74-ab63-beb86129b52a", runAttemptId: "6de2d166-850e-4c74-ab63-beb86129b52a", leaseId: "7de2d166-850e-4c74-ab63-beb86129b52a", attemptNumber: 1, fencingToken: 1, status: "pending", leaseStatus: "offered", expiresAt: "2026-09-01T08:02:00Z", replayed: false });
+    domainApi.requestRunCancellation.mockResolvedValue({ schemaVersion: 1, runId: "5de2d166-850e-4c74-ab63-beb86129b52a", runAttemptId: "6de2d166-850e-4c74-ab63-beb86129b52a", runStatus: "cancel_requested", attemptStatus: "cancel_requested", replayed: false });
   });
 
-  it("lists only authorization-filtered Targets and emits a principal-bound cursor", async () => {
-    const second = model({
-      targetId: "78a5eefd-e3ef-5b2a-a7ba-7cd1036e71e5",
-      activeTargetRevisionId: "a64f2ab0-01d0-5f7f-a7f1-b3260ae00554",
-      source: { ...model().source, id: "ee7e3b25-d7f2-4a40-8af0-2c9ac66d3788" },
-      updatedAt: "2026-08-26T09:00:00.000Z",
-    });
-    mockTargetService.list.mockResolvedValue([model(), second]);
-    const app = await createApp();
-
-    const first = await request(app).get(`/api/workspaces/${WORKSPACE_ID}/targets?limit=1`);
-    expect(first.status).toBe(200);
-    expect(first.body.items).toHaveLength(1);
-    expect(first.body.summary).toEqual({
-      total: 2,
-      open: 2,
-      attention: 0,
-      byProject: {
-        [model().project!.id]: { total: 2, open: 2, attention: 0 },
-      },
-    });
-    expect(first.body.nextCursor).toEqual(expect.any(String));
-    expect(first.headers.etag).toEqual(expect.any(String));
-
-    const unchanged = await request(app)
-      .get(`/api/workspaces/${WORKSPACE_ID}/targets?limit=1`)
-      .set("If-None-Match", first.headers.etag);
-    expect(unchanged.status).toBe(304);
-
-    const next = await request(app).get(
-      `/api/workspaces/${WORKSPACE_ID}/targets?limit=1&cursor=${encodeURIComponent(first.body.nextCursor)}`,
-    );
-    expect(next.status).toBe(200);
-    expect(next.body.items[0].targetId).toBe(second.targetId);
-
-    const differentPrincipal = await createApp({ userId: "user-2" });
-    const principalScoped = await request(differentPrincipal)
-      .get(`/api/workspaces/${WORKSPACE_ID}/targets?limit=1`);
-    expect(principalScoped.headers.etag).not.toBe(first.headers.etag);
-    const rejected = await request(differentPrincipal).get(
-      `/api/workspaces/${WORKSPACE_ID}/targets?limit=1&cursor=${encodeURIComponent(first.body.nextCursor)}`,
-    );
-    expect(rejected.status).toBe(400);
+  it("lists and reads only native Targets", async () => {
+    const app = await createApp(domainApi);
+    const listed = await request(app).get(`/api/workspaces/${WORKSPACE_ID}/targets`);
+    expect(listed.status).toBe(200);
+    expect(listed.body.readModelPolicyVersion).toBe("native.v1");
+    expect(listed.body.items).toEqual([expect.objectContaining({ targetId: TARGET_ID })]);
+    expect((await request(app).get(`/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}/workspace`)).body).toEqual(workspace());
   });
 
-  it("returns 404 rather than leaking a denied Target", async () => {
-    mockAccessService.decide.mockResolvedValue({ allowed: false });
-    const app = await createApp();
-    const response = await request(app).get(`/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}`);
-    expect(response.status).toBe(404);
-  });
-
-  it("returns the stable retryable error when an active projection snapshot is unavailable", async () => {
-    mockTargetService.getByTargetId.mockRejectedValue(new HttpError(503, "Target projection unavailable", {
-      code: "TARGET_PROJECTION_UNAVAILABLE",
-      retryable: true,
-    }));
-    const app = await createApp();
-
-    const response = await request(app).get(`/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}`);
-
-    expect(response.status).toBe(503);
-    expect(response.body).toMatchObject({
-      code: "TARGET_PROJECTION_UNAVAILABLE",
-      details: { retryable: true },
-    });
-  });
-
-  it("authorizes stale active reads against the source's current Project", async () => {
-    const currentProjectId = "693ba99a-33b5-4e15-9ce2-f138d55b46f1";
-    mockCurrentSourceRows.mockReturnValue([{ projectId: currentProjectId }]);
-    const app = await createApp();
-
-    const response = await request(app).get(`/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}`);
-
-    expect(response.status).toBe(200);
-    expect(mockAccessService.decide).toHaveBeenCalledWith(expect.objectContaining({
-      resource: expect.objectContaining({ projectId: currentProjectId }),
-    }));
-  });
-
-  it("uses the immutable snapshot scope when a historical revision source is gone", async () => {
-    mockCurrentSourceRows.mockReturnValue([]);
-    mockTargetService.getByRevisionId.mockResolvedValue(model({
-      compatibility: {
-        ...model().compatibility,
-        warnings: ["source_missing"],
-      },
-    }));
-    const app = await createApp();
-
-    const response = await request(app).get(
-      `/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}/revisions/${REVISION_ID}`,
-    );
-
-    expect(response.status).toBe(200);
-    expect(mockAccessService.decide).toHaveBeenCalledWith(expect.objectContaining({
-      resource: expect.objectContaining({ projectId: model().project!.id }),
-    }));
-  });
-
-  it("filters authorization before pagination and cursor calculation", async () => {
-    const visible = model({
-      targetId: "78a5eefd-e3ef-5b2a-a7ba-7cd1036e71e5",
-      activeTargetRevisionId: "a64f2ab0-01d0-5f7f-a7f1-b3260ae00554",
-      source: { ...model().source, id: "ee7e3b25-d7f2-4a40-8af0-2c9ac66d3788" },
-      updatedAt: "2026-08-26T09:00:00.000Z",
-    });
-    mockTargetService.list.mockResolvedValue([model(), visible]);
-    mockAccessService.decide.mockImplementation(async ({ resource }: { resource: { issueId?: string } }) => ({
-      allowed: resource.issueId === visible.source.id,
-    }));
-    const app = await createApp();
-
-    const response = await request(app).get(`/api/workspaces/${WORKSPACE_ID}/targets?limit=1`);
-    expect(response.status).toBe(200);
-    expect(response.body.items.map((item: TargetReadModelV1) => item.targetId)).toEqual([visible.targetId]);
-    expect(response.body.summary).toEqual({
-      total: 1,
-      open: 1,
-      attention: 0,
-      byProject: {
-        [visible.project!.id]: { total: 1, open: 1, attention: 0 },
-      },
-    });
-    expect(response.body.nextCursor).toBeNull();
-
-    const invalidLimit = await request(app).get(`/api/workspaces/${WORKSPACE_ID}/targets?limit=101`);
-    expect(invalidLimit.status).toBe(400);
-  });
-
-  it("registers explicit mappings only for an instance administrator and audits the mutation", async () => {
-    const app = await createApp();
-    const response = await request(app)
-      .post(`/api/workspaces/${WORKSPACE_ID}/target-projections`)
-      .send({ sourceType: "issue", sourceId: SOURCE_ID, eligibilityReason: "operator_mapping" });
+  it("proxies human Target creation and returns its initial graph identities", async () => {
+    const app = await createApp(domainApi);
+    const response = await request(app).post(`/api/workspaces/${WORKSPACE_ID}/targets`).set("Idempotency-Key", "target:create:native").send({ title: "Native Target", outcomeOwner: { principalType: "user", principalId: "user-1" }, goal: "Deliver", constraints: [], acceptanceCriteria: [{ title: "Done" }], riskLevel: "medium" });
     expect(response.status).toBe(201);
-    expect(mockTargetService.register).toHaveBeenCalledWith(WORKSPACE_ID, {
-      sourceType: "issue",
-      sourceId: SOURCE_ID,
-      eligibilityReason: "operator_mapping",
-    });
-    expect(mockLogActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      action: "target.projection_registered",
-      entityId: TARGET_ID,
-    }));
-
-    const memberApp = await createApp({ isInstanceAdmin: false });
-    const denied = await request(memberApp)
-      .post(`/api/workspaces/${WORKSPACE_ID}/target-projections`)
-      .send({ sourceType: "issue", sourceId: SOURCE_ID, eligibilityReason: "operator_mapping" });
-    expect(denied.status).toBe(403);
+    expect(response.body).toMatchObject({ workGraphId: GRAPH_ID, graphRevisionId: GRAPH_REVISION_ID });
+    expect(domainApi.createTarget).toHaveBeenCalledWith(expect.objectContaining({ input: expect.objectContaining({ resourceRefs: [] }) }));
   });
 
-  it("proxies a strict native Target command with principal-bound idempotency", async () => {
-    const app = await createApp();
-    const input = {
-      projectId: model().project!.id,
-      title: "Ship governed Target creation",
-      outcomeOwner: { principalType: "user", principalId: "user-1" },
-      goal: "Create a durable Target fact.",
-      constraints: ["Keep Go as the sole writer."],
-      acceptanceCriteria: [{ title: "Creation is idempotent" }],
-      riskLevel: "high",
-    };
-    const response = await request(app)
-      .post(`/api/workspaces/${WORKSPACE_ID}/targets`)
-      .set("Idempotency-Key", "target:create:route-test")
-      .send(input);
-
-    expect(response.status).toBe(201);
-    expect(response.body).toMatchObject({ targetId: TARGET_ID, targetRevisionId: REVISION_ID });
-    expect(mockCreateNativeTarget).toHaveBeenCalledWith({
-      workspaceId: WORKSPACE_ID,
-      principalType: "user",
-      principalId: "user-1",
-      idempotencyKey: "target:create:route-test",
-      input,
-    });
-
-    mockCreateNativeTarget.mockResolvedValueOnce({ ...response.body, replayed: true });
-    const replay = await request(app)
-      .post(`/api/workspaces/${WORKSPACE_ID}/targets`)
-      .set("Idempotency-Key", "target:create:route-test")
-      .send(input);
-    expect(replay.status).toBe(200);
+  it("creates, activates, and dispatches native graph facts", async () => {
+    const app = await createApp(domainApi);
+    const graph = await request(app).post(`/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}/graph-revisions`).set("Idempotency-Key", "graph:create:native").send({ expectedTargetRevisionId: REVISION_ID, nodes: [{ nodeKey: "implement", kind: "agent_task", stage: "execute", title: "Implement", completionDefinition: "Return a result" }] });
+    expect(graph.status).toBe(201);
+    const activated = await request(app).post(`/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}/graph-revisions/${GRAPH_REVISION_ID}/activate`).set("Idempotency-Key", "graph:activate:native").send({});
+    expect(activated.status).toBe(200);
+    const run = await request(app).post(`/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}/graph-revisions/${GRAPH_REVISION_ID}/nodes/${NODE_ID}/runs`).set("Idempotency-Key", "run:create:native").send({ kind: "agent_run", actor: { principalType: "agent", principalId: "agent-1" } });
+    expect(run.status).toBe(201);
+    expect(domainApi.createRun).toHaveBeenCalledWith(expect.objectContaining({ workNodeId: NODE_ID }));
   });
 
-  it("fails native creation closed for invalid command keys and denied Projects", async () => {
-    const input = {
-      projectId: model().project!.id,
-      title: "Target",
-      outcomeOwner: { principalType: "user", principalId: "user-1" },
-      goal: "Outcome",
-      constraints: [],
-      acceptanceCriteria: [{ title: "Accepted" }],
-      riskLevel: "medium",
-    };
-    const app = await createApp();
-    const invalidKey = await request(app)
-      .post(`/api/workspaces/${WORKSPACE_ID}/targets`)
-      .set("Idempotency-Key", "short")
-      .send(input);
-    expect(invalidKey.status).toBe(400);
-    expect(mockCreateNativeTarget).not.toHaveBeenCalled();
+  it("starts and cancels a recoverable native Run attempt", async () => {
+    const app = await createApp(domainApi);
+    const runId = "5de2d166-850e-4c74-ab63-beb86129b52a";
+    const attempt = await request(app)
+      .post(`/api/workspaces/${WORKSPACE_ID}/runs/${runId}/attempts`)
+      .set("Idempotency-Key", "attempt:create:native")
+      .send({ runtimeProfile: "host_trusted", executor: { principalType: "service", principalId: "host-trusted-local" } });
+    expect(attempt.status).toBe(201);
+    expect(domainApi.createRunAttempt).toHaveBeenCalledWith(expect.objectContaining({ runId }));
 
-    mockAccessService.decide.mockResolvedValueOnce({ allowed: false });
-    const denied = await request(app)
-      .post(`/api/workspaces/${WORKSPACE_ID}/targets`)
-      .set("Idempotency-Key", "target:create:denied")
-      .send(input);
-    expect(denied.status).toBe(404);
-    expect(mockCreateNativeTarget).not.toHaveBeenCalled();
+    const canceled = await request(app)
+      .post(`/api/workspaces/${WORKSPACE_ID}/runs/${runId}/cancel`)
+      .set("Idempotency-Key", "run:cancel:native")
+      .send({});
+    expect(canceled.status).toBe(200);
+    expect(domainApi.requestRunCancellation).toHaveBeenCalledWith(expect.objectContaining({ runId }));
+  });
+
+  it("does not expose compatibility projection mutation routes", async () => {
+    const app = await createApp(domainApi);
+    expect((await request(app).post(`/api/workspaces/${WORKSPACE_ID}/target-projections`).send({})).status).toBe(404);
+    expect((await request(app).post(`/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}/reconcile`).send({})).status).toBe(404);
   });
 });

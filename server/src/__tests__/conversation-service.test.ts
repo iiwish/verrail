@@ -60,6 +60,7 @@ describeEmbeddedPostgres("conversationService", () => {
         }],
       },
       { principalType: "user", principalId: "user-1" },
+      { trustedContext: true },
     );
 
     expect(created).toMatchObject({

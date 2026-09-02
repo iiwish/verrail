@@ -7,14 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TargetList } from "./TargetList";
 
 const list = vi.hoisted(() => vi.fn());
-const listForProject = vi.hoisted(() => vi.fn());
+const listForCollection = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children, ...props }: { to: string; children: React.ReactNode }) => (
     <a href={to} {...props}>{children}</a>
   ),
 }));
-vi.mock("../api/targets", () => ({ targetsApi: { list, listForProject } }));
+vi.mock("../api/targets", () => ({ targetsApi: { list, listForCollection } }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -42,12 +42,12 @@ describe("TargetList", () => {
     vi.clearAllMocks();
   });
 
-  async function renderList(projectId?: string) {
+  async function renderList(collectionId?: string) {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <TargetList workspaceId="workspace-1" projectId={projectId} />
+          <TargetList workspaceId="workspace-1" collectionId={collectionId} />
         </QueryClientProvider>,
       );
     });
@@ -73,10 +73,10 @@ describe("TargetList", () => {
     expect(container.querySelector('[aria-label="Needs attention"]')).not.toBeNull();
   });
 
-  it("uses the project-scoped endpoint and renders an honest empty state", async () => {
-    listForProject.mockResolvedValue({ items: [] });
-    await renderList("project-1");
-    expect(listForProject).toHaveBeenCalledWith("workspace-1", "project-1", { limit: 50 });
+  it("uses the Collection-scoped endpoint and renders an honest empty state", async () => {
+    listForCollection.mockResolvedValue({ items: [] });
+    await renderList("collection-1");
+    expect(listForCollection).toHaveBeenCalledWith("workspace-1", "collection-1", { limit: 50 });
     expect(container.textContent).toContain("No targets are available");
     expect(container.textContent).not.toContain("New Target");
   });

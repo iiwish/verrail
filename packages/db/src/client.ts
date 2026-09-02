@@ -472,6 +472,11 @@ async function migrationStatementAlreadyApplied(
     return constraintExists(sql, addConstraintMatch[2]);
   }
 
+  const dropConstraintMatch = normalized.match(/^ALTER TABLE "([^"]+)" DROP CONSTRAINT(?: IF EXISTS)? "([^"]+)"/i);
+  if (dropConstraintMatch) {
+    return !(await constraintExists(sql, dropConstraintMatch[2]));
+  }
+
   // If we cannot reason about a statement safely, require manual migration.
   return false;
 }

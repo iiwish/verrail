@@ -54,7 +54,7 @@ Go 直接承载新的 Verrail 领域和 Temporal Workflow。现有 TypeScript �
 
 | 组件 | 目标职责 | 初始语言 |
 | --- | --- | --- |
-| Domain API | Workspace、Project、TargetRevision、Graph、Run、IntegrationRun、HumanWorkResult、Artifact、VerificationResult、Submission、Review、Acceptance | Go |
+| Domain API | Workspace、Collection、Target、TargetRevision、Graph、Run、IntegrationRun、HumanWorkResult、Artifact、VerificationResult、Submission、Review、Acceptance | Go |
 | Temporal Worker | Target/Agent Run Workflow、Integration 协调、人工等待、Timer、Signal、Activity 编排 | Go |
 | Execution Gateway | Session、Lease、事件流、Artifact 上传、取消和 fencing | Go |
 | Headless Runner | RuntimeProfile、进程生命周期、资源与隔离适配 | Go |
@@ -80,7 +80,7 @@ Go 直接承载新的 Verrail 领域和 Temporal Workflow。现有 TypeScript �
 | 阶段 | 内容 | 参考工作量 |
 | --- | --- | ---: |
 | 0 | 合同盘点、Temporal Spike、Go 工程基线、性能与故障基线 | 3 至 5 周 |
-| 1 | Workspace/Project/Target/TargetRevision、Outbox、认证与 API 基线 | 5 至 8 周 |
+| 1 | Workspace/Collection/Target/TargetRevision、Outbox、认证与 API 基线 | 5 至 8 周 |
 | 2 | Graph Engine、TargetWorkflow、RunWorkflow、兼容桥 | 6 至 10 周 |
 | 3 | Submission、Artifact、Evidence、Review、Acceptance 和一条 GitHub 闭环 | 8 至 12 周 |
 | 4 | Execution Gateway、Runner、Lease/Fencing、Secret 与 Artifact 数据面 | 8 至 14 周 |
@@ -117,6 +117,8 @@ AI 可以显著加速工程骨架、机械迁移、测试生成、合同同步�
 - 取代 ADR-0002 第 1、7、8 条关于控制平面语言和 Go 提取范围的结论；
 - 保留 ADR-0001 的硬分叉、许可证、可复用基座和渐进迁移决策；
 - 保留 ADR-0002 的独立执行平面、Runner 出站连接、SandboxDriver、Lease 和 fencing 决策。
+
+ADR-0005 明确 Target 直接属于 Workspace，Collection 只作为可选归类。本文中阶段与服务表的旧 Project 表达不构成 Target 层级。
 
 ## 否决方案
 

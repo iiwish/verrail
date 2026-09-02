@@ -4,12 +4,10 @@ import {
   ChevronLeft,
   FolderKanban,
   Plus,
-  Target,
 } from "lucide-react";
 import type { Project } from "@paperclipai/shared";
 import { Link, useParams } from "@/lib/router";
 import { projectsApi } from "../api/projects";
-import { targetsApi } from "../api/targets";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { useSidebar } from "../context/SidebarContext";
@@ -27,12 +25,9 @@ function projectNameOrder(left: Project, right: Project) {
 
 export function VerrailProjectsSidebar() {
   const { t } = useTranslation();
-  const {
-    projectId: routeProjectRef,
-    targetId: routeTargetId,
-  } = useParams<{ projectId?: string; targetId?: string }>();
+  const { projectId: routeProjectRef } = useParams<{ projectId?: string }>();
   const { selectedCompany, selectedCompanyId } = useCompany();
-  const { openNewProject, openNewTarget } = useDialogActions();
+  const { openNewProject } = useDialogActions();
   const { isMobile, setSidebarOpen } = useSidebar();
   const membershipsQuery = useResourceMemberships(selectedCompanyId);
   const projectsQuery = useQuery({
@@ -40,24 +35,12 @@ export function VerrailProjectsSidebar() {
     queryFn: () => projectsApi.list(selectedCompanyId!),
     enabled: Boolean(selectedCompanyId),
   });
-  const targetQuery = useQuery({
-    queryKey: queryKeys.targets.detail(selectedCompanyId ?? "__none__", routeTargetId ?? "__none__"),
-    queryFn: () => targetsApi.get(selectedCompanyId!, routeTargetId!),
-    enabled: Boolean(selectedCompanyId && routeTargetId),
-  });
-  const targetProjectId = targetQuery.data?.project?.id ?? null;
-  const activeProjectLookupRef = routeProjectRef ?? targetProjectId;
   const projectQuery = useQuery({
-    queryKey: [...queryKeys.projects.detail(activeProjectLookupRef ?? "__none__"), selectedCompanyId ?? null],
-    queryFn: () => projectsApi.get(activeProjectLookupRef!, selectedCompanyId ?? undefined),
-    enabled: Boolean(activeProjectLookupRef && selectedCompanyId),
+    queryKey: [...queryKeys.projects.detail(routeProjectRef ?? "__none__"), selectedCompanyId ?? null],
+    queryFn: () => projectsApi.get(routeProjectRef!, selectedCompanyId ?? undefined),
+    enabled: Boolean(routeProjectRef && selectedCompanyId),
   });
   const activeProject = projectQuery.data ?? null;
-  const targetsQuery = useQuery({
-    queryKey: queryKeys.targets.list(selectedCompanyId ?? "__none__", activeProject?.id, { limit: 50 }),
-    queryFn: () => targetsApi.listForProject(selectedCompanyId!, activeProject!.id, { limit: 50 }),
-    enabled: Boolean(selectedCompanyId && activeProject),
-  });
   const selectedProjects = useMemo(() => {
     const visible = (projectsQuery.data ?? []).filter((project) => {
       if (!membershipsQuery.isSuccess) return true;
@@ -73,13 +56,9 @@ export function VerrailProjectsSidebar() {
     if (isMobile) setSidebarOpen(false);
   };
 
-  const createLabel = activeProject ? t("targets.create.submit") : t("projects.add");
+  const createLabel = t("projects.add");
   const handleCreate = () => {
-    if (activeProject) {
-      openNewTarget({ projectId: activeProject.id });
-    } else {
-      openNewProject();
-    }
+    openNewProject();
     closeMobileSidebar();
   };
 
@@ -105,10 +84,10 @@ export function VerrailProjectsSidebar() {
           <Link
             to="/projects"
             onClick={closeMobileSidebar}
-            aria-current={!routeProjectRef && !routeTargetId ? "page" : undefined}
+            aria-current={!routeProjectRef ? "page" : undefined}
             className={cn(
               "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-semibold transition-colors",
-              !routeProjectRef && !routeTargetId
+              !routeProjectRef
                 ? "bg-accent text-foreground"
                 : "text-foreground hover:bg-accent/50",
             )}
@@ -136,7 +115,7 @@ export function VerrailProjectsSidebar() {
               const selected = isProjectSelected(project);
               const ref = projectRouteRef(project);
               return (
-                <div key={project.id} className="flex flex-col gap-0.5">
+                <div key={project.id}>
                   <SidebarNavItem
                     to={`/projects/${ref}/overview`}
                     label={project.name}
@@ -144,28 +123,6 @@ export function VerrailProjectsSidebar() {
                     active={selected}
                     labelClassName={selected ? "font-semibold text-foreground" : undefined}
                   />
-                  {selected ? (
-                    <div className="ml-5 flex flex-col gap-0.5 border-l border-border pl-1" data-testid="project-target-list">
-                      {targetsQuery.isLoading ? (
-                        <p className="px-4 py-1 text-xs text-muted-foreground">{t("targets.loading")}</p>
-                      ) : targetsQuery.error ? (
-                        <p className="px-4 py-1 text-xs text-destructive">{t("targets.loadFailed")}</p>
-                      ) : targetsQuery.data?.items.length ? (
-                        targetsQuery.data.items.map((target) => (
-                          <SidebarNavItem
-                            key={target.targetId}
-                            to={`/targets/${target.targetId}/overview`}
-                            label={target.title}
-                            icon={Target}
-                            active={routeTargetId === target.targetId}
-                            alert={target.attentionSummary.total > 0}
-                          />
-                        ))
-                      ) : (
-                        <p className="px-4 py-1 text-xs text-muted-foreground">{t("targets.empty")}</p>
-                      )}
-                    </div>
-                  ) : null}
                 </div>
               );
             })}

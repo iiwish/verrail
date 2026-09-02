@@ -1,0 +1,78 @@
+{
+  "target_id": "g2-2-recoverable-run-execution",
+  "run_id": "run-001",
+  "runtime_target": {
+    "workspace_id": "45571f9e-90d6-4847-9504-74971defcf6b",
+    "target_id": "45dfb4a5-43ce-48bc-af28-20d8a782e57b",
+    "target_revision_id": "5dba97f9-8adb-4b24-85b9-6e9c1896f0e1",
+    "graph_revision_id": "5fd67497-1f1b-460d-9d8d-dade637d5200",
+    "work_node_id": "eb49db29-7519-4caf-8649-8fbb43d39308",
+    "runtime_status": "draft",
+    "local_delivery_status": "needs_review"
+  },
+  "browser_acceptance": {
+    "route": "http://127.0.0.1:3100/MYW/targets/45dfb4a5-43ce-48bc-af28-20d8a782e57b/runs",
+    "run_id": "2e75411b-163f-4cef-9c66-1ec400fd0d31",
+    "deployment_revision_id": "020099c3-5dc1-4b9a-bf4d-5a61339dcd22",
+    "agent_version_id": "47275a0d-d953-4177-91e4-ab1e7d2a502f",
+    "attempt_1": {
+      "id": "2de7bd1e-6258-4413-b58b-8732ff1cff86",
+      "lease_id": "f53bd53c-6fae-401a-93f6-de68b4967e91",
+      "fencing_token": 1,
+      "final_cursor": 3,
+      "final_status": "failed",
+      "lease_status": "released",
+      "error": "Injected browser acceptance fault"
+    },
+    "attempt_2": {
+      "id": "e3712f6c-e61d-4e7a-bfac-8f2443ed656a",
+      "lease_id": "89932ed8-972e-4d40-b2ae-0e6b8b5b1ac2",
+      "fencing_token": 2,
+      "final_cursor": 4,
+      "final_status": "canceled",
+      "lease_status": "released"
+    },
+    "stale_attempt_result": {
+      "authoritative": false,
+      "rejection_code": "STALE_FENCING_TOKEN"
+    },
+    "final_run_status": "canceled",
+    "result": "passed"
+  },
+  "verification": [
+    {
+      "scope": "Attempt, lease, cursor, fencing, idempotency, and cancellation domain",
+      "status": "passed",
+      "result": "Browser/API fault acceptance and the Domain API integration suite proved failure, retry, monotonic fencing, stale callback rejection, ordered cursor progression, and observable cancellation convergence."
+    },
+    {
+      "scope": "Temporal orchestration",
+      "status": "passed",
+      "result": "Go tests passed stable RunWorkflow identity, signal deduplication, phase transitions, replay-safe carried state, outbox routing, and Continue-As-New behavior."
+    },
+    {
+      "scope": "contracts and projection",
+      "status": "passed",
+      "result": "DB migration, shared validators, Go API, TypeScript client/read model, and Runs UI were compiled and exercised together on the migrated local database."
+    },
+    {
+      "scope": "repository verification",
+      "status": "passed_with_load_adjudication",
+      "result": "Typecheck, build, migration checks, token gates, Go tests, and formatting checks passed. Full Vitest passed 4737 tests; its only three failures were inherited concurrent port-ownership timing cases, and all 28 tests in that file passed serially."
+    }
+  ],
+  "residual_risks": [
+    "Independent engineering review and product-owner acceptance are required before approval, release, or ship claims.",
+    "G1 migration 0234 remains a production rolling-upgrade blocker for the combined branch until expand/contract or a stopped-write maintenance window is approved.",
+    "G2.2 authenticates the local executor through the board-authenticated HostTrusted server facade and an executor identity header; remote runner credentials, transport trust, and fleet enrollment remain G3 scope.",
+    "Temporal behavior is covered by unit and dispatcher tests, but this acceptance did not launch an external Temporal server and kill/restart a live worker process.",
+    "The product-native Artifact, Evidence, DeliveryReview, and Acceptance write surfaces are not implemented, so a succeeded or canceled Run cannot close the runtime Target beyond draft/Define."
+  ],
+  "missing": [
+    "Independent maintainer approval",
+    "Product-owner acceptance",
+    "External Temporal service worker-restart acceptance",
+    "Production rolling-upgrade plan for migration 0234",
+    "Product-native evidence and acceptance records"
+  ]
+}

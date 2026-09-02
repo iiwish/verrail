@@ -1,0 +1,44 @@
+{
+  "id": "run-004",
+  "target_id": "g1-domain-closure",
+  "agent": "codex",
+  "runner": "Codex desktop local checkout",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "b307b961445632a79acf712600ff1b1736a87112",
+  "output_commit": "",
+  "branch": "codex/g1-domain-closure",
+  "changed_files": [
+    "ui/src/App.tsx",
+    "ui/src/App.test.tsx",
+    "tests/verrail-acceptance/project-target-work.spec.ts"
+  ],
+  "commands": [
+    {
+      "command": "direct live Conversation SSE request",
+      "status": "passed",
+      "summary": "The live backend, Codex CLI runtime, streaming parser, and message persistence returned runtime-ok, proving the server path was healthy."
+    },
+    {
+      "command": "pnpm exec vitest run --project @paperclipai/ui ui/src/App.test.tsx",
+      "status": "passed",
+      "summary": "Nine UI routing and access tests passed."
+    },
+    {
+      "command": "VERRAIL_ACCEPTANCE_PORT=3211 VERRAIL_ACCEPTANCE_OUTPUT_ROOT=/tmp/verrail-chat-fix-acceptance pnpm test:e2e:verrail-acceptance",
+      "status": "passed",
+      "summary": "All four browser cases passed after the ordinary-message case was strengthened to require a visible assistant response."
+    },
+    {
+      "command": "Playwright live first-message smoke against http://127.0.0.1:3100/GLI/chat",
+      "status": "passed",
+      "summary": "A new conversation navigated to its stable URL and displayed browser-runtime-ok without console or page errors."
+    },
+    {
+      "command": "pnpm --filter @paperclipai/ui typecheck",
+      "status": "passed",
+      "summary": "The UI TypeScript project compiled cleanly."
+    }
+  ],
+  "summary": "The first-message stream was being aborted because navigation moved between two distinct Chat route elements and unmounted the component. One optional-parameter route now preserves the component and its SSE lifecycle."
+}

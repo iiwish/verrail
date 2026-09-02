@@ -1,0 +1,23 @@
+{
+  "target_id": "g1-domain-closure",
+  "run_id": "run-001",
+  "decision": "ready_for_independent_review",
+  "readiness": "g1_implementation_complete_pending_acceptance",
+  "reviewer": "Codex maintainer preflight self-review; advisory only, independent reviewer and product-owner acceptance required",
+  "rationale": "The G1 exit slice is implemented without creating a second native Target writer. The Target Workbench consumes a versioned server contract, represents empty facts honestly, labels inherited compatibility facts, creates only server-validated Conversation context, and preserves Go plus Temporal ownership. Focused tests, Go tests, workspace typecheck, build, token gates, and browser acceptance pass. Formal acceptance remains withheld because this is a self-review and the repository-wide Vitest gap has not been isolated against a clean baseline.",
+  "linked_evidence": [
+    ".verrail/targets/g1-domain-closure/runs/run-001/receipt.json",
+    ".verrail/targets/g1-domain-closure/runs/run-001/evidence.json",
+    "tests/verrail-acceptance/playwright-report/index.html"
+  ],
+  "requested_changes": [
+    "Complete user manual acceptance on the live Target Workbench.",
+    "Let independent review and required CI adjudicate the repository-wide test gap before merge."
+  ],
+  "conditions": [
+    "Do not reinterpret compatibility Work, Artifact, Evidence, or Run records as native G2 facts.",
+    "Keep Go as the sole native Target writer and Temporal as durable orchestration rather than business truth.",
+    "Do not treat this advisory record as permission to merge, deploy, release, or create a ship record."
+  ],
+  "created_at": "2026-09-01T03:11:29Z"
+}

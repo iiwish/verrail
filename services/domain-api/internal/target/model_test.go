@@ -5,13 +5,15 @@ import (
 	"testing"
 )
 
+func stringPointer(value string) *string { return &value }
+
 func TestValidateCommandCanonicalizesAndHashes(t *testing.T) {
 	command := CreateCommand{
 		WorkspaceID:    "1081b57b-22a5-4508-b12e-24f6ca1c0d6c",
 		Principal:      Principal{Type: "user", ID: "user-1"},
 		IdempotencyKey: "target:create:1234",
 		Input: CreateInput{
-			ProjectID:          "f74bfcd7-e107-4ab3-9e88-0ce69e99ed07",
+			CollectionID:       stringPointer("f74bfcd7-e107-4ab3-9e88-0ce69e99ed07"),
 			Title:              "  Governed Target  ",
 			OutcomeOwner:       OutcomeOwner{PrincipalType: "user", PrincipalID: "user-1"},
 			Goal:               "  Create one durable fact.  ",
@@ -44,7 +46,7 @@ func TestValidateCommandRejectsUnsafeBoundaries(t *testing.T) {
 		WorkspaceID:    "1081b57b-22a5-4508-b12e-24f6ca1c0d6c",
 		Principal:      Principal{Type: "agent", ID: "agent-1"},
 		IdempotencyKey: "unsafe key",
-		Input:          CreateInput{ProjectID: "f74bfcd7-e107-4ab3-9e88-0ce69e99ed07"},
+		Input:          CreateInput{CollectionID: stringPointer("f74bfcd7-e107-4ab3-9e88-0ce69e99ed07")},
 	}
 	if err := ValidateCommand(&command); err == nil {
 		t.Fatal("expected invalid command to fail")
@@ -57,7 +59,7 @@ func TestValidateCommandCountsUnicodeCharactersInsteadOfBytes(t *testing.T) {
 		Principal:      Principal{Type: "user", ID: "user-1"},
 		IdempotencyKey: "target:create:unicode",
 		Input: CreateInput{
-			ProjectID:          "f74bfcd7-e107-4ab3-9e88-0ce69e99ed07",
+			CollectionID:       stringPointer("f74bfcd7-e107-4ab3-9e88-0ce69e99ed07"),
 			Title:              strings.Repeat("目", 160),
 			OutcomeOwner:       OutcomeOwner{PrincipalType: "user", PrincipalID: "user-1"},
 			Goal:               "Create one durable fact.",
@@ -71,5 +73,24 @@ func TestValidateCommandCountsUnicodeCharactersInsteadOfBytes(t *testing.T) {
 	command.Input.Title = strings.Repeat("目", 161)
 	if err := ValidateCommand(&command); err == nil {
 		t.Fatal("161 Unicode characters should exceed the title limit")
+	}
+}
+
+func TestValidateCommandAllowsWorkspaceScopedTargetWithoutCollection(t *testing.T) {
+	command := CreateCommand{
+		WorkspaceID:    "1081b57b-22a5-4508-b12e-24f6ca1c0d6c",
+		Principal:      Principal{Type: "user", ID: "user-1"},
+		IdempotencyKey: "target:create:no-project",
+		Input: CreateInput{
+			Title:              "Workspace-scoped Target",
+			OutcomeOwner:       OutcomeOwner{PrincipalType: "user", PrincipalID: "user-1"},
+			Goal:               "Create a Target without a Collection.",
+			AcceptanceCriteria: []AcceptanceCriterionInput{{Title: "Target is durable."}},
+			RiskLevel:          "low",
+		},
+	}
+
+	if err := ValidateCommand(&command); err != nil {
+		t.Fatalf("Target without collectionId should be valid: %v", err)
 	}
 }

@@ -1,0 +1,40 @@
+{
+  "task_id": "g2-0-stabilize-g1-baseline",
+  "status": "completed_needs_review",
+  "objective": "Close the G1 verification and review baseline without adding G2 feature capability.",
+  "dependencies": [
+    ".verrail/targets/g1-domain-closure",
+    "docs/product-goals.md",
+    "docs/constitution.md",
+    "docs/operational-ontology.md",
+    "docs/architecture.md"
+  ],
+  "allowed_files": [
+    "G1 implementation files already changed on branch codex/g1-domain-closure",
+    "tests and test infrastructure required to correct deterministic G1 or repository baseline failures",
+    "canonical migration, rollback, compatibility, and development documentation",
+    ".verrail/targets/g2-0-stabilize-g1-baseline/**"
+  ],
+  "forbidden": [
+    "New G2.1 or later domain tables, commands, routes, workflows, or UI",
+    "Destructive git cleanup or reverting unrelated worktree changes",
+    "Weakening assertions merely to make failing tests green",
+    "Independent approval, merge, deploy, release, or ship claims"
+  ],
+  "validation": [
+    "pnpm test:run",
+    "pnpm -r typecheck",
+    "pnpm build",
+    "cd services/domain-api && go test ./...",
+    "pnpm --filter @paperclipai/db check:migrations",
+    "pnpm check:token-gates",
+    "pnpm test:e2e:verrail-acceptance",
+    "git diff --check"
+  ],
+  "evidence_contract": [
+    "Complete command results and failure classification",
+    "Migration and rollback verification",
+    "Maintainer-grade review findings with file and line references",
+    "Residual risks and explicit external review gate"
+  ]
+}

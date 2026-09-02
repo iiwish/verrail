@@ -8,21 +8,17 @@ import { VerrailProjectsSidebar } from "./VerrailProjectsSidebar";
 
 const route = vi.hoisted(() => ({
   projectId: undefined as string | undefined,
-  targetId: undefined as string | undefined,
-  pathname: "/projects",
 }));
 const projectsApiMock = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn() }));
-const targetsApiMock = vi.hoisted(() => ({ listForProject: vi.fn(), get: vi.fn() }));
 const sidebarNavItemMock = vi.hoisted(() => vi.fn());
-const dialogActionsMock = vi.hoisted(() => ({ openNewProject: vi.fn(), openNewTarget: vi.fn() }));
+const dialogActionsMock = vi.hoisted(() => ({ openNewProject: vi.fn() }));
 
 vi.mock("@/lib/router", () => ({
   Link: ({ children, to }: { children: React.ReactNode; to: string }) => <a href={to}>{children}</a>,
-  useParams: () => ({ projectId: route.projectId, targetId: route.targetId }),
+  useParams: () => ({ projectId: route.projectId }),
 }));
 
 vi.mock("../api/projects", () => ({ projectsApi: projectsApiMock }));
-vi.mock("../api/targets", () => ({ targetsApi: targetsApiMock }));
 vi.mock("../context/CompanyContext", () => ({
   useCompany: () => ({
     selectedCompany: { id: "company-1", name: "Verrail Workspace" },
@@ -43,6 +39,7 @@ vi.mock("../i18n", () => ({
   useTranslation: () => ({
     t: (key: string) => ({
       "nav.projects": "Projects",
+      "nav.targets": "Targets",
       "projects.add": "Add project",
       "projects.all": "All projects",
       "projects.yours": "Your projects",
@@ -75,13 +72,6 @@ const project = {
   icon: null,
   managedByPlugin: { pluginKey: "managed", pluginDisplayName: "Managed", resourceKind: "project" },
 };
-const target = {
-  targetId: "target-1",
-  title: "Ship navigation",
-  project: { id: "project-1", name: "Launch Project" },
-  attentionSummary: { total: 1, highestSeverity: "high" },
-};
-
 describe("VerrailProjectsSidebar", () => {
   let container: HTMLDivElement;
   let root: Root | null = null;
@@ -90,12 +80,8 @@ describe("VerrailProjectsSidebar", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     route.projectId = undefined;
-    route.targetId = undefined;
-    route.pathname = "/projects";
     projectsApiMock.list.mockResolvedValue([project]);
     projectsApiMock.get.mockResolvedValue(project);
-    targetsApiMock.listForProject.mockResolvedValue({ items: [target] });
-    targetsApiMock.get.mockResolvedValue(target);
   });
 
   afterEach(async () => {
@@ -135,40 +121,23 @@ describe("VerrailProjectsSidebar", () => {
     expect(container.querySelector('button[aria-label="Add project"]')).not.toBeNull();
   });
 
-  it("expands the selected project's Target list instead of its management menu", async () => {
+  it("keeps the selected Project as a Project switcher without nesting Targets", async () => {
     route.projectId = "launch-project";
-    route.pathname = "/projects/launch-project/targets";
     await renderSidebar();
 
     await vi.waitFor(() => {
       expect(sidebarNavItemMock.mock.calls.map(([props]) => props.to))
-        .toContain("/targets/target-1/overview");
+        .toContain("/projects/launch-project/overview");
     });
     const destinations = sidebarNavItemMock.mock.calls.map(([props]) => props.to);
     expect(destinations).toContain("/projects/launch-project/overview");
-    expect(destinations).toContain("/targets/target-1/overview");
+    expect(destinations).not.toContain("/targets/target-1/overview");
     expect(destinations).not.toContain("/projects/launch-project/configuration");
     expect(destinations).not.toContain("/projects/launch-project/budget");
     expect(container.querySelector('a[href="/projects/launch-project/targets"]')).toBeNull();
     expect(container.textContent).not.toContain("Targets");
-    expect(container.querySelector('button[aria-label="New target"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="project-target-list"]')).not.toBeNull();
-
-    container.querySelector<HTMLButtonElement>('button[aria-label="New target"]')?.click();
-    expect(dialogActionsMock.openNewTarget).toHaveBeenCalledWith({ projectId: "project-1" });
+    expect(container.querySelector('button[aria-label="New target"]')).toBeNull();
+    expect(container.querySelector('[data-testid="project-target-list"]')).toBeNull();
   });
 
-  it("keeps the owning Project and active Target visible inside the Target workbench", async () => {
-    route.targetId = "target-1";
-    route.pathname = "/targets/target-1/stages";
-    await renderSidebar();
-
-    await vi.waitFor(() => {
-      expect(projectsApiMock.get).toHaveBeenCalledWith("project-1", "company-1");
-      const targetRow = sidebarNavItemMock.mock.calls
-        .map(([props]) => props)
-        .find((props) => props.to === "/targets/target-1/overview");
-      expect(targetRow).toEqual(expect.objectContaining({ active: true, label: "Ship navigation" }));
-    });
-  });
 });

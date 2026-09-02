@@ -2,17 +2,20 @@ import { sql } from "drizzle-orm";
 import {
   check,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
   pgTable,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 import { projects } from "./projects.js";
+import { verrailCollections } from "./verrail_collections.js";
 
 export interface VerrailAcceptanceCriterionRecord {
   id: string;
@@ -25,7 +28,12 @@ export const verrailTargets = pgTable(
   {
     id: uuid("id").primaryKey(),
     workspaceId: uuid("workspace_id").notNull().references(() => companies.id),
-    projectId: uuid("project_id").notNull().references(() => projects.id),
+    // Compatibility storage for pre-G1 rolling upgrades (expand/contract):
+    // native Verrail code never reads or writes this column; it is retained so
+    // a pre-G1 service can keep running against a migrated database until the
+    // contract migration drops it after pre-G1 service retirement.
+    projectId: uuid("project_id"),
+    collectionId: uuid("collection_id"),
     activeTargetRevisionId: uuid("active_target_revision_id").notNull(),
     status: text("status").notNull().default("draft"),
     createdByPrincipalType: text("created_by_principal_type").notNull(),
@@ -34,11 +42,27 @@ export const verrailTargets = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
+    idWorkspaceUq: unique("verrail_targets_id_workspace_uq").on(table.id, table.workspaceId),
+    collectionWorkspaceFk: foreignKey({
+      columns: [table.collectionId, table.workspaceId],
+      foreignColumns: [verrailCollections.id, verrailCollections.workspaceId],
+      name: "verrail_targets_collection_workspace_fk",
+    }).onDelete("restrict"),
+    projectCompatFk: foreignKey({
+      columns: [table.projectId],
+      foreignColumns: [projects.id],
+      name: "verrail_targets_project_id_projects_id_fk",
+    }),
     workspaceUpdatedIdx: index("verrail_targets_workspace_updated_idx").on(
       table.workspaceId,
       table.updatedAt,
     ),
-    workspaceProjectUpdatedIdx: index("verrail_targets_workspace_project_updated_idx").on(
+    workspaceCollectionUpdatedIdx: index("verrail_targets_workspace_collection_updated_idx").on(
+      table.workspaceId,
+      table.collectionId,
+      table.updatedAt,
+    ),
+    workspaceProjectUpdatedCompatIdx: index("verrail_targets_workspace_project_updated_idx").on(
       table.workspaceId,
       table.projectId,
       table.updatedAt,
@@ -51,7 +75,7 @@ export const verrailTargetRevisions = pgTable(
   {
     id: uuid("id").primaryKey(),
     workspaceId: uuid("workspace_id").notNull().references(() => companies.id),
-    targetId: uuid("target_id").notNull().references(() => verrailTargets.id),
+    targetId: uuid("target_id").notNull(),
     revisionNumber: integer("revision_number").notNull(),
     title: text("title").notNull(),
     summary: text("summary"),
@@ -66,12 +90,19 @@ export const verrailTargetRevisions = pgTable(
     riskLevel: text("risk_level").notNull(),
     deadline: date("deadline"),
     policySummary: text("policy_summary"),
+    resourceRefs: jsonb("resource_refs").$type<Array<Record<string, unknown>>>().notNull().default([]),
     contentHash: text("content_hash").notNull(),
     createdByPrincipalType: text("created_by_principal_type").notNull(),
     createdByPrincipalId: text("created_by_principal_id").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
+    idWorkspaceUq: unique("verrail_target_revisions_id_workspace_uq").on(table.id, table.workspaceId),
+    targetWorkspaceFk: foreignKey({
+      columns: [table.targetId, table.workspaceId],
+      foreignColumns: [verrailTargets.id, verrailTargets.workspaceId],
+      name: "verrail_target_revisions_target_workspace_fk",
+    }).onDelete("cascade"),
     targetRevisionNumberUq: uniqueIndex("verrail_target_revisions_target_number_uq").on(
       table.targetId,
       table.revisionNumber,

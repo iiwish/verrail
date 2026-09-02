@@ -1,0 +1,107 @@
+{
+  "id": "run-001",
+  "target_id": "g2-2-recoverable-run-execution",
+  "agent": "codex",
+  "runner": "Codex desktop local checkout",
+  "model": "gpt-5.6-sol",
+  "status": "completed_needs_independent_review",
+  "base_commit": "b307b961445632a79acf712600ff1b1736a87112",
+  "output_commit": "",
+  "branch": "codex/g1-domain-closure",
+  "working_tree": "uncommitted combined G1, G2.0, G2.1, and G2.2 delivery change set",
+  "changed_files": [
+    "packages/db/src/schema/verrail_execution.ts",
+    "packages/db/src/schema/verrail_delivery.ts",
+    "packages/db/src/schema/index.ts",
+    "packages/db/src/migrations/0238_happy_human_cannonball.sql",
+    "packages/db/src/migrations/meta/0238_snapshot.json",
+    "packages/db/src/migrations/meta/_journal.json",
+    "packages/shared/src/types/execution.ts",
+    "packages/shared/src/validators/execution.ts",
+    "packages/shared/src/types/target.ts",
+    "packages/shared/src/validators/target.ts",
+    "packages/shared/src/validators/target.test.ts",
+    "packages/shared/src/index.ts",
+    "services/domain-api/internal/target/execution.go",
+    "services/domain-api/internal/target/execution_store.go",
+    "services/domain-api/internal/target/graph_store.go",
+    "services/domain-api/internal/httpapi/server.go",
+    "services/domain-api/internal/orchestration/contracts.go",
+    "services/domain-api/internal/orchestration/dispatcher.go",
+    "services/domain-api/internal/orchestration/temporal.go",
+    "services/domain-api/internal/orchestration/temporal_test.go",
+    "services/domain-api/internal/orchestration/workflow.go",
+    "services/domain-api/internal/orchestration/workflow_test.go",
+    "services/domain-api/cmd/orchestration-worker/main.go",
+    "server/src/routes/targets.ts",
+    "server/src/services/verrail-domain-api-client.ts",
+    "server/src/services/target-read-model.ts",
+    "server/src/__tests__/target-routes.test.ts",
+    "server/src/__tests__/target-read-model.test.ts",
+    "server/src/__tests__/verrail-domain-api.integration.test.ts",
+    "ui/src/api/targets.ts",
+    "ui/src/pages/TargetWorkbench.tsx",
+    "ui/src/i18n/locales/en.json",
+    "ui/src/i18n/locales/zh-CN.json",
+    "docs/temporal-target-workflow.md",
+    ".verrail/targets/g2-2-recoverable-run-execution/**"
+  ],
+  "commands": [
+    {
+      "command": "browser acceptance at http://127.0.0.1:3100/MYW/targets/45dfb4a5-43ce-48bc-af28-20d8a782e57b/runs",
+      "status": "passed",
+      "summary": "Created Attempt 1, claimed and started it, injected a terminal failure, retried as Attempt 2 with a higher fence, proved the old Attempt received STALE_FENCING_TOKEN without changing authoritative state, then requested, acknowledged, and terminated cancellation. The final Runs projection showed canceled state, two released leases, fences 1 and 2, and cursors 3 and 4."
+    },
+    {
+      "command": "focused shared, server route, read-model, UI, and Domain API integration Vitest suites",
+      "status": "passed",
+      "summary": "18 focused tests passed, and the four-test Domain API integration suite passed its failure, retry, stale-fence, and cancellation path."
+    },
+    {
+      "command": "cd services/domain-api && go test ./...",
+      "status": "passed",
+      "summary": "All Go domain and orchestration packages passed, including RunWorkflow replay and Continue-As-New coverage."
+    },
+    {
+      "command": "pnpm test:run",
+      "status": "passed_with_serial_follow_up",
+      "summary": "The full run passed 410 files and 4737 tests, with three unrelated port-ownership timing failures in workspace-runtime-exposure.test.ts under concurrent load. The affected file then passed alone with all 28 tests green."
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "All participating workspace projects passed type and contract checks."
+    },
+    {
+      "command": "pnpm build",
+      "status": "passed",
+      "summary": "The full workspace build passed with existing non-fatal CSS pseudo-element, font resolution, dynamic import, and chunk-size warnings."
+    },
+    {
+      "command": "pnpm --filter @paperclipai/db check:migrations",
+      "status": "passed",
+      "summary": "Migration numbering and safety checks passed."
+    },
+    {
+      "command": "pnpm db:generate",
+      "status": "passed",
+      "summary": "Drizzle reported no schema changes after migration 0238 was generated."
+    },
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "summary": "UI token gates passed."
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "summary": "The complete working diff contains no whitespace errors."
+    }
+  ],
+  "artifacts": [
+    ".verrail/targets/g2-2-recoverable-run-execution/runs/run-001/evidence.json",
+    ".verrail/targets/g2-2-recoverable-run-execution/reviews/maintainer-review.md"
+  ],
+  "errors": [],
+  "summary": "G2.2 implements and verifies the HostTrusted recoverable Run execution control slice. It is ready for independent review but is not independently approved, accepted, merged, deployed, released, or shipped."
+}

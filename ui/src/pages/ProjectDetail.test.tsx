@@ -31,9 +31,7 @@ const mockResourceMembershipsApi = vi.hoisted(() => ({
 }));
 const mockNavigate = vi.hoisted(() => vi.fn());
 const mockSetBreadcrumbs = vi.hoisted(() => vi.fn());
-const mockOpenNewTarget = vi.hoisted(() => vi.fn());
 const mockIssuesList = vi.hoisted(() => vi.fn());
-const mockTargetList = vi.hoisted(() => vi.fn());
 const mockSummarySlotCard = vi.hoisted(() => vi.fn());
 const mockLocation = vi.hoisted(() => ({
   pathname: "/projects/project-1/plugin-operations",
@@ -78,9 +76,6 @@ vi.mock("../context/CompanyContext", () => ({
 vi.mock("../context/PanelContext", () => ({ usePanel: () => ({ closePanel: vi.fn() }) }));
 vi.mock("../context/ToastContext", () => ({ useToastActions: () => ({ pushToast: vi.fn() }) }));
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: mockSetBreadcrumbs }) }));
-vi.mock("../context/DialogContext", () => ({
-  useDialogActions: () => ({ openNewTarget: mockOpenNewTarget }),
-}));
 vi.mock("@/plugins/slots", () => ({
   PluginSlotMount: (props: unknown) => {
     mockPluginSlotMount(props);
@@ -119,12 +114,6 @@ vi.mock("../components/IssuesList", () => ({
   IssuesList: (props: unknown) => {
     mockIssuesList(props);
     return <div data-testid="issues-list" />;
-  },
-}));
-vi.mock("../components/TargetList", () => ({
-  TargetList: (props: unknown) => {
-    mockTargetList(props);
-    return <div data-testid="target-list" />;
   },
 }));
 
@@ -298,7 +287,7 @@ describe("ProjectDetail", () => {
     expect(container.textContent).toContain("not-a-date");
   });
 
-  it("makes Targets the Project delivery surface in Verrail navigation", async () => {
+  it("redirects the retired Project Targets deep link to the Workspace Target surface", async () => {
     mockCompanyContext.companies = [{
       id: "company-1",
       issuePrefix: "PAP",
@@ -308,18 +297,8 @@ describe("ProjectDetail", () => {
 
     await renderCurrentRoute();
 
-    expect(container.querySelector('[data-testid="target-list"]')).not.toBeNull();
-    expect(mockTargetList).toHaveBeenCalledWith(expect.objectContaining({
-      workspaceId: "company-1",
-      projectId: "project-1",
-    }));
-    expect(container.textContent).not.toContain("Legacy work");
-
-    const newTargetButtons = Array.from(container.querySelectorAll("button"))
-      .filter((button) => button.textContent?.trim() === "New Target");
-    expect(newTargetButtons).toHaveLength(1);
-    act(() => newTargetButtons[0]?.click());
-    expect(mockOpenNewTarget).toHaveBeenCalledWith({ projectId: "project-1" });
+    expect(container.querySelector('[data-testid="navigate"]')?.textContent).toBe("/targets");
+    expect(container.querySelector('[data-testid="issues-list"]')).toBeNull();
   });
 
   it("keeps Project management navigation inside the Project detail page", async () => {

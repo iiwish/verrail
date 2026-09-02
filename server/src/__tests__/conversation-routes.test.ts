@@ -10,9 +10,21 @@ const mockConversationService = vi.hoisted(() => ({
   appendMessage: vi.fn(),
 }));
 const mockLogActivity = vi.hoisted(() => vi.fn());
+const mockBuiltInAgentService = vi.hoisted(() => ({
+  get: vi.fn(),
+}));
+const mockDraftService = vi.hoisted(() => ({
+  list: vi.fn(), create: vi.fn(), update: vi.fn(), cancel: vi.fn(), get: vi.fn(),
+  prepareConfirmation: vi.fn(), finalizeConfirmation: vi.fn(),
+}));
+const mockProviderBindingService = vi.hoisted(() => ({ create: vi.fn(), resolve: vi.fn() }));
 
 vi.mock("../services/index.js", () => ({
+  builtInAgentService: () => mockBuiltInAgentService,
   conversationService: () => mockConversationService,
+  targetCreationDraftService: () => mockDraftService,
+  providerConversationBindingService: () => mockProviderBindingService,
+  createVerrailDomainApiClient: () => null,
   logActivity: mockLogActivity,
 }));
 
@@ -71,6 +83,16 @@ describe("conversation routes", () => {
       messages: [],
     });
     mockConversationService.update.mockResolvedValue(conversation);
+    mockBuiltInAgentService.get.mockResolvedValue({
+      definition: {
+        defaultInstructions: "You are Verrail's default workspace Director.",
+      },
+      agent: {
+        id: "0f40e0eb-acde-46a9-a1bd-b769282cacad",
+        name: "Director",
+        status: "idle",
+      },
+    });
   });
 
   it("lists and creates workspace-scoped conversations", async () => {

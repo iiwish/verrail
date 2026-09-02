@@ -1,6 +1,5 @@
 import {
   Bot,
-  FolderKanban,
   House,
   MessagesSquare,
   PanelLeftClose,
@@ -9,6 +8,7 @@ import {
   ServerCog,
   Settings,
   ShieldCheck,
+  Target,
 } from "lucide-react";
 import { Link, useLocation } from "@/lib/router";
 import { Button } from "@/components/ui/button";
@@ -29,10 +29,10 @@ export function VerrailSidebar() {
   const { isMobile, collapsed, collapseLocked, peeking, toggleCollapsed, setCollapsed } = useSidebar();
   const location = useLocation();
   const rail = collapsed && !peeking;
-  const projectsActive = resolveVerrailManagementSection(
+  const targetsActive = resolveVerrailManagementSection(
     location.pathname,
     selectedCompany?.issuePrefix,
-  ) === "projects";
+  ) === "targets";
   const pluginContext = {
     companyId: selectedCompanyId,
     companyPrefix: selectedCompany?.issuePrefix ?? null,
@@ -83,10 +83,10 @@ export function VerrailSidebar() {
           <SidebarNavItem to="/home" label={t("nav.home")} icon={House} end />
           <SidebarNavItem to="/chat" label={t("nav.chat")} icon={MessagesSquare} />
           <SidebarNavItem
-            to="/projects"
-            label={t("nav.projects")}
-            icon={FolderKanban}
-            active={projectsActive}
+            to="/targets"
+            label={t("nav.targets")}
+            icon={Target}
+            active={targetsActive}
           />
           <SidebarNavItem to="/agents" label={t("nav.agents")} icon={Bot} />
           <SidebarNavItem to="/infrastructure" label={t("nav.infrastructure")} icon={ServerCog} />

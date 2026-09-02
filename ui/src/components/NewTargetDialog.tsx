@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CreateTargetInputV1 } from "@paperclipai/shared";
+import type { CreateTargetInputV1, TargetCreationDraft } from "@paperclipai/shared";
 import { AlertCircle, LoaderCircle, Plus, Target, X } from "lucide-react";
 import { useNavigate } from "@/lib/router";
 import { accessApi } from "../api/access";
 import { agentsApi } from "../api/agents";
 import { ApiError } from "../api/client";
-import { projectsApi } from "../api/projects";
-import { targetsApi } from "../api/targets";
+import { collectionsApi } from "../api/collections";
+import { conversationsApi } from "../api/conversations";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useTranslation } from "../i18n";
@@ -35,6 +35,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 
 type CriterionDraft = { key: string; title: string; description: string };
+const NO_COLLECTION = "__no_collection__";
 
 function freshCriterion(): CriterionDraft {
   return { key: crypto.randomUUID(), title: "", description: "" };
@@ -52,8 +53,8 @@ export function NewTargetDialog() {
   const { selectedCompanyId, selectedCompany } = useCompany();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const attemptRef = useRef<{ fingerprint: string; key: string } | null>(null);
-  const [projectId, setProjectId] = useState("");
+  const [draft, setDraft] = useState<TargetCreationDraft | null>(null);
+  const [collectionId, setCollectionId] = useState("");
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [ownerValue, setOwnerValue] = useState("");
@@ -64,9 +65,9 @@ export function NewTargetDialog() {
   const [deadline, setDeadline] = useState("");
   const [policySummary, setPolicySummary] = useState("");
 
-  const projectsQuery = useQuery({
-    queryKey: selectedCompanyId ? queryKeys.projects.all(selectedCompanyId) : ["projects", "disabled"],
-    queryFn: () => projectsApi.list(selectedCompanyId!),
+  const collectionsQuery = useQuery({
+    queryKey: selectedCompanyId ? queryKeys.collections.list(selectedCompanyId) : ["collections", "disabled"],
+    queryFn: () => collectionsApi.list(selectedCompanyId!),
     enabled: Boolean(selectedCompanyId && newTargetOpen),
   });
   const agentsQuery = useQuery({
@@ -82,24 +83,19 @@ export function NewTargetDialog() {
     enabled: Boolean(selectedCompanyId && newTargetOpen),
   });
 
-  const activeProjects = useMemo(
-    () => (projectsQuery.data ?? []).filter((project) => !project.archivedAt),
-    [projectsQuery.data],
-  );
+  const collections = collectionsQuery.data ?? [];
   const activeAgents = useMemo(
     () => (agentsQuery.data ?? []).filter((agent) => agent.status !== "terminated"),
     [agentsQuery.data],
   );
 
   useEffect(() => {
-    if (!newTargetOpen || projectId) return;
-    const preferred = newTargetDefaults.projectId;
-    if (preferred && activeProjects.some((project) => project.id === preferred)) {
-      setProjectId(preferred);
-      return;
+    if (!newTargetOpen || collectionId) return;
+    const preferred = newTargetDefaults.collectionId;
+    if (preferred && collections.some((collection) => collection.id === preferred)) {
+      setCollectionId(preferred);
     }
-    if (activeProjects[0]) setProjectId(activeProjects[0].id);
-  }, [activeProjects, newTargetDefaults.projectId, newTargetOpen, projectId]);
+  }, [collectionId, collections, newTargetDefaults.collectionId, newTargetOpen]);
 
   useEffect(() => {
     if (!newTargetOpen || ownerValue) return;
@@ -107,13 +103,41 @@ export function NewTargetDialog() {
     if (user) setOwnerValue(`user:${user.principalId}`);
   }, [newTargetOpen, ownerValue, usersQuery.data?.users]);
 
-  const createTarget = useMutation({
-    mutationFn: ({ input, idempotencyKey }: { input: CreateTargetInputV1; idempotencyKey: string }) =>
-      targetsApi.create(selectedCompanyId!, input, idempotencyKey),
+  const createDraft = useMutation({
+    mutationFn: async (input: CreateTargetInputV1) => {
+      const conversationId = newTargetDefaults.conversationId
+        ?? (await conversationsApi.create(selectedCompanyId!, { title: input.title, contextBindings: [] })).id;
+      const source = await conversationsApi.appendStructuredMessage(
+        selectedCompanyId!,
+        conversationId,
+        `Create Target: ${input.title}`,
+      );
+      return conversationsApi.createTargetDraft(selectedCompanyId!, conversationId, source.id, {
+        collectionId: input.collectionId ?? null,
+        title: input.title,
+        summary: input.summary ?? null,
+        outcomeOwner: input.outcomeOwner,
+        goal: input.goal,
+        constraints: input.constraints,
+        acceptanceCriteria: input.acceptanceCriteria,
+        riskLevel: input.riskLevel,
+        deadline: input.deadline ?? null,
+        policySummary: input.policySummary ?? null,
+        resourceRefs: input.resourceRefs ?? [],
+      });
+    },
+  });
+  const confirmDraft = useMutation({
+    mutationFn: (current: TargetCreationDraft) => conversationsApi.confirmTargetDraft(
+      selectedCompanyId!,
+      current.conversationId,
+      current.id,
+      current.activeRevisionNumber,
+    ),
   });
 
   const reset = () => {
-    setProjectId("");
+    setCollectionId("");
     setTitle("");
     setSummary("");
     setOwnerValue("");
@@ -123,20 +147,21 @@ export function NewTargetDialog() {
     setRiskLevel("medium");
     setDeadline("");
     setPolicySummary("");
-    attemptRef.current = null;
-    createTarget.reset();
+    setDraft(null);
+    createDraft.reset();
+    confirmDraft.reset();
   };
 
   const validCriteria = criteria.filter((criterion) => criterion.title.trim());
   const canSubmit = Boolean(
     selectedCompanyId
-    && projectId
     && title.trim()
     && ownerValue
     && goal.trim()
     && validCriteria.length === criteria.length
     && criteria.length > 0
-    && !createTarget.isPending,
+    && !createDraft.isPending
+    && !confirmDraft.isPending,
   );
 
   const submit = async () => {
@@ -145,7 +170,7 @@ export function NewTargetDialog() {
     const principalType = ownerValue.slice(0, separator) as "user" | "agent";
     const principalId = ownerValue.slice(separator + 1);
     const input: CreateTargetInputV1 = {
-      projectId,
+      ...(collectionId ? { collectionId } : {}),
       title: title.trim(),
       ...(summary.trim() ? { summary: summary.trim() } : {}),
       outcomeOwner: { principalType, principalId },
@@ -159,33 +184,31 @@ export function NewTargetDialog() {
       ...(deadline ? { deadline } : {}),
       ...(policySummary.trim() ? { policySummary: policySummary.trim() } : {}),
     };
-    const fingerprint = JSON.stringify(input);
-    if (attemptRef.current?.fingerprint !== fingerprint) {
-      attemptRef.current = { fingerprint, key: `target:create:${crypto.randomUUID()}` };
-    }
     try {
-      const created = await createTarget.mutateAsync({
-        input,
-        idempotencyKey: attemptRef.current.key,
-      });
+      if (!draft) {
+        setDraft(await createDraft.mutateAsync(input));
+        return;
+      }
+      const created = (await confirmDraft.mutateAsync(draft)).target;
       await queryClient.invalidateQueries({ queryKey: ["targets", selectedCompanyId] });
       reset();
       closeNewTarget();
       navigate(created.workbenchHref);
     } catch {
-      // The mutation error is rendered below. The attempt key is retained so a
-      // retry cannot duplicate a command whose outcome is temporarily unknown.
+      // Mutation errors are rendered below. Confirmation retries reuse the
+      // server-owned Draft revision idempotency key.
     }
   };
 
-  const code = errorCode(createTarget.error);
+  const mutationError = confirmDraft.error ?? createDraft.error;
+  const code = errorCode(mutationError);
   const errorMessage = code === "TARGET_IDEMPOTENCY_CONFLICT"
     ? t("targets.create.errors.conflict")
     : code === "TARGET_CREATE_FORBIDDEN"
       ? t("targets.create.errors.permission")
-      : code === "TARGET_DOMAIN_API_UNAVAILABLE" || createTarget.error instanceof ApiError && createTarget.error.status === 503
+      : code === "TARGET_DOMAIN_API_UNAVAILABLE" || mutationError instanceof ApiError && mutationError.status === 503
         ? t("targets.create.errors.retryable")
-        : createTarget.isError
+        : createDraft.isError || confirmDraft.isError
           ? t("targets.create.errors.failed")
           : null;
 
@@ -209,20 +232,26 @@ export function NewTargetDialog() {
           <DialogDescription>{t("targets.create.description")}</DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-5 py-2">
-          <div className="grid gap-2">
-            <Label htmlFor="new-target-project">{t("targets.create.project")}</Label>
-            <Select value={projectId} onValueChange={setProjectId}>
-              <SelectTrigger id="new-target-project" className="w-full">
-                <SelectValue placeholder={t("targets.create.selectProject")} />
-              </SelectTrigger>
-              <SelectContent>
-                {activeProjects.map((project) => (
-                  <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        <fieldset disabled={Boolean(draft)} className="grid gap-5 border-0 p-0 py-2">
+          {collections.length > 0 ? (
+            <div className="grid gap-2">
+              <Label htmlFor="new-target-collection">{t("targets.create.collection")}</Label>
+              <Select
+                value={collectionId || NO_COLLECTION}
+                onValueChange={(value) => setCollectionId(value === NO_COLLECTION ? "" : value)}
+              >
+                <SelectTrigger id="new-target-collection" className="w-full">
+                  <SelectValue placeholder={t("targets.create.selectCollection")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_COLLECTION}>{t("targets.create.noCollection")}</SelectItem>
+                  {collections.map((collection) => (
+                    <SelectItem key={collection.id} value={collection.id}>{collection.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
 
           <div className="grid gap-2">
             <Label htmlFor="new-target-title">{t("targets.create.name")}</Label>
@@ -335,15 +364,17 @@ export function NewTargetDialog() {
               <span>{errorMessage}</span>
             </div>
           ) : null}
-        </div>
+        </fieldset>
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => { reset(); closeNewTarget(); }}>
             {t("common.cancel")}
           </Button>
           <Button type="button" disabled={!canSubmit} onClick={() => void submit()}>
-            {createTarget.isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Target className="h-4 w-4" />}
-            {createTarget.isPending ? t("targets.create.creating") : t("targets.create.submit")}
+            {createDraft.isPending || confirmDraft.isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Target className="h-4 w-4" />}
+            {createDraft.isPending || confirmDraft.isPending
+              ? t("targets.create.creating")
+              : draft ? t("targets.create.confirm") : t("targets.create.review")}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,12 +1,21 @@
-import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ArrowLeft, ExternalLink, ShieldCheck } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  ArrowLeft,
+  Check,
+  Circle,
+  MessageSquare,
+  RefreshCw,
+  ShieldCheck,
+  Square,
+} from "lucide-react";
 import { Link, useNavigate, useParams } from "@/lib/router";
 import { targetsApi } from "../api/targets";
 import { ApiError } from "../api/client";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -15,12 +24,13 @@ import { useTranslation } from "@/i18n";
 
 const TARGET_TABS = [
   "overview",
-  "stages",
   "work",
-  "submission",
+  "runs",
   "artifacts",
   "evidence",
-  "runs",
+  "acceptance",
+  "stages",
+  "submission",
   "timeline",
 ] as const;
 type TargetTab = (typeof TARGET_TABS)[number];
@@ -33,6 +43,29 @@ function EmptyTab({ message }: { message: string }) {
   return <p className="border-y border-border py-10 text-sm text-muted-foreground">{message}</p>;
 }
 
+function commandFailureDetail(error: unknown): string | null {
+  if (!(error instanceof ApiError)) return null;
+  const code = (error.body as { code?: string } | null)?.code;
+  return code ?? String(error.status);
+}
+
+function WorkspaceSectionState({
+  loading,
+  error,
+  empty,
+  children,
+}: {
+  loading: boolean;
+  error: boolean;
+  empty: string;
+  children: ReactNode;
+}) {
+  const { t } = useTranslation();
+  if (loading) return <p className="border-y border-border py-10 text-sm text-muted-foreground">{t("targets.workspaceLoading")}</p>;
+  if (error) return <p className="border-y border-border py-10 text-sm text-destructive">{t("targets.workspaceLoadFailed")}</p>;
+  return <>{children || <EmptyTab message={empty} />}</>;
+}
+
 export function TargetWorkbench() {
   const { targetId, targetRevisionId, tab } = useParams<{
     targetId: string;
@@ -41,6 +74,7 @@ export function TargetWorkbench() {
   }>();
   const { selectedCompanyId } = useCompany();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { t } = useTranslation();
   const activeTab: TargetTab = isTargetTab(tab) ? tab : "overview";
@@ -58,20 +92,57 @@ export function TargetWorkbench() {
     enabled: Boolean(selectedCompanyId && targetId),
   });
 
+  const workspaceQuery = useQuery({
+    queryKey: selectedCompanyId && targetId
+      ? queryKeys.targets.workspace(selectedCompanyId, targetId)
+      : ["targets", "workspace", "disabled"],
+    queryFn: () => targetsApi.getWorkspace(selectedCompanyId!, targetId!),
+    enabled: Boolean(selectedCompanyId && targetId && !isRevision),
+  });
+
+  const createConversation = useMutation({
+    mutationFn: () => targetsApi.createConversation(selectedCompanyId!, targetId!),
+    onSuccess: (conversation) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all(selectedCompanyId!) });
+      navigate(`/chat/${conversation.id}`);
+    },
+  });
+
+  const refreshWorkspace = async () => {
+    if (!selectedCompanyId || !targetId) return;
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.targets.workspace(selectedCompanyId, targetId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.targets.detail(selectedCompanyId, targetId) }),
+    ]);
+  };
+
+  const [pendingRunId, setPendingRunId] = useState<string | null>(null);
+
+  const retryRun = useMutation({
+    mutationFn: (runId: string) => targetsApi.createRunAttempt(selectedCompanyId!, runId, {
+      runtimeProfile: "host_trusted",
+      executor: { principalType: "service", principalId: "host-trusted-local" },
+    }, crypto.randomUUID()),
+    onMutate: (runId) => setPendingRunId(runId),
+    onSettled: () => setPendingRunId(null),
+    onSuccess: refreshWorkspace,
+  });
+
+  const cancelRun = useMutation({
+    mutationFn: (runId: string) => targetsApi.requestRunCancellation(selectedCompanyId!, runId, crypto.randomUUID()),
+    onMutate: (runId) => setPendingRunId(runId),
+    onSettled: () => setPendingRunId(null),
+    onSuccess: refreshWorkspace,
+  });
+
   useEffect(() => {
     const breadcrumbs: Array<{ label: string; href?: string }> = [
-      { label: t("nav.projects"), href: "/projects" },
+      { label: t("nav.targets"), href: "/targets" },
     ];
-    if (query.data?.project) {
-      breadcrumbs.push({
-        label: query.data.project.name,
-        href: `/projects/${query.data.project.id}/overview`,
-      });
-    }
     breadcrumbs.push({ label: query.data?.title ?? t("targets.target") });
     if (isRevision) breadcrumbs.push({ label: t("targets.revision") });
     setBreadcrumbs(breadcrumbs);
-  }, [isRevision, query.data?.project, query.data?.title, setBreadcrumbs, t]);
+  }, [isRevision, query.data?.title, setBreadcrumbs, t]);
 
   if (query.isLoading) return <PageSkeleton variant="detail" />;
   if (query.error) {
@@ -84,14 +155,10 @@ export function TargetWorkbench() {
   }
   const target = query.data;
   if (!target) return null;
+  const workspace = workspaceQuery.data;
+  const runCommandError = retryRun.error ?? cancelRun.error;
+  const runCommandFailureDetail = commandFailureDetail(runCommandError);
 
-  const warnings = target.compatibility?.warnings ?? [];
-  const warningMessages = [
-    ...(warnings.includes("projection_stale") ? [t("targets.projectionStale")] : []),
-    ...(warnings.includes("projection_schema_upgraded") ? [t("targets.projectionSchemaUpgraded")] : []),
-    ...(warnings.includes("source_missing") ? [t("targets.sourceMissing")] : []),
-    ...(target.compatibility?.completionUnverified ? [t("targets.completionUnverified")] : []),
-  ];
   const tabItems = TARGET_TABS.map((value) => ({ value, label: t(`targets.tabs.${value}`) }));
 
   return (
@@ -112,23 +179,28 @@ export function TargetWorkbench() {
           <span>
             {isRevision
               ? t("targets.immutableRevision")
-              : target.authority.kind === "native"
-                ? t("targets.nativeRevision")
-                : t("targets.compatibilityProjection")}
+              : t("targets.nativeRevision")}
           </span>
         </div>
-        <h2 className="text-xl font-semibold">{target.title}</h2>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h2 className="text-xl font-semibold">{target.title}</h2>
+          {!isRevision ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => createConversation.mutate()}
+              disabled={createConversation.isPending}
+            >
+              <MessageSquare className="h-4 w-4" />
+              {createConversation.isPending ? t("targets.conversationCreating") : t("targets.discuss")}
+            </Button>
+          ) : null}
+        </div>
+        {createConversation.isError ? (
+          <p className="text-sm text-destructive">{t("targets.conversationFailed")}</p>
+        ) : null}
         {target.summary ? <p className="max-w-3xl text-sm text-muted-foreground">{target.summary}</p> : null}
       </header>
-
-      {warningMessages.length > 0 ? (
-        <div className="flex items-start gap-3 border-y border-border py-3 text-sm">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-          <div className="space-y-1">
-            {warningMessages.map((message) => <p key={message}>{message}</p>)}
-          </div>
-        </div>
-      ) : null}
 
       {!isRevision ? (
         <Tabs
@@ -148,8 +220,14 @@ export function TargetWorkbench() {
         <div className="space-y-7">
           <dl className="grid grid-cols-1 border-y border-border sm:grid-cols-2 lg:grid-cols-4">
             <div className="py-4 sm:pr-5">
-              <dt className="text-xs text-muted-foreground">{t("targets.project")}</dt>
-              <dd className="mt-1 text-sm font-medium">{target.project?.name ?? t("targets.noProject")}</dd>
+              <dt className="text-xs text-muted-foreground">{t("targets.collection")}</dt>
+              <dd className="mt-1 text-sm font-medium">
+                {target.collection ? (
+                  <Link to="/collections" className="hover:underline">
+                    {target.collection.name}
+                  </Link>
+                ) : t("targets.noCollection")}
+              </dd>
             </div>
             <div className="border-t border-border py-4 sm:border-l sm:border-t-0 sm:px-5">
               <dt className="text-xs text-muted-foreground">{t("targets.outcomeOwner")}</dt>
@@ -215,23 +293,6 @@ export function TargetWorkbench() {
             </div>
           </section>
 
-          {target.authority.kind === "compatibility" ? (
-          <section aria-labelledby="target-source-title" className="border-y border-border py-4">
-            <h3 id="target-source-title" className="text-sm font-semibold">{t("targets.source")}</h3>
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-3 text-sm">
-              <span className="text-muted-foreground">{target.source.identifier ?? target.source.id}</span>
-              {warnings.includes("source_missing") ? (
-                <span className="text-muted-foreground">{t("targets.sourceUnavailable")}</span>
-              ) : (
-                <Link to={target.source.href} className="inline-flex items-center gap-1 font-medium hover:underline">
-                  {t("targets.openSource")}
-                  <ExternalLink className="h-4 w-4" />
-                </Link>
-              )}
-            </div>
-          </section>
-          ) : null}
-
           <div className="flex items-start gap-3 text-xs text-muted-foreground">
             <ShieldCheck className="h-4 w-4 shrink-0" />
             <p>{t("targets.readOnlyNotice")}</p>
@@ -239,13 +300,184 @@ export function TargetWorkbench() {
         </div>
       ) : null}
 
-      {activeTab === "stages" && !isRevision ? <EmptyTab message={t("targets.emptyTabs.stages")} /> : null}
-      {activeTab === "work" && !isRevision ? <EmptyTab message={t("targets.emptyTabs.work")} /> : null}
-      {activeTab === "submission" && !isRevision ? <EmptyTab message={t("targets.emptyTabs.submission")} /> : null}
-      {activeTab === "artifacts" && !isRevision ? <EmptyTab message={t("targets.emptyTabs.artifacts")} /> : null}
-      {activeTab === "evidence" && !isRevision ? <EmptyTab message={t("targets.emptyTabs.evidence")} /> : null}
-      {activeTab === "runs" && !isRevision ? <EmptyTab message={t("targets.emptyTabs.runs")} /> : null}
-      {activeTab === "timeline" && !isRevision ? <EmptyTab message={t("targets.emptyTabs.timeline")} /> : null}
+      {activeTab === "stages" && !isRevision ? (
+        <WorkspaceSectionState
+          loading={workspaceQuery.isLoading}
+          error={workspaceQuery.isError}
+          empty={t("targets.emptyTabs.stages")}
+        >
+          {workspace?.stages.length ? (
+            <ol className="border-y border-border">
+              {workspace.stages.map((stage) => (
+                <li key={stage.key} className="flex items-center gap-3 border-b border-border py-4 last:border-b-0">
+                  {stage.state === "completed" ? (
+                    <Check className="h-4 w-4 text-success" />
+                  ) : (
+                    <Circle className={stage.state === "blocked" ? "h-4 w-4 text-destructive" : "h-4 w-4 text-muted-foreground"} />
+                  )}
+                  <span className="text-sm font-medium">{t(`targets.stageNames.${stage.key}`)}</span>
+                  <span className="ml-auto text-xs text-muted-foreground">{t(`targets.stageStates.${stage.state}`)}</span>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+        </WorkspaceSectionState>
+      ) : null}
+
+      {activeTab === "work" && !isRevision ? (
+        <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.work")}>
+          {workspace?.work.length ? (
+            <ul className="border-y border-border">
+              {workspace.work.map((item) => (
+                <li key={item.id} className="flex flex-wrap items-center gap-3 border-b border-border py-4 last:border-b-0">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{item.nodeKey} · {item.title}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{item.kind} · {item.stage}</p>
+                  </div>
+                  <span className="text-xs text-muted-foreground">{item.status}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </WorkspaceSectionState>
+      ) : null}
+
+      {activeTab === "submission" && !isRevision ? (
+        <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.submission")}>
+          {workspace?.submissions.length ? (
+            <ul className="border-y border-border">
+              {workspace.submissions.map((submission) => (
+                <li key={submission.id} className="flex items-center justify-between py-4 text-sm">
+                  <span className="font-medium">{submission.id}</span>
+                  <span className="text-muted-foreground">{submission.status}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </WorkspaceSectionState>
+      ) : null}
+
+      {activeTab === "artifacts" && !isRevision ? (
+        <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.artifacts")}>
+          {workspace?.artifacts.length ? (
+            <ul className="border-y border-border">
+              {workspace.artifacts.map((artifact) => (
+                <li key={artifact.id} className="flex items-center justify-between gap-3 border-b border-border py-4 last:border-b-0">
+                  <Link to={artifact.href} className="truncate text-sm font-medium hover:underline">{artifact.title}</Link>
+                  <span className="shrink-0 text-xs text-muted-foreground">{artifact.mediaKind}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </WorkspaceSectionState>
+      ) : null}
+
+      {activeTab === "evidence" && !isRevision ? (
+        <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.evidence")}>
+          {workspace?.evidence.length ? (
+            <ul className="border-y border-border">
+              {workspace.evidence.map((evidence) => (
+                <li key={evidence.id} className="flex items-center justify-between gap-3 border-b border-border py-4 text-sm last:border-b-0">
+                  <span className="font-medium">{evidence.title}</span>
+                  <span className="text-muted-foreground">{evidence.result}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </WorkspaceSectionState>
+      ) : null}
+
+      {activeTab === "acceptance" && !isRevision ? (
+        <EmptyTab message={t("targets.emptyTabs.acceptance")} />
+      ) : null}
+
+      {activeTab === "runs" && !isRevision ? (
+        <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.runs")}>
+          {workspace?.runs.length ? (
+            <ul className="border-y border-border">
+              {workspace.runs.map((run) => (
+                <li key={run.id} className="space-y-4 border-b border-border py-4 last:border-b-0">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">{run.actor.principalId}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {run.kind} · {t("targets.execution.runId", { id: run.id.slice(0, 8) })} · {t("targets.execution.attemptCount", { count: run.attempt })}
+                      </p>
+                    </div>
+                    <span className="text-xs font-medium">{t(`targets.execution.statuses.${run.status}`)}</span>
+                    {(run.status === "failed" || (run.status === "queued" && run.attempt === 0)) ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => retryRun.mutate(run.id)}
+                        disabled={pendingRunId === run.id}
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                        {t(run.attempt === 0 ? "targets.execution.start" : "targets.execution.retry")}
+                      </Button>
+                    ) : null}
+                    {(run.status === "queued" || run.status === "running") && run.attempt > 0 ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => cancelRun.mutate(run.id)}
+                        disabled={pendingRunId === run.id}
+                      >
+                        <Square className="h-4 w-4" />
+                        {t("targets.execution.cancel")}
+                      </Button>
+                    ) : null}
+                  </div>
+                  {run.attempts.length ? (
+                    <ol className="divide-y divide-border border-t border-border">
+                      {run.attempts.map((attempt) => (
+                        <li key={attempt.id} className="grid gap-2 py-3 text-xs sm:grid-cols-4">
+                          <span className="font-medium">{t("targets.execution.attempt", { number: attempt.attemptNumber })}</span>
+                          <span className="text-muted-foreground">{t("targets.execution.fence", { token: attempt.fencingToken })}</span>
+                          <span className="text-muted-foreground">{t("targets.execution.cursor", { cursor: attempt.lastEventCursor })}</span>
+                          <span className="text-muted-foreground">
+                            {attempt.lease
+                              ? t("targets.execution.lease", { status: t(`targets.execution.leaseStatuses.${attempt.lease.status}`) })
+                              : t("targets.execution.noLease")}
+                          </span>
+                          {attempt.errorMessage ? <span className="text-destructive sm:col-span-4">{attempt.errorMessage}</span> : null}
+                        </li>
+                      ))}
+                    </ol>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {runCommandError ? (
+            <p className="mt-3 text-sm text-destructive">
+              {runCommandFailureDetail
+                ? t("targets.execution.commandFailedDetail", { detail: runCommandFailureDetail })
+                : t("targets.execution.commandFailed")}
+            </p>
+          ) : null}
+        </WorkspaceSectionState>
+      ) : null}
+
+      {activeTab === "timeline" && !isRevision ? (
+        <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.timeline")}>
+          {workspace?.timeline.length ? (
+            <ol className="border-y border-border">
+              {workspace.timeline.map((event) => (
+                <li key={event.id} className="flex flex-wrap items-start justify-between gap-3 border-b border-border py-4 last:border-b-0">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{t(`targets.timelineEvents.${event.type}`)}</p>
+                    {event.detail ? <p className="mt-1 truncate text-xs text-muted-foreground">{event.detail}</p> : null}
+                  </div>
+                  <time className="text-xs text-muted-foreground">{formatDateTime(event.occurredAt)}</time>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+        </WorkspaceSectionState>
+      ) : null}
     </div>
   );
 }

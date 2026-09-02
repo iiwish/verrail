@@ -1,10 +1,10 @@
 # Verrail 导航与路由迁移合同
 
-版本：0.4
+版本：0.5
 
 状态：`Confirmed`
 
-最后更新：2026-08-28
+最后更新：2026-09-01
 
 变更要求：一级信息架构、Canonical Route、路由身份、权限或兼容窗口发生变化时重新评审本合同
 
@@ -28,13 +28,13 @@ G1 继续使用现有 `/:workspacePrefix/*` URL 形态和 Workspace 前缀值，
 | ---: | --- | --- | --- |
 | 1 | Home | My Targets、Attention、风险、活动 Run 和最近交付 | `/home` |
 | 2 | Chat | 持久会话、上下文绑定、查询与受控操作入口 | `/chat` |
-| 3 | Projects | Project 与 Target 列表、筛选、状态和创建 | `/projects` |
+| 3 | Targets | Workspace 内 Target 列表、筛选、状态和可选 Collection 归类 | `/targets` |
 | 4 | Agents | AgentDefinition、Version、Evaluation 和 Deployment | `/agents` |
 | 5 | Infrastructure | Runner、Runtime、Connector、Secret、Storage 和环境 | `/infrastructure` |
 | 6 | Governance | Attention、Policy、Approval、Audit、Cost 和数据策略 | `/governance` |
 | 7 | Settings | Workspace、成员、角色、集成、计费和实验配置 | `/settings` |
 
-Search 与 Command Palette 是全局命令，不作为领域栏目。创建主命令是 `New Target`；`New Task` 只在 Target Workbench 的 Work 上下文或兼容页面出现。
+Search 与 Command Palette 是全局命令，不作为领域栏目。创建主命令是 `New Target`；该命令打开或创建 Conversation 并启动结构化目标草拟，不展示 Project 必填长表单。`New Task` 只在 Target Workbench 的 Work 上下文或兼容页面出现。
 
 Organization/Org Chart、Goals、Routines、Pipelines、Cases、Skills 和 Apps 不进入默认一级导航。它们按目标语义进入 Target、Agents、Infrastructure、Settings、二级 Advanced 区域或兼容深链。
 
@@ -48,30 +48,29 @@ Home 是操作型收件箱，不是图表 Dashboard。默认按以下优先级�
 4. 最近发生实质变化的 Target 和 Submission；
 5. 运行容量或策略异常。
 
-Home 支持 Project、Role、Stage、Status 和 Owner 筛选。没有真实数据时展示可执行空状态，不展示演示图表或营销说明。
+Home 支持 Collection、Role、Stage、Status 和 Owner 筛选。没有真实数据时展示可执行空状态，不展示演示图表或营销说明。
 
 ## 5. Chat
 
 Chat 是紧随 Home 的一级工作入口。`/chat` 展示新会话入口和最近会话，`/chat/:conversationId` 展示持久线程。上下文侧栏提供 New chat、Search、Pinned、Recent 和 Archived；基础管理包含创建、自动命名、重命名、置顶、搜索、归档和恢复，不以硬删除作为默认操作。
 
-Conversation 属于当前 Workspace，并可显式绑定 Project、Target、Stage 或 ArtifactRevision。对话回复中的 Target、Run、ActionRequest、Approval、Artifact、Evidence、Review 和 Acceptance 必须作为可跳转、可检查的领域引用呈现。聊天记录不构成 Target 完成、Evidence、外部 Effect 批准或 Acceptance。
+Conversation 属于当前 Workspace。一个 Provider 群聊或私聊映射为一个持久 Conversation；Web Chat 创建独立 Conversation。Conversation 可以显式绑定 Target、可选 Collection、Stage 或 ArtifactRevision。对话回复中的 TargetCreationDraft、Target、Run、ActionRequest、Approval、Artifact、Evidence、Review 和 Acceptance 必须作为可跳转、可检查的对象呈现。聊天记录不构成 Target、Target 完成、Evidence、外部 Effect 批准或 Acceptance。
 
-## 6. Project 与 Target 路由
+普通消息不会出现目标草稿。只有用户明确要求创建目标时，系统才显示 TargetCreationDraft，通过后续多轮消息补齐缺失信息，并在授权人确认完整版本后创建 Target。具体合同见 [`conversation-target-creation.md`](./conversation-target-creation.md)。
 
-Project 的规范产品层级是 `Project -> Target -> Work`。Project 导航以 Overview 和 Targets 为主；Work 只在 Target Workbench 内作为正式执行表面。Project 可以提供跨 Target 的只读工作聚合，但必须按 Target 分组且创建 Work 时要求确定 Target。继承的 Project-scoped Issue 保留在 Legacy Work 兼容表面，不与 Targets 并列表达新的领域所有权。
+## 6. Target 与可选 Collection 路由
 
-Projects 使用领域层级型上下文二级侧栏。侧栏提供全部项目入口、当前 Principal 可见的 Project 列表和创建操作；选中 Project 在原位展开当前 Principal 可见的 Target 列表，而不是展开 Project 功能菜单。进入 Target Workbench 后保持同一 Projects 侧栏、所属 Project 和选中 Target，使 `Project -> Target` 关系持续可见。
+规范产品层级是 `Workspace -> Target -> Work Graph -> Run / Artifact / Evidence / Acceptance`。Target 直接进入 Target Workbench，Work 只在 Target 上下文内创建。Collection 是 Target 的可选关联，可以提供跨 Target 的只读工作聚合，但必须按 Target 分组，不表达领域所有权。Project 和 Issue 不进入 Verrail 导航或 Target 归属关系。
 
-Project 行进入独立 Project Detail。Overview、Resources、Plugin 能力、Settings、Budget 与 Legacy Work 属于 Project Detail 内部导航，不占用对象层级侧栏；Project Targets 页面提供筛选、创建和批量查看，侧栏负责在 Project 与 Target 之间快速切换。Target 和 Legacy Work 不作为 Project 的同级对象展示。
+Targets 使用对象列表型上下文二级侧栏。侧栏直接提供当前 Principal 可见的 Target 切换和创建入口；Target 列表页提供状态与 Attention 筛选。进入 Target Workbench 后保持选中 Target。Collection 作为可选筛选和属性显示，不占据 Target 面包屑，也不要求用户先选择归类。
+
+Collections 是 Targets 下的轻量管理表面，使用 `/collections` 创建分组，并通过 `/targets?collectionId=:collectionId` 查看关联 Target。Collection 不进入主导航一级菜单，也不拥有 Target。
 
 | 对象 | Canonical Route | 主要表面 |
 | --- | --- | --- |
-| Project 列表 | `/projects` | Project、活动 Target、健康和最近活动 |
-| Project 概览 | `/projects/:projectId` | Overview、Targets、Resources、Members、Configuration |
-| Project Targets | `/projects/:projectId/targets` | 目标列表、筛选、创建和批量查看 |
-| Project Legacy Work | `/projects/:projectId/legacy-work` | 继承的 Project-scoped Issue 兼容操作；不推断 Target 归属 |
+| Target 列表 | `/targets` | Workspace 内 Target、筛选、Attention、状态和可选归类 |
 | Target Workbench | `/targets/:targetId` | 默认跳转 Overview |
-| Target Tab | `/targets/:targetId/:tab` | `overview`、`stages`、`work`、`submission`、`artifacts`、`evidence`、`runs`、`timeline` |
+| Target Tab | `/targets/:targetId/:tab` | `overview`、`work`、`runs`、`artifacts`、`evidence`、`acceptance`、`stages`、`submission`、`timeline` |
 | TargetRevision Snapshot | `/targets/:targetId/revisions/:targetRevisionId` | 不可变责任合同、适用 Graph、Criterion、Submission 和历史；非活动 Revision 默认只读 |
 | Work Detail | `/targets/:targetId/work/:workNodeId` | Task/Gate 输入、责任、结果、Evidence 和历史 |
 | Submission Detail | `/targets/:targetId/submissions/:submissionId` | 固定 TargetRevision、ArtifactRevision、VerificationResult、Review 和 Acceptance |
@@ -79,8 +78,10 @@ Project 行进入独立 Project Detail。Overview、Resources、Plugin 能力、
 | Evidence Detail | `/targets/:targetId/evidence/:evidenceId` | Criterion、Claim、来源、验证器、Hash 和 VerificationResult |
 | Agent Run Detail | `/targets/:targetId/runs/:runId` | RunAttempt、日志、成本、Artifact、Evidence、取消和重试 |
 | Integration Run Detail | `/targets/:targetId/integrations/:integrationRunId` | IntegrationAttempt、Provider Receipt、Evidence、回调和重试 |
+| Collection 列表 | `/collections` | 可选长期归类、活动 Target 和健康；能力可用前不显示入口 |
+| Collection Targets | `/collections/:collectionId/targets` | 预设 Collection 筛选的 Target 列表 |
 
-Target Workbench 始终显示 Target 标题、状态、Outcome Owner、当前 Stage、风险、活动 Submission 和 Attention。Graph 是 `Work` 中的高级视图，不成为默认落地页。
+Target Workbench 始终显示 Target 标题、状态、Outcome Owner、当前 Stage、风险、活动 Submission 和 Attention。一级对象 Tab 按 `Work Graph`、`Runs`、`Artifacts`、`Evidence`、`Acceptance` 表达交付链；Stages、Submission 和 Timeline 是同一 Target 的过程投影与审阅入口。
 
 ## 7. 管理表面
 
@@ -103,9 +104,9 @@ Infrastructure 的当前页面复用既有 Environment、Secret、Adapter 和 Pl
 | --- | --- | --- |
 | `/dashboard`、`/dashboard/live` | `/home` | 新 Home 可用后重定向；Live Runs 进入 Home 区块和 Target Runs |
 | `/inbox/*`、`/decisions/*` | `/home`、`/governance/attention` | 保留筛选参数和未读/阻塞语义 |
-| `/projects/*` | `/projects/*` | 保留现有 Project ID 和深链，增加 Targets 子路由 |
+| `/projects/*` | 不进入 Verrail 一级信息架构 | 继承实现可以保留独立路由，但不得跳转、筛选或创建 Target |
 | `/issues/*` | Target Workbench 的 Work 或兼容 Task Detail | 有明确 Target/Work 映射前不强制重定向 |
-| `/cases/*` | `/targets/:targetId` | 仅在 Case 与 Target 映射存在且对账通过后重定向 |
+| `/cases/*` | 不进入 Verrail 一级信息架构 | 继承实现可以保留独立路由，但不得自动转换或重定向为 Target |
 | `/goals/*` | Target Objective/Context 或兼容页面 | 不把 Goal 自动转换为 Target |
 | `/routines/*` | Target Trigger/Automation 或 Settings Advanced | 保留兼容深链 |
 | `/pipelines/*`、`/review-queue` | ProcessTemplate、StageTemplate、Work/Review | 新对象存在前保留实验门禁和深链 |
@@ -143,37 +144,44 @@ Infrastructure 的当前页面复用既有 Environment、Secret、Adapter 和 Pl
 13. 导航项、Badge 和聚合计数只显示当前 Principal 有权读取的范围；隐藏导航不是授权机制，直接访问 Canonical Route 仍由服务端权限校验并返回一致的 Permission Denied 或 Not Found。
 14. 需要审阅、决定、验收、审计或分享的链接必须指向固定 TargetRevision、Submission、ArtifactRevision、Evidence、Run 或 IntegrationRun，不得只链接到会随活动 Revision 变化的默认 Tab。
 15. 每个嵌套对象路由都校验 Workspace 和父对象关系。`workNodeId`、`submissionId`、`artifactRevisionId`、`evidenceId`、`runId` 和 `integrationRunId` 必须是不可变全局标识；ID 存在但不属于 URL 中 Target 的对象不得被渲染或泄露。
-16. Verrail 模式中的 Project 裸路由固定进入 Overview，不读取继承 Tasks Tab 缓存；Project 一级操作只创建 Target，`New Task` 不出现在 Project Overview 或 Targets。
-17. `/projects/:projectId/issues` 及其筛选深链继续打开同一兼容工作数据；Verrail 新链接使用 `/projects/:projectId/legacy-work`，经典导航继续使用原 Tasks 命名和路径。
-18. Project 列表中的 Target 数量、Attention 和健康摘要必须在服务端完成 Principal 授权过滤后计算，不从分页行数、隐藏对象或旧 `taskCount` 推断。
-19. Projects 与 Agents 的二级侧栏都以对象切换为主，但遵循各自领域层级。Projects 选中 Project 后展开 Target 列表，Project 管理功能收口在 Project Detail；Agents 选中 Agent 后展开该 Agent 的功能入口。移动端使用同一信息架构的抽屉呈现。
+16. Collection 中的 Target 数量、Attention 和健康摘要必须在服务端完成 Principal 授权过滤后计算，不从分页行数或隐藏对象推断。
+17. Targets 与 Agents 的二级侧栏都以对象切换为主。Targets 直接展示 Workspace-scoped Target 列表并保持当前 Target 选中态；不得复用 Projects 二级侧栏、Project 列表或 Project 面包屑。Collection 只作为可选筛选和属性；Agents 选中 Agent 后展开该 Agent 的功能入口。移动端使用同一信息架构的抽屉呈现。
 
 ### Target 只读投影前提
 
-首个 Target Workbench 使用版本化 `TargetReadModel`，包含稳定 Target ID、活动 TargetRevision ID、来源对象类型与 ID、Workspace、Project、标题、状态、责任人、Stage、Attention、Artifact、Evidence 和最近运行摘要。它是可重建的只读投影，不是新的领域实体或写入所有者。兼容 Adapter 可以从已对账的 Case、Issue 或其他存量事实构建该投影，但 UI 不得自行合成 Target ID 或猜测 Case/Issue 等价关系。
+Target Workbench 使用版本化 `TargetReadModel`，包含稳定 Target ID、活动 TargetRevision ID、Workspace、可选 Collection、标题、状态、责任人、Stage、Attention、Artifact、Evidence 和最近运行摘要。它从原生 Target 事实重建，不是新的领域实体或写入所有者；UI 不得从 Project、Case 或 Issue 合成 Target ID。
 
-`TargetReadModel` 与 Case/Issue 的映射、权限、Not Found、缺失字段和来源跳转遵循 [`target-read-model.md`](./target-read-model.md)。不存在可靠投影时继续展示兼容页面，不发布空壳 Target 深链。
+`TargetReadModel` 的权限、Not Found、缺失字段和版本语义遵循 [`target-read-model.md`](./target-read-model.md)。不存在原生 Target 事实时返回 Not Found，不发布空壳 Target 深链。
 
-## 10. 首个实施切片
+## 10. G1 实施切片
 
-首个切片只包含：
+基础切片包含：
 
 - Verrail 品牌应用壳；
 - `/home` 操作型入口，复用当前 Attention、Inbox、Live Run 和 Project 数据；
 - `/chat` 持久会话、基础会话管理和本地受限兼容运行时；
-- `/projects` 与 `/projects/:projectId/targets`；
+- `/targets` Workspace-scoped Target 列表，`/collections` 管理可选分组；
 - `/targets/:targetId` 只读 Target Workbench 骨架；
 - 新 Sidebar、Command Palette 和 Breadcrumb 的 Canonical Route；
 - 旧 Dashboard、Inbox、Projects、Issues 和 Cases 深链兼容；
 - Loading、Empty、Error、Permission Denied 和 Not Found 状态。
 
-首个切片不创建新的权威 Target 写模型，不删除旧路由，不迁移 Auth 领域逻辑或身份安全标识，也不迁移 Secret、Plugin、Adapter 或执行恢复逻辑；Auth 表面的 Verrail Display Name 仍按品牌合同处理。
+Conversation-first 创建切片包含：
+
+- Provider 群聊/私聊与内部 Conversation 的稳定绑定；
+- 显式创建目标意图和可恢复 TargetCreationDraft；
+- 多轮补全、结构化确认卡片和授权人确认；
+- `collectionId` 可选的幂等 Target 创建命令；
+- 创建成功后的 Conversation ContextBinding、目标卡片和 Target Workbench 跳转；
+- 普通消息、歧义意图、并发草稿、权限不足和安全重试测试。
+
+两个切片都保留旧路由，不迁移 Auth 领域逻辑或身份安全标识，也不迁移 Secret、Plugin、Adapter 或执行恢复逻辑；Auth 表面的 Verrail Display Name 仍按品牌合同处理。
 
 ## 11. 验收标准
 
 1. 用户进入 Workspace 后首先看到 Home，而不是 AI 公司 Dashboard；
-2. 一级导航只包含 Home、Chat、Projects、Agents、Infrastructure、Governance 和 Settings；
-3. 用户从 Home 或 Projects 能进入 Target Workbench，并始终知道当前 Workspace、Project 和 Target；
+2. 一级导航只包含 Home、Chat、Targets、Agents、Infrastructure、Governance 和 Settings；
+3. 用户从 Home、Chat 或 Targets 能进入 Target Workbench，并始终知道当前 Workspace 和 Target；Collection 仅在存在关联时作为可选属性显示；
 4. Target Workbench 可回答目标、责任人、阶段、阻塞、产物、证据和下一步行动；
 5. 所有旧邮件、通知、收藏、Issue、Case、Agent 和设置深链继续打开正确资源或明确兼容页；
 6. Workspace 切换、刷新、前进后退、Command Palette、Breadcrumb 和 Plugin Launcher 行为一致；
@@ -183,6 +191,7 @@ Infrastructure 的当前页面复用既有 Environment、Secret、Adapter 和 Pl
 10. Review、Acceptance、通知和审计链接固定到不可变版本对象，活动 Revision 变化后仍能打开原上下文；
 11. 无权访问的导航、Badge、搜索结果和聚合计数不泄露跨 Workspace 或受限对象信息；
 12. 相关组件测试、路由测试、权限测试、locale/parity、`pnpm check:token-gates`、typecheck 和 build 通过。
+13. 普通 Conversation 消息不显示目标草稿；显式创建意图进入多轮补全，确认成功后跳转到不依赖 Collection 的 Target Workbench。
 
 ## 12. 非目标
 
