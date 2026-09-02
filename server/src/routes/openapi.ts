@@ -194,12 +194,20 @@ import {
   workspaceFileListQuerySchema,
   workspaceFileResourceQuerySchema,
   // Native Target domain read model
+  createAgentDefinitionSchema,
   createCollectionSchema,
+  createDeploymentSchema,
   createGraphRevisionSchema,
+  createRunAttemptSchema,
   createRunSchema,
   createTargetSchema,
+  publishAgentVersionSchema,
+  recordEvaluationRunSchema,
+  reportRunEventSchema,
+  reviseDeploymentSchema,
   targetIdempotencyKeySchema,
   targetListQuerySchema,
+  updateAgentDefinitionSchema,
   // Workspace conversations
   conversationListQuerySchema,
   createConversationSchema,
@@ -3037,6 +3045,134 @@ registry.registerPath({
     params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid(), graphRevisionId: z.string().uuid(), workNodeId: z.string().uuid() }),
     headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
     body: jsonBody(createRunSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/runs/{runId}/attempts",
+  tags: ["targets"],
+  summary: "Create a fenced RunAttempt with an execution lease for a Run",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), runId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(createRunAttemptSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/runs/{runId}/attempts/{runAttemptId}/events",
+  tags: ["targets"],
+  summary: "Report a fenced RunEvent for a RunAttempt",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), runId: z.string().uuid(), runAttemptId: z.string().uuid() }),
+    headers: z.object({
+      "Idempotency-Key": targetIdempotencyKeySchema,
+      "X-Verrail-Executor-Id": z.string().min(1),
+    }),
+    body: jsonBody(reportRunEventSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/runs/{runId}/cancel",
+  tags: ["targets"],
+  summary: "Request cancellation of a Run through a governed domain command",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), runId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/agent-lifecycle",
+  tags: ["agents"],
+  summary: "Read the versioned Agent lifecycle facts for a workspace",
+  request: { params: z.object({ workspaceId: z.string().uuid() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/agent-definitions",
+  tags: ["agents"],
+  summary: "Create a governed AgentDefinition",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(createAgentDefinitionSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/workspaces/{workspaceId}/agent-definitions/{definitionId}",
+  tags: ["agents"],
+  summary: "Update an editable AgentDefinition",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), definitionId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(updateAgentDefinitionSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/agent-definitions/{definitionId}/versions",
+  tags: ["agents"],
+  summary: "Publish an immutable, content-addressed AgentVersion",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), definitionId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(publishAgentVersionSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/evaluation-runs",
+  tags: ["agents"],
+  summary: "Record an EvaluationRun that gates production activation",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(recordEvaluationRunSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/deployments",
+  tags: ["agents"],
+  summary: "Create a versioned Deployment for an AgentVersion",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(createDeploymentSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/deployments/{deploymentId}/revisions",
+  tags: ["agents"],
+  summary: "Revise a Deployment with an audited, immutable revision",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), deploymentId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(reviseDeploymentSchema),
   },
   responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
 });
