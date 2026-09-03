@@ -23,6 +23,7 @@ import type {
   ApproveActionInput,
   CreateArtifactInput,
   CreateClaimInput,
+  CreateGithubRepoBindingInput,
   CreateSubmissionInput,
   ExecuteActionInput,
   RecordDeliveryReviewInput,
@@ -102,7 +103,7 @@ export interface AdjudicationCommandResponseV1 {
 // services/domain-api/internal/httpapi/server.go; keep in sync.
 export interface ConnectorCommandResponseV1 {
   schemaVersion: 1;
-  resourceType: "integration_run" | "action_request" | "action_approval" | "effect_receipt";
+  resourceType: "integration_run" | "action_request" | "action_approval" | "effect_receipt" | "repo_binding";
   resourceId: string;
   replayed: boolean;
 }
@@ -133,6 +134,7 @@ export interface VerrailDomainApiClient {
   requestPullRequestAction(command: HumanCommand & { input: RequestPullRequestActionInput }): Promise<ConnectorCommandResponseV1>;
   approveAction(command: HumanCommand & { actionRequestId: string; input: ApproveActionInput }): Promise<ConnectorCommandResponseV1>;
   executeAction(command: HumanCommand & { actionRequestId: string; input: ExecuteActionInput }): Promise<ConnectorCommandResponseV1>;
+  createGithubRepoBinding(command: HumanCommand & { input: CreateGithubRepoBindingInput }): Promise<ConnectorCommandResponseV1>;
 }
 
 type DomainApiErrorPayload = { error?: unknown; code?: unknown; retryable?: unknown };
@@ -212,5 +214,6 @@ export function createVerrailDomainApiClient(options: {
     requestPullRequestAction: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/pull-request-actions`, command.input),
     approveAction: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/pull-request-actions/${encodeURIComponent(command.actionRequestId)}/approvals`, command.input),
     executeAction: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/pull-request-actions/${encodeURIComponent(command.actionRequestId)}/executions`, command.input),
+    createGithubRepoBinding: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/github-repo-bindings`, command.input),
   };
 }

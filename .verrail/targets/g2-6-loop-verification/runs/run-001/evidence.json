@@ -12,7 +12,8 @@
     "local_delivery_status": "needs_review"
   },
   "change": {
-    "provisioning_command": "services/domain-api/internal/target/repo_binding.go + repo_binding_store.go + repo_binding_test.go: CreateGithubRepoBinding (admin-gated: workspace owner-role membership OR instance admin; connection must exist in workspace AND be enabled; one binding per workspace with content-addressed dedup replay and conflict rejection; receipt + audit transaction pattern), httpapi route POST /v1/workspaces/{workspaceId}/github-repo-bindings; Store wired without functional-option changes (default real GitHub client)"
+    "provisioning_command": "services/domain-api/internal/target/repo_binding.go + repo_binding_store.go + repo_binding_test.go: CreateGithubRepoBinding (admin-gated: workspace owner-role membership OR instance admin; connection must exist in workspace AND be enabled; one binding per workspace with content-addressed dedup replay and conflict rejection; receipt + audit transaction pattern), httpapi route POST /v1/workspaces/{workspaceId}/github-repo-bindings; Store wired without functional-option changes (default real GitHub client)",
+    "facade_route": "server/src/routes/connector.ts gains POST /workspaces/:id/github-repo-bindings (board-only, idempotency-key, shared createGithubRepoBindingSchema) + client method + OpenAPI registration + route test; shared zod contract added to packages/shared/src/validators/connector.ts with validator tests"
   },
   "verification": [
     {
@@ -49,6 +50,11 @@
       "scope": "repository pipeline",
       "status": "passed",
       "result": "Root pipeline green on the pre-G2.6 tree (run 7); the provisioning commit touches only Go connector/binding code verified by go vet/build/test -count=1 and the DB-gated integration above"
+    },
+    {
+      "scope": "signature-loop facts render on the live stack (criterion 5)",
+      "status": "passed",
+      "result": "Workspace read model for the G2.4 runtime target (3e9c92ff) renders the full signature-loop fact set with real data: artifacts 1 (1 revision), claims 1 (supported), evidence 1 (high trust), verificationResults 1, submissions 1 (with submissionHash) — and honest empty sets for reviews/acceptances (governance correctly rejected self-review, so no independent review or acceptance exists in single-human mode) and connector facts (integration runs / action requests / effect receipts seeded on the G2.5 target, not this one). schemaVersion 1"
     }
   ],
   "residual_risks": [
