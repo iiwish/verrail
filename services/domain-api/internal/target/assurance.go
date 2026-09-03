@@ -175,6 +175,9 @@ func ValidateRecordEvidenceInput(input *RecordEvidenceInput) error {
 	if input.TrustLevel != "high" && input.TrustLevel != "medium" && input.TrustLevel != "low" {
 		return validation("trustLevel must be high, medium, or low")
 	}
+	if input.ProducerPrincipalType == "agent" && (input.Kind != "agent_observation" || input.TrustLevel != "low") {
+		return validation("agent-produced evidence must be a low-trust agent observation")
+	}
 	return nil
 }
 

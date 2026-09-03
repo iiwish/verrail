@@ -62,6 +62,19 @@ describe("assurance validators", () => {
     expect(() => recordEvidenceSchema.parse({ ...base, producerPrincipalType: "robot" })).toThrow();
     expect(() => recordEvidenceSchema.parse({ ...base, trustLevel: "absolute" })).toThrow();
     expect(() => recordEvidenceSchema.parse({ ...base, objectHash: "z".repeat(64) })).toThrow();
+    expect(() => recordEvidenceSchema.parse({ ...base, producerPrincipalType: "agent" })).toThrow();
+    expect(() =>
+      recordEvidenceSchema.parse({ ...base, producerPrincipalType: "agent", kind: "agent_observation", trustLevel: "high" }),
+    ).toThrow();
+    expect(
+      recordEvidenceSchema.parse({
+        ...base,
+        producerPrincipalType: "agent",
+        kind: "agent_observation",
+        trustLevel: "low",
+        reference: "session/agent-1",
+      }),
+    ).toMatchObject({ kind: "agent_observation", trustLevel: "low" });
   });
 
   it("enforces the waiver rule on verification results", () => {

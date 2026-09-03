@@ -40,16 +40,27 @@ export const createClaimSchema = z.object({
   title: z.string().trim().min(1).max(200),
 }).strict();
 
-export const recordEvidenceSchema = z.object({
-  targetId: z.string().uuid(),
-  claimId: z.string().uuid().nullable().optional(),
-  kind: assuranceEvidenceKindSchema,
-  producerPrincipalType: principalType,
-  producerPrincipalId: z.string().trim().min(1).max(200),
-  objectHash: sha256Hex,
-  reference: z.string().trim().min(1).max(500),
-  trustLevel: assuranceTrustLevelSchema,
-}).strict();
+export const recordEvidenceSchema = z
+  .object({
+    targetId: z.string().uuid(),
+    claimId: z.string().uuid().nullable().optional(),
+    kind: assuranceEvidenceKindSchema,
+    producerPrincipalType: principalType,
+    producerPrincipalId: z.string().trim().min(1).max(200),
+    objectHash: sha256Hex,
+    reference: z.string().trim().min(1).max(500),
+    trustLevel: assuranceTrustLevelSchema,
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.producerPrincipalType === "agent" && (value.kind !== "agent_observation" || value.trustLevel !== "low")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["trustLevel"],
+        message: "Agent-produced evidence must be a low-trust agent observation",
+      });
+    }
+  });
 
 export const recordVerificationResultSchema = z.object({
   claimId: z.string().uuid(),

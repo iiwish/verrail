@@ -76,6 +76,23 @@ func TestRecordEvidenceInputValidation(t *testing.T) {
 	badTrust := valid
 	badTrust.TrustLevel = "absolute"
 	require.Error(t, ValidateRecordEvidenceInput(&badTrust))
+
+	agentImpersonation := valid
+	agentImpersonation.ProducerPrincipalType = "agent"
+	require.Error(t, ValidateRecordEvidenceInput(&agentImpersonation))
+
+	agentHighTrust := valid
+	agentHighTrust.ProducerPrincipalType = "agent"
+	agentHighTrust.Kind = "agent_observation"
+	agentHighTrust.TrustLevel = "high"
+	require.Error(t, ValidateRecordEvidenceInput(&agentHighTrust))
+
+	agentObservation := valid
+	agentObservation.ProducerPrincipalType = "agent"
+	agentObservation.Kind = "agent_observation"
+	agentObservation.TrustLevel = "low"
+	agentObservation.Reference = "session/agent-1"
+	require.NoError(t, ValidateRecordEvidenceInput(&agentObservation))
 }
 
 func TestRecordVerificationResultValidation(t *testing.T) {
@@ -531,5 +548,22 @@ func TestAssuranceContractsIntegration(t *testing.T) {
 		require.NotNil(t, boundClaim)
 		require.Equal(t, claimID, *boundClaim)
 		require.Equal(t, "high", trustLevel)
+	})
+
+	t.Run("evidence claim must belong to the given target", func(t *testing.T) {
+		otherTargetID, _ := harness.createTarget()
+		mismatchClaimID := harness.createClaim(targetID, targetRevisionID, "ac-9")
+		_, err := harness.store.RecordEvidence(ctx, buildAssuranceCommand(harness, AssuranceEvidenceRecordCommand, "", RecordEvidenceInput{
+			TargetID:              otherTargetID,
+			ClaimID:               &mismatchClaimID,
+			Kind:                  "ci_result",
+			ProducerPrincipalType: "service",
+			ProducerPrincipalID:   "ci-runner",
+			ObjectHash:            assuranceTestHash,
+			Reference:             "ci/run/mismatch",
+			TrustLevel:            "high",
+		}))
+		requireLifecycleCode(t, err, "TARGET_COMMAND_INVALID")
+		require.Equal(t, "open", harness.claimStatus(mismatchClaimID), "a rejected evidence record must not touch the claim")
 	})
 }

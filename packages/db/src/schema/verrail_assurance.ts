@@ -192,6 +192,10 @@ export const verrailEvidence = pgTable(
       "verrail_evidence_trust_level_check",
       sql`${table.trustLevel} in ('high', 'medium', 'low')`,
     ),
+    agentTrustCheck: check(
+      "verrail_evidence_agent_trust_check",
+      sql`${table.producerPrincipalType} <> 'agent' or (${table.kind} = 'agent_observation' and ${table.trustLevel} = 'low')`,
+    ),
   }),
 );
 

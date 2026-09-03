@@ -64,7 +64,8 @@ CREATE TABLE "verrail_evidence" (
 	CONSTRAINT "verrail_evidence_id_workspace_uq" UNIQUE("id","workspace_id"),
 	CONSTRAINT "verrail_evidence_kind_check" CHECK ("verrail_evidence"."kind" in ('ci_result', 'scan_result', 'human_review', 'agent_observation', 'external_reference')),
 	CONSTRAINT "verrail_evidence_producer_type_check" CHECK ("verrail_evidence"."producer_principal_type" in ('user', 'service', 'agent')),
-	CONSTRAINT "verrail_evidence_trust_level_check" CHECK ("verrail_evidence"."trust_level" in ('high', 'medium', 'low'))
+	CONSTRAINT "verrail_evidence_trust_level_check" CHECK ("verrail_evidence"."trust_level" in ('high', 'medium', 'low')),
+	CONSTRAINT "verrail_evidence_agent_trust_check" CHECK ("verrail_evidence"."producer_principal_type" <> 'agent' or ("verrail_evidence"."kind" = 'agent_observation' and "verrail_evidence"."trust_level" = 'low'))
 );
 --> statement-breakpoint
 CREATE TABLE "verrail_verification_results" (

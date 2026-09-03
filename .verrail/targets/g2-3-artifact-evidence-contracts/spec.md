@@ -68,8 +68,10 @@ outbox in this slice):
 
 - CreateArtifact, AddArtifactRevision, CreateClaim, RecordEvidence,
   RecordVerificationResult.
-- AddArtifactRevision rejects a reused (artifact, content_hash); revision
-  numbers allocate monotonically under the artifact row lock.
+- AddArtifactRevision deduplicates a reused (artifact, content_hash) by
+  replaying the existing revision id (content addressing: same hash is the
+  same content); revision numbers allocate monotonically under the artifact
+  row lock.
 - RecordEvidence rejects mutation by design (insert-only).
 - RecordVerificationResult validates the waiver rule (waived requires
   waiver_reference) and requires evidence_ids to reference same-workspace

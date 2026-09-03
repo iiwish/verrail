@@ -167,8 +167,16 @@ func (store *Store) RecordEvidence(ctx context.Context, command AgentLifecycleCo
 	if err := assertAssuranceTarget(ctx, tx, command.WorkspaceID, command.Input.TargetID); err != nil {
 		return AgentLifecycleResult{}, err
 	}
-	if err := assertAssuranceReference(ctx, tx, command.WorkspaceID, command.Input.ClaimID, "verrail_claims", "Claim"); err != nil {
-		return AgentLifecycleResult{}, err
+	if command.Input.ClaimID != nil {
+		var claimTargetID string
+		if err := tx.QueryRow(ctx, `select target_id from verrail_claims where id=$1 and workspace_id=$2`, *command.Input.ClaimID, command.WorkspaceID).Scan(&claimTargetID); errors.Is(err, pgx.ErrNoRows) {
+			return AgentLifecycleResult{}, assuranceNotFound("Claim")
+		} else if err != nil {
+			return AgentLifecycleResult{}, err
+		}
+		if claimTargetID != command.Input.TargetID {
+			return AgentLifecycleResult{}, validation("Evidence claim does not belong to the given Target")
+		}
 	}
 	evidenceID, _ := NewUUID()
 	if _, err := tx.Exec(ctx, `insert into verrail_evidence(id,workspace_id,target_id,claim_id,kind,producer_principal_type,producer_principal_id,object_hash,reference,trust_level,created_by_principal_type,created_by_principal_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'user',$11)`, evidenceID, command.WorkspaceID, command.Input.TargetID, command.Input.ClaimID, command.Input.Kind, command.Input.ProducerPrincipalType, command.Input.ProducerPrincipalID, command.Input.ObjectHash, command.Input.Reference, command.Input.TrustLevel, command.Principal.ID); err != nil {
