@@ -22,7 +22,15 @@ import { statusBadge, statusBadgeDefault } from "../lib/status-colors";
 import { queryKeys } from "../lib/queryKeys";
 import { formatDateTime } from "../lib/utils";
 import { cn } from "@/lib/utils";
-import type { AssuranceClaimStatus, AssuranceEvidenceV1, AssuranceVerdict } from "@paperclipai/shared";
+import type {
+  AdjudicationAcceptanceV1,
+  AdjudicationDeliveryReviewV1,
+  AdjudicationReviewVerdict,
+  AdjudicationAcceptanceValidity,
+  AssuranceClaimStatus,
+  AssuranceEvidenceV1,
+  AssuranceVerdict,
+} from "@paperclipai/shared";
 import { useTranslation } from "@/i18n";
 
 const TARGET_TABS = [
@@ -82,6 +90,23 @@ const CLAIM_STATUS_TONES: Record<AssuranceClaimStatus, ToneLevel> = {
   waived: "warning",
 };
 
+const REVIEW_VERDICT_TONES: Record<AdjudicationReviewVerdict, ToneLevel> = {
+  approved: "positive",
+  changes_requested: "warning",
+  rejected: "danger",
+};
+
+const ACCEPTANCE_VALIDITY_TONES: Record<AdjudicationAcceptanceValidity, ToneLevel> = {
+  valid: "positive",
+  invalid: "warning",
+};
+
+function acceptanceValidityLabelKey(acceptance: Pick<AdjudicationAcceptanceV1, "validity" | "invalidReason">): string {
+  return acceptance.validity === "valid" || acceptance.invalidReason === null
+    ? "targets.adjudication.accepted"
+    : `targets.adjudication.invalidReasons.${acceptance.invalidReason}`;
+}
+
 function truncateFact(value: string) {
   return value.length > 12 ? `${value.slice(0, 12)}…` : value;
 }
@@ -123,6 +148,50 @@ function EvidenceList({ items }: { items: AssuranceEvidenceV1[] }) {
         </li>
       ))}
     </ol>
+  );
+}
+
+function DeliveryReviewList({ reviews }: { reviews: AdjudicationDeliveryReviewV1[] }) {
+  const { t } = useTranslation();
+  return (
+    <ol className="divide-y divide-border border-t border-border">
+      {reviews.map((review) => (
+        <li key={review.id} className="space-y-2 py-2 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <ToneBadge tone={REVIEW_VERDICT_TONES[review.verdict]}>
+              {t(`targets.adjudication.reviewVerdicts.${review.verdict}`)}
+            </ToneBadge>
+            <span>{review.reviewer.principalId}</span>
+            <span>{formatDateTime(review.createdAt)}</span>
+          </div>
+          {review.unprovenItems.length ? (
+            <div className="space-y-1">
+              <p className="font-medium">{t("targets.adjudication.unprovenItems")}</p>
+              <ul className="list-disc space-y-1 pl-5">
+                {review.unprovenItems.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </div>
+          ) : null}
+          {review.risks ? <p>{t("targets.adjudication.risks", { risks: review.risks })}</p> : null}
+          {review.comments ? <p>{t("targets.adjudication.comments", { comments: review.comments })}</p> : null}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function AcceptanceChip({ acceptance }: { acceptance: AdjudicationAcceptanceV1 }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <ToneBadge tone={ACCEPTANCE_VALIDITY_TONES[acceptance.validity]}>
+        {t(acceptanceValidityLabelKey(acceptance))}
+      </ToneBadge>
+      <span className="text-xs text-muted-foreground">
+        {t(`targets.adjudication.authorities.${acceptance.authority}`)}
+      </span>
+      <span className="text-xs text-muted-foreground">{acceptance.acceptedBy.principalId}</span>
+    </div>
   );
 }
 
@@ -407,12 +476,37 @@ export function TargetWorkbench() {
         <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.submission")}>
           {workspace?.submissions.length ? (
             <ul className="border-y border-border">
-              {workspace.submissions.map((submission) => (
-                <li key={submission.id} className="flex items-center justify-between py-4 text-sm">
-                  <span className="font-medium">{submission.id}</span>
-                  <span className="text-muted-foreground">{submission.status}</span>
-                </li>
-              ))}
+              {workspace.submissions.map((submission) => {
+                const submissionReviews = workspace.reviews.filter((review) => review.submissionId === submission.id);
+                const submissionAcceptance = workspace.acceptances.find((acceptance) => acceptance.submissionId === submission.id);
+                return (
+                  <li key={submission.id} className="space-y-4 border-b border-border py-4 last:border-b-0">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="font-mono text-xs text-muted-foreground" title={submission.submissionHash}>
+                        {truncateFact(submission.submissionHash)}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs text-muted-foreground">
+                          {submission.submittedBy.principalId} · {formatDateTime(submission.createdAt)}
+                        </p>
+                      </div>
+                      {submissionAcceptance ? <AcceptanceChip acceptance={submissionAcceptance} /> : null}
+                    </div>
+                    {submission.commitRef || submission.environmentSummary || submission.notes ? (
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        {submission.commitRef ? (
+                          <p className="min-w-0 truncate font-mono" title={submission.commitRef}>
+                            {truncateFact(submission.commitRef)}
+                          </p>
+                        ) : null}
+                        {submission.environmentSummary ? <p>{submission.environmentSummary}</p> : null}
+                        {submission.notes ? <p>{submission.notes}</p> : null}
+                      </div>
+                    ) : null}
+                    {submissionReviews.length ? <DeliveryReviewList reviews={submissionReviews} /> : null}
+                  </li>
+                );
+              })}
             </ul>
           ) : null}
         </WorkspaceSectionState>
@@ -514,7 +608,38 @@ export function TargetWorkbench() {
       ) : null}
 
       {activeTab === "acceptance" && !isRevision ? (
-        <EmptyTab message={t("targets.emptyTabs.acceptance")} />
+        <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.acceptance")}>
+          {workspace?.acceptances.length ? (
+            <ul className="border-y border-border">
+              {workspace.acceptances.map((acceptance) => {
+                const acceptedSubmission = workspace.submissions.find((submission) => submission.id === acceptance.submissionId);
+                const submissionRef = acceptedSubmission?.submissionHash ?? acceptance.submissionId;
+                return (
+                  <li key={acceptance.id} className="space-y-4 border-b border-border py-4 last:border-b-0">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <ToneBadge tone="neutral">{t(`targets.adjudication.authorities.${acceptance.authority}`)}</ToneBadge>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">{acceptance.acceptedBy.principalId}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(acceptance.createdAt)}</p>
+                      </div>
+                      <ToneBadge tone={ACCEPTANCE_VALIDITY_TONES[acceptance.validity]}>
+                        {t(acceptanceValidityLabelKey(acceptance))}
+                      </ToneBadge>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <span className="min-w-0 truncate font-mono" title={submissionRef}>
+                        {t("targets.adjudication.submissionRef", { hash: truncateFact(submissionRef) })}
+                      </span>
+                      <span className="font-mono" title={acceptance.reviewId}>
+                        {t("targets.adjudication.reviewRef", { id: truncateFact(acceptance.reviewId) })}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+        </WorkspaceSectionState>
       ) : null}
 
       {activeTab === "runs" && !isRevision ? (

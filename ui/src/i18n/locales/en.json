@@ -933,6 +933,26 @@
         "medium": "Medium trust",
         "low": "Low trust"
       }
+    },
+    "adjudication": {
+      "accepted": "Accepted",
+      "unprovenItems": "Unproven items",
+      "risks": "Risks: {{risks}}",
+      "comments": "Comments: {{comments}}",
+      "submissionRef": "Submission {{hash}}",
+      "reviewRef": "Review {{id}}",
+      "reviewVerdicts": {
+        "approved": "Approved",
+        "changes_requested": "Changes requested",
+        "rejected": "Rejected"
+      },
+      "authorities": {
+        "outcome_owner": "Outcome owner"
+      },
+      "invalidReasons": {
+        "superseded_submission": "Superseded by a newer submission",
+        "target_revision_changed": "Target revision changed"
+      }
     }
   },
   "sidebarAgents": {

@@ -1,4 +1,7 @@
 import type {
+  AdjudicationAcceptanceV1,
+  AdjudicationDeliveryReviewV1,
+  AdjudicationSubmissionV1,
   AssuranceArtifactV1,
   AssuranceClaimV1,
   AssuranceEvidenceV1,
@@ -18,11 +21,14 @@ import { api } from "./client";
 
 /**
  * Local extension of the shared TargetWorkspaceV1 contract: the server's
- * workspace read model replaces the legacy artifact/evidence shapes with the
- * G2.3 Assurance facts. The shared TargetWorkspaceV1 stays unchanged until the
- * domain migration completes.
+ * workspace read model replaces the legacy artifact/evidence/submission shapes
+ * with the G2.3 Assurance facts and the G2.4 Adjudication facts. The shared
+ * TargetWorkspaceV1 stays unchanged until the domain migration completes.
  */
-export type TargetWorkspaceAssuranceFactsV1 = Omit<TargetWorkspaceV1, "artifacts" | "evidence"> & {
+export type TargetWorkspaceAssuranceFactsV1 = Omit<TargetWorkspaceV1, "artifacts" | "evidence" | "submissions"> & {
+  submissions: AdjudicationSubmissionV1[];
+  reviews: AdjudicationDeliveryReviewV1[];
+  acceptances: AdjudicationAcceptanceV1[];
   artifacts: AssuranceArtifactV1[];
   claims: AssuranceClaimV1[];
   evidence: AssuranceEvidenceV1[];

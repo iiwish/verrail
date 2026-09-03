@@ -32,6 +32,9 @@ type addArtifactRevisionFunc func(*http.Request, target.AgentLifecycleCommand[ta
 type createClaimFunc func(*http.Request, target.AgentLifecycleCommand[target.CreateClaimInput]) (target.AgentLifecycleResult, error)
 type recordEvidenceFunc func(*http.Request, target.AgentLifecycleCommand[target.RecordEvidenceInput]) (target.AgentLifecycleResult, error)
 type recordVerificationResultFunc func(*http.Request, target.AgentLifecycleCommand[target.RecordVerificationResultInput]) (target.AgentLifecycleResult, error)
+type createSubmissionFunc func(*http.Request, target.AgentLifecycleCommand[target.CreateSubmissionInput]) (target.AgentLifecycleResult, error)
+type recordDeliveryReviewFunc func(*http.Request, target.AgentLifecycleCommand[target.RecordDeliveryReviewInput]) (target.AgentLifecycleResult, error)
+type acceptSubmissionFunc func(*http.Request, target.AgentLifecycleCommand[target.AcceptSubmissionInput]) (target.AgentLifecycleResult, error)
 
 type Server struct {
 	token                    string
@@ -53,6 +56,9 @@ type Server struct {
 	createClaim              createClaimFunc
 	recordEvidence           recordEvidenceFunc
 	recordVerificationResult recordVerificationResultFunc
+	createSubmission         createSubmissionFunc
+	recordDeliveryReview     recordDeliveryReviewFunc
+	acceptSubmission         acceptSubmissionFunc
 	logger                   *slog.Logger
 }
 
@@ -114,6 +120,15 @@ func New(token string, store *target.Store, logger *slog.Logger) http.Handler {
 		recordVerificationResult: func(request *http.Request, command target.AgentLifecycleCommand[target.RecordVerificationResultInput]) (target.AgentLifecycleResult, error) {
 			return store.RecordVerificationResult(request.Context(), command)
 		},
+		createSubmission: func(request *http.Request, command target.AgentLifecycleCommand[target.CreateSubmissionInput]) (target.AgentLifecycleResult, error) {
+			return store.CreateSubmission(request.Context(), command)
+		},
+		recordDeliveryReview: func(request *http.Request, command target.AgentLifecycleCommand[target.RecordDeliveryReviewInput]) (target.AgentLifecycleResult, error) {
+			return store.RecordDeliveryReview(request.Context(), command)
+		},
+		acceptSubmission: func(request *http.Request, command target.AgentLifecycleCommand[target.AcceptSubmissionInput]) (target.AgentLifecycleResult, error) {
+			return store.AcceptSubmission(request.Context(), command)
+		},
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", server.health)
@@ -135,6 +150,9 @@ func New(token string, store *target.Store, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/claims", server.createAssuranceClaim)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/evidence", server.recordAssuranceEvidence)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/verification-results", server.recordAssuranceVerificationResult)
+	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/submissions", server.createAdjudicationSubmission)
+	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/delivery-reviews", server.recordAdjudicationDeliveryReview)
+	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/acceptances", server.acceptAdjudicationSubmission)
 	return mux
 }
 
@@ -421,6 +439,81 @@ func (server *Server) recordAssuranceVerificationResult(response http.ResponseWr
 		return
 	}
 	result, err := server.recordVerificationResult(request, command)
+	if err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	writeJSON(response, lifecycleStatus(result), result)
+}
+
+func (server *Server) createAdjudicationSubmission(response http.ResponseWriter, request *http.Request) {
+	if !server.lifecycleAuthorized(response, request) {
+		return
+	}
+	command := target.AgentLifecycleCommand[target.CreateSubmissionInput]{WorkspaceID: request.PathValue("workspaceId"), Principal: principal(request), IdempotencyKey: request.Header.Get("Idempotency-Key"), CommandType: target.AdjudicationSubmissionCreateCommand}
+	if err := decodeBody(response, request, &command.Input); err != nil {
+		writeError(response, err)
+		return
+	}
+	if err := target.ValidateCreateSubmissionInput(&command.Input); err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	if err := target.ValidateAgentLifecycleCommand(&command); err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	result, err := server.createSubmission(request, command)
+	if err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	writeJSON(response, lifecycleStatus(result), result)
+}
+
+func (server *Server) recordAdjudicationDeliveryReview(response http.ResponseWriter, request *http.Request) {
+	if !server.lifecycleAuthorized(response, request) {
+		return
+	}
+	command := target.AgentLifecycleCommand[target.RecordDeliveryReviewInput]{WorkspaceID: request.PathValue("workspaceId"), Principal: principal(request), IdempotencyKey: request.Header.Get("Idempotency-Key"), CommandType: target.AdjudicationReviewRecordCommand}
+	if err := decodeBody(response, request, &command.Input); err != nil {
+		writeError(response, err)
+		return
+	}
+	if err := target.ValidateRecordDeliveryReviewInput(&command.Input); err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	if err := target.ValidateAgentLifecycleCommand(&command); err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	result, err := server.recordDeliveryReview(request, command)
+	if err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	writeJSON(response, lifecycleStatus(result), result)
+}
+
+func (server *Server) acceptAdjudicationSubmission(response http.ResponseWriter, request *http.Request) {
+	if !server.lifecycleAuthorized(response, request) {
+		return
+	}
+	command := target.AgentLifecycleCommand[target.AcceptSubmissionInput]{WorkspaceID: request.PathValue("workspaceId"), Principal: principal(request), IdempotencyKey: request.Header.Get("Idempotency-Key"), CommandType: target.AdjudicationAcceptanceCreateCommand}
+	if err := decodeBody(response, request, &command.Input); err != nil {
+		writeError(response, err)
+		return
+	}
+	if err := target.ValidateAcceptSubmissionInput(&command.Input); err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	if err := target.ValidateAgentLifecycleCommand(&command); err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	result, err := server.acceptSubmission(request, command)
 	if err != nil {
 		writeError(response, target.AsError(err))
 		return

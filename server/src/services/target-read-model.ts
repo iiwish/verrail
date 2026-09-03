@@ -1,16 +1,19 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
+  verrailAcceptances,
   verrailAuditEvents,
   verrailArtifactRevisions,
   verrailArtifacts,
   verrailClaims,
   verrailCollections,
+  verrailDeliveryReviews,
   verrailEvidence,
   verrailGraphRevisions,
   verrailExecutionLeases,
   verrailRunAttempts,
   verrailRunEvents,
   verrailRuns,
+  verrailSubmissions,
   verrailTargetRevisions,
   verrailTargets,
   verrailVerificationResults,
@@ -22,6 +25,10 @@ import {
   TARGET_READ_MODEL_POLICY_VERSION,
   TARGET_READ_MODEL_SCHEMA_VERSION,
   TARGET_WORKSPACE_SCHEMA_VERSION,
+  deriveAcceptanceValidity,
+  type AdjudicationAcceptanceV1,
+  type AdjudicationDeliveryReviewV1,
+  type AdjudicationSubmissionV1,
   type AssuranceArtifactRevisionV1,
   type AssuranceArtifactV1,
   type AssuranceClaimV1,
@@ -123,7 +130,10 @@ type ExecutionFacts = {
   events: Array<typeof verrailRunEvents.$inferSelect>;
 };
 
-export type TargetWorkspaceAssuranceFactsV1 = Omit<TargetWorkspaceV1, "artifacts" | "evidence"> & {
+export type TargetWorkspaceAssuranceFactsV1 = Omit<TargetWorkspaceV1, "artifacts" | "evidence" | "submissions"> & {
+  submissions: AdjudicationSubmissionV1[];
+  reviews: AdjudicationDeliveryReviewV1[];
+  acceptances: AdjudicationAcceptanceV1[];
   artifacts: AssuranceArtifactV1[];
   claims: AssuranceClaimV1[];
   evidence: AssuranceEvidenceV1[];
@@ -136,6 +146,9 @@ type AssuranceFacts = {
   claims: Array<typeof verrailClaims.$inferSelect>;
   evidence: Array<typeof verrailEvidence.$inferSelect>;
   verificationResults: Array<typeof verrailVerificationResults.$inferSelect>;
+  submissions: Array<typeof verrailSubmissions.$inferSelect>;
+  deliveryReviews: Array<typeof verrailDeliveryReviews.$inferSelect>;
+  acceptances: Array<typeof verrailAcceptances.$inferSelect>;
 };
 
 const EMPTY_ASSURANCE_FACTS: AssuranceFacts = {
@@ -144,6 +157,9 @@ const EMPTY_ASSURANCE_FACTS: AssuranceFacts = {
   claims: [],
   evidence: [],
   verificationResults: [],
+  submissions: [],
+  deliveryReviews: [],
+  acceptances: [],
 };
 
 function byCreatedAtAsc(
@@ -151,6 +167,15 @@ function byCreatedAtAsc(
   right: { createdAt: Date; id: string },
 ) {
   return left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id);
+}
+
+// Newest-first on (created_at desc, id desc) — mirrors the Go "latest
+// submission" ordering used by deriveAcceptanceValidity.
+function byCreatedAtDesc(
+  left: { createdAt: Date; id: string },
+  right: { createdAt: Date; id: string },
+) {
+  return right.createdAt.getTime() - left.createdAt.getTime() || right.id.localeCompare(left.id);
 }
 
 function assurancePrincipal(principalType: string, principalId: string): AssurancePrincipalV1 {
@@ -226,6 +251,54 @@ function mapVerificationResult(row: typeof verrailVerificationResults.$inferSele
     resultHash: row.resultHash,
     createdBy: assurancePrincipal(row.createdByPrincipalType, row.createdByPrincipalId),
     createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function mapSubmission(row: typeof verrailSubmissions.$inferSelect): AdjudicationSubmissionV1 {
+  return {
+    id: row.id,
+    targetId: row.targetId,
+    targetRevisionId: row.targetRevisionId,
+    artifactRevisionIds: row.artifactRevisionIds,
+    verificationResultIds: row.verificationResultIds,
+    commitRef: row.commitRef,
+    environmentSummary: row.environmentSummary,
+    notes: row.notes,
+    submissionHash: row.submissionHash,
+    submittedBy: assurancePrincipal(row.submittedByPrincipalType, row.submittedByPrincipalId),
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function mapDeliveryReview(row: typeof verrailDeliveryReviews.$inferSelect): AdjudicationDeliveryReviewV1 {
+  return {
+    id: row.id,
+    targetId: row.targetId,
+    submissionId: row.submissionId,
+    verdict: row.verdict as AdjudicationDeliveryReviewV1["verdict"],
+    risks: row.risks,
+    unprovenItems: row.unprovenItems,
+    comments: row.comments,
+    reviewHash: row.reviewHash,
+    reviewer: assurancePrincipal(row.reviewerPrincipalType, row.reviewerPrincipalId),
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function mapAcceptance(row: typeof verrailAcceptances.$inferSelect, latestSubmissionId: string | null, activeTargetRevisionId: string): AdjudicationAcceptanceV1 {
+  const derived = deriveAcceptanceValidity(row.submissionId === latestSubmissionId, row.targetRevisionId === activeTargetRevisionId);
+  return {
+    id: row.id,
+    targetId: row.targetId,
+    targetRevisionId: row.targetRevisionId,
+    submissionId: row.submissionId,
+    reviewId: row.reviewId,
+    authority: row.authority as AdjudicationAcceptanceV1["authority"],
+    acceptedBy: assurancePrincipal(row.acceptedByPrincipalType, row.acceptedByPrincipalId),
+    acceptanceHash: row.acceptanceHash,
+    createdAt: row.createdAt.toISOString(),
+    validity: derived.validity,
+    invalidReason: derived.invalidReason,
   };
 }
 
@@ -396,7 +469,7 @@ export function targetReadModelService(db: Db) {
         ...EMPTY_ASSURANCE_FACTS,
       };
     }
-    const [graphs, graphRevisions, nodes, runs, artifacts, claims, evidence, verificationResults] = await Promise.all([
+    const [graphs, graphRevisions, nodes, runs, artifacts, claims, evidence, verificationResults, submissions, deliveryReviews, acceptances] = await Promise.all([
       db.select().from(verrailWorkGraphs).where(and(
         eq(verrailWorkGraphs.workspaceId, workspaceId),
         inArray(verrailWorkGraphs.targetId, targetIds),
@@ -429,6 +502,18 @@ export function targetReadModelService(db: Db) {
         eq(verrailVerificationResults.workspaceId, workspaceId),
         inArray(verrailVerificationResults.targetId, targetIds),
       )),
+      db.select().from(verrailSubmissions).where(and(
+        eq(verrailSubmissions.workspaceId, workspaceId),
+        inArray(verrailSubmissions.targetId, targetIds),
+      )),
+      db.select().from(verrailDeliveryReviews).where(and(
+        eq(verrailDeliveryReviews.workspaceId, workspaceId),
+        inArray(verrailDeliveryReviews.targetId, targetIds),
+      )),
+      db.select().from(verrailAcceptances).where(and(
+        eq(verrailAcceptances.workspaceId, workspaceId),
+        inArray(verrailAcceptances.targetId, targetIds),
+      )),
     ]);
     const runIds = runs.map((run) => run.id);
     const artifactIds = artifacts.map((artifact) => artifact.id);
@@ -450,7 +535,7 @@ export function targetReadModelService(db: Db) {
         inArray(verrailArtifactRevisions.artifactId, artifactIds),
       )),
     ]);
-    return { graphs, graphRevisions, nodes, runs, attempts, leases, events, artifacts, artifactRevisions, claims, evidence, verificationResults };
+    return { graphs, graphRevisions, nodes, runs, attempts, leases, events, artifacts, artifactRevisions, claims, evidence, verificationResults, submissions, deliveryReviews, acceptances };
   }
 
   function buildModel(
@@ -593,6 +678,11 @@ export function targetReadModelService(db: Db) {
           occurredAt: event.occurredAt.toISOString(),
         }] : [];
       });
+      const submissions = facts.submissions
+        .filter((item) => item.targetId === model.targetId)
+        .sort((left, right) => byCreatedAtDesc(left, right))
+        .map(mapSubmission);
+      const latestSubmissionId = submissions[0]?.id ?? null;
       return {
         schemaVersion: TARGET_WORKSPACE_SCHEMA_VERSION,
         targetId: model.targetId,
@@ -608,7 +698,15 @@ export function targetReadModelService(db: Db) {
         stages,
         work,
         attention,
-        submissions: [],
+        submissions,
+        reviews: facts.deliveryReviews
+          .filter((item) => item.targetId === model.targetId)
+          .sort((left, right) => byCreatedAtDesc(left, right))
+          .map(mapDeliveryReview),
+        acceptances: facts.acceptances
+          .filter((item) => item.targetId === model.targetId)
+          .sort((left, right) => byCreatedAtDesc(left, right))
+          .map((acceptance) => mapAcceptance(acceptance, latestSubmissionId, model.activeTargetRevisionId)),
         artifacts: facts.artifacts
           .filter((item) => item.targetId === model.targetId)
           .sort((left, right) => byCreatedAtAsc(left, right))

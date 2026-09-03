@@ -69,6 +69,11 @@ export {
   verrailEvidence,
   verrailVerificationResults,
 } from "./verrail_assurance.js";
+export {
+  verrailSubmissions,
+  verrailDeliveryReviews,
+  verrailAcceptances,
+} from "./verrail_adjudication.js";
 export { projectMemberships } from "./project_memberships.js";
 export { documentMemberships } from "./document_memberships.js";
 export { projectWorkspaces } from "./project_workspaces.js";

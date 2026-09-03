@@ -2674,3 +2674,5 @@ export * from "./types/agent-lifecycle.js";
 export * from "./validators/agent-lifecycle.js";
 export * from "./types/assurance.js";
 export * from "./validators/assurance.js";
+export * from "./types/adjudication.js";
+export * from "./validators/adjudication.js";

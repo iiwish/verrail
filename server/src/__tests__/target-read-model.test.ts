@@ -1,15 +1,19 @@
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { getTableName } from "drizzle-orm";
 import {
   companies,
   createDb,
+  verrailAcceptances,
   verrailArtifactRevisions,
   verrailArtifacts,
   verrailClaims,
+  verrailDeliveryReviews,
   verrailEvidence,
   verrailGraphRevisions,
   verrailRuns,
+  verrailSubmissions,
   verrailTargetRevisions,
   verrailTargets,
   verrailVerificationResults,
@@ -32,6 +36,9 @@ describePostgres("native TargetReadModel", () => {
   }, 30_000);
 
   afterEach(async () => {
+    await db.delete(verrailAcceptances);
+    await db.delete(verrailDeliveryReviews);
+    await db.delete(verrailSubmissions);
     await db.delete(verrailVerificationResults);
     await db.delete(verrailEvidence);
     await db.delete(verrailClaims);
@@ -125,8 +132,156 @@ describePostgres("native TargetReadModel", () => {
     expect(workspace.claims).toEqual([]);
     expect(workspace.evidence).toEqual([]);
     expect(workspace.verificationResults).toEqual([]);
+    expect(workspace.submissions).toEqual([]);
+    expect(workspace.reviews).toEqual([]);
+    expect(workspace.acceptances).toEqual([]);
     expect(model!.artifactSummary).toEqual({ count: 0, latestRevisionId: null });
     expect(model!.evidenceSummary).toEqual({ count: 0, passed: 0, failed: 0, inconclusive: 0, coverage: "unknown" });
+  });
+
+  it("derives acceptance validity from the latest submission and the active target revision", async () => {
+    const seeded = await seed();
+    const submissionA = await db.insert(verrailSubmissions).values({
+      id: randomUUID(),
+      workspaceId: seeded.workspace.id,
+      targetId: seeded.targetId,
+      targetRevisionId: seeded.targetRevisionId,
+      artifactRevisionIds: [randomUUID()],
+      verificationResultIds: [],
+      commitRef: "git:rev-1",
+      environmentSummary: null,
+      notes: null,
+      submissionHash: "a".repeat(64),
+      submittedByPrincipalType: "agent",
+      submittedByPrincipalId: "agent-1",
+      createdAt: new Date("2026-09-01T10:00:00Z"),
+    }).returning().then((rows) => rows[0]!);
+    const submissionB = await db.insert(verrailSubmissions).values({
+      id: randomUUID(),
+      workspaceId: seeded.workspace.id,
+      targetId: seeded.targetId,
+      targetRevisionId: seeded.targetRevisionId,
+      artifactRevisionIds: [randomUUID()],
+      verificationResultIds: [],
+      commitRef: "git:rev-2",
+      environmentSummary: null,
+      notes: null,
+      submissionHash: "b".repeat(64),
+      submittedByPrincipalType: "agent",
+      submittedByPrincipalId: "agent-1",
+      createdAt: new Date("2026-09-01T10:05:00Z"),
+    }).returning().then((rows) => rows[0]!);
+    const reviewA = await db.insert(verrailDeliveryReviews).values({
+      id: randomUUID(),
+      workspaceId: seeded.workspace.id,
+      targetId: seeded.targetId,
+      submissionId: submissionA.id,
+      reviewerPrincipalType: "user",
+      reviewerPrincipalId: "user-2",
+      verdict: "approved",
+      risks: null,
+      unprovenItems: [],
+      comments: null,
+      reviewHash: "c".repeat(64),
+      createdAt: new Date("2026-09-01T10:06:00Z"),
+    }).returning().then((rows) => rows[0]!);
+    const reviewB = await db.insert(verrailDeliveryReviews).values({
+      id: randomUUID(),
+      workspaceId: seeded.workspace.id,
+      targetId: seeded.targetId,
+      submissionId: submissionB.id,
+      reviewerPrincipalType: "user",
+      reviewerPrincipalId: "user-2",
+      verdict: "approved",
+      risks: null,
+      unprovenItems: [],
+      comments: null,
+      reviewHash: "d".repeat(64),
+      createdAt: new Date("2026-09-01T10:07:00Z"),
+    }).returning().then((rows) => rows[0]!);
+    const acceptanceA = await db.insert(verrailAcceptances).values({
+      id: randomUUID(),
+      workspaceId: seeded.workspace.id,
+      targetId: seeded.targetId,
+      targetRevisionId: seeded.targetRevisionId,
+      submissionId: submissionA.id,
+      reviewId: reviewA.id,
+      authority: "outcome_owner",
+      acceptedByPrincipalType: "user",
+      acceptedByPrincipalId: "user-1",
+      acceptanceHash: "e".repeat(64),
+      createdAt: new Date("2026-09-01T10:08:00Z"),
+    }).returning().then((rows) => rows[0]!);
+    const acceptanceB = await db.insert(verrailAcceptances).values({
+      id: randomUUID(),
+      workspaceId: seeded.workspace.id,
+      targetId: seeded.targetId,
+      targetRevisionId: seeded.targetRevisionId,
+      submissionId: submissionB.id,
+      reviewId: reviewB.id,
+      authority: "outcome_owner",
+      acceptedByPrincipalType: "user",
+      acceptedByPrincipalId: "user-1",
+      acceptanceHash: "f".repeat(64),
+      createdAt: new Date("2026-09-01T10:09:00Z"),
+    }).returning().then((rows) => rows[0]!);
+
+    const service = targetReadModelService(db);
+    const model = await service.getByTargetId(seeded.workspace.id, seeded.targetId);
+    const workspace = await service.workspace(model!);
+    expect(workspace.submissions.map((submission) => submission.id)).toEqual([submissionB.id, submissionA.id]);
+    expect(workspace.reviews.map((review) => review.id)).toEqual([reviewB.id, reviewA.id]);
+    expect(workspace.acceptances).toEqual([
+      expect.objectContaining({
+        id: acceptanceB.id,
+        submissionId: submissionB.id,
+        targetRevisionId: seeded.targetRevisionId,
+        authority: "outcome_owner",
+        validity: "valid",
+        invalidReason: null,
+      }),
+      expect.objectContaining({
+        id: acceptanceA.id,
+        submissionId: submissionA.id,
+        validity: "invalid",
+        invalidReason: "superseded_submission",
+      }),
+    ]);
+
+    const revisionTwoId = randomUUID();
+    await db.insert(verrailTargetRevisions).values({
+      id: revisionTwoId,
+      workspaceId: seeded.workspace.id,
+      targetId: seeded.targetId,
+      revisionNumber: 2,
+      title: "Second revision",
+      outcomeOwnerPrincipalType: "user",
+      outcomeOwnerPrincipalId: "user-1",
+      goal: "Second goal.",
+      constraints: [],
+      acceptanceCriteria: [{ id: "criterion-1", title: "Native only", description: null }],
+      riskLevel: "medium",
+      resourceRefs: [],
+      contentHash: "target-hash-2",
+      createdByPrincipalType: "user",
+      createdByPrincipalId: "user-1",
+    });
+    await db.update(verrailTargets).set({ activeTargetRevisionId: revisionTwoId }).where(eq(verrailTargets.id, seeded.targetId));
+
+    const modelTwo = await service.getByTargetId(seeded.workspace.id, seeded.targetId);
+    const workspaceTwo = await service.workspace(modelTwo!);
+    expect(workspaceTwo.acceptances).toEqual([
+      expect.objectContaining({
+        id: acceptanceB.id,
+        validity: "invalid",
+        invalidReason: "target_revision_changed",
+      }),
+      expect.objectContaining({
+        id: acceptanceA.id,
+        validity: "invalid",
+        invalidReason: "superseded_submission",
+      }),
+    ]);
   });
 
   it("renders assurance facts from the verrail assurance tables only", async () => {
@@ -256,7 +411,16 @@ describePostgres("native TargetReadModel", () => {
     expect(model!.artifactSummary).toEqual({ count: 1, latestRevisionId: revisionTwo.id });
     expect(model!.evidenceSummary).toEqual({ count: 2, passed: 1, failed: 0, inconclusive: 0, coverage: "complete" });
 
-    const assuranceTables = ["verrail_artifacts", "verrail_artifact_revisions", "verrail_claims", "verrail_evidence", "verrail_verification_results"];
+    const assuranceTables = [
+      "verrail_artifacts",
+      "verrail_artifact_revisions",
+      "verrail_claims",
+      "verrail_evidence",
+      "verrail_verification_results",
+      "verrail_submissions",
+      "verrail_delivery_reviews",
+      "verrail_acceptances",
+    ];
     for (const table of assuranceTables) {
       expect(queriedTables, `${table} is queried`).toContain(table);
     }

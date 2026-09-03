@@ -92,6 +92,8 @@ function targetWorkspace() {
     }],
     attention: [],
     submissions: [],
+    reviews: [],
+    acceptances: [],
     artifacts: [],
     evidence: [],
     claims: [],
@@ -214,6 +216,108 @@ function assuranceFacts() {
         resultHash: OBJECT_HASH,
         createdBy: { principalType: "user", principalId: "owner-1" },
         createdAt: "2026-08-26T10:15:00.000Z",
+      },
+    ],
+  };
+}
+
+const SUBMISSION_HASH_A = "b1946ac92492d2347c6235b4d2611184e0f2a5ab2b0f8a9c1d2e3f4a5b6c7d80";
+const SUBMISSION_HASH_B = "ff2527f949b3f0c5b2a3d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f0";
+const REVIEW_HASH_A = "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae";
+const REVIEW_HASH_B = "9d3e09cbae7b9c1a2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c";
+const ACCEPTANCE_HASH_A = "5d41402abc4b2a76b9719d911017c592a1b2c3d4e5f60718293a4b5c6d7e8f90";
+const ACCEPTANCE_HASH_B = "7d865e959b2466918c9863afca942d0fb8912c9a4fca7f1d7c6b9a5e4d3c2b10";
+const SUBMISSION_ID_A = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+const SUBMISSION_ID_B = "0f5d4c3b-2a19-4e87-b6f5-c8d9e0a1b2c3";
+const REVIEW_ID_A = "d3b07384-d113-4b1f-8a2c-5e9f0a1b2c3d";
+const REVIEW_ID_B = "c4ca4238-a0b9-4e33-a5c6-7d8e9f0a1b2c";
+const ACCEPTANCE_ID_A = "9a8b7c6d-5e4f-4031-8271-9a0b1c2d3e4f";
+const ACCEPTANCE_ID_B = "3e1c5a7b-9d2f-4a68-b0c4-8e7f6a5b4c3d";
+
+// Newest-first on (created_at desc, id desc): submission A supersedes the
+// older submission B, so B's acceptance derives invalid/superseded server-side.
+function adjudicationFacts() {
+  return {
+    submissions: [
+      {
+        id: SUBMISSION_ID_A,
+        targetId: "target-1",
+        targetRevisionId: "revision-1",
+        artifactRevisionIds: ["revision-a1"],
+        verificationResultIds: ["verification-1"],
+        commitRef: "e07fc1f90ae7",
+        environmentSummary: "staging · all checks green",
+        notes: "Candidate binding for the release review.",
+        submissionHash: SUBMISSION_HASH_A,
+        submittedBy: { principalType: "agent", principalId: "agent-1" },
+        createdAt: "2026-08-26T11:00:00.000Z",
+      },
+      {
+        id: SUBMISSION_ID_B,
+        targetId: "target-1",
+        targetRevisionId: "revision-1",
+        artifactRevisionIds: ["revision-a2"],
+        verificationResultIds: [],
+        commitRef: null,
+        environmentSummary: null,
+        notes: null,
+        submissionHash: SUBMISSION_HASH_B,
+        submittedBy: { principalType: "agent", principalId: "agent-2" },
+        createdAt: "2026-08-26T10:30:00.000Z",
+      },
+    ],
+    reviews: [
+      {
+        id: REVIEW_ID_A,
+        targetId: "target-1",
+        submissionId: SUBMISSION_ID_A,
+        verdict: "approved",
+        risks: "Rollback plan documented.",
+        unprovenItems: ["Load test at peak traffic"],
+        comments: "Evidence chain is complete.",
+        reviewHash: REVIEW_HASH_A,
+        reviewer: { principalType: "user", principalId: "reviewer-1" },
+        createdAt: "2026-08-26T11:10:00.000Z",
+      },
+      {
+        id: REVIEW_ID_B,
+        targetId: "target-1",
+        submissionId: SUBMISSION_ID_B,
+        verdict: "approved",
+        risks: null,
+        unprovenItems: [],
+        comments: null,
+        reviewHash: REVIEW_HASH_B,
+        reviewer: { principalType: "user", principalId: "reviewer-2" },
+        createdAt: "2026-08-26T10:40:00.000Z",
+      },
+    ],
+    acceptances: [
+      {
+        id: ACCEPTANCE_ID_A,
+        targetId: "target-1",
+        targetRevisionId: "revision-1",
+        submissionId: SUBMISSION_ID_A,
+        reviewId: REVIEW_ID_A,
+        authority: "outcome_owner",
+        acceptedBy: { principalType: "user", principalId: "owner-1" },
+        acceptanceHash: ACCEPTANCE_HASH_A,
+        createdAt: "2026-08-26T11:20:00.000Z",
+        validity: "valid",
+        invalidReason: null,
+      },
+      {
+        id: ACCEPTANCE_ID_B,
+        targetId: "target-1",
+        targetRevisionId: "revision-1",
+        submissionId: SUBMISSION_ID_B,
+        reviewId: REVIEW_ID_B,
+        authority: "outcome_owner",
+        acceptedBy: { principalType: "user", principalId: "owner-1" },
+        acceptanceHash: ACCEPTANCE_HASH_B,
+        createdAt: "2026-08-26T10:50:00.000Z",
+        validity: "invalid",
+        invalidReason: "superseded_submission",
       },
     ],
   };
@@ -549,5 +653,58 @@ describe("TargetWorkbench", () => {
     route.tab = "evidence";
     await renderWorkbench();
     expect(container.textContent).toContain("No verification evidence has been projected.");
+  });
+
+  it("renders submissions newest-first with reviews and the acceptance chip on the submission tab", async () => {
+    route.tab = "submission";
+    getWorkspace.mockResolvedValue({ ...targetWorkspace(), ...adjudicationFacts() });
+
+    await renderWorkbench();
+
+    expect(getWorkspace).toHaveBeenCalledWith("workspace-1", "target-1");
+    expect(container.textContent).toContain(SUBMISSION_HASH_A.slice(0, 12));
+    expect(container.textContent).not.toContain(SUBMISSION_HASH_A);
+    expect(container.querySelector(`[title="${SUBMISSION_HASH_A}"]`)).not.toBeNull();
+    expect(container.textContent.indexOf(SUBMISSION_HASH_A.slice(0, 12)))
+      .toBeLessThan(container.textContent.indexOf(SUBMISSION_HASH_B.slice(0, 12)));
+    expect(container.textContent).toContain("agent-1");
+    expect(container.textContent).toContain("e07fc1f90ae7");
+    expect(container.textContent).toContain("staging · all checks green");
+    expect(container.textContent).toContain("Candidate binding for the release review.");
+    expect(container.textContent).toContain("Approved");
+    expect(container.textContent).toContain("reviewer-1");
+    expect(container.textContent).toContain("Load test at peak traffic");
+    expect(container.textContent).toContain("Risks: Rollback plan documented.");
+    expect(container.textContent).toContain("Comments: Evidence chain is complete.");
+    expect(container.textContent).toContain("Accepted");
+    expect(container.textContent).toContain("Outcome owner");
+    expect(container.textContent).toContain("owner-1");
+  });
+
+  it("renders invalid acceptances with their derived reason on the acceptance tab", async () => {
+    route.tab = "acceptance";
+    getWorkspace.mockResolvedValue({ ...targetWorkspace(), ...adjudicationFacts() });
+
+    await renderWorkbench();
+
+    expect(container.textContent).toContain("Superseded by a newer submission");
+    expect(container.textContent).toContain("Accepted");
+    expect(container.textContent).toContain(`Submission ${SUBMISSION_HASH_B.slice(0, 12)}`);
+    expect(container.querySelector(`[title="${SUBMISSION_HASH_B}"]`)).not.toBeNull();
+    expect(container.textContent).toContain(`Review ${REVIEW_ID_A.slice(0, 12)}`);
+    expect(container.querySelector(`[title="${REVIEW_ID_A}"]`)).not.toBeNull();
+    expect(container.textContent).toContain("Outcome owner");
+    expect(container.textContent).toContain("owner-1");
+    expect(container.textContent).not.toContain(ACCEPTANCE_HASH_B);
+  });
+
+  it("keeps honest empty states for the adjudication tabs without server facts", async () => {
+    route.tab = "submission";
+    await renderWorkbench();
+    expect(container.textContent).toContain("No immutable submission exists for this target.");
+
+    route.tab = "acceptance";
+    await renderWorkbench();
+    expect(container.textContent).toContain("No version-bound acceptance has been recorded.");
   });
 });

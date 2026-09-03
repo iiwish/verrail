@@ -933,6 +933,26 @@
         "medium": "中信任",
         "low": "低信任"
       }
+    },
+    "adjudication": {
+      "accepted": "已验收",
+      "unprovenItems": "未证实项",
+      "risks": "风险：{{risks}}",
+      "comments": "审查意见：{{comments}}",
+      "submissionRef": "提交 {{hash}}",
+      "reviewRef": "审查 {{id}}",
+      "reviewVerdicts": {
+        "approved": "已通过",
+        "changes_requested": "要求修改",
+        "rejected": "已拒绝"
+      },
+      "authorities": {
+        "outcome_owner": "结果负责人"
+      },
+      "invalidReasons": {
+        "superseded_submission": "已被更新的提交取代",
+        "target_revision_changed": "目标修订版本已变更"
+      }
     }
   },
   "sidebarAgents": {

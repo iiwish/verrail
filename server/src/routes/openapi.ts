@@ -194,7 +194,9 @@ import {
   workspaceFileListQuerySchema,
   workspaceFileResourceQuerySchema,
   // Native Target domain read model
+  acceptSubmissionSchema,
   addArtifactRevisionSchema,
+  adjudicationIdempotencyKeySchema,
   createAgentDefinitionSchema,
   createArtifactSchema,
   createClaimSchema,
@@ -203,9 +205,11 @@ import {
   createGraphRevisionSchema,
   createRunAttemptSchema,
   createRunSchema,
+  createSubmissionSchema,
   createTargetSchema,
   publishAgentVersionSchema,
   recordEvaluationRunSchema,
+  recordDeliveryReviewSchema,
   recordEvidenceSchema,
   recordVerificationResultSchema,
   reportRunEventSchema,
@@ -3243,6 +3247,45 @@ registry.registerPath({
     params: z.object({ workspaceId: z.string().uuid() }),
     headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
     body: jsonBody(recordVerificationResultSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/submissions",
+  tags: ["adjudication"],
+  summary: "Create an immutable Submission binding a TargetRevision to artifact revisions and verification results",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": adjudicationIdempotencyKeySchema }),
+    body: jsonBody(createSubmissionSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/delivery-reviews",
+  tags: ["adjudication"],
+  summary: "Record an immutable, independent DeliveryReview verdict for a Submission",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": adjudicationIdempotencyKeySchema }),
+    body: jsonBody(recordDeliveryReviewSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/acceptances",
+  tags: ["adjudication"],
+  summary: "Settle a Submission with an outcome-owner Acceptance bound to an approved DeliveryReview",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": adjudicationIdempotencyKeySchema }),
+    body: jsonBody(acceptSubmissionSchema),
   },
   responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
 });
