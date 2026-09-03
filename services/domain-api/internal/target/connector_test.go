@@ -684,4 +684,43 @@ func TestConnectorContractsIntegration(t *testing.T) {
 		requireLifecycleCode(t, err, "ADJUDICATION_NOT_APPLICABLE")
 		require.Equal(t, 409, AsError(err).Status)
 	})
+
+	t.Run("executing an action whose submission was superseded is rejected", func(t *testing.T) {
+		targetID, _, firstSubmission := harness.createAcceptedSubmission("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")
+		request, err := harness.requestAction(RequestPullRequestActionInput{TargetID: targetID, SubmissionID: firstSubmission, Params: PullRequestParams{Title: "Stale execution PR", Head: "feat/stale-exec", Base: "main"}})
+		require.NoError(t, err)
+
+		var storedParamsHash string
+		require.NoError(t, pool.QueryRow(ctx, `select params_hash from verrail_action_requests where id=$1`, request.ResourceID).Scan(&storedParamsHash))
+		_, err = harness.approveActionAs(harness.approverID, ApproveActionInput{ActionRequestID: request.ResourceID, ApproverPrincipalType: "user", ApproverPrincipalID: harness.approverID, ParamsHash: storedParamsHash})
+		require.NoError(t, err)
+
+		_, err = harness.supersedeSubmission(targetID, firstSubmission)
+		require.NoError(t, err)
+
+		callsBefore := harness.fake.calls
+		_, err = harness.executeAction(ExecuteActionInput{ActionRequestID: request.ResourceID})
+		requireLifecycleCode(t, err, "CONNECTOR_SUBMISSION_SUPERSEDED")
+		require.Equal(t, 409, AsError(err).Status)
+		require.Equal(t, callsBefore, harness.fake.calls, "a rejected execution must not reach the upstream connector")
+	})
+
+	t.Run("executing an action after the active revision changed is rejected", func(t *testing.T) {
+		targetID, _, submissionID := harness.createAcceptedSubmission("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd")
+		request, err := harness.requestAction(RequestPullRequestActionInput{TargetID: targetID, SubmissionID: submissionID, Params: PullRequestParams{Title: "Rotated execution PR", Head: "feat/rotated-exec", Base: "main"}})
+		require.NoError(t, err)
+
+		var storedParamsHash string
+		require.NoError(t, pool.QueryRow(ctx, `select params_hash from verrail_action_requests where id=$1`, request.ResourceID).Scan(&storedParamsHash))
+		_, err = harness.approveActionAs(harness.approverID, ApproveActionInput{ActionRequestID: request.ResourceID, ApproverPrincipalType: "user", ApproverPrincipalID: harness.approverID, ParamsHash: storedParamsHash})
+		require.NoError(t, err)
+
+		require.NoError(t, harness.rotateActiveRevision(targetID))
+
+		callsBefore := harness.fake.calls
+		_, err = harness.executeAction(ExecuteActionInput{ActionRequestID: request.ResourceID})
+		requireLifecycleCode(t, err, "ADJUDICATION_NOT_APPLICABLE")
+		require.Equal(t, 409, AsError(err).Status)
+		require.Equal(t, callsBefore, harness.fake.calls, "a rejected execution must not reach the upstream connector")
+	})
 }

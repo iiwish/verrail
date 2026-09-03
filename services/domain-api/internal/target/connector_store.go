@@ -173,6 +173,9 @@ func (store *Store) RequestPullRequestAction(ctx context.Context, command AgentL
 }
 
 func (store *Store) ApproveAction(ctx context.Context, command AgentLifecycleCommand[ApproveActionInput]) (AgentLifecycleResult, error) {
+	if command.ResourceID != "" && command.ResourceID != command.Input.ActionRequestID {
+		return AgentLifecycleResult{}, validation("The action request in the path must match the request in the payload")
+	}
 	meta := lifecycleMeta(command)
 	tx, replay, err := store.beginAgentCommand(ctx, meta)
 	if err != nil {
@@ -247,6 +250,9 @@ func (store *Store) ApproveAction(ctx context.Context, command AgentLifecycleCom
 }
 
 func (store *Store) ExecuteAction(ctx context.Context, command AgentLifecycleCommand[ExecuteActionInput]) (AgentLifecycleResult, error) {
+	if command.ResourceID != "" && command.ResourceID != command.Input.ActionRequestID {
+		return AgentLifecycleResult{}, validation("The action request in the path must match the request in the payload")
+	}
 	meta := lifecycleMeta(command)
 	tx, replay, err := store.beginAgentCommand(ctx, meta)
 	if err != nil {
@@ -256,15 +262,40 @@ func (store *Store) ExecuteAction(ctx context.Context, command AgentLifecycleCom
 		return *replay, nil
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	var requestStatus, requestTargetID, requestParamsHash string
+	var requestStatus, requestTargetID, requestParamsHash, requestSubmissionID string
 	var params PullRequestParams
-	if err := tx.QueryRow(ctx, `select status,target_id,params_hash,params from verrail_action_requests where id=$1 and workspace_id=$2 for update`, command.Input.ActionRequestID, command.WorkspaceID).Scan(&requestStatus, &requestTargetID, &requestParamsHash, &params); errors.Is(err, pgx.ErrNoRows) {
+	if err := tx.QueryRow(ctx, `select status,target_id,params_hash,params,submission_id from verrail_action_requests where id=$1 and workspace_id=$2 for update`, command.Input.ActionRequestID, command.WorkspaceID).Scan(&requestStatus, &requestTargetID, &requestParamsHash, &params, &requestSubmissionID); errors.Is(err, pgx.ErrNoRows) {
 		return AgentLifecycleResult{}, connectorNotFound("ActionRequest")
 	} else if err != nil {
 		return AgentLifecycleResult{}, err
 	}
 	if requestStatus != "approved" {
 		return AgentLifecycleResult{}, &Error{Status: 409, Code: "CONNECTOR_ACTION_NOT_APPROVED", Message: "Only an approved ActionRequest can be executed"}
+	}
+	// Execute-time re-check (target criterion 2): the submission must still be
+	// the latest for the target and its revision must still be the target's
+	// active revision — invariant 10 forbids a stale acceptance from
+	// producing a governed external effect.
+	var submissionRevisionID string
+	if err := tx.QueryRow(ctx, `select target_revision_id from verrail_submissions where id=$1 and workspace_id=$2`, requestSubmissionID, command.WorkspaceID).Scan(&submissionRevisionID); errors.Is(err, pgx.ErrNoRows) {
+		return AgentLifecycleResult{}, adjudicationNotFound("Submission")
+	} else if err != nil {
+		return AgentLifecycleResult{}, err
+	}
+	var latestSubmissionID string
+	if err := tx.QueryRow(ctx, `select id from verrail_submissions where target_id=$1 order by created_at desc, id desc limit 1`, requestTargetID).Scan(&latestSubmissionID); err != nil {
+		return AgentLifecycleResult{}, err
+	}
+	var activeRevisionID string
+	if err := tx.QueryRow(ctx, `select active_target_revision_id from verrail_targets where id=$1 and workspace_id=$2`, requestTargetID, command.WorkspaceID).Scan(&activeRevisionID); err != nil {
+		return AgentLifecycleResult{}, err
+	}
+	validity, invalidReason := deriveAcceptanceValidity(latestSubmissionID == requestSubmissionID, activeRevisionID == submissionRevisionID)
+	if validity != "valid" {
+		if latestSubmissionID != requestSubmissionID {
+			return AgentLifecycleResult{}, &Error{Status: 409, Code: "CONNECTOR_SUBMISSION_SUPERSEDED", Message: "The Submission is no longer the latest submission for this Target"}
+		}
+		return AgentLifecycleResult{}, &Error{Status: 409, Code: "ADJUDICATION_NOT_APPLICABLE", Message: "The derived acceptance for this Submission is " + validity + " (" + invalidReason + ")"}
 	}
 	// A GitHub connection must be bound for the workspace with a repo binding
 	// and an enabled connection (409 CONNECTOR_NOT_BOUND when absent).

@@ -73,9 +73,30 @@ Go Domain API commands (receipt + audit pattern; no outbox):
   params_hash must match the request (409 CONNECTOR_PARAMS_HASH_MISMATCH);
   status pending_approval → approved. Unique (action_request_id).
 - ExecuteAction: status must be approved (409 CONNECTOR_ACTION_NOT_APPROVED);
-  a GitHub connection must be bound for the workspace (409
-  CONNECTOR_NOT_BOUND when absent); calls the GitHubClient interface to
-  create the PR; records the EffectReceipt + marks the action executed.
+  an execute-time re-check re-derives the acceptance validity gate (the
+  submission must still be the latest for the target and its revision must
+  still be the target's active revision — 409 CONNECTOR_SUBMISSION_SUPERSEDED
+  or ADJUDICATION_NOT_APPLICABLE); a GitHub connection must be bound for the
+  workspace (409 CONNECTOR_NOT_BOUND when absent); calls the GitHubClient
+  interface to create the PR; records the EffectReceipt + marks the action
+  executed. Facade and store additionally bind the path action request id to
+  the payload action request id (400 CONNECTOR_PATH_PAYLOAD_MISMATCH).
+
+Deferrals recorded for this slice (review dispositions):
+
+- Live GitHub acceptance against a real repository is deferred to a
+  user-provisioned environment (connector is interface-bound, Fake-tested).
+- The GitHub REST client's token injection is deferred: connection
+  credentials are encrypted in the Node secret store and are not resolvable
+  from the Go DB-only process; ExecuteAction surfaces
+  CONNECTOR_CREDENTIALS_NOT_CONFIGURED until control-plane credential wiring
+  lands (G2.6 / production).
+- `verrail_github_repo_bindings` has no governed provisioning command or
+  route yet — binding rows are provisioned out of band until a binding
+  command lands (G2.6 / production).
+- Upstream-crash reconciliation (a GitHub PR created but the transaction
+  rolled back before the receipt committed) is recorded as a residual risk;
+  invariant-15 style verification before blind replay is a G2.6 item.
 
 GitHubClient interface (internal/target/connector.go):
 - CreatePullRequest(ctx, input) (externalObjectID, externalURL, error)

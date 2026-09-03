@@ -207,4 +207,14 @@ describe("connector routes", () => {
     expect(response.status).toBe(403);
     expect(domainApi.approveAction).not.toHaveBeenCalled();
   });
+
+  it("returns 400 when the path action request does not match the payload", async () => {
+    const app = await createApp(domainApi, boardActor([WORKSPACE_ID]));
+    const response = await request(app)
+      .post(`/api/workspaces/${WORKSPACE_ID}/pull-request-actions/${ACTION_REQUEST_ID}/executions`)
+      .set("Idempotency-Key", "connector:action:mismatch")
+      .send({ actionRequestId: "11111111-2222-4333-8444-555555555555" });
+    expect(response.status).toBe(400);
+    expect(domainApi.executeAction).not.toHaveBeenCalled();
+  });
 });

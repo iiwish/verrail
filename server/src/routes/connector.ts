@@ -35,13 +35,21 @@ export function connectorRoutes(options: { domainApiClient?: VerrailDomainApiCli
     res.status(result.replayed ? 200 : 201).json(result);
   });
   router.post("/workspaces/:workspaceId/pull-request-actions/:actionRequestId/approvals", validate(approveActionSchema), async (req, res) => {
+    const actionRequestId = req.params.actionRequestId as string;
+    if (req.body.actionRequestId !== actionRequestId) {
+      throw new HttpError(400, "The action request in the path must match the request in the payload", { code: "CONNECTOR_PATH_PAYLOAD_MISMATCH" });
+    }
     const context = commandContext(req, req.params.workspaceId as string);
-    const result = await domainApi!.approveAction({ ...context, actionRequestId: req.params.actionRequestId as string, input: req.body });
+    const result = await domainApi!.approveAction({ ...context, actionRequestId, input: req.body });
     res.status(result.replayed ? 200 : 201).json(result);
   });
   router.post("/workspaces/:workspaceId/pull-request-actions/:actionRequestId/executions", validate(executeActionSchema), async (req, res) => {
+    const actionRequestId = req.params.actionRequestId as string;
+    if (req.body.actionRequestId !== actionRequestId) {
+      throw new HttpError(400, "The action request in the path must match the request in the payload", { code: "CONNECTOR_PATH_PAYLOAD_MISMATCH" });
+    }
     const context = commandContext(req, req.params.workspaceId as string);
-    const result = await domainApi!.executeAction({ ...context, actionRequestId: req.params.actionRequestId as string, input: req.body });
+    const result = await domainApi!.executeAction({ ...context, actionRequestId, input: req.body });
     res.status(result.replayed ? 200 : 201).json(result);
   });
   return router;
