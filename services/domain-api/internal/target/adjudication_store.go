@@ -104,8 +104,14 @@ func (store *Store) RecordDeliveryReview(ctx context.Context, command AgentLifec
 	} else if err != nil {
 		return AgentLifecycleResult{}, err
 	}
-	// Independence rule (spec.md product contract item 2): the reviewer must
-	// differ from the submission's submitter when that submitter is a user.
+	// Authority rule (spec.md product contract item 2): the reviewer is the
+	// authenticated human member recording the review — the wire field must
+	// equal the command principal so independence cannot be self-attested on
+	// behalf of someone else. The reviewer must also differ from the
+	// submission's submitter when that submitter is a user.
+	if command.Input.ReviewerPrincipalID != command.Principal.ID {
+		return AgentLifecycleResult{}, forbidden("ADJUDICATION_REVIEWER_FORBIDDEN", "The reviewer must be the authenticated member recording the review")
+	}
 	if submitterType == "user" && submitterID == command.Input.ReviewerPrincipalID {
 		return AgentLifecycleResult{}, &Error{Status: 403, Code: "ADJUDICATION_REVIEWER_NOT_INDEPENDENT", Message: "The reviewer must differ from the submission's submitter"}
 	}

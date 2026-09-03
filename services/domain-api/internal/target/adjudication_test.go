@@ -440,6 +440,28 @@ func TestAdjudicationContractsIntegration(t *testing.T) {
 		requireLifecycleCode(t, err, "ADJUDICATION_REVIEWER_NOT_INDEPENDENT")
 	})
 
+	t.Run("reviewer identity must be the authenticated principal", func(t *testing.T) {
+		submission, err := harness.createSubmission(t, CreateSubmissionInput{
+			TargetID:            targetID,
+			TargetRevisionID:    targetRevisionID,
+			ArtifactRevisionIDs: []string{artifactRevisionID},
+			CommitRef:           ptr("git:attested-review"),
+		})
+		require.NoError(t, err)
+		harness.aggregateIDs = append(harness.aggregateIDs, submission.ResourceID)
+
+		attested := RecordDeliveryReviewInput{
+			SubmissionID:          submission.ResourceID,
+			ReviewerPrincipalType: "user",
+			ReviewerPrincipalID:   "fabricated-independent-reviewer",
+			Verdict:               "approved",
+			UnprovenItems:         []string{},
+		}
+		require.NoError(t, ValidateRecordDeliveryReviewInput(&attested))
+		_, err = harness.store.RecordDeliveryReview(ctx, buildAdjudicationCommandFor(t, harness, harness.principalID, AdjudicationReviewRecordCommand, attested))
+		requireLifecycleCode(t, err, "ADJUDICATION_REVIEWER_FORBIDDEN")
+	})
+
 	t.Run("verification results must bind claims of the submitted revision", func(t *testing.T) {
 		otherTargetID, otherRevisionID := harness.createTarget()
 		otherClaim := harness.createClaim(otherTargetID, otherRevisionID, "ac-1")

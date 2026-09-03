@@ -11,9 +11,11 @@ invalidated when facts change (invariant 10).
 ## Product contract (confirmed with the Outcome Owner before this target)
 
 1. Stage template stays define/execute/verify/accept (already in schema).
-2. Authority model for G2: reviewer = any human workspace member who is NOT
-   the submission submitter; acceptance authority = the target revision's
-   outcomeOwner principal. Fine-grained RBAC stays in G4.
+2. Authority model for G2: the reviewer is the authenticated human member
+   recording the review (the wire reviewer field must equal the command
+   principal — enforced, so independence cannot be self-attested) and must
+   differ from the submission submitter; acceptance authority = the target
+   revision's outcomeOwner principal. Fine-grained RBAC stays in G4.
 3. Submission binding = set snapshot: artifact revision ids + verification
    result ids + hashes, locked by a submission hash.
 
