@@ -19,7 +19,9 @@
     "Invalid acceptance is derived and visible: an acceptance over a superseded submission or a changed target revision renders as invalid in the read model without mutating the acceptance fact",
     "Contracts synchronized and verified: migration reconcilable, Go integration tests cover the full adjudication path, facade and UI tests pass, i18n parity holds"
   ],
-  "status": "in_progress",
+  "status": "accepted",
   "created_at": "2026-09-03T03:55:00Z",
-  "updated_at": "2026-09-03T03:55:00Z"
+  "updated_at": "2026-09-03T03:55:00Z",
+  "accepted_at": "2026-09-03T07:05:00Z",
+  "accepted_by": "Outcome Owner (browser acceptance delegated to Sisyphus; passed)"
 }

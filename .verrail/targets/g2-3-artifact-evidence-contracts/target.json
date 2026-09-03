@@ -21,7 +21,9 @@
     "Target Workbench Artifacts and Evidence tabs render server facts via the native read model with honest empty sets; no client fabrication",
     "Contracts synchronized across db/shared/Go/server/UI; fresh migration, focused tests, typecheck, Go tests, and token gates pass with inspectable evidence"
   ],
-  "status": "in_progress",
+  "status": "accepted",
   "created_at": "2026-09-03T02:20:00Z",
-  "updated_at": "2026-09-03T02:20:00Z"
+  "updated_at": "2026-09-03T02:20:00Z",
+  "accepted_at": "2026-09-03T07:05:00Z",
+  "accepted_by": "Outcome Owner (browser acceptance delegated to Sisyphus; passed)"
 }
