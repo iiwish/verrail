@@ -1,4 +1,8 @@
 import type {
+  AssuranceArtifactV1,
+  AssuranceClaimV1,
+  AssuranceEvidenceV1,
+  AssuranceVerificationResultV1,
   ConversationDetail,
   CreateTargetInputV1,
   CreateTargetResponseV1,
@@ -11,6 +15,19 @@ import type {
   TargetWorkspaceV1,
 } from "@paperclipai/shared";
 import { api } from "./client";
+
+/**
+ * Local extension of the shared TargetWorkspaceV1 contract: the server's
+ * workspace read model replaces the legacy artifact/evidence shapes with the
+ * G2.3 Assurance facts. The shared TargetWorkspaceV1 stays unchanged until the
+ * domain migration completes.
+ */
+export type TargetWorkspaceAssuranceFactsV1 = Omit<TargetWorkspaceV1, "artifacts" | "evidence"> & {
+  artifacts: AssuranceArtifactV1[];
+  claims: AssuranceClaimV1[];
+  evidence: AssuranceEvidenceV1[];
+  verificationResults: AssuranceVerificationResultV1[];
+};
 
 export interface TargetListOptions {
   limit?: number;
@@ -55,7 +72,7 @@ export const targetsApi = {
   get: (workspaceId: string, targetId: string) =>
     api.get<TargetReadModelV1>(`/workspaces/${workspaceId}/targets/${targetId}`),
   getWorkspace: (workspaceId: string, targetId: string) =>
-    api.get<TargetWorkspaceV1>(`/workspaces/${workspaceId}/targets/${targetId}/workspace`),
+    api.get<TargetWorkspaceAssuranceFactsV1>(`/workspaces/${workspaceId}/targets/${targetId}/workspace`),
   createConversation: (workspaceId: string, targetId: string) =>
     api.post<ConversationDetail>(`/workspaces/${workspaceId}/targets/${targetId}/conversation`, {}),
   createRunAttempt: (workspaceId: string, runId: string, input: CreateRunAttemptInputV1, idempotencyKey: string) =>

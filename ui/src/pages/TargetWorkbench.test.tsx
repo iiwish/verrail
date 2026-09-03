@@ -94,6 +94,8 @@ function targetWorkspace() {
     submissions: [],
     artifacts: [],
     evidence: [],
+    claims: [],
+    verificationResults: [],
     runs: [],
     timeline: [{
       id: "target:target-1:created",
@@ -102,6 +104,118 @@ function targetWorkspace() {
       detail: "Release Verrail",
       occurredAt: "2026-08-26T09:00:00.000Z",
     }],
+  };
+}
+
+const CONTENT_HASH_A = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";
+const CONTENT_HASH_B = "f0e1d2c3b4a5968778695a4b3c2d1e0ff0e1d2c3b4a5968778695a4b3c2d1e0f";
+const OBJECT_HASH = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+
+function assuranceFacts() {
+  return {
+    artifacts: [
+      {
+        id: "artifact-1",
+        targetId: "target-1",
+        kind: "code_change",
+        title: "Traceability ledger",
+        createdBy: { principalType: "agent", principalId: "agent-1" },
+        createdAt: "2026-08-26T10:05:00.000Z",
+        updatedAt: "2026-08-26T10:20:00.000Z",
+        revisions: [
+          {
+            id: "revision-a1",
+            artifactId: "artifact-1",
+            revisionNumber: 1,
+            contentHash: CONTENT_HASH_A,
+            contentRef: `verrail://objects/${CONTENT_HASH_A}`,
+            sourceRunId: "run-1",
+            sourceWorkNodeId: null,
+            baseRevisionId: null,
+            createdBy: { principalType: "agent", principalId: "agent-1" },
+            createdAt: "2026-08-26T10:06:00.000Z",
+          },
+          {
+            id: "revision-a2",
+            artifactId: "artifact-1",
+            revisionNumber: 2,
+            contentHash: CONTENT_HASH_B,
+            contentRef: `verrail://objects/${CONTENT_HASH_B}`,
+            sourceRunId: null,
+            sourceWorkNodeId: null,
+            baseRevisionId: "revision-a1",
+            createdBy: { principalType: "agent", principalId: "agent-1" },
+            createdAt: "2026-08-26T10:20:00.000Z",
+          },
+        ],
+      },
+    ],
+    claims: [
+      {
+        id: "claim-1",
+        targetId: "target-1",
+        targetRevisionId: "revision-1",
+        criterionKey: "criterion-1",
+        title: "Release builds cleanly",
+        status: "supported",
+        createdBy: { principalType: "user", principalId: "owner-1" },
+        createdAt: "2026-08-26T10:07:00.000Z",
+        updatedAt: "2026-08-26T10:15:00.000Z",
+      },
+      {
+        id: "claim-2",
+        targetId: "target-1",
+        targetRevisionId: "revision-1",
+        criterionKey: "reviewed",
+        title: "Security review recorded",
+        status: "open",
+        createdBy: { principalType: "user", principalId: "owner-1" },
+        createdAt: "2026-08-26T10:08:00.000Z",
+        updatedAt: "2026-08-26T10:08:00.000Z",
+      },
+    ],
+    evidence: [
+      {
+        id: "evidence-1",
+        targetId: "target-1",
+        claimId: "claim-1",
+        kind: "ci_result",
+        producer: { principalType: "service", principalId: "ci-runner" },
+        objectHash: OBJECT_HASH,
+        reference: "verrail://ci/runs/run-1/report",
+        trustLevel: "high",
+        recordedAt: "2026-08-26T10:10:00.000Z",
+        createdBy: { principalType: "service", principalId: "ci-runner" },
+        createdAt: "2026-08-26T10:10:00.000Z",
+      },
+      {
+        id: "evidence-2",
+        targetId: "target-1",
+        claimId: null,
+        kind: "human_review",
+        producer: { principalType: "user", principalId: "owner-1" },
+        objectHash: OBJECT_HASH,
+        reference: "verrail://reviews/r-9",
+        trustLevel: "medium",
+        recordedAt: "2026-08-26T10:12:00.000Z",
+        createdBy: { principalType: "user", principalId: "owner-1" },
+        createdAt: "2026-08-26T10:12:00.000Z",
+      },
+    ],
+    verificationResults: [
+      {
+        id: "verification-1",
+        targetId: "target-1",
+        claimId: "claim-1",
+        verdict: "passed",
+        verifierVersion: "verifier.v1",
+        evidenceIds: ["evidence-1"],
+        waiverReference: null,
+        resultHash: OBJECT_HASH,
+        createdBy: { principalType: "user", principalId: "owner-1" },
+        createdAt: "2026-08-26T10:15:00.000Z",
+      },
+    ],
   };
 }
 
@@ -384,5 +498,56 @@ describe("TargetWorkbench", () => {
 
     expect(container.textContent).toContain("RUN_FENCE_STALE");
     expect(container.textContent).toContain("Review the run state");
+  });
+
+  it("renders server assurance facts on the artifacts tab", async () => {
+    route.tab = "artifacts";
+    getWorkspace.mockResolvedValue({ ...targetWorkspace(), ...assuranceFacts() });
+
+    await renderWorkbench();
+
+    expect(getWorkspace).toHaveBeenCalledWith("workspace-1", "target-1");
+    expect(container.textContent).toContain("Traceability ledger");
+    expect(container.textContent).toContain("agent-1");
+    expect(container.textContent).toContain("Revision 1");
+    expect(container.textContent).toContain("Revision 2");
+    expect(container.textContent).toContain(CONTENT_HASH_A.slice(0, 12));
+    expect(container.textContent).not.toContain(CONTENT_HASH_A);
+    expect(container.querySelector(`[title="${CONTENT_HASH_A}"]`)).not.toBeNull();
+    expect(container.querySelector(`[title="${CONTENT_HASH_B}"]`)).not.toBeNull();
+    expect(container.textContent).toContain("Run run-1");
+  });
+
+  it("groups verification results and evidence under their claims on the evidence tab", async () => {
+    route.tab = "evidence";
+    getWorkspace.mockResolvedValue({ ...targetWorkspace(), ...assuranceFacts() });
+
+    await renderWorkbench();
+
+    expect(container.textContent).toContain("Release builds cleanly");
+    expect(container.textContent).toContain("criterion-1");
+    expect(container.textContent).toContain("Supported");
+    expect(container.textContent).toContain("Passed");
+    expect(container.textContent).toContain("Verifier verifier.v1");
+    expect(container.textContent).toContain("Evidence items: 1");
+    expect(container.textContent).toContain("ci-runner");
+    expect(container.textContent).toContain("verrail://ci/runs/run-1/report".slice(0, 12));
+    expect(container.textContent).toContain(OBJECT_HASH.slice(0, 12));
+    expect(container.querySelector(`[title="${OBJECT_HASH}"]`)).not.toBeNull();
+    expect(container.textContent).toContain("Security review recorded");
+    expect(container.textContent).toContain("Open");
+    expect(container.textContent).toContain("Unbound evidence");
+    expect(container.textContent).toContain("owner-1");
+    expect(container.textContent).toContain("Human review");
+  });
+
+  it("keeps honest empty states for the assurance tabs without server facts", async () => {
+    route.tab = "artifacts";
+    await renderWorkbench();
+    expect(container.textContent).toContain("No artifact revisions have been projected.");
+
+    route.tab = "evidence";
+    await renderWorkbench();
+    expect(container.textContent).toContain("No verification evidence has been projected.");
   });
 });

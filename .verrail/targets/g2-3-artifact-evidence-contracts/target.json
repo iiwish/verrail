@@ -1,0 +1,27 @@
+{
+  "id": "g2-3-artifact-evidence-contracts",
+  "runtime_target_id": "c18c7a6a-c93c-40a5-8010-2fe059399e61",
+  "runtime_target_revision_id": "cf5efd85-ee39-4e29-a51c-d2cecd898839",
+  "runtime_workspace_id": "c641493c-081c-4607-84ba-0818cd97981a",
+  "title": "G2.3 - Artifact and Evidence minimal contracts",
+  "intent": "Add governed Artifact, ArtifactRevision, Claim, Evidence, and VerificationResult data models and domain commands so Run output attaches to Targets and acceptance criteria become verifiable.",
+  "scope": "Implement the Assurance data spine: content-addressed artifact revisions, immutable evidence records with trust levels, per-criterion claims and verification results, written only through the Go Domain API; extend the native read model and Target Workbench Artifacts/Evidence tabs with real facts.",
+  "non_goals": [
+    "Implement Submission, DeliveryReview, or Acceptance commands (G2.4)",
+    "Implement the GitHub Connector, CI IntegrationTask, or IntegrationRun (G2.5)",
+    "Emit outbox events for assurance aggregates; the Timeline reads assurance tables directly in this slice",
+    "Build the ArtifactContract registry; artifact kinds are a fixed enum for now",
+    "Approve, merge, deploy, release, or create a ship record without independent review and explicit user acceptance"
+  ],
+  "acceptance_criteria": [
+    "Artifact revisions are content-addressed and immutable: each binds content hash, source run/node when present, base revision, and creating principal; revision numbers are monotonic per artifact",
+    "Evidence is immutable with explicit trust level: binds object hash, producing principal, kind, and trust level; agent self-reports record as low-trust observations",
+    "VerificationResult binds criterion key, claim, and evidence set: verdicts are passed/failed/inconclusive/waived; waived requires an authorized human waiver reference; results bind verifier version",
+    "Only the Go Domain API writes assurance facts; commands use the established receipt + audit transaction pattern with deterministic idempotency keys and request-hash conflict rejection",
+    "Target Workbench Artifacts and Evidence tabs render server facts via the native read model with honest empty sets; no client fabrication",
+    "Contracts synchronized across db/shared/Go/server/UI; fresh migration, focused tests, typecheck, Go tests, and token gates pass with inspectable evidence"
+  ],
+  "status": "in_progress",
+  "created_at": "2026-09-03T02:20:00Z",
+  "updated_at": "2026-09-03T02:20:00Z"
+}

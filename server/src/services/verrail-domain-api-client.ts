@@ -18,6 +18,11 @@ import type {
   ReportRunEventInputV1,
   ReportRunEventResponseV1,
   RequestRunCancellationResponseV1,
+  AddArtifactRevisionInput,
+  CreateArtifactInput,
+  CreateClaimInput,
+  RecordEvidenceInput,
+  RecordVerificationResultInput,
 } from "@paperclipai/shared";
 import { HttpError } from "../errors.js";
 
@@ -68,6 +73,13 @@ export interface RequestNativeRunCancellationCommand extends HumanCommand {
   runId: string;
 }
 
+export interface AssuranceCommandResponseV1 {
+  schemaVersion: 1;
+  resourceType: "artifact" | "artifact_revision" | "claim" | "evidence" | "verification_result";
+  resourceId: string;
+  replayed: boolean;
+}
+
 export interface VerrailDomainApiClient {
   createTarget(command: CreateNativeTargetCommand): Promise<CreateTargetResponseV1>;
   createGraphRevision(command: CreateNativeGraphRevisionCommand): Promise<CreateGraphRevisionResponseV1>;
@@ -82,6 +94,11 @@ export interface VerrailDomainApiClient {
   recordEvaluationRun(command: HumanCommand & { input: RecordEvaluationRunInputV1 }): Promise<AgentLifecycleCommandResponseV1>;
   createDeployment(command: HumanCommand & { input: CreateDeploymentInputV1 }): Promise<AgentLifecycleCommandResponseV1>;
   reviseDeployment(command: HumanCommand & { deploymentId: string; input: ReviseDeploymentInputV1 }): Promise<AgentLifecycleCommandResponseV1>;
+  createArtifact(command: HumanCommand & { input: CreateArtifactInput }): Promise<AssuranceCommandResponseV1>;
+  addArtifactRevision(command: HumanCommand & { input: AddArtifactRevisionInput }): Promise<AssuranceCommandResponseV1>;
+  createClaim(command: HumanCommand & { input: CreateClaimInput }): Promise<AssuranceCommandResponseV1>;
+  recordEvidence(command: HumanCommand & { input: RecordEvidenceInput }): Promise<AssuranceCommandResponseV1>;
+  recordVerificationResult(command: HumanCommand & { input: RecordVerificationResultInput }): Promise<AssuranceCommandResponseV1>;
 }
 
 type DomainApiErrorPayload = { error?: unknown; code?: unknown; retryable?: unknown };
@@ -149,5 +166,10 @@ export function createVerrailDomainApiClient(options: {
     recordEvaluationRun: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/evaluation-runs`, command.input),
     createDeployment: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/deployments`, command.input),
     reviseDeployment: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/deployments/${encodeURIComponent(command.deploymentId)}/revisions`, command.input),
+    createArtifact: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/artifacts`, command.input),
+    addArtifactRevision: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/artifact-revisions`, command.input),
+    createClaim: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/claims`, command.input),
+    recordEvidence: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/evidence`, command.input),
+    recordVerificationResult: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/verification-results`, command.input),
   };
 }
