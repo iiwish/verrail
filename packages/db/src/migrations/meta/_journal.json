@@ -1674,6 +1674,13 @@
       "when": 1788411588393,
       "tag": "0240_fine_beast",
       "breakpoints": true
+    },
+    {
+      "idx": 241,
+      "version": "7",
+      "when": 1788425061049,
+      "tag": "0241_easy_may_parker",
+      "breakpoints": true
     }
   ]
 }

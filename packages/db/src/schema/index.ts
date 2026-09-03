@@ -74,6 +74,13 @@ export {
   verrailDeliveryReviews,
   verrailAcceptances,
 } from "./verrail_adjudication.js";
+export {
+  verrailIntegrationRuns,
+  verrailActionRequests,
+  verrailActionApprovals,
+  verrailEffectReceipts,
+  verrailGithubRepoBindings,
+} from "./verrail_connector.js";
 export { projectMemberships } from "./project_memberships.js";
 export { documentMemberships } from "./document_memberships.js";
 export { projectWorkspaces } from "./project_workspaces.js";

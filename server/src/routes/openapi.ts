@@ -197,6 +197,8 @@ import {
   acceptSubmissionSchema,
   addArtifactRevisionSchema,
   adjudicationIdempotencyKeySchema,
+  approveActionSchema,
+  connectorIdempotencyKeySchema,
   createAgentDefinitionSchema,
   createArtifactSchema,
   createClaimSchema,
@@ -207,12 +209,15 @@ import {
   createRunSchema,
   createSubmissionSchema,
   createTargetSchema,
+  executeActionSchema,
   publishAgentVersionSchema,
   recordEvaluationRunSchema,
   recordDeliveryReviewSchema,
   recordEvidenceSchema,
+  recordIntegrationRunSchema,
   recordVerificationResultSchema,
   reportRunEventSchema,
+  requestPullRequestActionSchema,
   reviseDeploymentSchema,
   targetIdempotencyKeySchema,
   targetListQuerySchema,
@@ -609,6 +614,10 @@ const responses = {
   },
   conflict: {
     description: "Conflict",
+    content: { "application/json": { schema: ErrorSchema } },
+  },
+  badGateway: {
+    description: "Bad gateway",
     content: { "application/json": { schema: ErrorSchema } },
   },
   payloadTooLarge: {
@@ -3288,6 +3297,58 @@ registry.registerPath({
     body: jsonBody(acceptSubmissionSchema),
   },
   responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/integration-runs",
+  tags: ["connector"],
+  summary: "Record an immutable IntegrationRun binding CI evidence and a VerificationResult to a Claim",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": connectorIdempotencyKeySchema }),
+    body: jsonBody(recordIntegrationRunSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 502: r.badGateway, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/pull-request-actions",
+  tags: ["connector"],
+  summary: "Request a governed create_pull_request external action against the latest valid Submission",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": connectorIdempotencyKeySchema }),
+    body: jsonBody(requestPullRequestActionSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 502: r.badGateway, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/pull-request-actions/{actionRequestId}/approvals",
+  tags: ["connector"],
+  summary: "Approve a pending pull-request action with a parameter-bound params hash",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), actionRequestId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": connectorIdempotencyKeySchema }),
+    body: jsonBody(approveActionSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 502: r.badGateway, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/pull-request-actions/{actionRequestId}/executions",
+  tags: ["connector"],
+  summary: "Execute an approved pull-request action through GitHub and record the immutable EffectReceipt",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), actionRequestId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": connectorIdempotencyKeySchema }),
+    body: jsonBody(executeActionSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 502: r.badGateway, 503: r.serviceUnavailable },
 });
 
 registry.registerPath({
