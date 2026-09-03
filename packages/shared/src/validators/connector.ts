@@ -52,8 +52,15 @@ export const executeActionSchema = z.object({
   actionRequestId: z.string().uuid(),
 }).strict();
 
+export const createGithubRepoBindingSchema = z.object({
+  connectionId: z.string().uuid(),
+  repoOwner: z.string().trim().min(1).max(200),
+  repoName: z.string().trim().min(1).max(200),
+}).strict();
+
 export type RecordIntegrationRunInput = z.infer<typeof recordIntegrationRunSchema>;
 export type RequestPullRequestActionInput = z.infer<typeof requestPullRequestActionSchema>;
 export type ApproveActionInput = z.infer<typeof approveActionSchema>;
 export type ExecuteActionInput = z.infer<typeof executeActionSchema>;
+export type CreateGithubRepoBindingInput = z.infer<typeof createGithubRepoBindingSchema>;
 export type PullRequestParams = z.infer<typeof pullRequestParamsSchema>;

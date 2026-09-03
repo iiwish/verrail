@@ -39,6 +39,7 @@ type recordIntegrationRunFunc func(*http.Request, target.AgentLifecycleCommand[t
 type requestPullRequestActionFunc func(*http.Request, target.AgentLifecycleCommand[target.RequestPullRequestActionInput]) (target.AgentLifecycleResult, error)
 type approveActionFunc func(*http.Request, target.AgentLifecycleCommand[target.ApproveActionInput]) (target.AgentLifecycleResult, error)
 type executeActionFunc func(*http.Request, target.AgentLifecycleCommand[target.ExecuteActionInput]) (target.AgentLifecycleResult, error)
+type createGithubRepoBindingFunc func(*http.Request, target.AgentLifecycleCommand[target.CreateGithubRepoBindingInput]) (target.AgentLifecycleResult, error)
 
 type Server struct {
 	token                    string
@@ -67,6 +68,7 @@ type Server struct {
 	requestPullRequestAction requestPullRequestActionFunc
 	approveAction            approveActionFunc
 	executeAction            executeActionFunc
+	createGithubRepoBinding  createGithubRepoBindingFunc
 	logger                   *slog.Logger
 }
 
@@ -149,6 +151,9 @@ func New(token string, store *target.Store, logger *slog.Logger) http.Handler {
 		executeAction: func(request *http.Request, command target.AgentLifecycleCommand[target.ExecuteActionInput]) (target.AgentLifecycleResult, error) {
 			return store.ExecuteAction(request.Context(), command)
 		},
+		createGithubRepoBinding: func(request *http.Request, command target.AgentLifecycleCommand[target.CreateGithubRepoBindingInput]) (target.AgentLifecycleResult, error) {
+			return store.CreateGithubRepoBinding(request.Context(), command)
+		},
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", server.health)
@@ -177,6 +182,7 @@ func New(token string, store *target.Store, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/pull-request-actions", server.requestConnectorPullRequestAction)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/pull-request-actions/{actionRequestId}/approvals", server.approveConnectorAction)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/pull-request-actions/{actionRequestId}/executions", server.executeConnectorAction)
+	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/github-repo-bindings", server.createConnectorGithubRepoBinding)
 	return mux
 }
 
@@ -638,6 +644,31 @@ func (server *Server) executeConnectorAction(response http.ResponseWriter, reque
 		return
 	}
 	result, err := server.executeAction(request, command)
+	if err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	writeJSON(response, lifecycleStatus(result), result)
+}
+
+func (server *Server) createConnectorGithubRepoBinding(response http.ResponseWriter, request *http.Request) {
+	if !server.lifecycleAuthorized(response, request) {
+		return
+	}
+	command := target.AgentLifecycleCommand[target.CreateGithubRepoBindingInput]{WorkspaceID: request.PathValue("workspaceId"), Principal: principal(request), IdempotencyKey: request.Header.Get("Idempotency-Key"), CommandType: target.ConnectorRepoBindingCreateCommand}
+	if err := decodeBody(response, request, &command.Input); err != nil {
+		writeError(response, err)
+		return
+	}
+	if err := target.ValidateCreateGithubRepoBindingInput(&command.Input); err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	if err := target.ValidateAgentLifecycleCommand(&command); err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	result, err := server.createGithubRepoBinding(request, command)
 	if err != nil {
 		writeError(response, target.AsError(err))
 		return

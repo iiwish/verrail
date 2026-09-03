@@ -10,6 +10,7 @@ const SUBMISSION_ID = "3df266a0-87ea-47f0-81bd-c4f04e4d576e";
 const ACTION_REQUEST_ID = "7df266a0-87ea-47f0-81bd-c4f04e4d576e";
 const APPROVAL_ID = "8ef266a0-87ea-47f0-81bd-c4f04e4d576e";
 const RECEIPT_ID = "9ff266a0-87ea-47f0-81bd-c4f04e4d576e";
+const CONNECTION_ID = "aa1f266a-87ea-47f0-81bd-c4f04e4d576e";
 
 function receipt(resourceType: string, resourceId: string, replayed = false) {
   return { schemaVersion: 1, resourceType, resourceId, replayed };
@@ -78,6 +79,7 @@ describe("connector routes", () => {
     requestPullRequestAction: vi.fn(),
     approveAction: vi.fn(),
     executeAction: vi.fn(),
+    createGithubRepoBinding: vi.fn(),
   };
   beforeEach(() => {
     vi.clearAllMocks();
@@ -85,6 +87,7 @@ describe("connector routes", () => {
     domainApi.requestPullRequestAction.mockResolvedValue(receipt("action_request", ACTION_REQUEST_ID));
     domainApi.approveAction.mockResolvedValue(receipt("action_approval", APPROVAL_ID));
     domainApi.executeAction.mockResolvedValue(receipt("effect_receipt", RECEIPT_ID));
+    domainApi.createGithubRepoBinding.mockResolvedValue(receipt("repo_binding", CONNECTION_ID));
   });
 
   it("proxies the four connector commands to the Domain API", async () => {
@@ -206,6 +209,18 @@ describe("connector routes", () => {
       .send(approveBody());
     expect(response.status).toBe(403);
     expect(domainApi.approveAction).not.toHaveBeenCalled();
+  });
+
+  it("creates a github repo binding through the connector facade", async () => {
+    const app = await createApp(domainApi, boardActor([WORKSPACE_ID]));
+    const response = await request(app)
+      .post(`/api/workspaces/${WORKSPACE_ID}/github-repo-bindings`)
+      .set("Idempotency-Key", "connector:binding:create")
+      .send({ connectionId: CONNECTION_ID, repoOwner: "owner", repoName: "repo" });
+    expect(response.status).toBe(201);
+    expect(domainApi.createGithubRepoBinding).toHaveBeenCalledWith(
+      expect.objectContaining({ principalType: "user", input: { connectionId: CONNECTION_ID, repoOwner: "owner", repoName: "repo" } }),
+    );
   });
 
   it("returns 400 when the path action request does not match the payload", async () => {

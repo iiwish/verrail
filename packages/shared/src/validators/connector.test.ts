@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   approveActionSchema,
   connectorIdempotencyKeySchema,
+  createGithubRepoBindingSchema,
   executeActionSchema,
   pullRequestParamsSchema,
   recordIntegrationRunSchema,
@@ -94,5 +95,16 @@ describe("connector validators", () => {
     expect(() => executeActionSchema.parse({ actionRequestId: "not-a-uuid" })).toThrow();
     expect(() => executeActionSchema.parse({})).toThrow();
     expect(() => executeActionSchema.parse({ actionRequestId: uuid, extra: 1 })).toThrow();
+  });
+
+  it("validates github repo binding creation", () => {
+    const base = { connectionId: uuid, repoOwner: "owner", repoName: "repo" };
+    expect(createGithubRepoBindingSchema.parse(base)).toMatchObject({ repoOwner: "owner" });
+    expect(createGithubRepoBindingSchema.parse({ ...base, repoOwner: "  owner  " })).toMatchObject({ repoOwner: "owner" });
+    expect(() => createGithubRepoBindingSchema.parse({ ...base, connectionId: "not-a-uuid" })).toThrow();
+    expect(() => createGithubRepoBindingSchema.parse({ ...base, repoOwner: "" })).toThrow();
+    expect(() => createGithubRepoBindingSchema.parse({ ...base, repoOwner: "x".repeat(201) })).toThrow();
+    expect(() => createGithubRepoBindingSchema.parse({ ...base, repoName: "x".repeat(201) })).toThrow();
+    expect(() => createGithubRepoBindingSchema.parse({ ...base, extra: 1 })).toThrow();
   });
 });

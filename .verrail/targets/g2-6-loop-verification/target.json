@@ -1,0 +1,25 @@
+{
+  "id": "g2-6-loop-verification",
+  "runtime_target_id": "b6cb0501-a421-4544-b099-97f970f431e4",
+  "runtime_target_revision_id": "3b646903-67ac-4412-ac04-4284b4136eda",
+  "runtime_workspace_id": "c641493c-081c-4607-84ba-0818cd97981a",
+  "title": "G2.6 - Loop fault demonstrations and operational verification",
+  "intent": "Formalize the four fault demonstrations (failure, retry, rejection, invalidation) on the live stack, gather orchestration-worker kill-restart recovery evidence, and add the governed repo-binding provisioning command, completing the G2 exit-gate verification.",
+  "scope": "Prove the G2 exit gate: failures, retries, rejections and invalidation demonstrated on the live loop with inspectable evidence; a worker restart converges without human repair; repo bindings are provisionable through governance. The GitHub token-resolution design decision is surfaced to the Outcome Owner.",
+  "non_goals": [
+    "Live GitHub PR creation against a real repository (deferred pending the credential-wiring decision)",
+    "Webhook ingestion, Runner Protocol extraction, or Execution Gateway work (G3)",
+    "Fine-grained RBAC or approval delegation (G4)",
+    "Approve, merge, deploy, release, or create a ship record without independent review and explicit user acceptance"
+  ],
+  "acceptance_criteria": [
+    "Four fault demonstrations recorded on the live loop: failure (integration run failure -> claim refuted), retry (idempotent replay + stale-fence rejection), rejection (self-review/self-approve 403), invalidation (superseded submission -> derived invalid) — each with inspectable evidence on the live stack",
+    "Worker kill-restart recovery proven: killing the orchestration worker mid-loop leaves outbox events pending; restarting converges delivery and workflow state without human repair",
+    "Repo bindings provisionable through governance: a governed admin command creates the workspace repo binding with the receipt + audit pattern; the connector execute gate accepts it",
+    "Credential wiring decision surfaced: the design options for GitHub token resolution are documented for the Outcome Owner; no unilateral secret-transit decision",
+    "G2 exit gate verified: the signature-loop facts (target version, artifact revisions, criterion coverage, evidence, submission, review, acceptance, invalidation) render on the live stack with honest states"
+  ],
+  "status": "in_progress",
+  "created_at": "2026-09-03T13:40:00Z",
+  "updated_at": "2026-09-03T13:40:00Z"
+}

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   approveActionSchema,
+  createGithubRepoBindingSchema,
   executeActionSchema,
   recordIntegrationRunSchema,
   requestPullRequestActionSchema,
@@ -50,6 +51,11 @@ export function connectorRoutes(options: { domainApiClient?: VerrailDomainApiCli
     }
     const context = commandContext(req, req.params.workspaceId as string);
     const result = await domainApi!.executeAction({ ...context, actionRequestId, input: req.body });
+    res.status(result.replayed ? 200 : 201).json(result);
+  });
+  router.post("/workspaces/:workspaceId/github-repo-bindings", validate(createGithubRepoBindingSchema), async (req, res) => {
+    const context = commandContext(req, req.params.workspaceId as string);
+    const result = await domainApi!.createGithubRepoBinding({ ...context, input: req.body });
     res.status(result.replayed ? 200 : 201).json(result);
   });
   return router;

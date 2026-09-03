@@ -209,6 +209,7 @@ import {
   createRunSchema,
   createSubmissionSchema,
   createTargetSchema,
+  createGithubRepoBindingSchema,
   executeActionSchema,
   publishAgentVersionSchema,
   recordEvaluationRunSchema,
@@ -3349,6 +3350,19 @@ registry.registerPath({
     body: jsonBody(executeActionSchema),
   },
   responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 502: r.badGateway, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/github-repo-bindings",
+  tags: ["connector"],
+  summary: "Provision the workspace GitHub repo binding through an admin-gated command",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": connectorIdempotencyKeySchema }),
+    body: jsonBody(createGithubRepoBindingSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
 });
 
 registry.registerPath({

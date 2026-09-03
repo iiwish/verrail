@@ -1,0 +1,66 @@
+{
+  "target_id": "g2-6-loop-verification",
+  "run_id": "run-001",
+  "runtime": {
+    "workspace_id": "c641493c-081c-4607-84ba-0818cd97981a",
+    "conversation_id": "50341d12-9a13-409c-9284-46830b0191f8",
+    "source_message_id": "127e8d22-8f56-4288-8ae3-7778616f1b9e",
+    "draft_id": "2d98be3b-10d8-42f1-ad5d-1a08a79f4210",
+    "target_id": "b6cb0501-a421-4544-b099-97f970f431e4",
+    "target_revision_id": "3b646903-67ac-4412-ac04-4284b4136eda",
+    "runtime_status": "draft",
+    "local_delivery_status": "needs_review"
+  },
+  "change": {
+    "provisioning_command": "services/domain-api/internal/target/repo_binding.go + repo_binding_store.go + repo_binding_test.go: CreateGithubRepoBinding (admin-gated: workspace owner-role membership OR instance admin; connection must exist in workspace AND be enabled; one binding per workspace with content-addressed dedup replay and conflict rejection; receipt + audit transaction pattern), httpapi route POST /v1/workspaces/{workspaceId}/github-repo-bindings; Store wired without functional-option changes (default real GitHub client)",
+    "facade_route": "server/src/routes/connector.ts gains POST /workspaces/:id/github-repo-bindings (board-only, idempotency-key, shared createGithubRepoBindingSchema) + client method + OpenAPI registration + route test; shared zod contract added to packages/shared/src/validators/connector.ts with validator tests"
+  },
+  "verification": [
+    {
+      "scope": "provisioning command",
+      "status": "passed",
+      "result": "go vet/build/test -count=1 green; DB-gated integration on throwaway seeded PG: 15 subtests green across connector (13) + repo binding (2 groups incl. full path create -> dedup replay -> conflict 409 -> non-owner 403 -> disabled connection 409 -> non-member 403 -> instance-admin bypass -> ExecuteAction gate proceeds past CONNECTOR_NOT_BOUND to CONNECTOR_CREDENTIALS_NOT_CONFIGURED with the provisioned binding)"
+    },
+    {
+      "scope": "fault demonstration 1: failure",
+      "status": "passed",
+      "result": "Live stack: claim on the G2.6 runtime target + high-trust CI evidence + integration run with conclusion=failure -> claim status flipped to 'refuted' (verified via DB query); evidence + failed verification result recorded"
+    },
+    {
+      "scope": "fault demonstration 2: retry",
+      "status": "passed",
+      "result": "Live stack: identical artifact command replayed with the same Idempotency-Key -> same resourceId returned with Replayed=true; no duplicate fact"
+    },
+    {
+      "scope": "fault demonstration 3: rejection",
+      "status": "passed",
+      "result": "Recorded live during G2.4/G2.5 acceptance: self-review 403 ADJUDICATION_REVIEWER_NOT_INDEPENDENT, self-approve 403 CONNECTOR_APPROVER_NOT_INDEPENDENT, execute-pending 409 CONNECTOR_ACTION_NOT_APPROVED — re-verified in the G2.5 acceptance timeline"
+    },
+    {
+      "scope": "fault demonstration 4: invalidation",
+      "status": "passed_with_note",
+      "result": "Proven by the TS read-model integration tests (real embedded PG: superseded submission -> invalidReason superseded_submission; active-revision rotation -> target_revision_changed; superseded precedence) — a live product demo of an invalid ACCEPTANCE is structurally blocked in single-human local mode (the governance correctly prevents self-approval, so no acceptance exists to invalidate); the derivation rule is identical and covered"
+    },
+    {
+      "scope": "worker kill-restart recovery",
+      "status": "passed",
+      "result": "The orchestration worker process tree was killed (go run + compiled binary); the dev stack tore down; the volume persisted. Full stack restart: server + worker + Temporal healthy on commit f387757e, all 3 dogfood targets intact, outbox events delivered, workflows intact. Additionally a verified SIGSTOP freeze experiment: all 4 worker processes confirmed state T (stopped), a target created through the product during the freeze window (130c28b2), the outbox event stayed 'pending' for the full 10s frozen window (tight-loop sampled at 0.25s), and on resume the Temporal workflow verrail.target.workflow.v1 started and is Running for the correct workflow ID — no human repair at any point"
+    },
+    {
+      "scope": "repository pipeline",
+      "status": "passed",
+      "result": "Root pipeline green on the pre-G2.6 tree (run 7); the provisioning commit touches only Go connector/binding code verified by go vet/build/test -count=1 and the DB-gated integration above"
+    },
+    {
+      "scope": "signature-loop facts render on the live stack (criterion 5)",
+      "status": "passed",
+      "result": "Workspace read model for the G2.4 runtime target (3e9c92ff) renders the full signature-loop fact set with real data: artifacts 1 (1 revision), claims 1 (supported), evidence 1 (high trust), verificationResults 1, submissions 1 (with submissionHash) — and honest empty sets for reviews/acceptances (governance correctly rejected self-review, so no independent review or acceptance exists in single-human mode) and connector facts (integration runs / action requests / effect receipts seeded on the G2.5 target, not this one). schemaVersion 1"
+    }
+  ],
+  "residual_risks": [
+    "GitHub token injection deferred: connection credentials are encrypted in the Node secret store, not resolvable from the Go DB-only process; ExecuteAction surfaces CONNECTOR_CREDENTIALS_NOT_CONFIGURED until the credential-wiring decision is implemented (three options documented in spec.md section D)",
+    "Repo-binding provisioning has no UI surface yet; the Go command is the governance path (bearer-protected internal API)",
+    "Upstream-crash reconciliation (GitHub PR created but the transaction rolled back) remains a recorded residual risk; invariant-15 verification before blind replay is the G3-era item",
+    "The failure-conclusion write path is covered at unit level only (neutral and success have integration subtests); the failure mapping is unit-tested via TestConnectorConclusionVerdict"
+  ]
+}
