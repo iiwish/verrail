@@ -1,0 +1,112 @@
+- generic [ref=e6]:
+  - link "跳到主要内容" [ref=e7] [cursor=pointer]:
+    - /url: "#main-content"
+  - generic [ref=e8]:
+    - generic [ref=e10]:
+      - complementary [ref=e12]:
+        - link "首页" [ref=e14] [cursor=pointer]:
+          - /url: /VER/home
+        - button "打开 Verrail G2 Delivery 工作区切换器" [ref=e17]:
+          - generic [ref=e18]:
+            - generic [ref=e19]: V
+            - generic "Verrail G2 Delivery"
+        - navigation [ref=e22]:
+          - generic [ref=e23]:
+            - link [ref=e25] [cursor=pointer]:
+              - /url: /VER/home
+            - link [ref=e31] [cursor=pointer]:
+              - /url: /VER/chat
+            - link [ref=e37] [cursor=pointer]:
+              - /url: /VER/targets
+            - link [ref=e44] [cursor=pointer]:
+              - /url: /VER/agents
+            - link [ref=e50] [cursor=pointer]:
+              - /url: /VER/infrastructure
+            - link [ref=e64] [cursor=pointer]:
+              - /url: /VER/governance
+            - link [ref=e70] [cursor=pointer]:
+              - /url: /VER/settings
+          - generic [ref=e75]: 插件
+      - button "打开账户菜单" [ref=e81]:
+        - generic [ref=e82]: BO
+        - generic: Board
+    - complementary [ref=e85]:
+      - generic [ref=e86]:
+        - link "Verrail G2 Delivery" [ref=e87] [cursor=pointer]:
+          - /url: /VER/home
+        - generic [ref=e91]:
+          - link "目标" [ref=e92] [cursor=pointer]:
+            - /url: /VER/targets
+          - button "新建目标" [ref=e98]
+      - navigation "目标" [ref=e99]:
+        - generic [ref=e100]:
+          - link "G2.5 - GitHub connector, CI evidence, and PR action" [ref=e101] [cursor=pointer]:
+            - /url: /VER/targets/cb87c140-ce5a-4f8b-abeb-54f4ef2dff00/overview
+          - link "G2.4 - Submission, DeliveryReview, and Acceptance" [ref=e109] [cursor=pointer]:
+            - /url: /VER/targets/3e9c92ff-f655-4a0b-8653-da7f109a4a1f/overview
+          - link "G2.3 - Artifact and Evidence minimal contracts" [ref=e117] [cursor=pointer]:
+            - /url: /VER/targets/c18c7a6a-c93c-40a5-8010-2fe059399e61/overview
+    - generic [ref=e125]:
+      - navigation "breadcrumb" [ref=e129]:
+        - list [ref=e130]:
+          - listitem [ref=e131]:
+            - link "目标" [ref=e132] [cursor=pointer]:
+              - /url: /VER/targets
+          - listitem [aria-hidden] [ref=e133]
+          - listitem [ref=e136]:
+            - link "G2.5 - GitHub connector, CI evidence, and PR action" [disabled] [ref=e137]
+      - main [active] [ref=e139]:
+        - generic [ref=e140]:
+          - generic [ref=e141]:
+            - generic [ref=e142]:
+              - generic [ref=e143]: 草稿
+              - generic [ref=e144]: ·
+              - generic [ref=e145]: Define
+              - generic [ref=e146]: ·
+              - generic [ref=e147]: 原生受治理修订版本
+            - generic [ref=e148]:
+              - heading "G2.5 - GitHub connector, CI evidence, and PR action" [level=2] [ref=e149]
+              - button "讨论" [ref=e150]
+            - paragraph [ref=e151]: Add IntegrationRun CI evidence production, structured PR-creation actions with parameter-bound approvals and effect receipts, and the GitHub connector binding, completing the external half of the trusted delivery loop.
+          - tablist [ref=e153]:
+            - tab "概览" [ref=e154]
+            - tab "工作图" [ref=e155]
+            - tab "运行" [ref=e156]
+            - tab "产物" [ref=e157]
+            - tab "证据" [selected] [ref=e158]
+            - tab "验收" [ref=e159]
+            - tab "阶段" [ref=e160]
+            - tab "提交" [ref=e161]
+            - tab "时间线" [ref=e162]
+          - list [ref=e164]:
+            - listitem [ref=e165]:
+              - generic [ref=e166]:
+                - generic [ref=e167]:
+                  - paragraph [ref=e168]: Integration runs produce evidence and verification results
+                  - paragraph [ref=e169]: 6a47a753-86f9-43bd-9d21-af5b74aa0486
+                - generic [ref=e170]: 已支持
+              - list [ref=e171]:
+                - listitem [ref=e172]:
+                  - generic [ref=e173]: 通过
+                  - generic [ref=e174]: 验证器 integration-run.v1
+                  - generic [ref=e175]: 证据条数：1
+                - listitem [ref=e176]:
+                  - generic [ref=e177]: 通过
+                  - generic [ref=e178]: 验证器 integration-run.v1
+                  - generic [ref=e179]: 证据条数：1
+              - list [ref=e180]:
+                - listitem [ref=e181]:
+                  - generic [ref=e182]: CI 结果
+                  - generic [ref=e183]: 高信任
+                  - generic [ref=e184]: integration-run
+                  - generic "connector-run/acceptance-001" [ref=e185]: connector-ru…
+                  - generic "ed744efd541d1fa03146bdc9c025c7fdeb078ce29e6f48c2275e092ba576daa5" [ref=e186]: ed744efd541d…
+                - listitem [ref=e187]:
+                  - generic [ref=e188]: CI 结果
+                  - generic [ref=e189]: 高信任
+                  - generic [ref=e190]: integration-run
+                  - generic "connector-run/acceptance-001" [ref=e191]: connector-ru…
+                  - generic "ed744efd541d1fa03146bdc9c025c7fdeb078ce29e6f48c2275e092ba576daa5" [ref=e192]: ed744efd541d…
+  - generic [ref=e193]:
+    - heading "命令面板" [level=2] [ref=e194]
+    - paragraph [ref=e195]: 搜索要运行的命令...
