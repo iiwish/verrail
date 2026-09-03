@@ -5,13 +5,20 @@ import { getTableName } from "drizzle-orm";
 import {
   companies,
   createDb,
+  toolApplications,
+  toolConnections,
   verrailAcceptances,
+  verrailActionApprovals,
+  verrailActionRequests,
   verrailArtifactRevisions,
   verrailArtifacts,
   verrailClaims,
   verrailDeliveryReviews,
+  verrailEffectReceipts,
   verrailEvidence,
+  verrailGithubRepoBindings,
   verrailGraphRevisions,
+  verrailIntegrationRuns,
   verrailRuns,
   verrailSubmissions,
   verrailTargetRevisions,
@@ -36,6 +43,13 @@ describePostgres("native TargetReadModel", () => {
   }, 30_000);
 
   afterEach(async () => {
+    await db.delete(verrailEffectReceipts);
+    await db.delete(verrailActionApprovals);
+    await db.delete(verrailActionRequests);
+    await db.delete(verrailIntegrationRuns);
+    await db.delete(verrailGithubRepoBindings);
+    await db.delete(toolConnections);
+    await db.delete(toolApplications);
     await db.delete(verrailAcceptances);
     await db.delete(verrailDeliveryReviews);
     await db.delete(verrailSubmissions);
@@ -135,6 +149,10 @@ describePostgres("native TargetReadModel", () => {
     expect(workspace.submissions).toEqual([]);
     expect(workspace.reviews).toEqual([]);
     expect(workspace.acceptances).toEqual([]);
+    expect(workspace.integrationRuns).toEqual([]);
+    expect(workspace.actionRequests).toEqual([]);
+    expect(workspace.effectReceipts).toEqual([]);
+    expect(workspace.workspaceBinding).toEqual(null);
     expect(model!.artifactSummary).toEqual({ count: 0, latestRevisionId: null });
     expect(model!.evidenceSummary).toEqual({ count: 0, passed: 0, failed: 0, inconclusive: 0, coverage: "unknown" });
   });
@@ -420,8 +438,212 @@ describePostgres("native TargetReadModel", () => {
       "verrail_submissions",
       "verrail_delivery_reviews",
       "verrail_acceptances",
+      "verrail_integration_runs",
+      "verrail_action_requests",
+      "verrail_action_approvals",
+      "verrail_effect_receipts",
+      "verrail_github_repo_bindings",
     ];
     for (const table of assuranceTables) {
+      expect(queriedTables, `${table} is queried`).toContain(table);
+    }
+    expect([...queriedTables].filter((table) => !table.startsWith("verrail_"))).toEqual([]);
+  });
+
+  it("renders connector facts from the verrail connector tables only", async () => {
+    const seeded = await seed();
+    const claim = await db.insert(verrailClaims).values({
+      id: randomUUID(),
+      workspaceId: seeded.workspace.id,
+      targetId: seeded.targetId,
+      targetRevisionId: seeded.targetRevisionId,
+      criterionKey: "criterion-1",
+      title: "CI passes",
+      status: "supported",
+      createdByPrincipalType: "user",
+      createdByPrincipalId: "user-1",
+    }).returning().then((rows) => rows[0]!);
+    const evidence = await db.insert(verrailEvidence).values({
+      id: randomUUID(),
+      workspaceId: seeded.workspace.id,
+      targetId: seeded.targetId,
+      claimId: claim.id,
+      kind: "ci_result",
+      producerPrincipalType: "service",
+      producerPrincipalId: "integration-run",
+      objectHash: "a".repeat(64),
+      reference: "ci:job:1",
+      trustLevel: "high",
+      recordedAt: new Date("2026-09-01T08:00:00Z"),
+      createdByPrincipalType: "user",
+      createdByPrincipalId: "user-1",
+    }).returning().then((rows) => rows[0]!);
+    const verificationResult = await db.insert(verrailVerificationResults).values({
+      id: randomUUID(),
+      workspaceId: seeded.workspace.id,
+      targetId: seeded.targetId,
+      claimId: claim.id,
+      verdict: "passed",
+      verifierVersion: "integration-run.v1",
+      evidenceIds: [evidence.id],
+      waiverReference: null,
+      resultHash: "b".repeat(64),
+      createdByPrincipalType: "user",
+      createdByPrincipalId: "user-1",
+    }).returning().then((rows) => rows[0]!);
+    const integrationRun = await db.insert(verrailIntegrationRuns).values({
+      id: randomUUID(),
+      workspaceId: seeded.workspace.id,
+      targetId: seeded.targetId,
+      claimId: claim.id,
+      workNodeId: null,
+      provider: "github",
+      externalRef: "ci:run:1",
+      conclusion: "success",
+      evidenceId: evidence.id,
+      verificationResultId: verificationResult.id,
+      createdByPrincipalType: "user",
+      createdByPrincipalId: "user-1",
+      createdAt: new Date("2026-09-01T08:01:00Z"),
+    }).returning().then((rows) => rows[0]!);
+    const submission = await db.insert(verrailSubmissions).values({
+      id: randomUUID(),
+      workspaceId: seeded.workspace.id,
+      targetId: seeded.targetId,
+      targetRevisionId: seeded.targetRevisionId,
+      artifactRevisionIds: [randomUUID()],
+      verificationResultIds: [verificationResult.id],
+      commitRef: "git:rev-1",
+      environmentSummary: null,
+      notes: null,
+      submissionHash: "c".repeat(64),
+      submittedByPrincipalType: "agent",
+      submittedByPrincipalId: "agent-1",
+      createdAt: new Date("2026-09-01T09:00:00Z"),
+    }).returning().then((rows) => rows[0]!);
+    const params = { title: "Add connector", head: "feat/connector", base: "main" };
+    const paramsHash = "d".repeat(64);
+    const actionRequest = await db.insert(verrailActionRequests).values({
+      id: randomUUID(),
+      workspaceId: seeded.workspace.id,
+      targetId: seeded.targetId,
+      submissionId: submission.id,
+      actionType: "create_pull_request",
+      params,
+      paramsHash,
+      status: "executed",
+      requestedByPrincipalType: "agent",
+      requestedByPrincipalId: "agent-1",
+      createdAt: new Date("2026-09-01T09:05:00Z"),
+      updatedAt: new Date("2026-09-01T09:10:00Z"),
+    }).returning().then((rows) => rows[0]!);
+    const approval = await db.insert(verrailActionApprovals).values({
+      id: randomUUID(),
+      workspaceId: seeded.workspace.id,
+      actionRequestId: actionRequest.id,
+      approvedByPrincipalType: "user",
+      approvedByPrincipalId: "user-2",
+      paramsHash,
+      createdAt: new Date("2026-09-01T09:08:00Z"),
+    }).returning().then((rows) => rows[0]!);
+    const effectReceipt = await db.insert(verrailEffectReceipts).values({
+      id: randomUUID(),
+      workspaceId: seeded.workspace.id,
+      targetId: seeded.targetId,
+      actionRequestId: actionRequest.id,
+      actionType: "create_pull_request",
+      provider: "github",
+      externalObjectId: "42",
+      externalUrl: "https://github.com/owner/repo/pull/42",
+      effectHash: "e".repeat(64),
+      payload: {},
+      createdByPrincipalType: "user",
+      createdByPrincipalId: "user-1",
+      createdAt: new Date("2026-09-01T09:10:00Z"),
+    }).returning().then((rows) => rows[0]!);
+    const application = await db.insert(toolApplications).values({
+      id: randomUUID(),
+      companyId: seeded.workspace.id,
+      name: "GitHub",
+      type: "mcp_http",
+    }).returning().then((rows) => rows[0]!);
+    const connection = await db.insert(toolConnections).values({
+      id: randomUUID(),
+      companyId: seeded.workspace.id,
+      applicationId: application.id,
+      name: "GitHub REST",
+      uid: "github-rest",
+      transport: "rest_api",
+    }).returning().then((rows) => rows[0]!);
+    await db.insert(verrailGithubRepoBindings).values({
+      id: randomUUID(),
+      workspaceId: seeded.workspace.id,
+      connectionId: connection.id,
+      repoOwner: "owner",
+      repoName: "repo",
+      createdByPrincipalType: "user",
+      createdByPrincipalId: "user-1",
+    });
+
+    const queriedTables = new Set<string>();
+    const service = targetReadModelService(recordingDb(db, queriedTables));
+    const model = await service.getByTargetId(seeded.workspace.id, seeded.targetId);
+    const workspace = await service.workspace(model!);
+
+    expect(workspace.integrationRuns).toEqual([expect.objectContaining({
+      id: integrationRun.id,
+      targetId: seeded.targetId,
+      claimId: claim.id,
+      workNodeId: null,
+      provider: "github",
+      externalRef: "ci:run:1",
+      conclusion: "success",
+      evidenceId: evidence.id,
+      verificationResultId: verificationResult.id,
+      createdBy: { principalType: "user", principalId: "user-1" },
+    })]);
+    expect(workspace.actionRequests).toEqual([expect.objectContaining({
+      id: actionRequest.id,
+      submissionId: submission.id,
+      actionType: "create_pull_request",
+      params,
+      paramsHash,
+      status: "executed",
+      requestedBy: { principalType: "agent", principalId: "agent-1" },
+      approvals: {
+        count: 1,
+        latest: expect.objectContaining({
+          id: approval.id,
+          approvedBy: { principalType: "user", principalId: "user-2" },
+          paramsHash,
+        }),
+      },
+      executedReceipt: expect.objectContaining({
+        id: effectReceipt.id,
+        effectHash: "e".repeat(64),
+        externalObjectId: "42",
+        externalUrl: "https://github.com/owner/repo/pull/42",
+      }),
+    })]);
+    expect(workspace.effectReceipts).toEqual([expect.objectContaining({
+      id: effectReceipt.id,
+      actionRequestId: actionRequest.id,
+      actionType: "create_pull_request",
+      provider: "github",
+      externalObjectId: "42",
+      effectHash: "e".repeat(64),
+      createdBy: { principalType: "user", principalId: "user-1" },
+    })]);
+    expect(workspace.workspaceBinding).toEqual({ repoOwner: "owner", repoName: "repo" });
+
+    const connectorTables = [
+      "verrail_integration_runs",
+      "verrail_action_requests",
+      "verrail_action_approvals",
+      "verrail_effect_receipts",
+      "verrail_github_repo_bindings",
+    ];
+    for (const table of connectorTables) {
       expect(queriedTables, `${table} is queried`).toContain(table);
     }
     expect([...queriedTables].filter((table) => !table.startsWith("verrail_"))).toEqual([]);

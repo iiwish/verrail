@@ -1,15 +1,20 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
   verrailAcceptances,
+  verrailActionApprovals,
+  verrailActionRequests,
   verrailAuditEvents,
   verrailArtifactRevisions,
   verrailArtifacts,
   verrailClaims,
   verrailCollections,
   verrailDeliveryReviews,
+  verrailEffectReceipts,
   verrailEvidence,
+  verrailGithubRepoBindings,
   verrailGraphRevisions,
   verrailExecutionLeases,
+  verrailIntegrationRuns,
   verrailRunAttempts,
   verrailRunEvents,
   verrailRuns,
@@ -35,6 +40,15 @@ import {
   type AssuranceEvidenceV1,
   type AssurancePrincipalV1,
   type AssuranceVerificationResultV1,
+  type ConnectorActionRequestV1,
+  type ConnectorActionApprovalSummaryV1,
+  type ConnectorActionStatus,
+  type ConnectorActionType,
+  type ConnectorConclusion,
+  type ConnectorEffectReceiptV1,
+  type ConnectorIntegrationRunV1,
+  type ConnectorPrincipalV1,
+  type ConnectorProvider,
   type TargetAttentionItemV1,
   type TargetReadModelV1,
   type TargetResourceRefV1,
@@ -138,6 +152,10 @@ export type TargetWorkspaceAssuranceFactsV1 = Omit<TargetWorkspaceV1, "artifacts
   claims: AssuranceClaimV1[];
   evidence: AssuranceEvidenceV1[];
   verificationResults: AssuranceVerificationResultV1[];
+  integrationRuns: ConnectorIntegrationRunV1[];
+  actionRequests: ConnectorActionRequestV1[];
+  effectReceipts: ConnectorEffectReceiptV1[];
+  workspaceBinding: { repoOwner: string; repoName: string } | null;
 };
 
 type AssuranceFacts = {
@@ -149,6 +167,11 @@ type AssuranceFacts = {
   submissions: Array<typeof verrailSubmissions.$inferSelect>;
   deliveryReviews: Array<typeof verrailDeliveryReviews.$inferSelect>;
   acceptances: Array<typeof verrailAcceptances.$inferSelect>;
+  integrationRuns: Array<typeof verrailIntegrationRuns.$inferSelect>;
+  actionRequests: Array<typeof verrailActionRequests.$inferSelect>;
+  actionApprovals: Array<typeof verrailActionApprovals.$inferSelect>;
+  effectReceipts: Array<typeof verrailEffectReceipts.$inferSelect>;
+  githubRepoBindings: Array<typeof verrailGithubRepoBindings.$inferSelect>;
 };
 
 const EMPTY_ASSURANCE_FACTS: AssuranceFacts = {
@@ -160,6 +183,11 @@ const EMPTY_ASSURANCE_FACTS: AssuranceFacts = {
   submissions: [],
   deliveryReviews: [],
   acceptances: [],
+  integrationRuns: [],
+  actionRequests: [],
+  actionApprovals: [],
+  effectReceipts: [],
+  githubRepoBindings: [],
 };
 
 function byCreatedAtAsc(
@@ -299,6 +327,83 @@ function mapAcceptance(row: typeof verrailAcceptances.$inferSelect, latestSubmis
     createdAt: row.createdAt.toISOString(),
     validity: derived.validity,
     invalidReason: derived.invalidReason,
+  };
+}
+
+function connectorPrincipal(principalType: string, principalId: string): ConnectorPrincipalV1 {
+  return { principalType, principalId };
+}
+
+function mapIntegrationRun(row: typeof verrailIntegrationRuns.$inferSelect): ConnectorIntegrationRunV1 {
+  return {
+    id: row.id,
+    targetId: row.targetId,
+    claimId: row.claimId,
+    workNodeId: row.workNodeId,
+    provider: row.provider as ConnectorProvider,
+    externalRef: row.externalRef,
+    conclusion: row.conclusion as ConnectorConclusion,
+    evidenceId: row.evidenceId,
+    verificationResultId: row.verificationResultId,
+    createdBy: connectorPrincipal(row.createdByPrincipalType, row.createdByPrincipalId),
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function mapActionRequest(row: typeof verrailActionRequests.$inferSelect, facts: AssuranceFacts): ConnectorActionRequestV1 {
+  const approvals = facts.actionApprovals
+    .filter((approval) => approval.actionRequestId === row.id)
+    .sort((left, right) => byCreatedAtAsc(left, right));
+  const latestApproval = approvals[approvals.length - 1] ?? null;
+  const executedReceipt = facts.effectReceipts.find((receipt) => receipt.actionRequestId === row.id) ?? null;
+  const approvalSummary: ConnectorActionApprovalSummaryV1 = {
+    count: approvals.length,
+    latest: latestApproval
+      ? {
+          id: latestApproval.id,
+          approvedBy: connectorPrincipal(latestApproval.approvedByPrincipalType, latestApproval.approvedByPrincipalId),
+          paramsHash: latestApproval.paramsHash,
+          createdAt: latestApproval.createdAt.toISOString(),
+        }
+      : null,
+  };
+  return {
+    id: row.id,
+    targetId: row.targetId,
+    submissionId: row.submissionId,
+    actionType: row.actionType as ConnectorActionType,
+    params: { title: row.params.title, head: row.params.head, base: row.params.base },
+    paramsHash: row.paramsHash,
+    status: row.status as ConnectorActionStatus,
+    requestedBy: connectorPrincipal(row.requestedByPrincipalType, row.requestedByPrincipalId),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    approvals: approvalSummary,
+    executedReceipt: executedReceipt
+      ? {
+          id: executedReceipt.id,
+          effectHash: executedReceipt.effectHash,
+          externalObjectId: executedReceipt.externalObjectId,
+          externalUrl: executedReceipt.externalUrl,
+          createdAt: executedReceipt.createdAt.toISOString(),
+        }
+      : null,
+  };
+}
+
+function mapEffectReceipt(row: typeof verrailEffectReceipts.$inferSelect): ConnectorEffectReceiptV1 {
+  return {
+    id: row.id,
+    targetId: row.targetId,
+    actionRequestId: row.actionRequestId,
+    actionType: row.actionType as ConnectorActionType,
+    provider: row.provider as ConnectorProvider,
+    externalObjectId: row.externalObjectId,
+    externalUrl: row.externalUrl,
+    effectHash: row.effectHash,
+    payload: row.payload,
+    createdBy: connectorPrincipal(row.createdByPrincipalType, row.createdByPrincipalId),
+    createdAt: row.createdAt.toISOString(),
   };
 }
 
@@ -469,7 +574,7 @@ export function targetReadModelService(db: Db) {
         ...EMPTY_ASSURANCE_FACTS,
       };
     }
-    const [graphs, graphRevisions, nodes, runs, artifacts, claims, evidence, verificationResults, submissions, deliveryReviews, acceptances] = await Promise.all([
+    const [graphs, graphRevisions, nodes, runs, artifacts, claims, evidence, verificationResults, submissions, deliveryReviews, acceptances, integrationRuns, actionRequests, actionApprovals, effectReceipts, githubRepoBindings] = await Promise.all([
       db.select().from(verrailWorkGraphs).where(and(
         eq(verrailWorkGraphs.workspaceId, workspaceId),
         inArray(verrailWorkGraphs.targetId, targetIds),
@@ -514,6 +619,20 @@ export function targetReadModelService(db: Db) {
         eq(verrailAcceptances.workspaceId, workspaceId),
         inArray(verrailAcceptances.targetId, targetIds),
       )),
+      db.select().from(verrailIntegrationRuns).where(and(
+        eq(verrailIntegrationRuns.workspaceId, workspaceId),
+        inArray(verrailIntegrationRuns.targetId, targetIds),
+      )),
+      db.select().from(verrailActionRequests).where(and(
+        eq(verrailActionRequests.workspaceId, workspaceId),
+        inArray(verrailActionRequests.targetId, targetIds),
+      )),
+      db.select().from(verrailActionApprovals).where(eq(verrailActionApprovals.workspaceId, workspaceId)),
+      db.select().from(verrailEffectReceipts).where(and(
+        eq(verrailEffectReceipts.workspaceId, workspaceId),
+        inArray(verrailEffectReceipts.targetId, targetIds),
+      )),
+      db.select().from(verrailGithubRepoBindings).where(eq(verrailGithubRepoBindings.workspaceId, workspaceId)),
     ]);
     const runIds = runs.map((run) => run.id);
     const artifactIds = artifacts.map((artifact) => artifact.id);
@@ -535,7 +654,7 @@ export function targetReadModelService(db: Db) {
         inArray(verrailArtifactRevisions.artifactId, artifactIds),
       )),
     ]);
-    return { graphs, graphRevisions, nodes, runs, attempts, leases, events, artifacts, artifactRevisions, claims, evidence, verificationResults, submissions, deliveryReviews, acceptances };
+    return { graphs, graphRevisions, nodes, runs, attempts, leases, events, artifacts, artifactRevisions, claims, evidence, verificationResults, submissions, deliveryReviews, acceptances, integrationRuns, actionRequests, actionApprovals, effectReceipts, githubRepoBindings };
   }
 
   function buildModel(
@@ -683,6 +802,9 @@ export function targetReadModelService(db: Db) {
         .sort((left, right) => byCreatedAtDesc(left, right))
         .map(mapSubmission);
       const latestSubmissionId = submissions[0]?.id ?? null;
+      const githubBinding = facts.githubRepoBindings
+        .filter((item) => item.workspaceId === model.workspaceId)
+        .sort((left, right) => byCreatedAtAsc(left, right))[0] ?? null;
       return {
         schemaVersion: TARGET_WORKSPACE_SCHEMA_VERSION,
         targetId: model.targetId,
@@ -723,6 +845,21 @@ export function targetReadModelService(db: Db) {
           .filter((item) => item.targetId === model.targetId)
           .sort((left, right) => byCreatedAtAsc(left, right))
           .map(mapVerificationResult),
+        integrationRuns: facts.integrationRuns
+          .filter((item) => item.targetId === model.targetId)
+          .sort((left, right) => byCreatedAtAsc(left, right))
+          .map(mapIntegrationRun),
+        actionRequests: facts.actionRequests
+          .filter((item) => item.targetId === model.targetId)
+          .sort((left, right) => byCreatedAtAsc(left, right))
+          .map((request) => mapActionRequest(request, facts)),
+        effectReceipts: facts.effectReceipts
+          .filter((item) => item.targetId === model.targetId)
+          .sort((left, right) => byCreatedAtAsc(left, right))
+          .map(mapEffectReceipt),
+        workspaceBinding: githubBinding
+          ? { repoOwner: githubBinding.repoOwner, repoName: githubBinding.repoName }
+          : null,
         runs,
         timeline,
       };

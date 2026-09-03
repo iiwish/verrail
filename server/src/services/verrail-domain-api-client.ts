@@ -20,12 +20,16 @@ import type {
   RequestRunCancellationResponseV1,
   AcceptSubmissionInput,
   AddArtifactRevisionInput,
+  ApproveActionInput,
   CreateArtifactInput,
   CreateClaimInput,
   CreateSubmissionInput,
+  ExecuteActionInput,
   RecordDeliveryReviewInput,
   RecordEvidenceInput,
+  RecordIntegrationRunInput,
   RecordVerificationResultInput,
+  RequestPullRequestActionInput,
 } from "@paperclipai/shared";
 import { HttpError } from "../errors.js";
 
@@ -92,6 +96,17 @@ export interface AdjudicationCommandResponseV1 {
   replayed: boolean;
 }
 
+// Mirrors the Go AgentLifecycleResult written by the connector handlers
+// (recordConnectorIntegrationRun, requestConnectorPullRequestAction,
+// approveConnectorAction, executeConnectorAction) in
+// services/domain-api/internal/httpapi/server.go; keep in sync.
+export interface ConnectorCommandResponseV1 {
+  schemaVersion: 1;
+  resourceType: "integration_run" | "action_request" | "action_approval" | "effect_receipt";
+  resourceId: string;
+  replayed: boolean;
+}
+
 export interface VerrailDomainApiClient {
   createTarget(command: CreateNativeTargetCommand): Promise<CreateTargetResponseV1>;
   createGraphRevision(command: CreateNativeGraphRevisionCommand): Promise<CreateGraphRevisionResponseV1>;
@@ -114,6 +129,10 @@ export interface VerrailDomainApiClient {
   createSubmission(command: HumanCommand & { input: CreateSubmissionInput }): Promise<AdjudicationCommandResponseV1>;
   recordDeliveryReview(command: HumanCommand & { input: RecordDeliveryReviewInput }): Promise<AdjudicationCommandResponseV1>;
   acceptSubmission(command: HumanCommand & { input: AcceptSubmissionInput }): Promise<AdjudicationCommandResponseV1>;
+  recordIntegrationRun(command: HumanCommand & { input: RecordIntegrationRunInput }): Promise<ConnectorCommandResponseV1>;
+  requestPullRequestAction(command: HumanCommand & { input: RequestPullRequestActionInput }): Promise<ConnectorCommandResponseV1>;
+  approveAction(command: HumanCommand & { actionRequestId: string; input: ApproveActionInput }): Promise<ConnectorCommandResponseV1>;
+  executeAction(command: HumanCommand & { actionRequestId: string; input: ExecuteActionInput }): Promise<ConnectorCommandResponseV1>;
 }
 
 type DomainApiErrorPayload = { error?: unknown; code?: unknown; retryable?: unknown };
@@ -189,5 +208,9 @@ export function createVerrailDomainApiClient(options: {
     createSubmission: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/submissions`, command.input),
     recordDeliveryReview: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/delivery-reviews`, command.input),
     acceptSubmission: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/acceptances`, command.input),
+    recordIntegrationRun: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/integration-runs`, command.input),
+    requestPullRequestAction: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/pull-request-actions`, command.input),
+    approveAction: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/pull-request-actions/${encodeURIComponent(command.actionRequestId)}/approvals`, command.input),
+    executeAction: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/pull-request-actions/${encodeURIComponent(command.actionRequestId)}/executions`, command.input),
   };
 }

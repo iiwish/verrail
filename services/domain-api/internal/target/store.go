@@ -14,9 +14,20 @@ const createCommandType = "target.create.v1"
 
 type Store struct {
 	pool *pgxpool.Pool
+	// github is the governed external-effect client used by ExecuteAction.
+	// The default is the real thin REST wrapper with no resolved credential,
+	// which fails fast with CONNECTOR_CREDENTIALS_NOT_CONFIGURED; tests swap
+	// in a fake via WithGitHubClient.
+	github GitHubClient
 }
 
-func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
+func NewStore(pool *pgxpool.Pool, options ...StoreOption) *Store {
+	store := &Store{pool: pool, github: NewGitHubRESTClient("https://api.github.com", "")}
+	for _, option := range options {
+		option(store)
+	}
+	return store
+}
 
 func (store *Store) Create(ctx context.Context, command CreateCommand) (CreateResult, error) {
 	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})

@@ -1,0 +1,28 @@
+{
+  "id": "g2-5-github-connector-ci-evidence",
+  "runtime_target_id": "cb87c140-ce5a-4f8b-abeb-54f4ef2dff00",
+  "runtime_target_revision_id": "e25b4181-b6e7-47fc-953b-14c24134c585",
+  "runtime_workspace_id": "c641493c-081c-4607-84ba-0818cd97981a",
+  "title": "G2.5 - GitHub connector, CI evidence, and PR action",
+  "intent": "Add IntegrationRun CI evidence production, structured PR-creation actions with parameter-bound approvals and effect receipts, and the GitHub connector binding, completing the external half of the trusted delivery loop.",
+  "scope": "Implement the external half of the signature loop: integration runs producing CI evidence and verification results, governed PR-creation actions with parameter-bound approvals and effect receipts, and the GitHub connector behind an interface with a fake for tests.",
+  "non_goals": [
+    "Live GitHub acceptance against a real repository (deferred to a user-provisioned environment; the connector is interface-bound and fixture-tested)",
+    "Webhook-driven automation; integration runs are recorded through governed commands in this slice",
+    "Fine-grained RBAC or delegation for approvals (approver = a human member other than the requester)",
+    "Emit outbox events for connector aggregates; the Timeline reads tables directly",
+    "Approve, merge, deploy, release, or create a ship record without independent review and explicit user acceptance"
+  ],
+  "acceptance_criteria": [
+    "Integration runs produce evidence and verification results: recording an integration run for a claim creates the immutable run fact, high-trust CI evidence, and a verification result whose verdict follows the conclusion",
+    "PR creation is a governed external action: an action request captures bound parameters; execution requires an approval whose hash matches, a valid derived acceptance on the latest submission, and a bound GitHub connection",
+    "Effect receipts bind external outcomes: an executed action records an immutable effect receipt with the external object id, url, and canonical request hash",
+    "The connector is behind an interface: the GitHub client is an interface with a fake used in tests; the real client is a thin REST wrapper",
+    "Contracts synchronized and verified: migration reconcilable, Go integration tests cover the loop with a fake connector, facade/read-model surfaces updated, i18n parity holds"
+  ],
+  "status": "accepted",
+  "created_at": "2026-09-03T08:30:00Z",
+  "updated_at": "2026-09-03T08:30:00Z",
+  "accepted_at": "2026-09-03T11:05:00Z",
+  "accepted_by": "Outcome Owner (browser acceptance delegated to Sisyphus; passed)"
+}

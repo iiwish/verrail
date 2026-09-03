@@ -2676,3 +2676,5 @@ export * from "./types/assurance.js";
 export * from "./validators/assurance.js";
 export * from "./types/adjudication.js";
 export * from "./validators/adjudication.js";
+export * from "./types/connector.js";
+export * from "./validators/connector.js";

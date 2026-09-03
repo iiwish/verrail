@@ -35,6 +35,10 @@ type recordVerificationResultFunc func(*http.Request, target.AgentLifecycleComma
 type createSubmissionFunc func(*http.Request, target.AgentLifecycleCommand[target.CreateSubmissionInput]) (target.AgentLifecycleResult, error)
 type recordDeliveryReviewFunc func(*http.Request, target.AgentLifecycleCommand[target.RecordDeliveryReviewInput]) (target.AgentLifecycleResult, error)
 type acceptSubmissionFunc func(*http.Request, target.AgentLifecycleCommand[target.AcceptSubmissionInput]) (target.AgentLifecycleResult, error)
+type recordIntegrationRunFunc func(*http.Request, target.AgentLifecycleCommand[target.RecordIntegrationRunInput]) (target.AgentLifecycleResult, error)
+type requestPullRequestActionFunc func(*http.Request, target.AgentLifecycleCommand[target.RequestPullRequestActionInput]) (target.AgentLifecycleResult, error)
+type approveActionFunc func(*http.Request, target.AgentLifecycleCommand[target.ApproveActionInput]) (target.AgentLifecycleResult, error)
+type executeActionFunc func(*http.Request, target.AgentLifecycleCommand[target.ExecuteActionInput]) (target.AgentLifecycleResult, error)
 
 type Server struct {
 	token                    string
@@ -59,6 +63,10 @@ type Server struct {
 	createSubmission         createSubmissionFunc
 	recordDeliveryReview     recordDeliveryReviewFunc
 	acceptSubmission         acceptSubmissionFunc
+	recordIntegrationRun     recordIntegrationRunFunc
+	requestPullRequestAction requestPullRequestActionFunc
+	approveAction            approveActionFunc
+	executeAction            executeActionFunc
 	logger                   *slog.Logger
 }
 
@@ -129,6 +137,18 @@ func New(token string, store *target.Store, logger *slog.Logger) http.Handler {
 		acceptSubmission: func(request *http.Request, command target.AgentLifecycleCommand[target.AcceptSubmissionInput]) (target.AgentLifecycleResult, error) {
 			return store.AcceptSubmission(request.Context(), command)
 		},
+		recordIntegrationRun: func(request *http.Request, command target.AgentLifecycleCommand[target.RecordIntegrationRunInput]) (target.AgentLifecycleResult, error) {
+			return store.RecordIntegrationRun(request.Context(), command)
+		},
+		requestPullRequestAction: func(request *http.Request, command target.AgentLifecycleCommand[target.RequestPullRequestActionInput]) (target.AgentLifecycleResult, error) {
+			return store.RequestPullRequestAction(request.Context(), command)
+		},
+		approveAction: func(request *http.Request, command target.AgentLifecycleCommand[target.ApproveActionInput]) (target.AgentLifecycleResult, error) {
+			return store.ApproveAction(request.Context(), command)
+		},
+		executeAction: func(request *http.Request, command target.AgentLifecycleCommand[target.ExecuteActionInput]) (target.AgentLifecycleResult, error) {
+			return store.ExecuteAction(request.Context(), command)
+		},
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", server.health)
@@ -153,6 +173,10 @@ func New(token string, store *target.Store, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/submissions", server.createAdjudicationSubmission)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/delivery-reviews", server.recordAdjudicationDeliveryReview)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/acceptances", server.acceptAdjudicationSubmission)
+	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/integration-runs", server.recordConnectorIntegrationRun)
+	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/pull-request-actions", server.requestConnectorPullRequestAction)
+	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/pull-request-actions/{actionRequestId}/approvals", server.approveConnectorAction)
+	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/pull-request-actions/{actionRequestId}/executions", server.executeConnectorAction)
 	return mux
 }
 
@@ -514,6 +538,106 @@ func (server *Server) acceptAdjudicationSubmission(response http.ResponseWriter,
 		return
 	}
 	result, err := server.acceptSubmission(request, command)
+	if err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	writeJSON(response, lifecycleStatus(result), result)
+}
+
+func (server *Server) recordConnectorIntegrationRun(response http.ResponseWriter, request *http.Request) {
+	if !server.lifecycleAuthorized(response, request) {
+		return
+	}
+	command := target.AgentLifecycleCommand[target.RecordIntegrationRunInput]{WorkspaceID: request.PathValue("workspaceId"), Principal: principal(request), IdempotencyKey: request.Header.Get("Idempotency-Key"), CommandType: target.ConnectorIntegrationRunRecordCommand}
+	if err := decodeBody(response, request, &command.Input); err != nil {
+		writeError(response, err)
+		return
+	}
+	if err := target.ValidateRecordIntegrationRunInput(&command.Input); err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	if err := target.ValidateAgentLifecycleCommand(&command); err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	result, err := server.recordIntegrationRun(request, command)
+	if err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	writeJSON(response, lifecycleStatus(result), result)
+}
+
+func (server *Server) requestConnectorPullRequestAction(response http.ResponseWriter, request *http.Request) {
+	if !server.lifecycleAuthorized(response, request) {
+		return
+	}
+	command := target.AgentLifecycleCommand[target.RequestPullRequestActionInput]{WorkspaceID: request.PathValue("workspaceId"), Principal: principal(request), IdempotencyKey: request.Header.Get("Idempotency-Key"), CommandType: target.ConnectorActionRequestCreateCommand}
+	if err := decodeBody(response, request, &command.Input); err != nil {
+		writeError(response, err)
+		return
+	}
+	if err := target.ValidateRequestPullRequestActionInput(&command.Input); err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	if err := target.ValidateAgentLifecycleCommand(&command); err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	result, err := server.requestPullRequestAction(request, command)
+	if err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	writeJSON(response, lifecycleStatus(result), result)
+}
+
+func (server *Server) approveConnectorAction(response http.ResponseWriter, request *http.Request) {
+	if !server.lifecycleAuthorized(response, request) {
+		return
+	}
+	command := target.AgentLifecycleCommand[target.ApproveActionInput]{WorkspaceID: request.PathValue("workspaceId"), ResourceID: request.PathValue("actionRequestId"), Principal: principal(request), IdempotencyKey: request.Header.Get("Idempotency-Key"), CommandType: target.ConnectorActionApproveCommand}
+	if err := decodeBody(response, request, &command.Input); err != nil {
+		writeError(response, err)
+		return
+	}
+	if err := target.ValidateApproveActionInput(&command.Input); err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	if err := target.ValidateAgentLifecycleCommand(&command); err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	result, err := server.approveAction(request, command)
+	if err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	writeJSON(response, lifecycleStatus(result), result)
+}
+
+func (server *Server) executeConnectorAction(response http.ResponseWriter, request *http.Request) {
+	if !server.lifecycleAuthorized(response, request) {
+		return
+	}
+	command := target.AgentLifecycleCommand[target.ExecuteActionInput]{WorkspaceID: request.PathValue("workspaceId"), ResourceID: request.PathValue("actionRequestId"), Principal: principal(request), IdempotencyKey: request.Header.Get("Idempotency-Key"), CommandType: target.ConnectorActionExecuteCommand}
+	if err := decodeBody(response, request, &command.Input); err != nil {
+		writeError(response, err)
+		return
+	}
+	if err := target.ValidateExecuteActionInput(&command.Input); err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	if err := target.ValidateAgentLifecycleCommand(&command); err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	result, err := server.executeAction(request, command)
 	if err != nil {
 		writeError(response, target.AsError(err))
 		return
