@@ -1660,6 +1660,20 @@
       "when": 1788332928614,
       "tag": "0238_happy_human_cannonball",
       "breakpoints": true
+    },
+    {
+      "idx": 239,
+      "version": "7",
+      "when": 1788403494700,
+      "tag": "0239_deep_red_hulk",
+      "breakpoints": true
+    },
+    {
+      "idx": 240,
+      "version": "7",
+      "when": 1788411588393,
+      "tag": "0240_fine_beast",
+      "breakpoints": true
     }
   ]
 }

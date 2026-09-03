@@ -895,6 +895,64 @@
         "released": "已释放",
         "revoked": "已撤销"
       }
+    },
+    "assurance": {
+      "revision": "修订 {{number}}",
+      "sourceRun": "运行 {{id}}",
+      "verifier": "验证器 {{version}}",
+      "evidenceCount": "证据条数：{{count}}",
+      "waiver": "豁免依据：{{reference}}",
+      "unbound": "未绑定证据",
+      "artifactKinds": {
+        "code_change": "代码变更",
+        "document": "文档",
+        "report": "报告",
+        "external_reference": "外部引用"
+      },
+      "claimStatuses": {
+        "open": "待验证",
+        "supported": "已支持",
+        "refuted": "已反驳",
+        "waived": "已豁免"
+      },
+      "verdicts": {
+        "passed": "通过",
+        "failed": "失败",
+        "inconclusive": "无法定论",
+        "waived": "已豁免"
+      },
+      "evidenceKinds": {
+        "ci_result": "CI 结果",
+        "scan_result": "扫描结果",
+        "human_review": "人工审查",
+        "agent_observation": "智能体观察",
+        "external_reference": "外部引用"
+      },
+      "trustLevels": {
+        "high": "高信任",
+        "medium": "中信任",
+        "low": "低信任"
+      }
+    },
+    "adjudication": {
+      "accepted": "已验收",
+      "unprovenItems": "未证实项",
+      "risks": "风险：{{risks}}",
+      "comments": "审查意见：{{comments}}",
+      "submissionRef": "提交 {{hash}}",
+      "reviewRef": "审查 {{id}}",
+      "reviewVerdicts": {
+        "approved": "已通过",
+        "changes_requested": "要求修改",
+        "rejected": "已拒绝"
+      },
+      "authorities": {
+        "outcome_owner": "结果负责人"
+      },
+      "invalidReasons": {
+        "superseded_submission": "已被更新的提交取代",
+        "target_revision_changed": "目标修订版本已变更"
+      }
     }
   },
   "sidebarAgents": {

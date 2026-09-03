@@ -44,6 +44,8 @@ import { projectRoutes } from "./routes/projects.js";
 import { collectionRoutes } from "./routes/collections.js";
 import { targetRoutes } from "./routes/targets.js";
 import { agentLifecycleRoutes } from "./routes/agent-lifecycle.js";
+import { assuranceRoutes } from "./routes/assurance.js";
+import { adjudicationRoutes } from "./routes/adjudication.js";
 import { issueRoutes } from "./routes/issues.js";
 import { issueTreeControlRoutes } from "./routes/issue-tree-control.js";
 import { caseRoutes } from "./routes/cases.js";
@@ -509,6 +511,8 @@ export async function createApp(
   api.use(collectionRoutes(db));
   api.use(targetRoutes(db));
   api.use(agentLifecycleRoutes(db));
+  api.use(assuranceRoutes());
+  api.use(adjudicationRoutes());
   api.use(caseRoutes(db, opts.storageService));
   api.use(issueTreeControlRoutes(db));
   api.use(fileResourceRoutes(db));

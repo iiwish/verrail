@@ -895,6 +895,64 @@
         "released": "released",
         "revoked": "revoked"
       }
+    },
+    "assurance": {
+      "revision": "Revision {{number}}",
+      "sourceRun": "Run {{id}}",
+      "verifier": "Verifier {{version}}",
+      "evidenceCount": "Evidence items: {{count}}",
+      "waiver": "Waiver: {{reference}}",
+      "unbound": "Unbound evidence",
+      "artifactKinds": {
+        "code_change": "Code change",
+        "document": "Document",
+        "report": "Report",
+        "external_reference": "External reference"
+      },
+      "claimStatuses": {
+        "open": "Open",
+        "supported": "Supported",
+        "refuted": "Refuted",
+        "waived": "Waived"
+      },
+      "verdicts": {
+        "passed": "Passed",
+        "failed": "Failed",
+        "inconclusive": "Inconclusive",
+        "waived": "Waived"
+      },
+      "evidenceKinds": {
+        "ci_result": "CI result",
+        "scan_result": "Scan result",
+        "human_review": "Human review",
+        "agent_observation": "Agent observation",
+        "external_reference": "External reference"
+      },
+      "trustLevels": {
+        "high": "High trust",
+        "medium": "Medium trust",
+        "low": "Low trust"
+      }
+    },
+    "adjudication": {
+      "accepted": "Accepted",
+      "unprovenItems": "Unproven items",
+      "risks": "Risks: {{risks}}",
+      "comments": "Comments: {{comments}}",
+      "submissionRef": "Submission {{hash}}",
+      "reviewRef": "Review {{id}}",
+      "reviewVerdicts": {
+        "approved": "Approved",
+        "changes_requested": "Changes requested",
+        "rejected": "Rejected"
+      },
+      "authorities": {
+        "outcome_owner": "Outcome owner"
+      },
+      "invalidReasons": {
+        "superseded_submission": "Superseded by a newer submission",
+        "target_revision_changed": "Target revision changed"
+      }
     }
   },
   "sidebarAgents": {

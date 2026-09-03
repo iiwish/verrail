@@ -1,14 +1,22 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
+  verrailAcceptances,
   verrailAuditEvents,
+  verrailArtifactRevisions,
+  verrailArtifacts,
+  verrailClaims,
   verrailCollections,
+  verrailDeliveryReviews,
+  verrailEvidence,
   verrailGraphRevisions,
   verrailExecutionLeases,
   verrailRunAttempts,
   verrailRunEvents,
   verrailRuns,
+  verrailSubmissions,
   verrailTargetRevisions,
   verrailTargets,
+  verrailVerificationResults,
   verrailWorkGraphs,
   verrailWorkNodes,
   type Db,
@@ -17,6 +25,16 @@ import {
   TARGET_READ_MODEL_POLICY_VERSION,
   TARGET_READ_MODEL_SCHEMA_VERSION,
   TARGET_WORKSPACE_SCHEMA_VERSION,
+  deriveAcceptanceValidity,
+  type AdjudicationAcceptanceV1,
+  type AdjudicationDeliveryReviewV1,
+  type AdjudicationSubmissionV1,
+  type AssuranceArtifactRevisionV1,
+  type AssuranceArtifactV1,
+  type AssuranceClaimV1,
+  type AssuranceEvidenceV1,
+  type AssurancePrincipalV1,
+  type AssuranceVerificationResultV1,
   type TargetAttentionItemV1,
   type TargetReadModelV1,
   type TargetResourceRefV1,
@@ -111,6 +129,178 @@ type ExecutionFacts = {
   leases: Array<typeof verrailExecutionLeases.$inferSelect>;
   events: Array<typeof verrailRunEvents.$inferSelect>;
 };
+
+export type TargetWorkspaceAssuranceFactsV1 = Omit<TargetWorkspaceV1, "artifacts" | "evidence" | "submissions"> & {
+  submissions: AdjudicationSubmissionV1[];
+  reviews: AdjudicationDeliveryReviewV1[];
+  acceptances: AdjudicationAcceptanceV1[];
+  artifacts: AssuranceArtifactV1[];
+  claims: AssuranceClaimV1[];
+  evidence: AssuranceEvidenceV1[];
+  verificationResults: AssuranceVerificationResultV1[];
+};
+
+type AssuranceFacts = {
+  artifacts: Array<typeof verrailArtifacts.$inferSelect>;
+  artifactRevisions: Array<typeof verrailArtifactRevisions.$inferSelect>;
+  claims: Array<typeof verrailClaims.$inferSelect>;
+  evidence: Array<typeof verrailEvidence.$inferSelect>;
+  verificationResults: Array<typeof verrailVerificationResults.$inferSelect>;
+  submissions: Array<typeof verrailSubmissions.$inferSelect>;
+  deliveryReviews: Array<typeof verrailDeliveryReviews.$inferSelect>;
+  acceptances: Array<typeof verrailAcceptances.$inferSelect>;
+};
+
+const EMPTY_ASSURANCE_FACTS: AssuranceFacts = {
+  artifacts: [],
+  artifactRevisions: [],
+  claims: [],
+  evidence: [],
+  verificationResults: [],
+  submissions: [],
+  deliveryReviews: [],
+  acceptances: [],
+};
+
+function byCreatedAtAsc(
+  left: { createdAt: Date; id: string },
+  right: { createdAt: Date; id: string },
+) {
+  return left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id);
+}
+
+// Newest-first on (created_at desc, id desc) — mirrors the Go "latest
+// submission" ordering used by deriveAcceptanceValidity.
+function byCreatedAtDesc(
+  left: { createdAt: Date; id: string },
+  right: { createdAt: Date; id: string },
+) {
+  return right.createdAt.getTime() - left.createdAt.getTime() || right.id.localeCompare(left.id);
+}
+
+function assurancePrincipal(principalType: string, principalId: string): AssurancePrincipalV1 {
+  return { principalType: principalType as AssurancePrincipalV1["principalType"], principalId };
+}
+
+function mapArtifact(row: typeof verrailArtifacts.$inferSelect, revisions: AssuranceFacts["artifactRevisions"]): AssuranceArtifactV1 {
+  return {
+    id: row.id,
+    targetId: row.targetId,
+    kind: row.kind as AssuranceArtifactV1["kind"],
+    title: row.title,
+    createdBy: assurancePrincipal(row.createdByPrincipalType, row.createdByPrincipalId),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    revisions: revisions
+      .filter((revision) => revision.artifactId === row.id)
+      .sort((left, right) => left.revisionNumber - right.revisionNumber || left.id.localeCompare(right.id))
+      .map((revision): AssuranceArtifactRevisionV1 => ({
+        id: revision.id,
+        artifactId: revision.artifactId,
+        revisionNumber: revision.revisionNumber,
+        contentHash: revision.contentHash,
+        contentRef: revision.contentRef,
+        sourceRunId: revision.sourceRunId,
+        sourceWorkNodeId: revision.sourceWorkNodeId,
+        baseRevisionId: revision.baseRevisionId,
+        createdBy: assurancePrincipal(revision.createdByPrincipalType, revision.createdByPrincipalId),
+        createdAt: revision.createdAt.toISOString(),
+      })),
+  };
+}
+
+function mapClaim(row: typeof verrailClaims.$inferSelect): AssuranceClaimV1 {
+  return {
+    id: row.id,
+    targetId: row.targetId,
+    targetRevisionId: row.targetRevisionId,
+    criterionKey: row.criterionKey,
+    title: row.title,
+    status: row.status as AssuranceClaimV1["status"],
+    createdBy: assurancePrincipal(row.createdByPrincipalType, row.createdByPrincipalId),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function mapEvidence(row: typeof verrailEvidence.$inferSelect): AssuranceEvidenceV1 {
+  return {
+    id: row.id,
+    targetId: row.targetId,
+    claimId: row.claimId,
+    kind: row.kind as AssuranceEvidenceV1["kind"],
+    producer: assurancePrincipal(row.producerPrincipalType, row.producerPrincipalId),
+    objectHash: row.objectHash,
+    reference: row.reference,
+    trustLevel: row.trustLevel as AssuranceEvidenceV1["trustLevel"],
+    recordedAt: row.recordedAt.toISOString(),
+    createdBy: assurancePrincipal(row.createdByPrincipalType, row.createdByPrincipalId),
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function mapVerificationResult(row: typeof verrailVerificationResults.$inferSelect): AssuranceVerificationResultV1 {
+  return {
+    id: row.id,
+    targetId: row.targetId,
+    claimId: row.claimId,
+    verdict: row.verdict as AssuranceVerificationResultV1["verdict"],
+    verifierVersion: row.verifierVersion,
+    evidenceIds: row.evidenceIds,
+    waiverReference: row.waiverReference,
+    resultHash: row.resultHash,
+    createdBy: assurancePrincipal(row.createdByPrincipalType, row.createdByPrincipalId),
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function mapSubmission(row: typeof verrailSubmissions.$inferSelect): AdjudicationSubmissionV1 {
+  return {
+    id: row.id,
+    targetId: row.targetId,
+    targetRevisionId: row.targetRevisionId,
+    artifactRevisionIds: row.artifactRevisionIds,
+    verificationResultIds: row.verificationResultIds,
+    commitRef: row.commitRef,
+    environmentSummary: row.environmentSummary,
+    notes: row.notes,
+    submissionHash: row.submissionHash,
+    submittedBy: assurancePrincipal(row.submittedByPrincipalType, row.submittedByPrincipalId),
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function mapDeliveryReview(row: typeof verrailDeliveryReviews.$inferSelect): AdjudicationDeliveryReviewV1 {
+  return {
+    id: row.id,
+    targetId: row.targetId,
+    submissionId: row.submissionId,
+    verdict: row.verdict as AdjudicationDeliveryReviewV1["verdict"],
+    risks: row.risks,
+    unprovenItems: row.unprovenItems,
+    comments: row.comments,
+    reviewHash: row.reviewHash,
+    reviewer: assurancePrincipal(row.reviewerPrincipalType, row.reviewerPrincipalId),
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function mapAcceptance(row: typeof verrailAcceptances.$inferSelect, latestSubmissionId: string | null, activeTargetRevisionId: string): AdjudicationAcceptanceV1 {
+  const derived = deriveAcceptanceValidity(row.submissionId === latestSubmissionId, row.targetRevisionId === activeTargetRevisionId);
+  return {
+    id: row.id,
+    targetId: row.targetId,
+    targetRevisionId: row.targetRevisionId,
+    submissionId: row.submissionId,
+    reviewId: row.reviewId,
+    authority: row.authority as AdjudicationAcceptanceV1["authority"],
+    acceptedBy: assurancePrincipal(row.acceptedByPrincipalType, row.acceptedByPrincipalId),
+    acceptanceHash: row.acceptanceHash,
+    createdAt: row.createdAt.toISOString(),
+    validity: derived.validity,
+    invalidReason: derived.invalidReason,
+  };
+}
 
 function mapRun(row: typeof verrailRuns.$inferSelect, facts: ExecutionFacts): TargetRunV1 {
   const attempts = facts.attempts
@@ -273,8 +463,13 @@ export function targetReadModelService(db: Db) {
   }
 
   async function readFacts(workspaceId: string, targetIds: string[]) {
-    if (targetIds.length === 0) return { graphs: [], graphRevisions: [], nodes: [], runs: [], attempts: [], leases: [], events: [] };
-    const [graphs, graphRevisions, nodes, runs] = await Promise.all([
+    if (targetIds.length === 0) {
+      return {
+        graphs: [], graphRevisions: [], nodes: [], runs: [], attempts: [], leases: [], events: [],
+        ...EMPTY_ASSURANCE_FACTS,
+      };
+    }
+    const [graphs, graphRevisions, nodes, runs, artifacts, claims, evidence, verificationResults, submissions, deliveryReviews, acceptances] = await Promise.all([
       db.select().from(verrailWorkGraphs).where(and(
         eq(verrailWorkGraphs.workspaceId, workspaceId),
         inArray(verrailWorkGraphs.targetId, targetIds),
@@ -291,24 +486,56 @@ export function targetReadModelService(db: Db) {
         eq(verrailRuns.workspaceId, workspaceId),
         inArray(verrailRuns.targetId, targetIds),
       )).orderBy(desc(verrailRuns.createdAt)),
+      db.select().from(verrailArtifacts).where(and(
+        eq(verrailArtifacts.workspaceId, workspaceId),
+        inArray(verrailArtifacts.targetId, targetIds),
+      )),
+      db.select().from(verrailClaims).where(and(
+        eq(verrailClaims.workspaceId, workspaceId),
+        inArray(verrailClaims.targetId, targetIds),
+      )),
+      db.select().from(verrailEvidence).where(and(
+        eq(verrailEvidence.workspaceId, workspaceId),
+        inArray(verrailEvidence.targetId, targetIds),
+      )),
+      db.select().from(verrailVerificationResults).where(and(
+        eq(verrailVerificationResults.workspaceId, workspaceId),
+        inArray(verrailVerificationResults.targetId, targetIds),
+      )),
+      db.select().from(verrailSubmissions).where(and(
+        eq(verrailSubmissions.workspaceId, workspaceId),
+        inArray(verrailSubmissions.targetId, targetIds),
+      )),
+      db.select().from(verrailDeliveryReviews).where(and(
+        eq(verrailDeliveryReviews.workspaceId, workspaceId),
+        inArray(verrailDeliveryReviews.targetId, targetIds),
+      )),
+      db.select().from(verrailAcceptances).where(and(
+        eq(verrailAcceptances.workspaceId, workspaceId),
+        inArray(verrailAcceptances.targetId, targetIds),
+      )),
     ]);
     const runIds = runs.map((run) => run.id);
-    if (runIds.length === 0) return { graphs, graphRevisions, nodes, runs, attempts: [], leases: [], events: [] };
-    const [attempts, leases, events] = await Promise.all([
-      db.select().from(verrailRunAttempts).where(and(
+    const artifactIds = artifacts.map((artifact) => artifact.id);
+    const [attempts, leases, events, artifactRevisions] = await Promise.all([
+      runIds.length === 0 ? [] : db.select().from(verrailRunAttempts).where(and(
         eq(verrailRunAttempts.workspaceId, workspaceId),
         inArray(verrailRunAttempts.runId, runIds),
       )),
-      db.select().from(verrailExecutionLeases).where(and(
+      runIds.length === 0 ? [] : db.select().from(verrailExecutionLeases).where(and(
         eq(verrailExecutionLeases.workspaceId, workspaceId),
         inArray(verrailExecutionLeases.runId, runIds),
       )),
-      db.select().from(verrailRunEvents).where(and(
+      runIds.length === 0 ? [] : db.select().from(verrailRunEvents).where(and(
         eq(verrailRunEvents.workspaceId, workspaceId),
         inArray(verrailRunEvents.runId, runIds),
       )),
+      artifactIds.length === 0 ? [] : db.select().from(verrailArtifactRevisions).where(and(
+        eq(verrailArtifactRevisions.workspaceId, workspaceId),
+        inArray(verrailArtifactRevisions.artifactId, artifactIds),
+      )),
     ]);
-    return { graphs, graphRevisions, nodes, runs, attempts, leases, events };
+    return { graphs, graphRevisions, nodes, runs, attempts, leases, events, artifacts, artifactRevisions, claims, evidence, verificationResults, submissions, deliveryReviews, acceptances };
   }
 
   function buildModel(
@@ -331,6 +558,26 @@ export function targetReadModelService(db: Db) {
     const activeRuns = runs.filter((run) => run.status === "queued" || run.status === "running" || run.status === "cancel_requested");
     const failedRuns = runs.filter((run) => run.status === "failed");
     const latestRun = runs[0] ?? null;
+    const targetArtifacts = facts.artifacts.filter((item) => item.targetId === row.target.id);
+    const targetArtifactIds = new Set(targetArtifacts.map((artifact) => artifact.id));
+    const targetRevisions = facts.artifactRevisions.filter((revision) => targetArtifactIds.has(revision.artifactId));
+    const latestRevisionId = targetArtifacts
+      .map((artifact) => targetRevisions
+        .filter((revision) => revision.artifactId === artifact.id)
+        .sort((left, right) => right.revisionNumber - left.revisionNumber || left.id.localeCompare(right.id))[0])
+      .filter((revision) => revision != null)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime() || left.id.localeCompare(right.id))[0]?.id ?? null;
+    const targetClaims = facts.claims.filter((item) => item.targetId === row.target.id);
+    const targetVerificationResults = facts.verificationResults.filter((item) => item.targetId === row.target.id);
+    const verifiedClaimIds = new Set(targetVerificationResults.map((result) => result.claimId));
+    const verifiedCriterionKeys = new Set(
+      targetClaims.filter((claim) => verifiedClaimIds.has(claim.id)).map((claim) => claim.criterionKey),
+    );
+    const criteria = row.revision.acceptanceCriteria;
+    const coveredCriteria = criteria.filter((criterion) => verifiedCriterionKeys.has(criterion.id)).length;
+    const evidenceCoverage = criteria.length === 0 || coveredCriteria === 0
+      ? "unknown"
+      : coveredCriteria >= criteria.length ? "complete" : "partial";
     return {
       schemaVersion: TARGET_READ_MODEL_SCHEMA_VERSION,
       readModelPolicyVersion: TARGET_READ_MODEL_POLICY_VERSION,
@@ -354,8 +601,14 @@ export function targetReadModelService(db: Db) {
           ? "critical"
           : attention.some((item) => item.severity === "warning") ? "warning" : attention.length > 0 ? "info" : null,
       },
-      artifactSummary: { count: 0, latestRevisionId: null },
-      evidenceSummary: { count: 0, passed: 0, failed: 0, inconclusive: 0, coverage: "unknown" },
+      artifactSummary: { count: targetArtifacts.length, latestRevisionId },
+      evidenceSummary: {
+        count: facts.evidence.filter((item) => item.targetId === row.target.id).length,
+        passed: targetVerificationResults.filter((item) => item.verdict === "passed").length,
+        failed: targetVerificationResults.filter((item) => item.verdict === "failed").length,
+        inconclusive: targetVerificationResults.filter((item) => item.verdict === "inconclusive").length,
+        coverage: evidenceCoverage,
+      },
       runSummary: {
         active: activeRuns.length,
         failed: failedRuns.length,
@@ -392,7 +645,7 @@ export function targetReadModelService(db: Db) {
     getByRevisionId: async (workspaceId: string, targetId: string, targetRevisionId: string) =>
       (await modelsFor(workspaceId, targetId, targetRevisionId))[0] ?? null,
 
-    workspace: async (model: TargetReadModelV1): Promise<TargetWorkspaceV1> => {
+    workspace: async (model: TargetReadModelV1): Promise<TargetWorkspaceAssuranceFactsV1> => {
       const facts = await readFacts(model.workspaceId, [model.targetId]);
       const graph = facts.graphs.find((item) => item.targetId === model.targetId) ?? null;
       const activeRevision = graph?.activeGraphRevisionId
@@ -425,6 +678,11 @@ export function targetReadModelService(db: Db) {
           occurredAt: event.occurredAt.toISOString(),
         }] : [];
       });
+      const submissions = facts.submissions
+        .filter((item) => item.targetId === model.targetId)
+        .sort((left, right) => byCreatedAtDesc(left, right))
+        .map(mapSubmission);
+      const latestSubmissionId = submissions[0]?.id ?? null;
       return {
         schemaVersion: TARGET_WORKSPACE_SCHEMA_VERSION,
         targetId: model.targetId,
@@ -440,9 +698,31 @@ export function targetReadModelService(db: Db) {
         stages,
         work,
         attention,
-        submissions: [],
-        artifacts: [],
-        evidence: [],
+        submissions,
+        reviews: facts.deliveryReviews
+          .filter((item) => item.targetId === model.targetId)
+          .sort((left, right) => byCreatedAtDesc(left, right))
+          .map(mapDeliveryReview),
+        acceptances: facts.acceptances
+          .filter((item) => item.targetId === model.targetId)
+          .sort((left, right) => byCreatedAtDesc(left, right))
+          .map((acceptance) => mapAcceptance(acceptance, latestSubmissionId, model.activeTargetRevisionId)),
+        artifacts: facts.artifacts
+          .filter((item) => item.targetId === model.targetId)
+          .sort((left, right) => byCreatedAtAsc(left, right))
+          .map((artifact) => mapArtifact(artifact, facts.artifactRevisions)),
+        claims: facts.claims
+          .filter((item) => item.targetId === model.targetId)
+          .sort((left, right) => byCreatedAtAsc(left, right))
+          .map(mapClaim),
+        evidence: facts.evidence
+          .filter((item) => item.targetId === model.targetId)
+          .sort((left, right) => left.recordedAt.getTime() - right.recordedAt.getTime() || left.id.localeCompare(right.id))
+          .map(mapEvidence),
+        verificationResults: facts.verificationResults
+          .filter((item) => item.targetId === model.targetId)
+          .sort((left, right) => byCreatedAtAsc(left, right))
+          .map(mapVerificationResult),
         runs,
         timeline,
       };

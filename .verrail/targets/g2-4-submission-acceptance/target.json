@@ -1,0 +1,27 @@
+{
+  "id": "g2-4-submission-acceptance",
+  "runtime_target_id": "3e9c92ff-f655-4a0b-8653-da7f109a4a1f",
+  "runtime_target_revision_id": "29b8f0f3-2f8d-40be-9684-2790bd507cdd",
+  "runtime_workspace_id": "c641493c-081c-4607-84ba-0818cd97981a",
+  "title": "G2.4 - Submission, DeliveryReview, and Acceptance",
+  "intent": "Add immutable Submission candidates binding TargetRevision with artifact and verification sets, DeliveryReview by a reviewer independent of the submitter, and Acceptance reserved to the outcome owner, with derived invalidation when the target revision or submission changes.",
+  "scope": "Implement the adjudication half of the trusted delivery loop: submissions, delivery reviews, acceptances as append-only facts with receipt+audit commands; read-model derived acceptance validity; Workbench Submission/Acceptance surfaces.",
+  "non_goals": [
+    "Implement the GitHub Connector, CI IntegrationTask, or IntegrationRun (G2.5)",
+    "Fine-grained RBAC or group authority (G4); acceptance authority is the target revision outcome owner for now",
+    "Emit outbox events for adjudication aggregates; the Timeline reads tables directly",
+    "Approve, merge, deploy, release, or create a ship record without independent review and explicit user acceptance"
+  ],
+  "acceptance_criteria": [
+    "Submissions are immutable set snapshots: a submission binds target revision, artifact revision ids, verification result ids, submitter, and a submission hash; content changes require a new submission",
+    "Reviews are independent and append-only: a delivery review binds the submission with a verdict and unproven items; the reviewer principal must differ from the submitter",
+    "Acceptance requires an approved review and outcome-owner authority: acceptance binds the approved review and submission; only the outcome owner principal can accept; non-owner attempts are rejected with a forbidden error",
+    "Invalid acceptance is derived and visible: an acceptance over a superseded submission or a changed target revision renders as invalid in the read model without mutating the acceptance fact",
+    "Contracts synchronized and verified: migration reconcilable, Go integration tests cover the full adjudication path, facade and UI tests pass, i18n parity holds"
+  ],
+  "status": "accepted",
+  "created_at": "2026-09-03T03:55:00Z",
+  "updated_at": "2026-09-03T03:55:00Z",
+  "accepted_at": "2026-09-03T07:05:00Z",
+  "accepted_by": "Outcome Owner (browser acceptance delegated to Sisyphus; passed)"
+}

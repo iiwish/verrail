@@ -1,0 +1,60 @@
+{
+  "target_id": "g2-4-submission-acceptance",
+  "run_id": "run-001",
+  "runtime": {
+    "workspace_id": "c641493c-081c-4607-84ba-0818cd97981a",
+    "conversation_id": "1da9ebd2-4e43-44b6-8d5e-3ea6c9e3abda",
+    "source_message_id": "ec9997ab-abb9-446b-a7cd-953b50173e45",
+    "draft_id": "06d20fe4-4e40-41e0-9a80-0d1a8de28e85",
+    "target_id": "3e9c92ff-f655-4a0b-8653-da7f109a4a1f",
+    "target_revision_id": "29b8f0f3-2f8d-40be-9684-2790bd507cdd",
+    "runtime_status": "draft",
+    "local_delivery_status": "needs_review"
+  },
+  "change": {
+    "schema": "packages/db/src/schema/verrail_adjudication.ts: verrail_submissions (immutable set snapshot: target revision + artifact revision ids + verification result ids + commit/environment summary + submission hash; unique per target+hash), verrail_delivery_reviews (append-only, verdict check, reviewer principal, review hash), verrail_acceptances (one per submission, outcome_owner authority check, acceptance hash); all immutable (no updated_at), composite workspace FKs restrict; migration 0240_fine_beast.sql + snapshot",
+    "shared": "types/adjudication.ts (AdjudicationSubmissionV1/DeliveryReviewV1/AcceptanceV1 incl. derived validity fields, AdjudicationTargetFactsV1) + validators/adjudication.ts (3 command schemas: set snapshot bounded arrays, reviewer literal user, verdict enum) + 5 validator tests",
+    "go": "internal/target/adjudication.go + adjudication_store.go: CreateSubmission (revision belongs to target; artifact revisions belong to target; verification results bind claims of the submitted revision — the G2.3 review P2 follow-up; submission_hash sha256 canonical with sorted sets; content-addressed dedup replay), RecordDeliveryReview (reviewer independence 403 ADJUDICATION_REVIEWER_NOT_INDEPENDENT; review hash), AcceptSubmission (referenced review belongs to submission + latest review approved else 409 ADJUDICATION_REVIEW_NOT_APPROVED; outcome-owner authority else 403 ADJUDICATION_NOT_OUTCOME_OWNER; one acceptance per submission with dedup replay); deriveAcceptanceValidity pure function (valid | superseded_submission | target_revision_changed, superseded precedence)",
+    "facade": "server/src/routes/adjudication.ts (3 routes mirroring the assurance pattern), client methods, OpenAPI registration + route registry",
+    "read_model": "workspace() serves submissions (newest-first), reviews, acceptances with DERIVED acceptance validity: valid iff submission is the latest for the target AND target revision unchanged; invalid reason superseded_submission | target_revision_changed; honest empty sets; only-verrail-tables assertion extended",
+    "ui": "TargetWorkbench Submission tab (set snapshot cards with hash/commit/summary/notes/submitter, nested reviews with verdict tones, acceptance chips with validity) and Acceptance tab (acceptance facts with validity + invalid reason); 12 new i18n keys en + zh-CN"
+  },
+  "verification": [
+    {
+      "scope": "schema-snapshot consistency",
+      "status": "passed",
+      "result": "pnpm db:generate no-op; packages/db typecheck (numbering + safety) passed; fresh-DB probe: 239 migrations applied, 3 adjudication tables present, 34 verrail_* tables total"
+    },
+    {
+      "scope": "Go domain",
+      "status": "passed",
+      "result": "go vet/build/test -count=1 green; VERRAIL_TEST_DATABASE_URL integration on throwaway seeded PG: TestAdjudicationContractsIntegration 7 subtests pass (full submission->independent approved review->owner acceptance; reviewer independence 403; verification results bind claims of the submitted revision; approved-latest-review requirement 409; outcome-owner-only 403; superseded submission + revision-changed derived invalidity)"
+    },
+    {
+      "scope": "shared validators",
+      "status": "passed",
+      "result": "adjudication.test.ts 5/5 (command shapes, hash canonicality, reviewer literal, verdict enum)"
+    },
+    {
+      "scope": "TypeScript facade and read model",
+      "status": "passed",
+      "result": "adjudication-routes + openapi-coverage + read-model + assurance-routes regression 23/23; tsc clean; derived validity cases covered (valid/superseded/revision-changed)"
+    },
+    {
+      "scope": "UI",
+      "status": "passed",
+      "result": "Workbench suites 21/21; tsc -b clean; token gates clean; i18n parity en=zh-CN 3324 keys with 12 new adjudication keys bilingual"
+    },
+    {
+      "scope": "repository pipeline",
+      "status": "passed_with_environment_adjudication",
+      "result": "Root pipeline: server 411, UI 489, CLI 58, shared 68, skills 5 all green; DB project 2 embedded-PostgreSQL infra failures under load in the inherited connections-v3 test, 23 passed/0 failed standalone — same adjudicated environmental flake class as prior runs"
+    }
+  ],
+  "residual_risks": [
+    "Adjudication aggregates emit no outbox events (recorded non-goal); Timeline reads tables directly",
+    "Acceptance authority is the target revision outcomeOwner only; group delegation stays in G4",
+    "Reviews are append-only with no amendment flow; a corrected review appends a new row (latest verdict governs acceptance)",
+    "Derived validity precedence: superseded_submission wins over target_revision_changed when both apply"
+  ]
+}

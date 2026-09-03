@@ -18,8 +18,19 @@ import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
+import { statusBadge, statusBadgeDefault } from "../lib/status-colors";
 import { queryKeys } from "../lib/queryKeys";
 import { formatDateTime } from "../lib/utils";
+import { cn } from "@/lib/utils";
+import type {
+  AdjudicationAcceptanceV1,
+  AdjudicationDeliveryReviewV1,
+  AdjudicationReviewVerdict,
+  AdjudicationAcceptanceValidity,
+  AssuranceClaimStatus,
+  AssuranceEvidenceV1,
+  AssuranceVerdict,
+} from "@paperclipai/shared";
 import { useTranslation } from "@/i18n";
 
 const TARGET_TABS = [
@@ -43,6 +54,63 @@ function EmptyTab({ message }: { message: string }) {
   return <p className="border-y border-border py-10 text-sm text-muted-foreground">{message}</p>;
 }
 
+const TONE_BADGE_CLASSES = {
+  neutral: statusBadgeDefault,
+  positive: statusBadge.succeeded,
+  danger: statusBadge.failed,
+  warning: statusBadge.warning,
+} as const;
+
+type ToneLevel = keyof typeof TONE_BADGE_CLASSES;
+
+function ToneBadge({ tone, children }: { tone: ToneLevel; children: ReactNode }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium",
+        TONE_BADGE_CLASSES[tone],
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+const VERDICT_TONES: Record<AssuranceVerdict, ToneLevel> = {
+  passed: "positive",
+  failed: "danger",
+  inconclusive: "neutral",
+  waived: "warning",
+};
+
+const CLAIM_STATUS_TONES: Record<AssuranceClaimStatus, ToneLevel> = {
+  open: "neutral",
+  supported: "positive",
+  refuted: "danger",
+  waived: "warning",
+};
+
+const REVIEW_VERDICT_TONES: Record<AdjudicationReviewVerdict, ToneLevel> = {
+  approved: "positive",
+  changes_requested: "warning",
+  rejected: "danger",
+};
+
+const ACCEPTANCE_VALIDITY_TONES: Record<AdjudicationAcceptanceValidity, ToneLevel> = {
+  valid: "positive",
+  invalid: "warning",
+};
+
+function acceptanceValidityLabelKey(acceptance: Pick<AdjudicationAcceptanceV1, "validity" | "invalidReason">): string {
+  return acceptance.validity === "valid" || acceptance.invalidReason === null
+    ? "targets.adjudication.accepted"
+    : `targets.adjudication.invalidReasons.${acceptance.invalidReason}`;
+}
+
+function truncateFact(value: string) {
+  return value.length > 12 ? `${value.slice(0, 12)}…` : value;
+}
+
 function commandFailureDetail(error: unknown): string | null {
   if (!(error instanceof ApiError)) return null;
   const code = (error.body as { code?: string } | null)?.code;
@@ -64,6 +132,67 @@ function WorkspaceSectionState({
   if (loading) return <p className="border-y border-border py-10 text-sm text-muted-foreground">{t("targets.workspaceLoading")}</p>;
   if (error) return <p className="border-y border-border py-10 text-sm text-destructive">{t("targets.workspaceLoadFailed")}</p>;
   return <>{children || <EmptyTab message={empty} />}</>;
+}
+
+function EvidenceList({ items }: { items: AssuranceEvidenceV1[] }) {
+  const { t } = useTranslation();
+  return (
+    <ol className="divide-y divide-border">
+      {items.map((item) => (
+        <li key={item.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-xs text-muted-foreground">
+          <ToneBadge tone="neutral">{t(`targets.assurance.evidenceKinds.${item.kind}`)}</ToneBadge>
+          <ToneBadge tone="neutral">{t(`targets.assurance.trustLevels.${item.trustLevel}`)}</ToneBadge>
+          <span>{item.producer.principalId}</span>
+          <span className="min-w-0 truncate font-mono" title={item.reference}>{truncateFact(item.reference)}</span>
+          <span className="font-mono" title={item.objectHash}>{truncateFact(item.objectHash)}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function DeliveryReviewList({ reviews }: { reviews: AdjudicationDeliveryReviewV1[] }) {
+  const { t } = useTranslation();
+  return (
+    <ol className="divide-y divide-border border-t border-border">
+      {reviews.map((review) => (
+        <li key={review.id} className="space-y-2 py-2 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <ToneBadge tone={REVIEW_VERDICT_TONES[review.verdict]}>
+              {t(`targets.adjudication.reviewVerdicts.${review.verdict}`)}
+            </ToneBadge>
+            <span>{review.reviewer.principalId}</span>
+            <span>{formatDateTime(review.createdAt)}</span>
+          </div>
+          {review.unprovenItems.length ? (
+            <div className="space-y-1">
+              <p className="font-medium">{t("targets.adjudication.unprovenItems")}</p>
+              <ul className="list-disc space-y-1 pl-5">
+                {review.unprovenItems.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </div>
+          ) : null}
+          {review.risks ? <p>{t("targets.adjudication.risks", { risks: review.risks })}</p> : null}
+          {review.comments ? <p>{t("targets.adjudication.comments", { comments: review.comments })}</p> : null}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function AcceptanceChip({ acceptance }: { acceptance: AdjudicationAcceptanceV1 }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <ToneBadge tone={ACCEPTANCE_VALIDITY_TONES[acceptance.validity]}>
+        {t(acceptanceValidityLabelKey(acceptance))}
+      </ToneBadge>
+      <span className="text-xs text-muted-foreground">
+        {t(`targets.adjudication.authorities.${acceptance.authority}`)}
+      </span>
+      <span className="text-xs text-muted-foreground">{acceptance.acceptedBy.principalId}</span>
+    </div>
+  );
 }
 
 export function TargetWorkbench() {
@@ -156,6 +285,7 @@ export function TargetWorkbench() {
   const target = query.data;
   if (!target) return null;
   const workspace = workspaceQuery.data;
+  const unboundEvidence = workspace ? workspace.evidence.filter((item) => item.claimId === null) : [];
   const runCommandError = retryRun.error ?? cancelRun.error;
   const runCommandFailureDetail = commandFailureDetail(runCommandError);
 
@@ -346,12 +476,37 @@ export function TargetWorkbench() {
         <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.submission")}>
           {workspace?.submissions.length ? (
             <ul className="border-y border-border">
-              {workspace.submissions.map((submission) => (
-                <li key={submission.id} className="flex items-center justify-between py-4 text-sm">
-                  <span className="font-medium">{submission.id}</span>
-                  <span className="text-muted-foreground">{submission.status}</span>
-                </li>
-              ))}
+              {workspace.submissions.map((submission) => {
+                const submissionReviews = workspace.reviews.filter((review) => review.submissionId === submission.id);
+                const submissionAcceptance = workspace.acceptances.find((acceptance) => acceptance.submissionId === submission.id);
+                return (
+                  <li key={submission.id} className="space-y-4 border-b border-border py-4 last:border-b-0">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="font-mono text-xs text-muted-foreground" title={submission.submissionHash}>
+                        {truncateFact(submission.submissionHash)}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs text-muted-foreground">
+                          {submission.submittedBy.principalId} · {formatDateTime(submission.createdAt)}
+                        </p>
+                      </div>
+                      {submissionAcceptance ? <AcceptanceChip acceptance={submissionAcceptance} /> : null}
+                    </div>
+                    {submission.commitRef || submission.environmentSummary || submission.notes ? (
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        {submission.commitRef ? (
+                          <p className="min-w-0 truncate font-mono" title={submission.commitRef}>
+                            {truncateFact(submission.commitRef)}
+                          </p>
+                        ) : null}
+                        {submission.environmentSummary ? <p>{submission.environmentSummary}</p> : null}
+                        {submission.notes ? <p>{submission.notes}</p> : null}
+                      </div>
+                    ) : null}
+                    {submissionReviews.length ? <DeliveryReviewList reviews={submissionReviews} /> : null}
+                  </li>
+                );
+              })}
             </ul>
           ) : null}
         </WorkspaceSectionState>
@@ -362,9 +517,32 @@ export function TargetWorkbench() {
           {workspace?.artifacts.length ? (
             <ul className="border-y border-border">
               {workspace.artifacts.map((artifact) => (
-                <li key={artifact.id} className="flex items-center justify-between gap-3 border-b border-border py-4 last:border-b-0">
-                  <Link to={artifact.href} className="truncate text-sm font-medium hover:underline">{artifact.title}</Link>
-                  <span className="shrink-0 text-xs text-muted-foreground">{artifact.mediaKind}</span>
+                <li key={artifact.id} className="space-y-4 border-b border-border py-4 last:border-b-0">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <ToneBadge tone="neutral">{t(`targets.assurance.artifactKinds.${artifact.kind}`)}</ToneBadge>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">{artifact.title}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {artifact.createdBy.principalId} · {formatDateTime(artifact.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                  {artifact.revisions.length ? (
+                    <ol className="divide-y divide-border border-t border-border">
+                      {artifact.revisions.map((revision) => (
+                        <li key={revision.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-xs text-muted-foreground">
+                          <span className="font-medium">{t("targets.assurance.revision", { number: revision.revisionNumber })}</span>
+                          <span className="font-mono" title={revision.contentHash}>{truncateFact(revision.contentHash)}</span>
+                          <span className="min-w-0 truncate font-mono" title={revision.contentRef}>{truncateFact(revision.contentRef)}</span>
+                          {revision.sourceRunId ? (
+                            <span className="font-mono" title={revision.sourceRunId}>
+                              {t("targets.assurance.sourceRun", { id: revision.sourceRunId.slice(0, 8) })}
+                            </span>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ol>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -374,21 +552,94 @@ export function TargetWorkbench() {
 
       {activeTab === "evidence" && !isRevision ? (
         <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.evidence")}>
-          {workspace?.evidence.length ? (
-            <ul className="border-y border-border">
-              {workspace.evidence.map((evidence) => (
-                <li key={evidence.id} className="flex items-center justify-between gap-3 border-b border-border py-4 text-sm last:border-b-0">
-                  <span className="font-medium">{evidence.title}</span>
-                  <span className="text-muted-foreground">{evidence.result}</span>
-                </li>
-              ))}
-            </ul>
+          {workspace && (workspace.claims.length > 0 || workspace.evidence.length > 0) ? (
+            <div className="space-y-6">
+              {workspace.claims.length ? (
+                <ul className="border-y border-border">
+                  {workspace.claims.map((claim) => {
+                    const claimResults = workspace.verificationResults.filter((result) => result.claimId === claim.id);
+                    const claimEvidence = workspace.evidence.filter((item) => item.claimId === claim.id);
+                    return (
+                      <li key={claim.id} className="space-y-4 border-b border-border py-4 last:border-b-0">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium">{claim.title}</p>
+                            <p className="mt-1 font-mono text-xs text-muted-foreground">{claim.criterionKey}</p>
+                          </div>
+                          <ToneBadge tone={CLAIM_STATUS_TONES[claim.status]}>
+                            {t(`targets.assurance.claimStatuses.${claim.status}`)}
+                          </ToneBadge>
+                        </div>
+                        {claimResults.length ? (
+                          <ul className="space-y-2">
+                            {claimResults.map((result) => (
+                              <li key={result.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                                <ToneBadge tone={VERDICT_TONES[result.verdict]}>
+                                  {t(`targets.assurance.verdicts.${result.verdict}`)}
+                                </ToneBadge>
+                                <span className="font-mono">{t("targets.assurance.verifier", { version: result.verifierVersion })}</span>
+                                <span>{t("targets.assurance.evidenceCount", { count: result.evidenceIds.length })}</span>
+                                {result.waiverReference ? (
+                                  <span className="min-w-0 truncate" title={result.waiverReference}>
+                                    {t("targets.assurance.waiver", { reference: result.waiverReference })}
+                                  </span>
+                                ) : null}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        {claimEvidence.length ? <EvidenceList items={claimEvidence} /> : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+              {unboundEvidence.length ? (
+                <section aria-labelledby="target-unbound-evidence-title" className="space-y-3">
+                  <h3 id="target-unbound-evidence-title" className="text-sm font-semibold">{t("targets.assurance.unbound")}</h3>
+                  <div className="border-y border-border">
+                    <EvidenceList items={unboundEvidence} />
+                  </div>
+                </section>
+              ) : null}
+            </div>
           ) : null}
         </WorkspaceSectionState>
       ) : null}
 
       {activeTab === "acceptance" && !isRevision ? (
-        <EmptyTab message={t("targets.emptyTabs.acceptance")} />
+        <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.acceptance")}>
+          {workspace?.acceptances.length ? (
+            <ul className="border-y border-border">
+              {workspace.acceptances.map((acceptance) => {
+                const acceptedSubmission = workspace.submissions.find((submission) => submission.id === acceptance.submissionId);
+                const submissionRef = acceptedSubmission?.submissionHash ?? acceptance.submissionId;
+                return (
+                  <li key={acceptance.id} className="space-y-4 border-b border-border py-4 last:border-b-0">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <ToneBadge tone="neutral">{t(`targets.adjudication.authorities.${acceptance.authority}`)}</ToneBadge>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">{acceptance.acceptedBy.principalId}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(acceptance.createdAt)}</p>
+                      </div>
+                      <ToneBadge tone={ACCEPTANCE_VALIDITY_TONES[acceptance.validity]}>
+                        {t(acceptanceValidityLabelKey(acceptance))}
+                      </ToneBadge>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <span className="min-w-0 truncate font-mono" title={submissionRef}>
+                        {t("targets.adjudication.submissionRef", { hash: truncateFact(submissionRef) })}
+                      </span>
+                      <span className="font-mono" title={acceptance.reviewId}>
+                        {t("targets.adjudication.reviewRef", { id: truncateFact(acceptance.reviewId) })}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+        </WorkspaceSectionState>
       ) : null}
 
       {activeTab === "runs" && !isRevision ? (
