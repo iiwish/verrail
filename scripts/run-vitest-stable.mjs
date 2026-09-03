@@ -55,6 +55,8 @@ const additionalSerializedServerTests = new Set([
   "server/src/__tests__/issues-checkout-wakeup.test.ts",
   "server/src/__tests__/issues-service.test.ts",
   "server/src/__tests__/opencode-local-adapter-environment.test.ts",
+  "server/src/__tests__/plugin-worker-manager-duplex-byte-ledger.test.ts",
+  "server/src/__tests__/plugin-worker-manager-duplex.test.ts",
   "server/src/__tests__/project-routes-env.test.ts",
   "server/src/__tests__/redaction.test.ts",
   "server/src/__tests__/routines-e2e.test.ts",
