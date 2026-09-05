@@ -13,6 +13,7 @@ export {
   type CreateRunAttemptInputV1,
   type CreateRunAttemptResponseV1,
   type ReportRunEventInputV1,
+  type RunArtifactInputV1,
   type ReportRunEventResponseV1,
   type RequestRunCancellationResponseV1,
   type RetryRunOutboxInputV1,

@@ -59,14 +59,22 @@ type CreateRunAttemptResult struct {
 	Replayed       bool   `json:"replayed"`
 }
 
+type RunArtifactInput struct {
+	Title       string `json:"title"`
+	Kind        string `json:"kind"`
+	ContentHash string `json:"contentHash"`
+	ContentRef  string `json:"contentRef"`
+}
+
 type ReportRunEventInput struct {
-	LeaseID            string         `json:"leaseId"`
-	FencingToken       int64          `json:"fencingToken"`
-	Cursor             int64          `json:"cursor"`
-	EventType          string         `json:"eventType"`
-	EmittedAt          time.Time      `json:"emittedAt"`
-	Payload            map[string]any `json:"payload,omitempty"`
-	ExtendLeaseSeconds int            `json:"extendLeaseSeconds,omitempty"`
+	LeaseID            string             `json:"leaseId"`
+	FencingToken       int64              `json:"fencingToken"`
+	Cursor             int64              `json:"cursor"`
+	EventType          string             `json:"eventType"`
+	EmittedAt          time.Time          `json:"emittedAt"`
+	Payload            map[string]any     `json:"payload,omitempty"`
+	Artifacts          []RunArtifactInput `json:"artifacts,omitempty"`
+	ExtendLeaseSeconds int                `json:"extendLeaseSeconds,omitempty"`
 }
 
 type ReportRunEventCommand struct {
@@ -203,6 +211,20 @@ func ValidateReportRunEventCommand(command *ReportRunEventCommand) error {
 	}
 	if command.Input.Payload == nil {
 		command.Input.Payload = map[string]any{}
+	}
+	if len(command.Input.Artifacts) > 10 || (len(command.Input.Artifacts) > 0 && command.Input.EventType != "succeeded") {
+		return validation("At most 10 Artifacts can be attached to a succeeded event")
+	}
+	for i := range command.Input.Artifacts {
+		artifact := &command.Input.Artifacts[i]
+		input := CreateArtifactInput{TargetID: command.RunID, Title: artifact.Title, Kind: artifact.Kind}
+		if err := ValidateCreateArtifactInput(&input); err != nil {
+			return err
+		}
+		artifact.Title, artifact.Kind = input.Title, input.Kind
+		if artifact.Kind == "external_reference" || !assuranceHashPattern.MatchString(artifact.ContentHash) || artifact.ContentRef != "storage:"+command.WorkspaceID+"/verrail/run-artifacts/sha256/"+artifact.ContentHash {
+			return validation("Run Artifact requires a same-Workspace content-addressed storage reference")
+		}
 	}
 	hash, err := hashExecutionInput(command.Input)
 	command.RequestHash = hash

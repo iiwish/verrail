@@ -32,6 +32,8 @@ import {
 } from "@paperclipai/db";
 import detectPort from "detect-port";
 import { createApp } from "./app.js";
+import { collectNativeRunArtifacts } from "./services/verrail-run-artifacts.js";
+import { resolveNativeRunWorkspace } from "./services/verrail-native-workspace.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import {
@@ -831,6 +833,19 @@ export async function startServer(): Promise<StartedServer> {
   const nativeRunExecutor = heartbeat && domainApiRuntime
     ? createVerrailRunExecutor({
         store: createDrizzleVerrailRunExecutorStore(db as any),
+        collectArtifacts: async (candidate, heartbeatRun) => {
+          const workspace = await resolveNativeRunWorkspace(db as any, {
+            heartbeatRunId: heartbeatRun.id, workspaceId: candidate.workspaceId,
+            agentId: heartbeatRun.agentId, context: heartbeatRun.contextSnapshot ?? {},
+          });
+          if (!workspace || workspace.deploymentRevisionId !== candidate.deploymentRevisionId
+            || workspace.agentVersionId !== candidate.agentVersionId
+            || heartbeatRun.contextSnapshot?.verrailRunAttemptId !== candidate.runAttemptId
+            || heartbeatRun.contextSnapshot?.verrailRunId !== candidate.runId) {
+            throw new Error("NATIVE_ARTIFACT_BINDING_INVALID: output requires the pinned workspace and Attempt");
+          }
+          return collectNativeRunArtifacts({ cwd: workspace.cwd, workspaceId: candidate.workspaceId, runAttemptId: candidate.runAttemptId, storage: storageService });
+        },
         domainApi: createVerrailDomainApiClient({
           baseUrl: domainApiRuntime.baseUrl,
           token: domainApiRuntime.token,

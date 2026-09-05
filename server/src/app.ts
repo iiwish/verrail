@@ -527,7 +527,7 @@ export async function createApp(
   api.use(collectionRoutes(db));
   api.use(targetRoutes(db));
   api.use(agentLifecycleRoutes(db));
-  api.use(assuranceRoutes());
+  api.use(assuranceRoutes({ db, storage: opts.storageService }));
   api.use(adjudicationRoutes());
   api.use(connectorRoutes({ db }));
   api.use(caseRoutes(db, opts.storageService));

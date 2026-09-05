@@ -693,6 +693,13 @@ describe("TargetWorkbench", () => {
 
     const deploymentSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Delivery deployment revision"]');
     expect(deploymentSelect?.value).toBe("deployment-revision-1");
+    const completion = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Delivery task completion"]');
+    expect(completion).not.toBeNull();
+    expect(completion?.maxLength).toBe(4000);
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")!.set!.call(completion, "  Produce a local code snapshot; do not publish.  ");
+      completion!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
     const createButton = Array.from(container.querySelectorAll("button"))
       .find((candidate) => candidate.textContent?.includes("Create revision"));
     await act(async () => createButton?.click());
@@ -701,7 +708,7 @@ describe("TargetWorkbench", () => {
     expect(createGraphRevision).toHaveBeenCalledWith("workspace-1", "target-1", expect.objectContaining({
       expectedTargetRevisionId: "revision-1",
       nodes: expect.arrayContaining([
-        expect.objectContaining({ nodeKey: "deliver", responsiblePrincipal: { principalType: "agent", principalId: "deployment-revision-1" } }),
+        expect.objectContaining({ nodeKey: "deliver", completionDefinition: "Produce a local code snapshot; do not publish.", responsiblePrincipal: { principalType: "agent", principalId: "deployment-revision-1" } }),
         expect.objectContaining({ nodeKey: "verify", dependencyNodeKeys: ["deliver"] }),
         expect.objectContaining({ nodeKey: "review", dependencyNodeKeys: ["verify"] }),
         expect.objectContaining({ nodeKey: "accept", dependencyNodeKeys: ["review"] }),
@@ -726,6 +733,22 @@ describe("TargetWorkbench", () => {
       { kind: "agent_run", actor: { principalType: "agent", principalId: "agent-1" } },
       expect.any(String),
     );
+  });
+
+  it("blocks blank or overlong delivery conditions without issuing a graph command", async () => {
+    await renderWorkbench();
+    const completion = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Delivery task completion"]')!;
+    const button = Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.includes("Create revision"))!;
+    expect(button.disabled).toBe(false);
+    for (const value of ["   ", "x".repeat(4001)]) {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")!.set!.call(completion, value);
+        completion.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      expect(button.disabled).toBe(true);
+      await act(async () => button.click());
+    }
+    expect(createGraphRevision).not.toHaveBeenCalled();
   });
 
   it("issues review, acceptance, approval, and execution as separate bound human commands", async () => {
@@ -964,6 +987,17 @@ describe("TargetWorkbench", () => {
     expect(container.querySelector(`[title="${CONTENT_HASH_A}"]`)).not.toBeNull();
     expect(container.querySelector(`[title="${CONTENT_HASH_B}"]`)).not.toBeNull();
     expect(container.textContent).toContain("Run run-1");
+  });
+
+  it("offers downloads only for same-workspace content-addressed artifact revisions", async () => {
+    route.tab = "artifacts";
+    const facts = assuranceFacts();
+    facts.artifacts[0].revisions[0].contentRef = `storage:workspace-1/verrail/run-artifacts/sha256/${CONTENT_HASH_A}`;
+    getWorkspace.mockResolvedValue({ ...targetWorkspace(), ...facts });
+    await renderWorkbench();
+    const downloads = container.querySelectorAll('a[aria-label="Download artifact"]');
+    expect(downloads).toHaveLength(1);
+    expect(downloads[0].getAttribute("href")).toBe("/api/workspaces/workspace-1/artifact-revisions/revision-a1/content");
   });
 
   it("groups verification results and evidence under their claims on the evidence tab", async () => {

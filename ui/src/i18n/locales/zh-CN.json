@@ -806,6 +806,7 @@
       "submissionHash": "提交哈希",
       "reviewHash": "评审哈希",
       "deploymentRevision": "交付部署修订版本",
+      "deliveryCompletion": "交付任务完成条件",
       "noActiveDeployment": "没有活跃的部署修订版本",
       "reviewVerdict": "评审决定",
       "reviewComments": "评审意见",
@@ -984,6 +985,7 @@
     "assurance": {
       "revision": "修订 {{number}}",
       "sourceRun": "运行 {{id}}",
+      "downloadArtifact": "下载产物",
       "verifier": "验证器 {{version}}",
       "evidenceCount": "证据条数：{{count}}",
       "waiver": "豁免依据：{{reference}}",

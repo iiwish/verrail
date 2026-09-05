@@ -677,8 +677,8 @@ function deriveTargetProjection(input: ProjectionInput): TargetProjection {
   const graphComplete = Boolean(input.graph?.activeGraphRevisionId)
     && input.nodes.length > 0
     && input.nodes.every((node) => node.status === "completed");
-  const hasBlockedWork = input.nodes.some((node) => node.status === "blocked")
-    || input.runs.some((run) => run.status === "failed");
+  // Graph Engine node state is current authority; historical Runs remain inspectable.
+  const hasBlockedWork = input.nodes.some((node) => node.status === "blocked" || node.status === "canceled");
   const submissionCurrent = Boolean(latestSubmission)
     && latestSubmission?.targetRevisionId === input.activeTargetRevisionId;
   const reviewApproved = Boolean(latestReview) && latestReview?.verdict === "approved";
@@ -845,6 +845,7 @@ function deriveTargetProjection(input: ProjectionInput): TargetProjection {
   }
 
   const action = submissionActions[0] ?? null;
+  const readyAgentNode = input.nodes.find((node) => node.status === "ready" && node.kind === "agent_task");
   const draftGraphRevisionId = input.facts.graphRevisions
       .filter((row) => row.targetId === input.targetId
         && row.targetRevisionId === input.activeTargetRevisionId
@@ -855,7 +856,7 @@ function deriveTargetProjection(input: ProjectionInput): TargetProjection {
   const commands: TargetAvailableCommandV1[] = [
     { id: "create_graph_revision", state: canceled || status === "accepted" ? "blocked" : "available", reason: canceled || status === "accepted" ? "Target is terminal." : null, resourceId: input.graph?.id ?? null },
     { id: "activate_graph_revision", state: draftGraphRevisionId ? "available" : input.graph?.activeGraphRevisionId ? "completed" : "blocked", reason: draftGraphRevisionId || input.graph?.activeGraphRevisionId ? null : "A draft GraphRevision is required.", resourceId: draftGraphRevisionId ?? input.graph?.activeGraphRevisionId ?? null },
-    { id: "create_run", state: input.nodes.some((node) => node.status === "ready" && node.kind === "agent_task") ? "available" : graphComplete ? "completed" : "blocked", reason: graphComplete ? null : "No ready agent task is available.", resourceId: input.nodes.find((node) => node.status === "ready" && node.kind === "agent_task")?.id ?? null },
+    { id: "create_run", state: readyAgentNode ? "available" : graphComplete ? "completed" : "blocked", reason: readyAgentNode || graphComplete ? null : "No ready agent task is available.", resourceId: readyAgentNode?.id ?? null },
     { id: "create_submission", state: latestSubmission && submissionCurrent && artifactsCurrent && criteriaVerified ? "completed" : graphComplete && criteriaVerifiedBeforeSubmission && latestArtifactRevisionIds.size > 0 ? "available" : "blocked", reason: graphComplete && criteriaVerifiedBeforeSubmission && latestArtifactRevisionIds.size > 0 ? null : "Complete work, current artifacts, and criterion verification first.", resourceId: latestSubmission?.id ?? null },
     { id: "record_review", state: reviewApproved ? "completed" : latestSubmission && submissionCurrent && artifactsCurrent && criteriaVerified ? "available" : "blocked", reason: latestSubmission && submissionCurrent && artifactsCurrent && criteriaVerified ? null : "A current complete Submission is required.", resourceId: latestSubmission?.id ?? null },
     { id: "accept_submission", state: validAcceptance ? "completed" : reviewApproved && closureInputsValid ? "available" : "blocked", reason: reviewApproved && closureInputsValid ? null : "A current approved Review and settled controls are required.", resourceId: latestReview?.id ?? null },

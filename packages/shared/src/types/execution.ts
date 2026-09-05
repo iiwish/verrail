@@ -94,6 +94,13 @@ export interface CreateRunAttemptResponseV1 {
   replayed: boolean;
 }
 
+export interface RunArtifactInputV1 {
+  title: string;
+  kind: "code_change" | "document" | "report";
+  contentHash: string;
+  contentRef: string;
+}
+
 export interface ReportRunEventInputV1 {
   leaseId: string;
   fencingToken: number;
@@ -101,6 +108,7 @@ export interface ReportRunEventInputV1 {
   eventType: RunEventTypeV1;
   emittedAt: string;
   payload?: Record<string, unknown>;
+  artifacts?: RunArtifactInputV1[];
   extendLeaseSeconds?: number;
 }
 

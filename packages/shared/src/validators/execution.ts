@@ -29,8 +29,16 @@ export const reportRunEventSchema = z.object({
   eventType: runEventTypeV1Schema,
   emittedAt: z.iso.datetime({ offset: true }),
   payload: z.record(z.string(), z.unknown()).default({}),
+  artifacts: z.array(z.object({
+    title: z.string().trim().min(1).max(200),
+    kind: z.enum(["code_change", "document", "report"]),
+    contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+    contentRef: z.string().regex(/^storage:[a-f0-9-]{36}\/verrail\/run-artifacts\/sha256\/[a-f0-9]{64}$/),
+  }).strict()).max(10).optional(),
   extendLeaseSeconds: z.number().int().min(15).max(3_600).optional(),
-}).strict();
+}).strict().refine((input) => !input.artifacts?.length || input.eventType === "succeeded", {
+  message: "Artifacts require a succeeded event", path: ["artifacts"],
+});
 
 export const requestRunCancellationSchema = z.object({}).strict();
 

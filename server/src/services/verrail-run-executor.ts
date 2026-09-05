@@ -13,7 +13,8 @@ import {
   verrailWorkNodes,
   type Db,
 } from "@paperclipai/db";
-import type { ReportRunEventResponseV1 } from "@paperclipai/shared";
+import type { ReportRunEventResponseV1, RunArtifactInputV1 } from "@paperclipai/shared";
+import { NativeRunArtifactError, nativeRunArtifactDirectory } from "./verrail-run-artifacts.js";
 import type { VerrailDomainApiClient } from "./verrail-domain-api-client.js";
 
 const EXECUTOR_PRINCIPAL_ID = "verrail-host-runner";
@@ -110,6 +111,18 @@ function buildNativeTaskMarkdown(candidate: NativeRunLeaseCandidate) {
     `AgentVersion: ${candidate.agentVersionId}`,
     candidate.agentPrompt,
     "",
+    "## Native Execution Identity",
+    `Workspace: ${candidate.workspaceId}`,
+    `Target: ${candidate.targetId}`,
+    `TargetRevision: ${candidate.targetRevisionId}`,
+    `GraphRevision: ${candidate.graphRevisionId}`,
+    `WorkNode: ${candidate.workNodeId}`,
+    `Run: ${candidate.runId}`,
+    `RunAttempt: ${candidate.runAttemptId}`,
+    `DeploymentRevision: ${candidate.deploymentRevisionId}`,
+    `FencingToken: ${candidate.fencingToken}`,
+    "Use these authoritative bindings in generated artifacts; do not infer them from historical runs or other sessions.",
+    "",
     "## Native Run Authority",
     "This is a native Verrail Run, not a legacy Issue. Work on the assigned node; do not create substitute Issues or delegate work unless explicitly authorized.",
     "Executor success is not Target Acceptance. Do not issue human Review, ActionApproval or Acceptance decisions, or perform external effects without their required approval.",
@@ -128,6 +141,13 @@ function buildNativeTaskMarkdown(candidate: NativeRunLeaseCandidate) {
     "",
     "## Acceptance Criteria",
     criteria,
+    "",
+    "## Artifact Output Protocol",
+    `For deliverable files, write ${nativeRunArtifactDirectory(candidate.runAttemptId)}/manifest.json relative to the deployment cwd.`,
+    'Format: {"schemaVersion":1,"artifacts":[{"title":"Candidate report","kind":"report","path":"report.md"}]}',
+    "Store each listed file directly beside the manifest, using a plain ASCII filename (letters, digits, dots, underscores, hyphens; start with a letter or digit).",
+    "Allowed kinds: code_change, document, report. Maximum 10 files, 32 MiB per file, 64 MiB total; no links, nested paths, credentials, or secret configuration.",
+    "The trusted executor hashes, uploads, and registers these files against this Run and WorkNode. Do not impersonate a human or call Board write APIs to register artifacts.",
   ].join("\n");
 }
 
@@ -301,6 +321,7 @@ export function createVerrailRunExecutor(input: {
   store: VerrailRunExecutorStore;
   domainApi: Pick<VerrailDomainApiClient, "reportRunEvent">;
   heartbeat: NativeHeartbeatExecutor;
+  collectArtifacts?: (candidate: NativeRunLeaseCandidate, heartbeatRun: NativeHeartbeatRun) => Promise<RunArtifactInputV1[]>;
   executorPrincipalId?: string;
   leaseExtensionSeconds?: number;
   onError?: (error: unknown, candidate: NativeRunLeaseCandidate) => void;
@@ -318,6 +339,7 @@ export function createVerrailRunExecutor(input: {
       eventType: NativeRunEventType,
       payload: Record<string, unknown> = {},
       extendLeaseSeconds?: number,
+      artifacts?: RunArtifactInputV1[],
     ): Promise<ReportRunEventResponseV1> => {
       const nextCursor = cursor + 1;
       const response = await input.domainApi.reportRunEvent({
@@ -334,6 +356,7 @@ export function createVerrailRunExecutor(input: {
           eventType,
           emittedAt: new Date(candidate.attemptUpdatedAt.getTime() + nextCursor).toISOString(),
           payload,
+          ...(artifacts?.length ? { artifacts } : {}),
           ...(extendLeaseSeconds ? { extendLeaseSeconds } : {}),
         },
       });
@@ -392,7 +415,7 @@ export function createVerrailRunExecutor(input: {
           verrailWorkNodeId: candidate.workNodeId,
           verrailDeploymentRevisionId: candidate.deploymentRevisionId,
           verrailAgentVersionId: candidate.agentVersionId,
-          taskKey: `verrail:${candidate.targetId}:node:${candidate.workNodeKey}`,
+          taskKey: `verrail:run:${candidate.runId}`,
           responsibleUserId: candidate.responsibleUserId,
           verrailTaskMarkdown: buildNativeTaskMarkdown(candidate),
         },
@@ -410,7 +433,15 @@ export function createVerrailRunExecutor(input: {
       if (attemptStatus === "pending") {
         await report("started", { heartbeatRunId: heartbeatRun.id, agentId: heartbeatRun.agentId });
       }
-      await report("succeeded", executionFacts(heartbeatRun));
+      let artifacts: RunArtifactInputV1[] | undefined;
+      try {
+        artifacts = await input.collectArtifacts?.(candidate, heartbeatRun);
+      } catch (error) {
+        if (!(error instanceof NativeRunArtifactError)) throw error;
+        await report("failed", { ...executionFacts(heartbeatRun), errorCode: "NATIVE_ARTIFACT_INVALID", errorMessage: error.message });
+        return "failed" as const;
+      }
+      await report("succeeded", executionFacts(heartbeatRun), undefined, artifacts);
       return "succeeded" as const;
     }
     if (TERMINAL_HEARTBEAT_STATUSES.has(heartbeatRun.status)) {

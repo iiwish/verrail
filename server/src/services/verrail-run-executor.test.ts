@@ -7,6 +7,7 @@ import {
   type VerrailRunExecutorStore,
 } from "./verrail-run-executor.js";
 import { resolveHeartbeatTaskMarkdown } from "./heartbeat.js";
+import { NativeRunArtifactError } from "./verrail-run-artifacts.js";
 
 function candidate(overrides: Partial<NativeRunLeaseCandidate> = {}): NativeRunLeaseCandidate {
   return {
@@ -73,7 +74,7 @@ function heartbeatRun(overrides: Partial<NativeHeartbeatRun> = {}): NativeHeartb
   };
 }
 
-function harness(input: { lease?: NativeRunLeaseCandidate; heartbeat?: NativeHeartbeatRun | null } = {}) {
+function harness(input: { lease?: NativeRunLeaseCandidate; heartbeat?: NativeHeartbeatRun | null; collectArtifacts?: Parameters<typeof createVerrailRunExecutor>[0]["collectArtifacts"] } = {}) {
   let lease = input.lease ?? candidate();
   let heartbeat = input.heartbeat ?? null;
   const store: VerrailRunExecutorStore = {
@@ -125,11 +126,32 @@ function harness(input: { lease?: NativeRunLeaseCandidate; heartbeat?: NativeHea
     reports,
     domainApi,
     heartbeatExecutor,
-    runner: createVerrailRunExecutor({ store, domainApi, heartbeat: heartbeatExecutor }),
+    runner: createVerrailRunExecutor({ store, domainApi, heartbeat: heartbeatExecutor, collectArtifacts: input.collectArtifacts }),
   };
 }
 
 describe("verrail native run executor", () => {
+  it("attaches collected outputs only to the succeeded service event", async () => {
+    const artifacts = [{ title: "Candidate", kind: "report" as const, contentHash: "a".repeat(64), contentRef: "storage:workspace-1/verrail/run-artifacts/sha256/" + "a".repeat(64) }];
+    const collectArtifacts = vi.fn().mockResolvedValue(artifacts);
+    const test = harness({ heartbeat: heartbeatRun({ status: "succeeded" }), collectArtifacts });
+    await expect(test.runner.tick()).resolves.toMatchObject({ succeeded: 1 });
+    expect(collectArtifacts).toHaveBeenCalledOnce();
+    expect(test.domainApi.reportRunEvent).toHaveBeenLastCalledWith(expect.objectContaining({ principalType: "service", principalId: "verrail-host-runner", input: expect.objectContaining({ eventType: "succeeded", artifacts }) }));
+  });
+  it("does not declare success when output collection fails", async () => {
+    const collectArtifacts = vi.fn().mockRejectedValue(new Error("NATIVE_ARTIFACT_INVALID"));
+    const test = harness({ heartbeat: heartbeatRun({ status: "succeeded" }), collectArtifacts });
+    await expect(test.runner.tick()).resolves.toMatchObject({ succeeded: 0, errors: 1 });
+    expect(test.reports.some((event) => event.eventType === "succeeded")).toBe(false);
+  });
+  it("records an observable native failure for invalid output without leaking file contents", async () => {
+    const collectArtifacts = vi.fn().mockRejectedValue(new NativeRunArtifactError(new Error("private contents")));
+    const test = harness({ heartbeat: heartbeatRun({ status: "succeeded" }), collectArtifacts });
+    await expect(test.runner.tick()).resolves.toMatchObject({ failed: 1, succeeded: 0, errors: 0 });
+    expect(test.reports.at(-1)).toMatchObject({ eventType: "failed", payload: { errorCode: "NATIVE_ARTIFACT_INVALID" } });
+    expect(JSON.stringify(test.reports)).not.toContain("private contents");
+  });
   it("claims before invoking and starts the correlated heartbeat run", async () => {
     const test = harness();
 
@@ -143,10 +165,22 @@ describe("verrail native run executor", () => {
       contextSnapshot: expect.objectContaining({
         verrailRunAttemptId: "attempt-1",
         verrailRunId: "run-1",
-        taskKey: "verrail:target-1:node:implement",
+        taskKey: "verrail:run:run-1",
         verrailTaskMarkdown: expect.stringContaining("Deliver the production change."),
       }),
     }));
+  });
+
+  it("isolates different Runs on the same node while retaining the session across attempts", async () => {
+    const first = harness();
+    const nextRun = harness({ lease: candidate({ runId: "run-2", graphRevisionId: "graph-revision-2" }) });
+    const retry = harness({ lease: candidate({ runAttemptId: "attempt-2", fencingToken: 2 }) });
+    for (const test of [first, nextRun, retry]) await test.runner.tick();
+    for (const [test, taskKey] of [[first, "verrail:run:run-1"], [nextRun, "verrail:run:run-2"], [retry, "verrail:run:run-1"]] as const) {
+      expect(test.heartbeatExecutor.invoke).toHaveBeenCalledWith(expect.objectContaining({
+        contextSnapshot: expect.objectContaining({ taskKey }),
+      }));
+    }
   });
 
   it("sends the immutable AgentVersion prompt as execution input rather than only checking it", async () => {
@@ -157,6 +191,20 @@ describe("verrail native run executor", () => {
         verrailTaskMarkdown: expect.stringContaining("Pinned delivery prompt."),
       }),
     }));
+  });
+
+  it("includes authoritative native identities so the agent need not discover them from host state", async () => {
+    const test = harness();
+    await test.runner.tick();
+    for (const binding of [
+      "Workspace: workspace-1", "Target: target-1", "TargetRevision: target-revision-1",
+      "GraphRevision: graph-revision-1", "WorkNode: node-1", "Run: run-1",
+      "RunAttempt: attempt-1", "DeploymentRevision: deployment-revision-1", "FencingToken: 1",
+    ]) {
+      expect(test.heartbeatExecutor.invoke).toHaveBeenCalledWith(expect.objectContaining({
+        contextSnapshot: expect.objectContaining({ verrailTaskMarkdown: expect.stringContaining(binding) }),
+      }));
+    }
   });
 
   it("reuses the durable heartbeat correlation after restart", async () => {

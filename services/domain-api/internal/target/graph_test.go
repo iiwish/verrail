@@ -166,7 +166,7 @@ func TestGraphOrchestrationContractsIntegration(t *testing.T) {
 
 	reportRunEvent(t, store, workspaceID, serviceRun.RunID, recoveredAttempt, 1, "claimed")
 	reportRunEvent(t, store, workspaceID, serviceRun.RunID, recoveredAttempt, 2, "started")
-	reportRunEvent(t, store, workspaceID, serviceRun.RunID, recoveredAttempt, 3, "succeeded")
+	verifyNativeArtifactCompletion(t, store, pool, workspaceID, serviceRun.RunID, targetResult.TargetID, serviceNodeID, firstAttempt, recoveredAttempt)
 
 	secondReconcile := firstReconcile
 	secondReconcile.IdempotencyKey = "g2-7-reconcile-cycle-2"
@@ -242,6 +242,8 @@ func cleanupGraphOrchestrationHarness(pool *pgxpool.Pool, lifecycle *lifecycleTe
 	ctx := context.Background()
 	workspaceID := lifecycle.workspaceID
 	for _, statement := range []string{
+		`delete from verrail_artifact_revisions where workspace_id=$1`,
+		`delete from verrail_artifacts where workspace_id=$1`,
 		`delete from verrail_run_events where workspace_id=$1`,
 		`delete from verrail_execution_command_receipts where workspace_id=$1`,
 		`delete from verrail_execution_leases where workspace_id=$1`,

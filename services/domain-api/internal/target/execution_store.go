@@ -282,7 +282,14 @@ func (store *Store) ReportRunEvent(ctx context.Context, command ReportRunEventCo
 		}
 		return baseResult, nil
 	}
-	payload, _ := json.Marshal(command.Input.Payload)
+	storedPayload := make(map[string]any, len(command.Input.Payload)+1)
+	for key, value := range command.Input.Payload {
+		storedPayload[key] = value
+	}
+	if len(command.Input.Artifacts) > 0 {
+		storedPayload["artifacts"] = command.Input.Artifacts
+	}
+	payload, _ := json.Marshal(storedPayload)
 	eventID, _ := NewUUID()
 	if _, err := tx.Exec(ctx, `insert into verrail_run_events(id,workspace_id,run_id,run_attempt_id,cursor,fencing_token,event_type,payload,content_hash,emitted_at) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)`, eventID, command.WorkspaceID, command.RunID, command.RunAttemptID, command.Input.Cursor, command.Input.FencingToken, command.Input.EventType, payload, command.RequestHash, command.Input.EmittedAt); err != nil {
 		return ReportRunEventResult{}, err
@@ -325,6 +332,9 @@ func (store *Store) ReportRunEvent(ctx context.Context, command ReportRunEventCo
 	case "succeeded":
 		if leaseStatus != "active" || attemptStatus != "running" {
 			return ReportRunEventResult{}, &Error{Status: 409, Code: "INVALID_ATTEMPT_TRANSITION", Message: "Success requires a running Attempt"}
+		}
+		if err := insertRunArtifacts(ctx, tx, command, targetID, workNodeID); err != nil {
+			return ReportRunEventResult{}, err
 		}
 		attemptStatus, runStatus, leaseStatus = "succeeded", "succeeded", "released"
 		_, err = tx.Exec(ctx, `update verrail_run_attempts set status='succeeded',result=$1::jsonb,finished_at=$2,updated_at=$2 where id=$3`, payload, now, command.RunAttemptID)

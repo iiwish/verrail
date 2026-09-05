@@ -133,6 +133,8 @@ Target 存在可选 Collection 关联时可以附加对应 ContextBinding。Conv
 
 负责 AcceptanceCriterion、Claim、ArtifactContract、ArtifactRevision、内容 Hash、Materialization、IntegrationRun/IntegrationAttempt、Provider Receipt、Evidence、VerificationResult、Submission、DeliveryReview、ReviewComment 和 Acceptance。大对象写入 Object Store，关系、Hash 和生命周期写入 PostgreSQL。
 
+HostTrusted 原生 Run 的文件产物由实际执行器 service Principal 通过成功事件登记：TypeScript Runner 验证不可变部署目录及有界输出 manifest，完成内容寻址 Storage 写入；Go Domain API 在当前 Attempt、租约、fencing 和游标校验后，将 ArtifactRevision、来源 Run/WorkNode、审计及执行终态原子提交。该通道不扩展人工 Review、ActionApproval 或 Acceptance 权限，详见 [ADR 0007](adrs/0007-native-run-artifact-ingress.md)。
+
 ### Capability Gateway
 
 负责 Capability、Grant、Policy、Action、Approval、CredentialLease、Provider Effect 幂等与未知结果核验。所有外部写操作和敏感平台自操作经过此边界。

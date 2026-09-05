@@ -1,4 +1,9 @@
 import { Router } from "express";
+import { pipeline } from "node:stream/promises";
+import { and, eq } from "drizzle-orm";
+import { verrailArtifactRevisions, type Db } from "@paperclipai/db";
+import { z } from "zod";
+import type { StorageService } from "../storage/types.js";
 import {
   addArtifactRevisionSchema,
   createArtifactSchema,
@@ -10,11 +15,32 @@ import {
 import { HttpError } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { createVerrailDomainApiClient, type VerrailDomainApiClient } from "../services/verrail-domain-api-client.js";
-import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertBoard, assertBoardOrAgent, assertCompanyAccess, getActorInfo } from "./authz.js";
 
-export function assuranceRoutes(options: { domainApiClient?: VerrailDomainApiClient | null } = {}) {
+export function assuranceRoutes(options: { domainApiClient?: VerrailDomainApiClient | null; db?: Db; storage?: StorageService } = {}) {
   const router = Router();
   const domainApi = options.domainApiClient === undefined ? createVerrailDomainApiClient() : options.domainApiClient;
+
+  router.get("/workspaces/:workspaceId/artifact-revisions/:revisionId/content", async (req, res) => {
+    assertBoardOrAgent(req);
+    const workspaceId = z.string().uuid().parse(req.params.workspaceId);
+    const revisionId = z.string().uuid().parse(req.params.revisionId);
+    assertCompanyAccess(req, workspaceId);
+    if (!options.db || !options.storage) throw new HttpError(503, "Artifact storage is unavailable");
+    const [revision] = await options.db.select({ contentRef: verrailArtifactRevisions.contentRef, contentHash: verrailArtifactRevisions.contentHash })
+      .from(verrailArtifactRevisions).where(and(eq(verrailArtifactRevisions.workspaceId, workspaceId), eq(verrailArtifactRevisions.id, revisionId))).limit(1);
+    if (!revision || !/^[a-f0-9]{64}$/.test(revision.contentHash)
+      || revision.contentRef !== `storage:${workspaceId}/verrail/run-artifacts/sha256/${revision.contentHash}`) {
+      throw new HttpError(404, "Stored ArtifactRevision content not found");
+    }
+    const object = await options.storage.getObject(workspaceId, revision.contentRef.slice("storage:".length));
+    res.setHeader("Content-Type", "application/octet-stream");
+    res.setHeader("Content-Disposition", `attachment; filename="artifact-${revisionId}.bin"`);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "private, no-store");
+    if (object.contentLength !== undefined) res.setHeader("Content-Length", object.contentLength);
+    await pipeline(object.stream, res);
+  });
 
   function commandContext(req: Parameters<typeof getActorInfo>[0], workspaceId: string) {
     assertBoard(req);

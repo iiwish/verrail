@@ -806,6 +806,7 @@
       "submissionHash": "Submission",
       "reviewHash": "Review",
       "deploymentRevision": "Delivery deployment revision",
+      "deliveryCompletion": "Delivery task completion",
       "noActiveDeployment": "No active deployment revision",
       "reviewVerdict": "Review decision",
       "reviewComments": "Review comments",
@@ -984,6 +985,7 @@
     "assurance": {
       "revision": "Revision {{number}}",
       "sourceRun": "Run {{id}}",
+      "downloadArtifact": "Download artifact",
       "verifier": "Verifier {{version}}",
       "evidenceCount": "Evidence items: {{count}}",
       "waiver": "Waiver: {{reference}}",

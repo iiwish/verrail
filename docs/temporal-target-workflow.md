@@ -74,9 +74,17 @@ Workflow 收到已提交的取消请求后进入 `canceling`，等待 Runner 的
 
 Runner 必须先通过 Domain API 提交 `claimed`，再启动 heartbeat run 和提交 `started`。原生 RunAttempt ID 写入 heartbeat `context_snapshot`，重启时以该持久关联复用已有执行，不能重复启动 Codex。Target 的 goal、constraints、acceptance criteria、WorkNode 和 completion definition 作为原生任务正文进入执行上下文，不要求创建兼容 Issue。
 
-活跃 heartbeat run 由 Runner 定期提交 `heartbeat` 延长租约。heartbeat run 终止后，Runner 只把 heartbeat run ID、环境/日志引用、日志哈希、用量、退出状态和错误码等非敏感事实提交为 `succeeded` 或 `failed`。领域取消先传播到 heartbeat run，再依次提交 `cancel_acknowledged` 和 `terminated`。Runner 不直接更新原生 Run、Attempt、Lease 或 WorkNode 表；所有状态转换、游标和 fencing 仍由 Go Domain API 裁决。
+活跃 heartbeat run 由 Runner 定期提交 `heartbeat` 延长租约。heartbeat run 终止后，Runner 把 heartbeat run ID、环境/日志引用、日志哈希、用量、退出状态和错误码等非敏感事实提交为 `succeeded` 或 `failed`。成功事件可附带已存储产物的类型、标题、内容哈希及引用。领域取消先传播到 heartbeat run，再依次提交 `cancel_acknowledged` 和 `terminated`。Runner 不直接更新原生 Run、Attempt、Lease 或 WorkNode 表；所有状态转换、游标和 fencing 仍由 Go Domain API 裁决。
 
-原生执行正文包含固定 AgentVersion 的提示词、目标定义、节点完成条件与权限边界。Codex ACP 与 CLI 回退均保留该正文；执行器成功不替代真人 Review、ActionApproval 或 Acceptance，也不授权创建替代 Issue。
+原生文件产物通过部署目录下的 `.verrail/run-artifacts/<RunAttemptId>/manifest.json` 声明，格式为 `{"schemaVersion":1,"artifacts":[{"title":"Candidate report","kind":"report","path":"report.md"}]}`。列出的文件与 manifest 同目录，使用有界 ASCII 文件名，不接受嵌套路径、符号链接、硬链接或特殊文件。支持 `code_change`、`document`、`report`，最多 10 个文件，每个 32 MiB、合计 64 MiB，manifest 最多 64 KiB。不得包含密钥或私有凭据配置；没有 manifest 的既有任务兼容成功事件，不自动推断其产物。
+
+HostTrusted Runner 从同一 Workspace、RunAttempt、系统唤醒回执及不可变 DeploymentRevision 重新验证工作目录，读取并校验完整文件集合，然后以 SHA-256 内容寻址写入 Workspace Storage。Go Domain API 仅在当前 Attempt 的执行器身份、有效租约、fencing、连续游标及成功转换均通过后，原子提交 Artifact、ArtifactRevision、来源 Run/WorkNode、service Principal 审计和成功事件；重放不重复登记。来源标识由被锁定的 Run 推导，不由 Agent 提交。通用人工 Artifact 命令、Review、ActionApproval 和 Acceptance 权限保持独立。
+
+产物引用采用 `storage:<WorkspaceId>/verrail/run-artifacts/sha256/<hash>`。工作台通过 `GET /api/workspaces/:workspaceId/artifact-revisions/:revisionId/content` 下载同 Workspace 的已登记版本；该入口仅解引用与内容哈希一致的 Storage key，不读取任意本地路径或远程 URL，并使用私有、不可内联执行的附件响应。Storage 上传与数据库事务不是分布式原子提交：未登记成功的上传可能留下内容寻址孤立对象，不构成 ArtifactRevision 或交付成功证据；孤立对象清理属于后续存储维护范围。该通道属于 HostTrusted 执行边界，不提供对恶意宿主进程的强文件系统隔离。
+
+原生执行正文包含固定 AgentVersion 的提示词、目标定义、节点完成条件与权限边界，以及 Workspace、TargetRevision、GraphRevision、WorkNode、Run、RunAttempt、DeploymentRevision 和 fencing token。产物使用这些权威绑定，不从历史运行或其他会话猜测标识。Codex ACP 与 CLI 回退均保留该正文；执行器成功不替代真人 Review、ActionApproval 或 Acceptance，也不授权创建替代 Issue。
+
+工作台在创建 GraphRevision 时固定交付节点完成条件（1 至 4000 字符）；修改条件需要新修订，不修改历史节点。原生会话键采用 `verrail:run:<RunId>`，不同 Run 不共享执行历史，同一 Run 的重试可恢复其会话。
 
 本地原生执行要求 DeploymentRevision 的 `runtimeConfig.cwd` 固定绝对工作目录。智能体部署界面提供该字段；目录必须存在，符号链接解析后的实际目录与原始配置共同进入带内容哈希的环境快照。Heartbeat 只在数据库中的 RunAttempt、Workspace、兼容 Agent 和 `verrail-host-runner` 系统唤醒回执一致且租约有效时读取该配置，不接受消息载荷提供的目录覆盖。远程环境拒绝使用该本地配置。执行结果关联同一环境快照，历史 DeploymentRevision 与 Run 不原地修改。
 

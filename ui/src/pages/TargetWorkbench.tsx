@@ -6,6 +6,7 @@ import {
   Check,
   CheckCircle2,
   Circle,
+  Download,
   GitPullRequest,
   LoaderCircle,
   MessageSquare,
@@ -57,7 +58,7 @@ const TARGET_TABS = [
 type TargetTab = (typeof TARGET_TABS)[number];
 
 type WorkbenchCommandRequest =
-  | { id: "create_graph_revision"; deploymentRevisionId: string }
+  | { id: "create_graph_revision"; deploymentRevisionId: string; completionDefinition: string }
   | { id: "activate_graph_revision"; graphRevisionId: string }
   | { id: "create_run"; graphRevisionId: string; workNodeId: string; deploymentRevisionId: string }
   | { id: "record_review"; submissionId: string; verdict: AdjudicationReviewVerdict; comments: string }
@@ -249,6 +250,8 @@ export function TargetWorkbench() {
   const activeTab: TargetTab = isTargetTab(tab) ? tab : "overview";
   const isRevision = Boolean(targetRevisionId);
   const [graphDeploymentRevisionId, setGraphDeploymentRevisionId] = useState("");
+  const [graphCompletionDefinition, setGraphCompletionDefinition] = useState<string | null>(null);
+  const deliveryCompletion = graphCompletionDefinition ?? t("targets.commands.defaultNodes.deliverCompletion");
   const [reviewVerdict, setReviewVerdict] = useState<AdjudicationReviewVerdict>("approved");
   const [reviewComments, setReviewComments] = useState("");
   const [lastCommand, setLastCommand] = useState<WorkbenchCommandEnvelope | null>(null);
@@ -329,7 +332,7 @@ export function TargetWorkbench() {
                 title: t("targets.commands.defaultNodes.deliver"),
                 responsiblePrincipal: { principalType: "agent", principalId: request.deploymentRevisionId },
                 dependencyNodeKeys: [],
-                completionDefinition: t("targets.commands.defaultNodes.deliverCompletion"),
+                completionDefinition: request.completionDefinition,
               },
               {
                 nodeKey: "verify",
@@ -441,6 +444,11 @@ export function TargetWorkbench() {
     onSettled: () => setPendingRunId(null),
     onSuccess: refreshWorkspace,
   });
+
+  useEffect(() => {
+    setGraphCompletionDefinition(null);
+    setGraphDeploymentRevisionId("");
+  }, [selectedCompanyId, targetId]);
 
   useEffect(() => {
     const breadcrumbs: Array<{ label: string; href?: string }> = [
@@ -676,6 +684,18 @@ export function TargetWorkbench() {
                       </div>
                       {command.id === "create_graph_revision" && command.state === "available" ? (
                         <div className="flex flex-wrap items-end gap-2 pl-7">
+                          <label className="w-full min-w-0 text-xs font-medium">
+                            <span className="mb-1 block text-muted-foreground">{t("targets.commands.deliveryCompletion")}</span>
+                            <textarea
+                              className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              aria-label={t("targets.commands.deliveryCompletion")}
+                              rows={3}
+                              maxLength={4000}
+                              value={deliveryCompletion}
+                              onChange={(event) => setGraphCompletionDefinition(event.target.value)}
+                              disabled={commandMutation.isPending}
+                            />
+                          </label>
                           <label className="min-w-52 flex-1 text-xs font-medium">
                             <span className="mb-1 block text-muted-foreground">{t("targets.commands.deploymentRevision")}</span>
                             <select
@@ -696,8 +716,8 @@ export function TargetWorkbench() {
                             type="button"
                             size="sm"
                             variant="outline"
-                            disabled={!selectedDeploymentRevisionId || commandMutation.isPending}
-                            onClick={() => submitCommand({ id: "create_graph_revision", deploymentRevisionId: selectedDeploymentRevisionId })}
+                            disabled={!selectedDeploymentRevisionId || !deliveryCompletion.trim() || deliveryCompletion.trim().length > 4000 || commandMutation.isPending}
+                            onClick={() => submitCommand({ id: "create_graph_revision", deploymentRevisionId: selectedDeploymentRevisionId, completionDefinition: deliveryCompletion.trim() })}
                           >
                             {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                             {isPending ? t("targets.commands.pending") : t("targets.commands.actions.create_graph_revision")}
@@ -946,6 +966,13 @@ export function TargetWorkbench() {
                           <span className="font-medium">{t("targets.assurance.revision", { number: revision.revisionNumber })}</span>
                           <span className="font-mono" title={revision.contentHash}>{truncateFact(revision.contentHash)}</span>
                           <span className="min-w-0 truncate font-mono" title={revision.contentRef}>{truncateFact(revision.contentRef)}</span>
+                          {revision.contentRef === `storage:${selectedCompanyId}/verrail/run-artifacts/sha256/${revision.contentHash}` ? (
+                            <Button asChild variant="ghost" size="icon" title={t("targets.assurance.downloadArtifact")}>
+                              <a href={`/api/workspaces/${selectedCompanyId}/artifact-revisions/${revision.id}/content`} aria-label={t("targets.assurance.downloadArtifact")}>
+                                <Download className="size-4" />
+                              </a>
+                            </Button>
+                          ) : null}
                           {revision.sourceRunId ? (
                             <span className="font-mono" title={revision.sourceRunId}>
                               {t("targets.assurance.sourceRun", { id: revision.sourceRunId.slice(0, 8) })}

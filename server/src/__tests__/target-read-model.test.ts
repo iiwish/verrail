@@ -130,6 +130,32 @@ describePostgres("native TargetReadModel", () => {
     expect(workspace.stages.find((stage) => stage.key === "execute")?.state).toBe("current");
   });
 
+  it("keeps historical failures inspectable without blocking a ready replacement graph", async () => {
+    const seeded = await seed();
+    await db.update(verrailRuns).set({ status: "failed" }).where(eq(verrailRuns.targetId, seeded.targetId));
+    const original = await db.select().from(verrailGraphRevisions).where(eq(verrailGraphRevisions.id, seeded.graphRevisionId)).then((rows) => rows[0]!);
+    const replacementId = randomUUID();
+    const replacementNodeId = randomUUID();
+    await db.update(verrailGraphRevisions).set({ status: "superseded" }).where(eq(verrailGraphRevisions.id, seeded.graphRevisionId));
+    await db.insert(verrailGraphRevisions).values({ ...original, id: replacementId, revisionNumber: 2 });
+    await db.insert(verrailWorkNodes).values({ ...seeded.node, id: replacementNodeId, graphRevisionId: replacementId, status: "ready" });
+    await db.update(verrailWorkGraphs).set({ activeGraphRevisionId: replacementId }).where(eq(verrailWorkGraphs.id, original.workGraphId));
+    const service = targetReadModelService(db);
+    const model = await service.getByTargetId(seeded.workspace.id, seeded.targetId);
+    const workspace = await service.workspace(model!);
+    expect(workspace.outcome.controls.find((control) => control.key === "graph_complete")?.state).toBe("required");
+    expect(workspace.outcome.state).not.toBe("blocked");
+    expect(workspace.runs).toEqual([expect.objectContaining({ status: "failed" })]);
+    expect(workspace.availableCommands.find((command) => command.id === "create_run"))
+      .toMatchObject({ state: "available", reason: null, resourceId: replacementNodeId });
+
+    for (const status of ["blocked", "canceled"] as const) {
+      await db.update(verrailWorkNodes).set({ status }).where(eq(verrailWorkNodes.id, replacementNodeId));
+      const blocked = await service.getByTargetId(seeded.workspace.id, seeded.targetId);
+      expect(blocked?.outcome.state).toBe("blocked");
+    }
+  });
+
   it("represents a missing active graph as native attention instead of compatibility work", async () => {
     const seeded = await seed();
     await db.delete(verrailRuns);
