@@ -1226,6 +1226,35 @@ describeEmbeddedPostgres("heartbeat bounded retry scheduling", () => {
     expect(issue?.executionRunId).toBe(retryRuns[0]?.id);
   });
 
+  it("does not schedule a max-turn continuation when no matching retry owns the changed issue lock", async () => {
+    const { issueId, runId, now } = await seedMaxTurnFixture();
+    await db
+      .update(issues)
+      .set({ executionRunId: null, updatedAt: now })
+      .where(eq(issues.id, issueId));
+
+    const scheduled = await heartbeat.scheduleBoundedRetry(runId, {
+      now,
+      retryReason: MAX_TURN_CONTINUATION_RETRY_REASON,
+      wakeReason: MAX_TURN_CONTINUATION_WAKE_REASON,
+      maxAttempts: 2,
+      delayMs: 1_000,
+    });
+
+    expect(scheduled).toMatchObject({
+      outcome: "not_scheduled",
+      errorCode: "issue_execution_lock_changed",
+      issueId,
+    });
+
+    const retryRuns = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(heartbeatRuns)
+      .where(eq(heartbeatRuns.retryOfRunId, runId))
+      .then((rows) => rows[0]?.count ?? 0);
+    expect(retryRuns).toBe(0);
+  });
+
   it("does not promote a duplicate max-turn continuation that does not own the issue lock", async () => {
     const { companyId, agentId, issueId, runId, now } = await seedMaxTurnFixture();
 

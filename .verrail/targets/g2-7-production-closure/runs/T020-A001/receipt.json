@@ -1,0 +1,41 @@
+{
+  "id": "T020-A001",
+  "target_id": "g2-7-production-closure",
+  "task_id": "T020",
+  "agent": "codex",
+  "runner": "local_direct_execute",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "output_commit": null,
+  "branch": "codex/g2-7-production-closure",
+  "changed_files": [
+    "server/src/__tests__/connector-routes.test.ts"
+  ],
+  "commands": [
+    {
+      "command": "pnpm test:run",
+      "status": "failed_before_fix",
+      "summary": "The serialized full suite stopped at connector-routes.test.ts because the stale assertion omitted normalized params.body."
+    },
+    {
+      "command": "pnpm --filter @paperclipai/server exec vitest run src/__tests__/connector-routes.test.ts",
+      "status": "passed",
+      "summary": "16 tests passed."
+    },
+    {
+      "command": "pnpm --filter @paperclipai/server typecheck",
+      "status": "passed"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    }
+  ],
+  "logs": [
+    ".verrail/targets/g2-7-production-closure/runs/T020-A001/logs/tdd.md",
+    ".verrail/targets/g2-7-production-closure/runs/T020-A001/logs/review.md"
+  ],
+  "errors": [],
+  "summary": "The connector route test now distinguishes its compatibility wire payload from the canonical Domain API command produced by validation."
+}

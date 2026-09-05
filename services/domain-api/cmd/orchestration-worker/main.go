@@ -10,6 +10,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/verrail/verrail/services/domain-api/internal/orchestration"
+	"github.com/verrail/verrail/services/domain-api/internal/target"
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
@@ -52,6 +54,17 @@ func main() {
 	temporalWorker := worker.New(temporalClient, config.TaskQueue, worker.Options{})
 	temporalWorker.RegisterWorkflowWithOptions(orchestration.TargetWorkflow, workflow.RegisterOptions{Name: orchestration.TargetWorkflowName})
 	temporalWorker.RegisterWorkflowWithOptions(orchestration.RunWorkflow, workflow.RegisterOptions{Name: orchestration.RunWorkflowName})
+	domainActivities := orchestration.NewDomainActivities(target.NewStore(pool), orchestration.DomainActivitiesConfig{
+		ServicePrincipalID:  config.ServicePrincipalID,
+		ExecutorPrincipalID: config.ExecutorPrincipalID,
+		RuntimeProfile:      "host_trusted",
+		LeaseDuration:       config.RunLeaseDuration,
+		GraceDuration:       config.RunGraceDuration,
+	})
+	temporalWorker.RegisterActivityWithOptions(domainActivities.ReconcileTarget, activity.RegisterOptions{Name: orchestration.ReconcileTargetActivityName})
+	temporalWorker.RegisterActivityWithOptions(domainActivities.EnsureRunAttempt, activity.RegisterOptions{Name: orchestration.EnsureRunAttemptActivityName})
+	temporalWorker.RegisterActivityWithOptions(domainActivities.RequestRunCancellation, activity.RegisterOptions{Name: orchestration.RequestRunCancellationActivityName})
+	temporalWorker.RegisterActivityWithOptions(domainActivities.ObserveRunRecovery, activity.RegisterOptions{Name: orchestration.ObserveRunRecoveryActivityName})
 	if err := temporalWorker.Start(); err != nil {
 		logger.Error("start Temporal worker", "error", err)
 		os.Exit(1)

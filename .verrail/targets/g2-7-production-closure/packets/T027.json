@@ -1,0 +1,14 @@
+{
+  "task_id": "T027",
+  "status": "needs_review",
+  "verification": "RED 复现默认 passed；修复后 6 项 UI 测试、UI typecheck、818 文件 token gates 和 diff check 通过。空指标提交 null，显式 0 保留为 0；部署门禁不变。技术自检不替代独立评审。",
+  "mode": "direct_execute",
+  "authority": "用户委托继续完成技术评测和配置；交付 Review、ActionApproval、Acceptance 仍保留给真人。",
+  "goal": "评测表单不预填通过或伪造未知测量值，使真实技术评测能通过现有 UI 如实记录。",
+  "observed_defect": "评测表单默认 passed/passed、质量 90、成本和延迟 0，并将空字符串转成 0；共享合同允许未知指标为 null。",
+  "allowed_files": ["ui/src/pages/VerrailAgents.tsx", "ui/src/pages/VerrailAgents.test.tsx", ".verrail/targets/g2-7-production-closure/**"],
+  "validation": ["默认未裁定/安全未运行且未知指标为空的 RED/GREEN 回归", "显式零指标保持 0", "既有评测提交和幂等测试", "UI typecheck、token gates"],
+  "non_goals": ["放宽部署评测门禁", "修改不可变 AgentVersion", "伪造通过评测或真人审批"],
+  "depends_on": ["T026 技术恢复已验证"],
+  "parallel": false
+}

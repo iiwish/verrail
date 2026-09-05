@@ -1,0 +1,27 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T018-A001",
+  "task_id": "T018",
+  "status": "passed_for_dependency_progression",
+  "failure_reproduction": {
+    "runner": "model and prompt mismatch launched heartbeat before the fix",
+    "ui": "publish dialog defaulted to codex-local instead of codex_local"
+  },
+  "fix": {
+    "runtime": "AgentVersion runtime equals compatibility adapterType",
+    "model": "AgentVersion model equals the explicit adapter model or the literal unconfigured state",
+    "prompt": "AgentVersion prompt equals the compatibility Agent capabilities prompt",
+    "dispatch_order": "mismatch fails before heartbeat invocation"
+  },
+  "verification": [
+    {"command": "runner focused suite", "status": "passed", "result": "10/10"},
+    {"command": "UI focused suite", "status": "passed", "result": "4/4"},
+    {"command": "server and UI typecheck", "status": "passed"},
+    {"command": "token and diff gates", "status": "passed"}
+  ],
+  "review": {
+    "critical_or_high_findings": 0,
+    "recommendation": "accept_for_dependency_progression",
+    "reference": ".verrail/targets/g2-7-production-closure/runs/T018-A001/logs/review.md"
+  }
+}

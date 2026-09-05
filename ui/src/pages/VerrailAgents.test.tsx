@@ -191,6 +191,57 @@ describe("VerrailAgents", () => {
     expect(findButton("Rollback")).toBeDefined();
   });
 
+  it("does not invent a verdict or measurements when opening an evaluation", async () => {
+    await renderAgents();
+    const evaluate = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.includes("Record evaluation"));
+    await act(async () => evaluate?.click());
+    const dialog = container.querySelector('[data-testid="dialog-content"]')!;
+    expect((dialog.querySelector('[name="status"]') as HTMLSelectElement).value).toBe("inconclusive");
+    expect((dialog.querySelector('[name="safetyStatus"]') as HTMLSelectElement).value).toBe("not_run");
+    for (const name of ["quality", "cost", "latency"]) {
+      expect((dialog.querySelector(`[name="${name}"]`) as HTMLInputElement).value).toBe("");
+    }
+    await act(async () => (dialog.querySelector('[type="submit"]') as HTMLButtonElement).click());
+    await flushReact();
+    expect(recordEvaluation).toHaveBeenCalledWith("workspace-1", expect.objectContaining({
+      status: "inconclusive", safetyStatus: "not_run",
+      qualityScore: null, costCents: null, latencyMs: null,
+    }), expect.any(String));
+  });
+
+  it("preserves explicitly measured zero metrics", async () => {
+    await renderAgents();
+    const evaluate = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.includes("Record evaluation"));
+    await act(async () => evaluate?.click());
+    const dialog = container.querySelector('[data-testid="dialog-content"]')!;
+    for (const name of ["quality", "cost", "latency"]) {
+      (dialog.querySelector(`[name="${name}"]`) as HTMLInputElement).value = "0";
+    }
+    await act(async () => (dialog.querySelector('[type="submit"]') as HTMLButtonElement).click());
+    await flushReact();
+    expect(recordEvaluation).toHaveBeenCalledWith("workspace-1", expect.objectContaining({
+      qualityScore: 0, costCents: 0, latencyMs: 0,
+    }), expect.any(String));
+  });
+
+  it("pins a local working directory in the deployment revision", async () => {
+    await renderAgents();
+    const deploy = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.includes("Create deployment"));
+    await act(async () => deploy?.click());
+    const dialog = container.querySelector('[data-testid="dialog-content"]')!;
+    const cwd = dialog.querySelector('input[name="cwd"]') as HTMLInputElement | null;
+    expect(cwd).not.toBeNull();
+    cwd!.value = "/workspace/verrail";
+    await act(async () => (dialog.querySelector('[type="submit"]') as HTMLButtonElement).click());
+    await flushReact();
+    expect(createDeployment).toHaveBeenCalledWith("workspace-1", expect.objectContaining({
+      agentVersionId: "version-2", runtimeConfig: {cwd: "/workspace/verrail"},
+    }), expect.any(String));
+  });
+
   it("records a failed evaluation through the dialog selects", async () => {
     await renderAgents();
 
@@ -228,6 +279,18 @@ describe("VerrailAgents", () => {
       }),
       expect.any(String),
     );
+  });
+
+  it("uses the real Codex adapter identifier when publishing a version", async () => {
+    await renderAgents();
+
+    const publishButton = Array.from(container.querySelectorAll("button"))
+      .find((candidate) => candidate.textContent?.includes("Publish version"));
+    await act(async () => publishButton?.click());
+    await flushReact();
+
+    const runtimeInput = container.querySelector('input[name="runtime"]') as HTMLInputElement | null;
+    expect(runtimeInput?.value).toBe("codex_local");
   });
 
   it("reuses one idempotency key across re-submits and renders the mutation error banner", async () => {

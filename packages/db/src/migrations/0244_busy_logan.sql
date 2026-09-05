@@ -1,0 +1,1 @@
+ALTER TABLE "verrail_action_requests" ADD COLUMN "expected_commit_ref" text;

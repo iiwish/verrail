@@ -1,0 +1,47 @@
+{
+  "id": "run-001",
+  "target_id": "g2-6-loop-verification",
+  "agent": "sisyphus",
+  "runner": "historical_local_execution",
+  "model": "unknown",
+  "status": "completed_reconstructed_from_existing_evidence",
+  "retrospective": true,
+  "reconstructed_at": "2026-09-04T03:34:10Z",
+  "base_commit": "f387757e46af936a4cdd710fbb804b3c0843a01e",
+  "output_commit": null,
+  "landed_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "branch": "historical_pr_13_branch_unknown",
+  "changed_files": [
+    "packages/shared/src/validators/connector.ts",
+    "server/src/routes/connector.ts",
+    "server/src/routes/openapi.ts",
+    "server/src/services/verrail-domain-api-client.ts",
+    "services/domain-api/internal/target/repo_binding.go",
+    "services/domain-api/internal/target/repo_binding_store.go",
+    "services/domain-api/internal/target/repo_binding_test.go"
+  ],
+  "commands": [
+    {
+      "command": "go vet/build/test and DB-gated repo-binding integration",
+      "status": "passed_as_recorded"
+    },
+    {
+      "command": "four fault demonstrations and worker freeze/kill-restart",
+      "status": "passed_with_documented_scope_as_recorded"
+    }
+  ],
+  "logs": [],
+  "errors": [
+    {
+      "type": "missing_evidence",
+      "summary": "Timeline references reviews/independent-review.md, but the file is absent from the repository."
+    }
+  ],
+  "reconstruction_sources": [
+    ".verrail/targets/g2-6-loop-verification/runs/run-001/evidence.json",
+    ".verrail/targets/g2-6-loop-verification/timeline.jsonl",
+    "git commit b46307dbd05a912c38a32395b88662952286fd58"
+  ],
+  "uncertainty": "The exact attempt output commit, branch name, original model, and claimed independent-review report are not available; only the landed merge commit and existing summary evidence are known.",
+  "summary": "Retrospective receipt for repo-binding provisioning and recorded loop recovery demonstrations."
+}

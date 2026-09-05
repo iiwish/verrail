@@ -41,6 +41,12 @@ This starts:
 
 `pnpm dev` runs the server in watch mode and restarts on changes from workspace packages (including adapter packages). Use `pnpm dev:once` to run without file watching.
 
+Each embedded Vite server keeps its dependency optimizer cache under the instance's
+`cache/vite/` directory, keyed by checkout and listening endpoint. Concurrent
+development and browser-acceptance servers do not share mutable optimizer files.
+The standalone UI dev server uses its own Vite cache. Temporary acceptance homes
+include their cache and are removed by the acceptance runner after it exits.
+
 ### Verrail durable orchestration
 
 Use the integrated development stack when exercising the complete Target handoff:

@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T011",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T011",
+  "status": "accepted_for_dependency_progression",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T12:56:38Z",
+  "trigger": {
+    "command": "pnpm test:run",
+    "result": "1 failed, 4,726 passed, 19 skipped",
+    "failure": "Concurrent max-turn continuation calls do not consistently coalesce to the same scheduled retry Run.",
+    "isolated_reproduction": "Failed again on the first isolated run."
+  },
+  "work_unit": {
+    "title": "修复并发 max-turn continuation 幂等收敛",
+    "goal": "Preserve fail-closed execution-lock authority while allowing a concurrent duplicate to discover and reuse the continuation created for the same source Run and attempt.",
+    "requirements": ["AC-04", "AC-10"],
+    "depends_on": ["T005"],
+    "blocks": ["T010"],
+    "parallel": false
+  },
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "allowed_files": [
+      "server/src/services/heartbeat.ts",
+      "server/src/__tests__/heartbeat-retry-scheduling.test.ts",
+      ".verrail/targets/g2-7-production-closure/packets/T011.json",
+      ".verrail/targets/g2-7-production-closure/runs/T011-A001/**",
+      ".verrail/targets/g2-7-production-closure/tasks.md",
+      ".verrail/targets/g2-7-production-closure/target.json",
+      ".verrail/targets/g2-7-production-closure/timeline.jsonl"
+    ],
+    "invariants": [
+      "An existing continuation is reusable only when company, source Run, retry reason, attempt, issue and live status all match.",
+      "If no matching continuation exists, the transaction must reject a changed issue execution lock.",
+      "Promotion of an already scheduled retry continues to enforce that the issue lock belongs to the retry Run."
+    ]
+  },
+  "tdd_plan": {
+    "required": true,
+    "red": "Retain the consistently failing concurrent coalescing test and add or retain changed-lock suppression coverage.",
+    "green": "Move execution-lock authority for scheduling into the serialized transaction after the matching-continuation lookup.",
+    "refactor": "Avoid duplicating or weakening the promotion gate."
+  },
+  "validation_loop": {
+    "commands": [
+      "isolated failing regression repeated five times",
+      "complete heartbeat-retry-scheduling test file",
+      "pnpm --filter @paperclipai/server typecheck",
+      "git diff --check"
+    ],
+    "retry_budget": 3
+  },
+  "evidence_contract": {
+    "run_id": "T011-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T011-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T011-A001/evidence.json",
+    "logs": ".verrail/targets/g2-7-production-closure/runs/T011-A001/logs/"
+  },
+  "stop_conditions": [
+    "A changed execution lock can schedule a new continuation.",
+    "Concurrent duplicates can create multiple live retry Runs or wakeup requests.",
+    "The fix changes retry promotion behavior."
+  ]
+}

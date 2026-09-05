@@ -1,0 +1,46 @@
+{
+  "id": "run-001",
+  "target_id": "g2-4-submission-acceptance",
+  "agent": "sisyphus",
+  "runner": "historical_local_execution",
+  "model": "unknown",
+  "status": "completed_reconstructed_from_existing_evidence",
+  "retrospective": true,
+  "reconstructed_at": "2026-09-04T03:34:10Z",
+  "base_commit": "c4d2ae2fb25fdf60e72671e45706f5a58799fe03",
+  "output_commit": null,
+  "landed_commit": "5162c89a17c3580b3522ddf98fd0e164f96290ae",
+  "branch": "feat/g2-3-artifact-evidence-contracts",
+  "changed_files": [
+    "packages/db/src/schema/verrail_adjudication.ts",
+    "packages/db/src/migrations/0240_fine_beast.sql",
+    "packages/shared/src/types/adjudication.ts",
+    "packages/shared/src/validators/adjudication.ts",
+    "services/domain-api/internal/target/adjudication.go",
+    "services/domain-api/internal/target/adjudication_store.go",
+    "services/domain-api/internal/target/adjudication_test.go",
+    "server/src/routes/adjudication.ts",
+    "server/src/services/target-read-model.ts",
+    "ui/src/pages/TargetWorkbench.tsx"
+  ],
+  "commands": [
+    {
+      "command": "schema, Go, shared, facade, UI, and repository verification recorded in evidence",
+      "status": "passed_with_environment_adjudication_as_recorded"
+    },
+    {
+      "command": "independent reviewer identity-binding regression verification",
+      "status": "passed_as_recorded"
+    }
+  ],
+  "logs": [],
+  "errors": [],
+  "reconstruction_sources": [
+    ".verrail/targets/g2-4-submission-acceptance/runs/run-001/evidence.json",
+    ".verrail/targets/g2-4-submission-acceptance/timeline.jsonl",
+    ".verrail/targets/g2-4-submission-acceptance/reviews/independent-review.md",
+    "git commit 5162c89a17c3580b3522ddf98fd0e164f96290ae"
+  ],
+  "uncertainty": "The exact attempt output commit and original model were not recorded; the landed merge commit is known. The runtime target never contained a DeliveryReview or Acceptance fact.",
+  "summary": "Retrospective receipt for the Submission, DeliveryReview, Acceptance, and reviewer-identity implementation."
+}

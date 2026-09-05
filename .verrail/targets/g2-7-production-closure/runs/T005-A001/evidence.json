@@ -1,0 +1,75 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T005-A001",
+  "task_id": "T005",
+  "status": "passed",
+  "deterministic_identity": {
+    "target_workflow": "verrail-target-v1:{workspaceId}:{targetId}",
+    "run_workflow": "verrail-run-v1:{workspaceId}:{runId}",
+    "reconcile_activity": "reconcile:{graphRevisionId}:{cycle}",
+    "ensure_attempt_activity": "ensure-attempt:{runId}:{attemptOrdinal}:{recoveryCycle}",
+    "cancel_activity": "request-cancel:{runId}",
+    "domain_idempotency": "GraphRevision plus WorkNode for Run creation, Run plus attempt ordinal for Attempt creation, and Run for cancellation"
+  },
+  "graph_and_gate_proof": {
+    "authority": "ReconcileTarget Activity calls Store commands; only ReconcileGraph mutates pending WorkNodes to ready and terminal result commands own completed, blocked, or canceled status",
+    "dependency": "PostgreSQL integration proves a dependent HumanTask stays pending until its AgentTask prerequisite is completed, then appears once in activatedNodeIds and waitingTaskNodeIds",
+    "duplicate_protection": "same-cycle reconciliation replays one receipt and one audit fact; a later cycle reports no repeated activation",
+    "waiting": "ready HumanTask and IntegrationTask are returned as waiting tasks; decision, review, acceptance, and policy gates are returned as waiting gates"
+  },
+  "run_recovery_proof": {
+    "attempt_reuse": "a service recovery check returns the live Attempt and current database grace expiry instead of creating a duplicate",
+    "heartbeat_extension": "the next recovery Timer uses the database grace expiry returned by EnsureRunAttempt",
+    "lease_expiry": "an expired lease is marked expired, its Attempt is superseded, and the recovered Attempt receives a larger fencing token",
+    "stale_fence": "the old Attempt event returns STALE_FENCING_TOKEN and remains non-authoritative",
+    "attempt_limit": "the Store rejects creation beyond maxAttempts with RUN_ATTEMPTS_EXHAUSTED; the Activity maps it to a non-retryable Temporal error",
+    "cancellation": "workflow cancellation uses a disconnected context and the stable cancellation Activity; domain cancellation remains requested, acknowledged, then terminated"
+  },
+  "temporal_proof": {
+    "activity_retry": "tests observe the same reconciliation Activity ID across a retry and a new ID only for the next deterministic cycle",
+    "child_workflow": "tests observe the Workspace-scoped stable RunWorkflow child ID",
+    "continue_as_new": "Target and Run tests decode carried state and prove queued signals, current Attempt identity, counters, and bounded event state survive",
+    "legacy_replay": "GetVersion gates preserve signal-only Target and Run histories at DefaultVersion; the captured v1 Target history replays",
+    "live_restart": "a local Temporal 1.8.2 server test stops and replaces the worker while TargetWorkflow and RunWorkflow are waiting, completes both, fetches server history, and replays each history without nondeterminism"
+  },
+  "verification": [
+    {
+      "command": "DATABASE_URL=<fresh-postgres> pnpm db:migrate",
+      "status": "passed",
+      "result": "241 migrations applied to an isolated PostgreSQL database"
+    },
+    {
+      "command": "VERRAIL_TEST_DATABASE_URL=<fresh-postgres> go test -count=1 ./...",
+      "status": "passed",
+      "result": "Domain API command, HTTP, orchestration, and target packages passed"
+    },
+    {
+      "command": "VERRAIL_TEST_TEMPORAL_ADDRESS=<local-temporal> go test -count=1 ./internal/orchestration -run 'Test(Target|Run)WorkflowSurvivesWorkerRestartAndReplaysLiveHistory' -v",
+      "status": "passed",
+      "result": "2 real Temporal worker restart and live-history replay tests passed"
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "result": "34 of 35 workspace projects"
+    },
+    {
+      "command": "go vet ./...",
+      "status": "passed"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    }
+  ],
+  "review": {
+    "critical_or_high_findings": 0,
+    "recommendation": "accept_for_dependency_progression",
+    "final_product_authority": "not_granted",
+    "reference": ".verrail/targets/g2-7-production-closure/runs/T005-A001/logs/review.md"
+  },
+  "residual_risks": [
+    "The restart proof uses the repository's pinned local Temporal development server, not a production high-availability Temporal cluster.",
+    "Remote Runner fleet scheduling and strong-isolation admission remain outside the G2.7 T005 HostTrusted scope."
+  ]
+}

@@ -16,6 +16,8 @@
  */
 
 import type {
+  ChannelIngressRequestV1,
+  ChannelIngressResultV1,
   PaperclipPluginManifestV1,
   PluginLauncherBounds,
   PluginLauncherRenderContextSnapshot,
@@ -48,6 +50,10 @@ import type {
   ExternalObjectMentionConfidence,
   ExternalObjectMentionSourceKind,
   EnvSecretRefBinding,
+  ChannelReplyRequestV1,
+  ChannelReplyResultV1,
+  ChannelWebhookRequestV1,
+  ChannelWebhookResultV1,
 } from "@paperclipai/shared";
 export type { PluginLauncherRenderContextSnapshot } from "@paperclipai/shared";
 
@@ -1245,6 +1251,10 @@ export interface HostToWorkerMethods {
   runJob: [params: RunJobParams, result: void];
   /** @see PLUGIN_SPEC.md §13.7 */
   handleWebhook: [params: PluginWebhookInput, result: void];
+  /** Versioned enterprise-channel callback dispatch. */
+  handleChannelWebhook: [params: ChannelWebhookRequestV1, result: ChannelWebhookResultV1];
+  /** Versioned enterprise-channel reply dispatch. */
+  handleChannelReply: [params: ChannelReplyRequestV1, result: ChannelReplyResultV1];
   /** Scoped plugin API route dispatch. */
   handleApiRequest: [params: PluginApiRequestInput, result: PluginApiResponse];
   /** @see PLUGIN_SPEC.md §13.8 */
@@ -1372,6 +1382,8 @@ export const HOST_TO_WORKER_OPTIONAL_METHODS: readonly HostToWorkerMethodName[] 
   "onEvent",
   "runJob",
   "handleWebhook",
+  "handleChannelWebhook",
+  "handleChannelReply",
   "handleApiRequest",
   "getData",
   "performAction",
@@ -1415,6 +1427,7 @@ export const HOST_TO_WORKER_OPTIONAL_METHODS: readonly HostToWorkerMethodName[] 
  * host to access platform services (state, entities, config, etc.).
  */
 export interface WorkerToHostMethods {
+  "channels.ingest": [params: ChannelIngressRequestV1, result: ChannelIngressResultV1];
   // Config
   "config.get": [params: { companyId?: string }, result: Record<string, unknown>];
 

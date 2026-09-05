@@ -28,6 +28,7 @@ import {
 } from "../constants.js";
 import { routineVariableSchema } from "./routine.js";
 import { externalObjectProviderKeySchema, externalObjectTypeSchema } from "./external-object.js";
+import { channelConnectorDeclarationV1Schema } from "./channel.js";
 
 // ---------------------------------------------------------------------------
 // JSON Schema placeholder – a permissive validator for JSON Schema objects
@@ -787,6 +788,7 @@ export const pluginManifestV1Schema = z.object({
   instanceConfigSchema: jsonSchemaSchema.optional(),
   jobs: z.array(pluginJobDeclarationSchema).optional(),
   webhooks: z.array(pluginWebhookDeclarationSchema).optional(),
+  channelConnectors: z.array(channelConnectorDeclarationV1Schema).optional(),
   tools: z.array(pluginToolDeclarationSchema).optional(),
   database: pluginDatabaseDeclarationSchema.optional(),
   apiRoutes: z.array(pluginApiRouteDeclarationSchema).optional(),
@@ -803,6 +805,32 @@ export const pluginManifestV1Schema = z.object({
     launchers: z.array(pluginLauncherDeclarationSchema).optional(),
   }).optional(),
 }).superRefine((manifest, ctx) => {
+  const connectorKeys = (manifest.channelConnectors ?? []).map((connector) => connector.connectorKey);
+  const duplicateConnectorKeys = connectorKeys.filter((key, index) => connectorKeys.indexOf(key) !== index);
+  if (duplicateConnectorKeys.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Duplicate channel connector keys: ${[...new Set(duplicateConnectorKeys)].join(", ")}`,
+      path: ["channelConnectors"],
+    });
+  }
+  const webhookKeys = new Set((manifest.webhooks ?? []).map((webhook) => webhook.endpointKey));
+  for (const [index, connector] of (manifest.channelConnectors ?? []).entries()) {
+    if (!manifest.capabilities.includes("webhooks.receive")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Capability 'webhooks.receive' is required when channelConnectors are declared",
+        path: ["channelConnectors", index],
+      });
+    }
+    if (!webhookKeys.has(connector.webhookEndpointKey)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Channel connector webhookEndpointKey "${connector.webhookEndpointKey}" must match a declared webhook endpoint`,
+        path: ["channelConnectors", index, "webhookEndpointKey"],
+      });
+    }
+  }
   // ── Entrypoint ↔ UI slot consistency ──────────────────────────────────
   // Plugins that declare UI slots must also declare a UI entrypoint so the
   // host knows where to load the bundle from (PLUGIN_SPEC.md §10.1).

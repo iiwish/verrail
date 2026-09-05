@@ -28,6 +28,10 @@ const EVALUATION_STATUSES: readonly EvaluationRunStatus[] = ["passed", "failed",
 const SAFETY_STATUSES: readonly SafetyStatus[] = ["passed", "failed", "not_run"];
 
 function field(form: FormData, name: string) { return String(form.get(name) ?? "").trim(); }
+function optionalMetric(form: FormData, name: string) {
+  const value = field(form, name);
+  return value === "" ? null : Number(value);
+}
 
 export function VerrailAgents() {
   const { t } = useTranslation();
@@ -35,15 +39,15 @@ export function VerrailAgents() {
   const queryClient = useQueryClient();
   const [dialog, setDialog] = useState<LifecycleDialog>(null);
   const [error, setError] = useState<string | null>(null);
-  const [evaluationStatus, setEvaluationStatus] = useState<EvaluationRunStatus>("passed");
-  const [safetyStatus, setSafetyStatus] = useState<SafetyStatus>("passed");
+  const [evaluationStatus, setEvaluationStatus] = useState<EvaluationRunStatus>("inconclusive");
+  const [safetyStatus, setSafetyStatus] = useState<SafetyStatus>("not_run");
   // Idempotency key is per dialog open, reused across re-submits until success.
   const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
   const openDialog = (next: LifecycleDialog) => {
     idempotencyKeyRef.current = crypto.randomUUID();
     if (next?.kind === "evaluate") {
-      setEvaluationStatus("passed");
-      setSafetyStatus("passed");
+      setEvaluationStatus("inconclusive");
+      setSafetyStatus("not_run");
     }
     setDialog(next);
   };
@@ -106,9 +110,9 @@ export function VerrailAgents() {
         candidateAgentVersionId: latestVersion.id,
         baselineAgentVersionId: dialog.definition.versions.at(-2)?.id ?? null,
         status: evaluationStatus,
-        qualityScore: Number(field(form, "quality")),
-        costCents: Number(field(form, "cost")),
-        latencyMs: Number(field(form, "latency")),
+        qualityScore: optionalMetric(form, "quality"),
+        costCents: optionalMetric(form, "cost"),
+        latencyMs: optionalMetric(form, "latency"),
         safetyStatus,
         summary: field(form, "summary") || null,
       }, idempotencyKeyRef.current));
@@ -121,7 +125,7 @@ export function VerrailAgents() {
         evaluationRunId: evaluation.id,
         name: field(form, "name"),
         isDefault: form.get("default") === "on",
-        runtimeConfig: {},
+        runtimeConfig: field(form, "cwd") ? {cwd: field(form, "cwd")} : {},
       }, idempotencyKeyRef.current));
     }
   };
@@ -189,7 +193,7 @@ export function VerrailAgents() {
           <DialogHeader><DialogTitle>{dialog?.kind === "definition" ? t("agentLifecycle.definitionDialog") : dialog?.kind === "publish" ? t("agentLifecycle.publishDialog") : dialog?.kind === "evaluate" ? t("agentLifecycle.evaluateDialog") : t("agentLifecycle.deployDialog")}</DialogTitle><DialogDescription>{t("agentLifecycle.dialogDescription")}</DialogDescription></DialogHeader>
           <form onSubmit={submit} className="grid gap-4">
             {dialog?.kind === "definition" && <><label className="grid gap-1 text-sm">{t("common.name")}<Input name="name" required defaultValue={dialog.definition?.name} /></label><label className="grid gap-1 text-sm">{t("common.description")}<Textarea name="description" defaultValue={dialog.definition?.description ?? ""} /></label></>}
-            {dialog?.kind === "publish" && <><label className="grid gap-1 text-sm">{t("agentLifecycle.publishFields.runtime")}<Input name="runtime" required defaultValue="codex-local" /></label><label className="grid gap-1 text-sm">{t("agentLifecycle.publishFields.model")}<Input name="model" required /></label><label className="grid gap-1 text-sm">{t("agentLifecycle.publishFields.prompt")}<Textarea name="prompt" required /></label><label className="grid gap-1 text-sm">{t("agentLifecycle.publishFields.skills")}<Input name="skills" placeholder="skill-a, skill-b" /></label><label className="grid gap-1 text-sm">{t("agentLifecycle.publishFields.tools")}<Input name="tools" placeholder="tool-a, tool-b" /></label><label className="grid gap-1 text-sm">{t("agentLifecycle.publishFields.capabilities")}<Input name="capabilities" /></label></>}
+            {dialog?.kind === "publish" && <><label className="grid gap-1 text-sm">{t("agentLifecycle.publishFields.runtime")}<Input name="runtime" required defaultValue="codex_local" /></label><label className="grid gap-1 text-sm">{t("agentLifecycle.publishFields.model")}<Input name="model" required /></label><label className="grid gap-1 text-sm">{t("agentLifecycle.publishFields.prompt")}<Textarea name="prompt" required /></label><label className="grid gap-1 text-sm">{t("agentLifecycle.publishFields.skills")}<Input name="skills" placeholder="skill-a, skill-b" /></label><label className="grid gap-1 text-sm">{t("agentLifecycle.publishFields.tools")}<Input name="tools" placeholder="tool-a, tool-b" /></label><label className="grid gap-1 text-sm">{t("agentLifecycle.publishFields.capabilities")}<Input name="capabilities" /></label></>}
             {dialog?.kind === "evaluate" && <>
               <label className="grid gap-1 text-sm">{t("agentLifecycle.evaluation.status")}
                 <select name="status" className="h-9 rounded-md border border-border bg-background px-3 text-sm" value={evaluationStatus} onChange={(event) => setEvaluationStatus(event.target.value as EvaluationRunStatus)}>
@@ -201,9 +205,9 @@ export function VerrailAgents() {
                   {SAFETY_STATUSES.map((value) => <option key={value} value={value}>{t(`agentLifecycle.safetyStatuses.${value}`)}</option>)}
                 </select>
               </label>
-              <label className="grid gap-1 text-sm">{t("agentLifecycle.quality")}<Input name="quality" type="number" min="0" max="100" required defaultValue="90" /></label><label className="grid gap-1 text-sm">{t("agentLifecycle.cost")}<Input name="cost" type="number" min="0" required defaultValue="0" /></label><label className="grid gap-1 text-sm">{t("agentLifecycle.latency")}<Input name="latency" type="number" min="0" required defaultValue="0" /></label><label className="grid gap-1 text-sm">{t("common.summary")}<Textarea name="summary" /></label>
+              <label className="grid gap-1 text-sm">{t("agentLifecycle.quality")}<Input name="quality" type="number" min="0" max="100" /></label><label className="grid gap-1 text-sm">{t("agentLifecycle.cost")}<Input name="cost" type="number" min="0" /></label><label className="grid gap-1 text-sm">{t("agentLifecycle.latency")}<Input name="latency" type="number" min="0" /></label><label className="grid gap-1 text-sm">{t("common.summary")}<Textarea name="summary" /></label>
             </>}
-            {dialog?.kind === "deploy" && <><label className="grid gap-1 text-sm">{t("common.name")}<Input name="name" required defaultValue={`${dialog.definition.name} production`} /></label><label className="flex items-center gap-2 text-sm"><input name="default" type="checkbox" />{t("agentLifecycle.makeDefault")}</label></>}
+            {dialog?.kind === "deploy" && <><label className="grid gap-1 text-sm">{t("common.name")}<Input name="name" required defaultValue={`${dialog.definition.name} production`} /></label><label className="grid gap-1 text-sm">{t("agentLifecycle.localWorkingDirectory")}<Input name="cwd" pattern="/.*" required={dialog.definition.versions.at(-1)?.runtime === "codex_local"} /></label><label className="flex items-center gap-2 text-sm"><input name="default" type="checkbox" />{t("agentLifecycle.makeDefault")}</label></>}
             <DialogFooter><Button type="button" variant="outline" onClick={() => setDialog(null)}>{t("common.cancel")}</Button><Button type="submit" disabled={mutation.isPending}>{mutation.isPending ? t("common.saving") : t("common.confirm")}</Button></DialogFooter>
           </form>
         </DialogContent>

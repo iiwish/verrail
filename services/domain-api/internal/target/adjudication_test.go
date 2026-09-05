@@ -254,6 +254,46 @@ func TestAdjudicationRequestHashStableForReplay(t *testing.T) {
 	require.NotEqual(t, build().RequestHash, mutated.RequestHash)
 }
 
+func TestCandidateLifecycleCommandValidation(t *testing.T) {
+	build := func(principal Principal) AgentLifecycleCommand[CreateSubmissionInput] {
+		return AgentLifecycleCommand[CreateSubmissionInput]{
+			WorkspaceID:    "11111111-1111-4111-8111-111111111111",
+			Principal:      principal,
+			IdempotencyKey: "candidate-command-1",
+			CommandType:    AdjudicationSubmissionCreateCommand,
+			Input: CreateSubmissionInput{
+				TargetID:            "22222222-2222-4222-8222-222222222222",
+				TargetRevisionID:    "55555555-5555-4555-8555-555555555555",
+				ArtifactRevisionIDs: []string{"33333333-3333-4333-8333-333333333333"},
+			},
+		}
+	}
+
+	for _, principalType := range []string{"user", "agent", "service"} {
+		t.Run(principalType+" may author a candidate", func(t *testing.T) {
+			command := build(Principal{Type: principalType, ID: principalType + "-1"})
+			require.NoError(t, ValidateCandidateLifecycleCommand(&command))
+			require.NotEmpty(t, command.RequestHash)
+		})
+	}
+
+	for _, principal := range []Principal{
+		{Type: "", ID: "missing-type"},
+		{Type: "bot", ID: "unsupported-type"},
+		{Type: "agent", ID: ""},
+	} {
+		command := build(principal)
+		err := ValidateCandidateLifecycleCommand(&command)
+		requireLifecycleCode(t, err, "CANDIDATE_COMMAND_FORBIDDEN")
+	}
+
+	for _, principalType := range []string{"agent", "service"} {
+		command := build(Principal{Type: principalType, ID: principalType + "-1"})
+		err := ValidateAgentLifecycleCommand(&command)
+		requireLifecycleCode(t, err, "AGENT_LIFECYCLE_FORBIDDEN")
+	}
+}
+
 type adjudicationTestHarness struct {
 	*assuranceTestHarness
 	reviewerPrincipalID     string
@@ -294,6 +334,21 @@ func buildAdjudicationCommandFor[T any](t *testing.T, h *adjudicationTestHarness
 	return command
 }
 
+func buildAdjudicationCandidateCommandFor[T any](t *testing.T, h *adjudicationTestHarness, principalType, principalID, commandType string, input T) AgentLifecycleCommand[T] {
+	t.Helper()
+	idempotencyKey := "adjudication-it-" + mustNewUUID(t)
+	h.adjudicationReceiptKeys = append(h.adjudicationReceiptKeys, idempotencyKey)
+	command := AgentLifecycleCommand[T]{
+		WorkspaceID:    h.workspaceID,
+		Principal:      Principal{Type: principalType, ID: principalID},
+		IdempotencyKey: idempotencyKey,
+		CommandType:    commandType,
+		Input:          input,
+	}
+	require.NoError(t, ValidateCandidateLifecycleCommand(&command))
+	return command
+}
+
 func (h *adjudicationTestHarness) createSubmission(t *testing.T, input CreateSubmissionInput) (AgentLifecycleResult, error) {
 	t.Helper()
 	require.NoError(t, ValidateCreateSubmissionInput(&input))
@@ -323,9 +378,15 @@ func (h *adjudicationTestHarness) accept(t *testing.T, principalID, submissionID
 func (h *adjudicationTestHarness) cleanup(pool *pgxpool.Pool) {
 	ctx := context.Background()
 	cleanups := []func(){
-		func() { _, _ = pool.Exec(ctx, `delete from verrail_acceptances where id = any($1::uuid[])`, h.aggregateIDs) },
-		func() { _, _ = pool.Exec(ctx, `delete from verrail_delivery_reviews where id = any($1::uuid[])`, h.aggregateIDs) },
-		func() { _, _ = pool.Exec(ctx, `delete from verrail_submissions where id = any($1::uuid[])`, h.aggregateIDs) },
+		func() {
+			_, _ = pool.Exec(ctx, `delete from verrail_acceptances where id = any($1::uuid[])`, h.aggregateIDs)
+		},
+		func() {
+			_, _ = pool.Exec(ctx, `delete from verrail_delivery_reviews where id = any($1::uuid[])`, h.aggregateIDs)
+		},
+		func() {
+			_, _ = pool.Exec(ctx, `delete from verrail_submissions where id = any($1::uuid[])`, h.aggregateIDs)
+		},
 		func() {
 			_, _ = pool.Exec(ctx, `delete from verrail_agent_command_receipts where workspace_id=$1 and idempotency_key = any($2)`, h.workspaceID, h.adjudicationReceiptKeys)
 		},
@@ -391,6 +452,39 @@ func TestAdjudicationContractsIntegration(t *testing.T) {
 	}
 	ownerSubmissionID := ""
 	ownerAcceptanceID := ""
+
+	t.Run("service submission keeps its authenticated principal and one human can govern it", func(t *testing.T) {
+		input := submissionInput
+		input.CommitRef = ptr("git:service-candidate")
+		command := buildAdjudicationCandidateCommandFor(t, harness, "service", "graph-orchestrator", AdjudicationSubmissionCreateCommand, input)
+		submission, err := harness.store.CreateSubmission(ctx, command)
+		require.NoError(t, err)
+		harness.aggregateIDs = append(harness.aggregateIDs, submission.ResourceID)
+
+		var submitterType, submitterID string
+		require.NoError(t, pool.QueryRow(ctx, `select submitted_by_principal_type,submitted_by_principal_id from verrail_submissions where id=$1`, submission.ResourceID).Scan(&submitterType, &submitterID))
+		require.Equal(t, "service", submitterType)
+		require.Equal(t, "graph-orchestrator", submitterID)
+		replayed, err := harness.store.CreateSubmission(ctx, command)
+		require.NoError(t, err)
+		require.True(t, replayed.Replayed)
+		require.Equal(t, submission.ResourceID, replayed.ResourceID)
+
+		for _, table := range []string{"verrail_agent_command_receipts", "verrail_audit_events"} {
+			var principalType, principalID string
+			query := `select principal_type,principal_id from ` + table + ` where workspace_id=$1 and idempotency_key=$2`
+			require.NoError(t, pool.QueryRow(ctx, query, harness.workspaceID, command.IdempotencyKey).Scan(&principalType, &principalID))
+			require.Equal(t, "service", principalType)
+			require.Equal(t, "graph-orchestrator", principalID)
+		}
+
+		review, err := harness.recordReview(t, harness.principalID, submission.ResourceID, "approved")
+		require.NoError(t, err)
+		harness.aggregateIDs = append(harness.aggregateIDs, review.ResourceID)
+		acceptance, err := harness.accept(t, harness.principalID, submission.ResourceID, review.ResourceID)
+		require.NoError(t, err)
+		harness.aggregateIDs = append(harness.aggregateIDs, acceptance.ResourceID)
+	})
 
 	t.Run("full happy path from submission to owner acceptance", func(t *testing.T) {
 		submission, err := harness.createSubmission(t, submissionInput)

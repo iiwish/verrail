@@ -105,6 +105,18 @@ export type {
   PluginApiResponse,
 } from "./define-plugin.js";
 export type {
+  ChannelConnectorDeclarationV1,
+  ChannelConnectionBindingV1,
+  ChannelWebhookRequestV1,
+  ChannelWebhookResultV1,
+  ChannelMessageEventV1,
+  ChannelReplyRequestV1,
+  ChannelReplyResultV1,
+  ChannelIngressRequestV1,
+  ChannelIngressResultV1,
+} from "@paperclipai/shared";
+export { CHANNEL_CONNECTOR_CONTRACT_VERSION } from "@paperclipai/shared";
+export type {
   TestHarness,
   TestHarnessOptions,
   TestHarnessLogEntry,

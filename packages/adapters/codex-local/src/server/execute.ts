@@ -45,6 +45,7 @@ import {
   resolvePaperclipDesiredSkillNames,
   renderTemplate,
   renderPaperclipWakePrompt,
+  selectPaperclipTaskMarkdown,
   isPaperclipRecoveryWakePayload,
   stringifyPaperclipWakePayload,
   DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
@@ -1175,6 +1176,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       ? ""
       : renderTemplate(promptTemplate, templateData);
     const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
+    const nativeTaskContext = asString(context.verrailRunAttemptId, "").trim()
+      ? selectPaperclipTaskMarkdown(context, { resumedSession: Boolean(sessionId) })
+      : "";
     const prompt = joinPromptSections([
       promptInstructionsPrefix,
       renderedBootstrapPrompt,
@@ -1182,6 +1186,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       codexFallbackHandoffNote,
       sessionHandoffNote,
       renderedPrompt,
+      nativeTaskContext,
     ]);
     const promptMetrics = {
       promptChars: prompt.length,

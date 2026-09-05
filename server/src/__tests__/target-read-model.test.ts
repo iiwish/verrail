@@ -12,12 +12,15 @@ import {
   verrailActionRequests,
   verrailArtifactRevisions,
   verrailArtifacts,
+  verrailAuditEvents,
   verrailClaims,
   verrailDeliveryReviews,
   verrailEffectReceipts,
   verrailEvidence,
   verrailGithubRepoBindings,
   verrailGraphRevisions,
+  verrailHumanWorkResults,
+  verrailIntegrationAttempts,
   verrailIntegrationRuns,
   verrailRuns,
   verrailSubmissions,
@@ -43,10 +46,13 @@ describePostgres("native TargetReadModel", () => {
   }, 30_000);
 
   afterEach(async () => {
+    await db.delete(verrailAuditEvents);
     await db.delete(verrailEffectReceipts);
     await db.delete(verrailActionApprovals);
     await db.delete(verrailActionRequests);
+    await db.delete(verrailIntegrationAttempts);
     await db.delete(verrailIntegrationRuns);
+    await db.delete(verrailHumanWorkResults);
     await db.delete(verrailGithubRepoBindings);
     await db.delete(toolConnections);
     await db.delete(toolApplications);
@@ -104,7 +110,7 @@ describePostgres("native TargetReadModel", () => {
     await db.insert(verrailGraphRevisions).values({ id: graphRevisionId, workspaceId: workspace.id, targetId, targetRevisionId, workGraphId, revisionNumber: 1, status: "active", contentHash: "graph-hash", createdByPrincipalType: "user", createdByPrincipalId: "user-1", activatedAt: new Date() });
     const node = await db.insert(verrailWorkNodes).values({ id: randomUUID(), workspaceId: workspace.id, targetId, graphRevisionId, nodeKey: "implement", kind: "agent_task", title: "Implement", stageKey: "execute", status: "running", dependencyNodeKeys: [], completionDefinition: "Return a reviewable result." }).returning().then((rows) => rows[0]!);
     await db.insert(verrailRuns).values({ id: randomUUID(), workspaceId: workspace.id, targetId, targetRevisionId, graphRevisionId, workNodeId: node.id, kind: "agent", status: "queued", actorPrincipalType: "agent", actorPrincipalId: randomUUID(), attemptCount: 1, idempotencyKey: `run:${randomUUID()}` });
-    return { workspace, targetId, targetRevisionId };
+    return { workspace, targetId, targetRevisionId, graphRevisionId, node };
   }
 
   it("reads only native Target, graph, WorkNode, and Run facts", async () => {
@@ -137,6 +143,62 @@ describePostgres("native TargetReadModel", () => {
     expect(workspace.attention).toEqual([expect.objectContaining({ kind: "draft_graph" })]);
   });
 
+  it("offers activation only for a non-empty draft graph revision", async () => {
+    const seeded = await seed();
+    await db.delete(verrailRuns);
+    await db.delete(verrailWorkNodes);
+    await db.update(verrailGraphRevisions).set({ status: "draft", activatedAt: null })
+      .where(eq(verrailGraphRevisions.id, seeded.graphRevisionId));
+    await db.update(verrailWorkGraphs).set({ activeGraphRevisionId: null, status: "draft" })
+      .where(eq(verrailWorkGraphs.targetId, seeded.targetId));
+    const service = targetReadModelService(db);
+    const emptyModel = await service.getByTargetId(seeded.workspace.id, seeded.targetId);
+    const emptyWorkspace = await service.workspace(emptyModel!);
+    expect(emptyWorkspace.availableCommands.find((command) => command.id === "activate_graph_revision"))
+      .toMatchObject({ state: "blocked", resourceId: null });
+
+    await db.insert(verrailWorkNodes).values({
+      id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId,
+      graphRevisionId: seeded.graphRevisionId, nodeKey: "implement", kind: "agent_task",
+      title: "Implement", stageKey: "execute", status: "pending", dependencyNodeKeys: [],
+      completionDefinition: "Return a reviewable result.",
+    });
+    const readyModel = await service.getByTargetId(seeded.workspace.id, seeded.targetId);
+    const readyWorkspace = await service.workspace(readyModel!);
+    expect(readyWorkspace.availableCommands.find((command) => command.id === "activate_graph_revision"))
+      .toMatchObject({ state: "available", resourceId: seeded.graphRevisionId });
+  });
+
+  it("offers a newer non-empty draft even when a previous graph is active", async () => {
+    const seeded = await seed();
+    const draftId = randomUUID();
+    const original = await db.select().from(verrailGraphRevisions).where(eq(verrailGraphRevisions.id, seeded.graphRevisionId)).then((rows) => rows[0]!);
+    await db.insert(verrailGraphRevisions).values({ ...original, id: draftId, revisionNumber: 2, status: "draft", activatedAt: null });
+    await db.insert(verrailWorkNodes).values({
+      ...seeded.node, id: randomUUID(), graphRevisionId: draftId, status: "pending",
+    });
+    const service = targetReadModelService(db);
+    const model = await service.getByTargetId(seeded.workspace.id, seeded.targetId);
+    const workspace = await service.workspace(model!);
+    expect(workspace.availableCommands.find((command) => command.id === "activate_graph_revision"))
+      .toMatchObject({ state: "available", resourceId: draftId });
+    expect(workspace.graph?.activeGraphRevisionId).toBe(seeded.graphRevisionId);
+
+    await db.update(verrailGraphRevisions).set({ status: "superseded" }).where(eq(verrailGraphRevisions.id, draftId));
+    const after = await service.workspace((await service.getByTargetId(seeded.workspace.id, seeded.targetId))!);
+    expect(after.availableCommands.find((command) => command.id === "activate_graph_revision"))
+      .toMatchObject({ state: "completed", resourceId: seeded.graphRevisionId });
+  });
+
+  it("does not trust a stored accepted label without reconstructible closure facts", async () => {
+    const seeded = await seed();
+    await expect(db.update(verrailTargets).set({ status: "not-a-target-state" }).where(eq(verrailTargets.id, seeded.targetId))).rejects.toThrow();
+    await db.update(verrailTargets).set({ status: "accepted" }).where(eq(verrailTargets.id, seeded.targetId));
+    const model = await targetReadModelService(db).getByTargetId(seeded.workspace.id, seeded.targetId);
+    expect(model?.status).toBe("active");
+    expect(model?.outcome.validAcceptanceId).toBe(null);
+  });
+
   it("keeps assurance sets honest-empty when no facts exist", async () => {
     const seeded = await seed();
     const service = targetReadModelService(db);
@@ -150,6 +212,7 @@ describePostgres("native TargetReadModel", () => {
     expect(workspace.reviews).toEqual([]);
     expect(workspace.acceptances).toEqual([]);
     expect(workspace.integrationRuns).toEqual([]);
+    expect(workspace.humanWorkResults).toEqual([]);
     expect(workspace.actionRequests).toEqual([]);
     expect(workspace.effectReceipts).toEqual([]);
     expect(workspace.workspaceBinding).toEqual(null);
@@ -300,6 +363,141 @@ describePostgres("native TargetReadModel", () => {
         invalidReason: "superseded_submission",
       }),
     ]);
+  });
+
+  it("derives accepted only from complete current facts and invalidates stale content", async () => {
+    const seeded = await seed();
+    await db.delete(verrailRuns);
+    await db.update(verrailWorkNodes).set({ status: "completed" }).where(eq(verrailWorkNodes.id, seeded.node.id));
+    const artifact = await db.insert(verrailArtifacts).values({
+      id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId,
+      kind: "code_change", title: "Release patch", createdByPrincipalType: "agent", createdByPrincipalId: "agent-1",
+    }).returning().then((rows) => rows[0]!);
+    const artifactRevision = await db.insert(verrailArtifactRevisions).values({
+      id: randomUUID(), workspaceId: seeded.workspace.id, artifactId: artifact.id, revisionNumber: 1,
+      contentHash: "1".repeat(64), contentRef: "git:one", sourceRunId: null, sourceWorkNodeId: null,
+      baseRevisionId: null, createdByPrincipalType: "agent", createdByPrincipalId: "agent-1",
+    }).returning().then((rows) => rows[0]!);
+    const claim = await db.insert(verrailClaims).values({
+      id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId,
+      targetRevisionId: seeded.targetRevisionId, criterionKey: "criterion-1", title: "Native only",
+      status: "supported", createdByPrincipalType: "agent", createdByPrincipalId: "agent-1",
+    }).returning().then((rows) => rows[0]!);
+    const evidence = await db.insert(verrailEvidence).values({
+      id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId, claimId: claim.id,
+      kind: "ci_result", producerPrincipalType: "service", producerPrincipalId: "ci",
+      objectHash: "2".repeat(64), reference: "ci:green", trustLevel: "high",
+      createdByPrincipalType: "service", createdByPrincipalId: "ci",
+    }).returning().then((rows) => rows[0]!);
+    const verification = await db.insert(verrailVerificationResults).values({
+      id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId, claimId: claim.id,
+      verdict: "passed", verifierVersion: "ci.v1", evidenceIds: [evidence.id], waiverReference: null,
+      resultHash: "3".repeat(64), createdByPrincipalType: "service", createdByPrincipalId: "ci",
+    }).returning().then((rows) => rows[0]!);
+    const submission = await db.insert(verrailSubmissions).values({
+      id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId,
+      targetRevisionId: seeded.targetRevisionId, artifactRevisionIds: [artifactRevision.id],
+      verificationResultIds: [verification.id], commitRef: "git:one", environmentSummary: "test",
+      notes: null, submissionHash: "4".repeat(64), submittedByPrincipalType: "agent",
+      submittedByPrincipalId: "agent-1",
+    }).returning().then((rows) => rows[0]!);
+    const review = await db.insert(verrailDeliveryReviews).values({
+      id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId, submissionId: submission.id,
+      reviewerPrincipalType: "user", reviewerPrincipalId: "reviewer", verdict: "approved",
+      risks: null, unprovenItems: [], comments: null, reviewHash: "5".repeat(64),
+    }).returning().then((rows) => rows[0]!);
+    const service = targetReadModelService(db);
+    const awaitingAcceptance = await service.getByTargetId(seeded.workspace.id, seeded.targetId);
+    const awaitingAcceptanceWorkspace = await service.workspace(awaitingAcceptance!);
+    expect(awaitingAcceptanceWorkspace.availableCommands.find(
+      (command) => command.id === "accept_submission",
+    )).toMatchObject({ state: "available", resourceId: review.id });
+    const acceptance = await db.insert(verrailAcceptances).values({
+      id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId,
+      targetRevisionId: seeded.targetRevisionId, submissionId: submission.id, reviewId: review.id,
+      authority: "outcome_owner", acceptedByPrincipalType: "user", acceptedByPrincipalId: "user-1",
+      acceptanceHash: "6".repeat(64),
+    }).returning().then((rows) => rows[0]!);
+    await db.insert(verrailAuditEvents).values({
+      id: randomUUID(), workspaceId: seeded.workspace.id, principalType: "agent", principalId: "agent-1",
+      eventType: "adjudication.submission_created.v1", aggregateType: "submission", aggregateId: submission.id,
+      idempotencyKey: "target-read-model-timeline", payload: { targetId: seeded.targetId },
+    });
+
+    const accepted = await service.getByTargetId(seeded.workspace.id, seeded.targetId);
+    expect(accepted).toMatchObject({
+      status: "accepted",
+      outcome: { state: "accepted", latestSubmissionId: submission.id, latestReviewId: review.id, validAcceptanceId: acceptance.id },
+      attentionSummary: { total: 0, highestSeverity: null },
+    });
+    const acceptedWorkspace = await service.workspace(accepted!);
+    expect(acceptedWorkspace.availableCommands.find((command) => command.id === "accept_submission")?.state).toBe("completed");
+    expect(acceptedWorkspace.timeline).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "submission_created", aggregateType: "submission", aggregateId: submission.id }),
+    ]));
+
+    await db.insert(verrailArtifactRevisions).values({
+      id: randomUUID(), workspaceId: seeded.workspace.id, artifactId: artifact.id, revisionNumber: 2,
+      contentHash: "7".repeat(64), contentRef: "git:two", sourceRunId: null, sourceWorkNodeId: null,
+      baseRevisionId: artifactRevision.id, createdByPrincipalType: "agent", createdByPrincipalId: "agent-1",
+    });
+    const invalidated = await service.getByTargetId(seeded.workspace.id, seeded.targetId);
+    expect(invalidated).toMatchObject({ status: "blocked", outcome: { state: "blocked", validAcceptanceId: null } });
+    const invalidatedWorkspace = await service.workspace(invalidated!);
+    expect(invalidatedWorkspace.attention).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "invalidated_decision", resourceType: "acceptance", resourceId: acceptance.id }),
+    ]));
+    expect(invalidatedWorkspace.outcome.controls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "artifact_revisions_current", state: "invalidated" }),
+    ]));
+  });
+
+  it("surfaces unknown external effects as critical native attention", async () => {
+    const seeded = await seed();
+    const submission = await db.insert(verrailSubmissions).values({
+      id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId,
+      targetRevisionId: seeded.targetRevisionId, artifactRevisionIds: [randomUUID()], verificationResultIds: [],
+      commitRef: "git:one", environmentSummary: null, notes: null, submissionHash: "8".repeat(64),
+      submittedByPrincipalType: "agent", submittedByPrincipalId: "agent-1",
+    }).returning().then((rows) => rows[0]!);
+    const action = await db.insert(verrailActionRequests).values({
+      id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId, submissionId: submission.id,
+      actionType: "create_pull_request", params: { title: "Ship", head: "feat", base: "main" },
+      paramsHash: "9".repeat(64), expectedCommitRef: "git:one", status: "unknown_effect",
+      providerMarker: "a".repeat(64), executionAttemptCount: 1, executionStartedAt: new Date(),
+      lastReconciledAt: new Date(), requestedByPrincipalType: "agent", requestedByPrincipalId: "agent-1",
+    }).returning().then((rows) => rows[0]!);
+    const service = targetReadModelService(db);
+    const model = await service.getByTargetId(seeded.workspace.id, seeded.targetId);
+    expect(model).toMatchObject({ status: "blocked", outcome: { state: "blocked" } });
+    expect((await service.workspace(model!)).attention).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "unknown_effect", severity: "critical", resourceId: action.id }),
+    ]));
+  });
+
+  it("projects a pending pull request action as requiring approval", async () => {
+    const seeded = await seed();
+    const submission = await db.insert(verrailSubmissions).values({
+      id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId,
+      targetRevisionId: seeded.targetRevisionId, artifactRevisionIds: [randomUUID()], verificationResultIds: [],
+      commitRef: "git:one", environmentSummary: null, notes: null, submissionHash: "8".repeat(64),
+      submittedByPrincipalType: "agent", submittedByPrincipalId: "agent-1",
+    }).returning().then((rows) => rows[0]!);
+    const action = await db.insert(verrailActionRequests).values({
+      id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId, submissionId: submission.id,
+      actionType: "create_pull_request", params: { title: "Ship", head: "feat", base: "main" },
+      paramsHash: "9".repeat(64), expectedCommitRef: "git:one", status: "pending_approval",
+      requestedByPrincipalType: "agent", requestedByPrincipalId: "agent-1",
+    }).returning().then((rows) => rows[0]!);
+
+    const service = targetReadModelService(db);
+    const model = await service.getByTargetId(seeded.workspace.id, seeded.targetId);
+    const workspace = await service.workspace(model!);
+    expect(workspace.attention).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "action_approval_required", resourceId: action.id }),
+    ]));
+    expect(workspace.availableCommands.find((command) => command.id === "approve_action"))
+      .toMatchObject({ state: "available", resourceId: action.id });
   });
 
   it("renders assurance facts from the verrail assurance tables only", async () => {
@@ -491,20 +689,86 @@ describePostgres("native TargetReadModel", () => {
       createdByPrincipalType: "user",
       createdByPrincipalId: "user-1",
     }).returning().then((rows) => rows[0]!);
+    const application = await db.insert(toolApplications).values({
+      id: randomUUID(),
+      companyId: seeded.workspace.id,
+      name: "GitHub",
+      type: "mcp_http",
+    }).returning().then((rows) => rows[0]!);
+    const connection = await db.insert(toolConnections).values({
+      id: randomUUID(),
+      companyId: seeded.workspace.id,
+      applicationId: application.id,
+      name: "GitHub REST",
+      uid: "github-rest",
+      transport: "rest_api",
+    }).returning().then((rows) => rows[0]!);
     const integrationRun = await db.insert(verrailIntegrationRuns).values({
       id: randomUUID(),
       workspaceId: seeded.workspace.id,
       targetId: seeded.targetId,
+      targetRevisionId: seeded.targetRevisionId,
+      graphRevisionId: seeded.graphRevisionId,
       claimId: claim.id,
-      workNodeId: null,
+      workNodeId: seeded.node.id,
+      connectorVersion: "github.v1",
+      connectionId: connection.id,
       provider: "github",
       externalRef: "ci:run:1",
+      commitRef: "0123456789abcdef",
+      criterionKey: "criterion-1",
+      environmentRef: "github:owner/repo:main",
       conclusion: "success",
       evidenceId: evidence.id,
       verificationResultId: verificationResult.id,
+      providerReceipt: { runId: 1 },
+      idempotencyKey: "integration:1",
       createdByPrincipalType: "user",
       createdByPrincipalId: "user-1",
       createdAt: new Date("2026-09-01T08:01:00Z"),
+    }).returning().then((rows) => rows[0]!);
+    const integrationAttempt = await db.insert(verrailIntegrationAttempts).values({
+      id: randomUUID(),
+      workspaceId: seeded.workspace.id,
+      integrationRunId: integrationRun.id,
+      attemptNumber: 1,
+      connectorVersion: "github.v1",
+      connectionId: connection.id,
+      providerRef: "ci:run:1",
+      idempotencyKey: "integration:1",
+      providerReceipt: { runId: 1 },
+      status: "succeeded",
+      createdAt: new Date("2026-09-01T08:01:00Z"),
+    }).returning().then((rows) => rows[0]!);
+    const humanNode = await db.insert(verrailWorkNodes).values({
+      id: randomUUID(),
+      workspaceId: seeded.workspace.id,
+      targetId: seeded.targetId,
+      graphRevisionId: seeded.graphRevisionId,
+      nodeKey: "human-check",
+      kind: "human_task",
+      title: "Human check",
+      stageKey: "verify",
+      status: "completed",
+      dependencyNodeKeys: [],
+      completionDefinition: "Record the human result.",
+    }).returning().then((rows) => rows[0]!);
+    const humanWorkResult = await db.insert(verrailHumanWorkResults).values({
+      id: randomUUID(),
+      workspaceId: seeded.workspace.id,
+      targetId: seeded.targetId,
+      targetRevisionId: seeded.targetRevisionId,
+      graphRevisionId: seeded.graphRevisionId,
+      workNodeId: humanNode.id,
+      submittedByPrincipalType: "user",
+      submittedByPrincipalId: "user-1",
+      inputHash: "f".repeat(64),
+      result: { decision: "ready" },
+      artifactRevisionId: null,
+      attachmentHashes: ["0".repeat(64)],
+      resultHash: "1".repeat(64),
+      idempotencyKey: "human-result:1",
+      createdAt: new Date("2026-09-01T08:02:00Z"),
     }).returning().then((rows) => rows[0]!);
     const submission = await db.insert(verrailSubmissions).values({
       id: randomUUID(),
@@ -521,8 +785,9 @@ describePostgres("native TargetReadModel", () => {
       submittedByPrincipalId: "agent-1",
       createdAt: new Date("2026-09-01T09:00:00Z"),
     }).returning().then((rows) => rows[0]!);
-    const params = { title: "Add connector", head: "feat/connector", base: "main" };
+    const params = { title: "Add connector", head: "feat/connector", base: "main", body: "## Verification\n\n- Passed" };
     const paramsHash = "d".repeat(64);
+    const providerMarker = "a".repeat(64);
     const actionRequest = await db.insert(verrailActionRequests).values({
       id: randomUUID(),
       workspaceId: seeded.workspace.id,
@@ -531,7 +796,12 @@ describePostgres("native TargetReadModel", () => {
       actionType: "create_pull_request",
       params,
       paramsHash,
+      expectedCommitRef: "git:rev-1",
       status: "executed",
+      providerMarker,
+      executionAttemptCount: 1,
+      executionStartedAt: new Date("2026-09-01T09:09:00Z"),
+      lastReconciledAt: new Date("2026-09-01T09:10:00Z"),
       requestedByPrincipalType: "agent",
       requestedByPrincipalId: "agent-1",
       createdAt: new Date("2026-09-01T09:05:00Z"),
@@ -553,6 +823,7 @@ describePostgres("native TargetReadModel", () => {
       actionRequestId: actionRequest.id,
       actionType: "create_pull_request",
       provider: "github",
+      providerMarker,
       externalObjectId: "42",
       externalUrl: "https://github.com/owner/repo/pull/42",
       effectHash: "e".repeat(64),
@@ -560,20 +831,6 @@ describePostgres("native TargetReadModel", () => {
       createdByPrincipalType: "user",
       createdByPrincipalId: "user-1",
       createdAt: new Date("2026-09-01T09:10:00Z"),
-    }).returning().then((rows) => rows[0]!);
-    const application = await db.insert(toolApplications).values({
-      id: randomUUID(),
-      companyId: seeded.workspace.id,
-      name: "GitHub",
-      type: "mcp_http",
-    }).returning().then((rows) => rows[0]!);
-    const connection = await db.insert(toolConnections).values({
-      id: randomUUID(),
-      companyId: seeded.workspace.id,
-      applicationId: application.id,
-      name: "GitHub REST",
-      uid: "github-rest",
-      transport: "rest_api",
     }).returning().then((rows) => rows[0]!);
     await db.insert(verrailGithubRepoBindings).values({
       id: randomUUID(),
@@ -590,17 +847,46 @@ describePostgres("native TargetReadModel", () => {
     const model = await service.getByTargetId(seeded.workspace.id, seeded.targetId);
     const workspace = await service.workspace(model!);
 
+    expect(workspace.actionRequests[0]?.params.body).toBe("## Verification\n\n- Passed");
+
     expect(workspace.integrationRuns).toEqual([expect.objectContaining({
       id: integrationRun.id,
       targetId: seeded.targetId,
+      targetRevisionId: seeded.targetRevisionId,
+      graphRevisionId: seeded.graphRevisionId,
       claimId: claim.id,
-      workNodeId: null,
+      workNodeId: seeded.node.id,
+      connectorVersion: "github.v1",
+      connectionId: connection.id,
       provider: "github",
       externalRef: "ci:run:1",
+      commitRef: "0123456789abcdef",
+      criterionKey: "criterion-1",
+      environmentRef: "github:owner/repo:main",
       conclusion: "success",
       evidenceId: evidence.id,
       verificationResultId: verificationResult.id,
+      providerReceipt: { runId: 1 },
+      attempts: [expect.objectContaining({
+        id: integrationAttempt.id,
+        attemptNumber: 1,
+        connectorVersion: "github.v1",
+        connectionId: connection.id,
+        providerRef: "ci:run:1",
+        status: "succeeded",
+      })],
       createdBy: { principalType: "user", principalId: "user-1" },
+    })]);
+    expect(workspace.humanWorkResults).toEqual([expect.objectContaining({
+      id: humanWorkResult.id,
+      targetRevisionId: seeded.targetRevisionId,
+      graphRevisionId: seeded.graphRevisionId,
+      workNodeId: humanNode.id,
+      submittedBy: { principalType: "user", principalId: "user-1" },
+      inputHash: "f".repeat(64),
+      result: { decision: "ready" },
+      attachmentHashes: ["0".repeat(64)],
+      resultHash: "1".repeat(64),
     })]);
     expect(workspace.actionRequests).toEqual([expect.objectContaining({
       id: actionRequest.id,
@@ -608,7 +894,10 @@ describePostgres("native TargetReadModel", () => {
       actionType: "create_pull_request",
       params,
       paramsHash,
+      expectedCommitRef: "git:rev-1",
       status: "executed",
+      providerMarker,
+      executionAttemptCount: 1,
       requestedBy: { principalType: "agent", principalId: "agent-1" },
       approvals: {
         count: 1,
@@ -630,6 +919,7 @@ describePostgres("native TargetReadModel", () => {
       actionRequestId: actionRequest.id,
       actionType: "create_pull_request",
       provider: "github",
+      providerMarker,
       externalObjectId: "42",
       effectHash: "e".repeat(64),
       createdBy: { principalType: "user", principalId: "user-1" },
@@ -638,6 +928,8 @@ describePostgres("native TargetReadModel", () => {
 
     const connectorTables = [
       "verrail_integration_runs",
+      "verrail_integration_attempts",
+      "verrail_human_work_results",
       "verrail_action_requests",
       "verrail_action_approvals",
       "verrail_effect_receipts",

@@ -1,0 +1,78 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T003-A001",
+  "task_id": "T003",
+  "status": "passed",
+  "principal_matrix": {
+    "candidate_commands": {
+      "submission": ["user", "agent", "service"],
+      "action_request": ["user", "agent", "service"]
+    },
+    "human_commands": {
+      "delivery_review": ["user"],
+      "action_approval": ["user"],
+      "acceptance": ["user_outcome_owner"]
+    }
+  },
+  "identity_proof": {
+    "source": "authenticated Express actor or internal Domain API principal headers",
+    "body_override": "rejected by strict TypeScript schemas and Go DisallowUnknownFields decoder",
+    "workspace_scope": "Agent checked by facade company scope and Go agents.company_id; Service checked against active Workspace",
+    "persisted_facts": [
+      "verrail_submissions.submitted_by_principal_type/id",
+      "verrail_action_requests.requested_by_principal_type/id",
+      "verrail_agent_command_receipts.principal_type/id",
+      "verrail_audit_events.principal_type/id"
+    ],
+    "service_replay": "same Service principal and idempotency key replayed the stored Submission receipt"
+  },
+  "rejection_proof": {
+    "unsupported_candidate": "403 CANDIDATE_COMMAND_FORBIDDEN",
+    "agent_or_service_human_command": "403 AGENT_LIFECYCLE_FORBIDDEN",
+    "body_principal_spoof": "400 TARGET_COMMAND_INVALID or shared schema validation error",
+    "cross_workspace_agent": "403 before Domain API call",
+    "user_self_review": "403 ADJUDICATION_REVIEWER_NOT_INDEPENDENT",
+    "user_self_approval": "403 CONNECTOR_APPROVER_NOT_INDEPENDENT",
+    "non_owner_acceptance": "403 ADJUDICATION_NOT_OUTCOME_OWNER"
+  },
+  "tdd": {
+    "red": "Go candidate validator was undefined and candidate handlers returned 403; TypeScript candidate routes returned 403 (2 failed, 22 passed).",
+    "green": "Go focused packages passed; PostgreSQL integration persisted Service principals; TypeScript focused suite passed 3 files and 26 tests.",
+    "refactor": "Shared structural lifecycle validation extracted while separate authority allowlists remain."
+  },
+  "verification": [
+    {
+      "command": "VERRAIL_TEST_DATABASE_URL=<ephemeral-postgres> pnpm test:domain-api",
+      "status": "passed",
+      "result": "all Go packages passed; database-backed target and orchestration tests executed"
+    },
+    {
+      "command": "pnpm --filter @paperclipai/server exec vitest run src/services/verrail-domain-api-client.test.ts src/__tests__/adjudication-routes.test.ts src/__tests__/connector-routes.test.ts",
+      "status": "passed",
+      "result": "3 files, 26 tests"
+    },
+    {
+      "command": "pnpm --filter @paperclipai/shared typecheck",
+      "status": "passed"
+    },
+    {
+      "command": "pnpm --filter @paperclipai/server typecheck",
+      "status": "passed"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    }
+  ],
+  "review": {
+    "critical_or_high_findings": 0,
+    "recommendation": "accept_for_dependency_progression",
+    "final_product_authority": "not_granted",
+    "reference": ".verrail/targets/g2-7-production-closure/runs/T003-A001/logs/review.md"
+  },
+  "residual_risks": [
+    "Service principals use the current internal Domain API bearer trust boundary rather than a database membership registry.",
+    "Real worker-originated Service calls will be exercised after T005 adds active orchestration."
+  ]
+}
+

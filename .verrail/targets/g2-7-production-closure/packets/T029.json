@@ -1,0 +1,12 @@
+{
+  "task_id": "T029",
+  "status": "needs_review",
+  "technical_checks": "40 项组合回归、追加 23 项绑定回归、server/UI typecheck、UI build、818 文件 token gate 通过。真实 UI 部署固定 cwd；原生第二次尝试已在该目录运行真实 gpt-5.6-sol，环境哈希见 T010-A002/technical-progress.json。独立交付审查仍待完成。",
+  "mode": "direct_execute",
+  "authority": "用户委托 G2.7 真实技术执行与配置，继续保持真人交付决策边界。",
+  "goal": "从 DeploymentRevision 固定本地 cwd，通过原生受信唤醒绑定到真实执行环境，而非使用兼容智能体的可变默认目录。",
+  "allowed_files": ["server/src/services/verrail-native-workspace*", "server/src/services/verrail-run-executor*", "server/src/services/heartbeat.ts", "ui/src/pages/VerrailAgents*", "ui/src/i18n/locales/en.json", "ui/src/i18n/locales/zh-CN.json", "docs/temporal-target-workflow.md", ".verrail/targets/g2-7-production-closure/**"],
+  "validation": ["部署界面固定 cwd 的 RED/GREEN 测试", "可信唤醒、Workspace/Agent/Attempt 绑定与目录校验负例", "执行器事实回归", "server/UI typecheck 与 build、token gates", "真实原生运行的 cwd 和环境哈希"],
+  "non_goals": ["支持远程目录", "接受消息载荷提供的任意运行配置", "修改历史版本", "绕过 ActionApproval 或 Acceptance"],
+  "parallel": false
+}

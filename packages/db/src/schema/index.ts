@@ -42,6 +42,7 @@ export {
   verrailTargetCreationDraftRevisions,
   type VerrailTargetDraftDefinitionRecord,
 } from "./verrail_conversations.js";
+export { verrailChannelEvents } from "./verrail_channel.js";
 export {
   verrailWorkGraphs,
   verrailGraphRevisions,
@@ -76,11 +77,13 @@ export {
 } from "./verrail_adjudication.js";
 export {
   verrailIntegrationRuns,
+  verrailIntegrationAttempts,
   verrailActionRequests,
   verrailActionApprovals,
   verrailEffectReceipts,
   verrailGithubRepoBindings,
 } from "./verrail_connector.js";
+export { verrailHumanWorkResults } from "./verrail_work_results.js";
 export { projectMemberships } from "./project_memberships.js";
 export { documentMemberships } from "./document_memberships.js";
 export { projectWorkspaces } from "./project_workspaces.js";

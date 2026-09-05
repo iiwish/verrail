@@ -117,6 +117,14 @@ export function VerrailChat() {
     queryFn: () => conversationsApi.get(selectedCompanyId!, conversationId!),
     enabled: Boolean(selectedCompanyId && conversationId),
   });
+  const draftsQuery = useQuery({
+    queryKey: selectedCompanyId && conversationId
+      ? queryKeys.conversations.drafts(selectedCompanyId, conversationId)
+      : ["conversations", "drafts", "disabled"],
+    queryFn: () => conversationsApi.listTargetDrafts(selectedCompanyId!, conversationId!),
+    enabled: Boolean(selectedCompanyId && conversationId),
+    refetchInterval: 10_000,
+  });
 
   const createMutation = useMutation({
     mutationFn: () => conversationsApi.create(selectedCompanyId!),
@@ -330,6 +338,26 @@ export function VerrailChat() {
       <div className="relative min-h-0 flex-1">
         <div className="absolute inset-0 overflow-y-auto scrollbar-auto-hide">
           <div className="mx-auto flex min-h-full max-w-4xl flex-col px-5 py-6 md:px-8">
+            {draftsQuery.isError ? (
+              <div role="alert" className="mb-4 flex items-center gap-3 border-b border-border pb-3 text-sm text-destructive">
+                <p className="min-w-0 flex-1">{t("targets.create.errors.loadDrafts")}</p>
+                <Button variant="ghost" size="icon-sm" title={t("common.retry")} aria-label={t("common.retry")} onClick={() => void draftsQuery.refetch()}>
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : null}
+            {(draftsQuery.data ?? []).filter((draft) => ["collecting", "ready_for_confirmation", "converting"].includes(draft.status)).map((draft) => (
+              <div key={draft.id} className="mb-4 flex flex-wrap items-center gap-3 border-b border-border pb-3">
+                <div className="min-w-0 flex-1">
+                  <p className="break-words text-sm font-medium">{draft.activeRevision.definition.title ?? t("targets.create.untitledDraft")}</p>
+                  <p className="break-all font-mono text-xs text-muted-foreground">{draft.id} · v{draft.activeRevisionNumber}</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => openNewTarget({ conversationId: draft.conversationId, draft })}>
+                  <Target className="h-4 w-4" />
+                  {t("targets.create.resume")}
+                </Button>
+              </div>
+            ))}
             {!hasMessages ? (
               <div className="flex flex-1 items-center justify-center py-10">
                 <div className="max-w-xl text-center">

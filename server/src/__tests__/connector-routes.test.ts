@@ -5,6 +5,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const WORKSPACE_ID = "4f9f7195-e5ce-4fd0-b8c7-ed151347e6e0";
 const FOREIGN_WORKSPACE_ID = "5f9f7195-e5ce-4fd0-b8c7-ed151347e6e0";
 const TARGET_ID = "b80f266a-87ea-47f0-81bd-c4f04e4d576e";
+const TARGET_REVISION_ID = "c80f266a-87ea-47f0-81bd-c4f04e4d576e";
+const GRAPH_REVISION_ID = "d80f266a-87ea-47f0-81bd-c4f04e4d576e";
+const WORK_NODE_ID = "e80f266a-87ea-47f0-81bd-c4f04e4d576e";
 const CLAIM_ID = "6cf266a0-87ea-47f0-81bd-c4f04e4d576e";
 const SUBMISSION_ID = "3df266a0-87ea-47f0-81bd-c4f04e4d576e";
 const ACTION_REQUEST_ID = "7df266a0-87ea-47f0-81bd-c4f04e4d576e";
@@ -19,13 +22,34 @@ function receipt(resourceType: string, resourceId: string, replayed = false) {
 function integrationRunBody() {
   return {
     targetId: TARGET_ID,
+    targetRevisionId: TARGET_REVISION_ID,
+    graphRevisionId: GRAPH_REVISION_ID,
     claimId: CLAIM_ID,
-    workNodeId: null,
+    workNodeId: WORK_NODE_ID,
+    connectorVersion: "github.v1",
+    connectionId: CONNECTION_ID,
     provider: "github",
     externalRef: "ci:run:1",
+    commitRef: "0123456789abcdef",
+    criterionKey: "criterion-1",
+    environmentRef: "github:owner/repo:main",
     conclusion: "success",
     objectHash: "a".repeat(64),
     reference: "ci:job:1",
+    providerReceipt: { runId: 1, workflow: "verify" },
+  };
+}
+
+function humanWorkResultBody() {
+  return {
+    targetId: TARGET_ID,
+    targetRevisionId: TARGET_REVISION_ID,
+    graphRevisionId: GRAPH_REVISION_ID,
+    workNodeId: WORK_NODE_ID,
+    inputHash: "b".repeat(64),
+    result: { decision: "ready" },
+    artifactRevisionId: null,
+    attachmentHashes: ["c".repeat(64)],
   };
 }
 
@@ -35,6 +59,11 @@ function actionRequestBody() {
     submissionId: SUBMISSION_ID,
     params: { title: "Add connector", head: "feat/connector", base: "main" },
   };
+}
+
+function normalizedActionRequestBody() {
+  const input = actionRequestBody();
+  return { ...input, params: { ...input.params, body: "" } };
 }
 
 function approveBody() {
@@ -57,7 +86,14 @@ function boardActor(companyIds: string[] = [WORKSPACE_ID]) {
   };
 }
 
-async function createApp(domainApi: any, actor: Record<string, unknown> = boardActor()) {
+async function createApp(
+  domainApi: any,
+  actor: Record<string, unknown> = boardActor(),
+  resolveGithubCredential = vi.fn().mockResolvedValue({
+    connectionId: CONNECTION_ID,
+    authorization: "Bearer github-ephemeral-sentinel",
+  }),
+) {
   const [{ connectorRoutes }, { errorHandler }] = await Promise.all([
     import("../routes/connector.js"),
     import("../middleware/index.js"),
@@ -68,7 +104,7 @@ async function createApp(domainApi: any, actor: Record<string, unknown> = boardA
     (req as any).actor = actor;
     next();
   });
-  app.use("/api", connectorRoutes({ domainApiClient: domainApi }));
+  app.use("/api", connectorRoutes({ domainApiClient: domainApi, resolveGithubCredential }));
   app.use(errorHandler);
   return app;
 }
@@ -76,6 +112,7 @@ async function createApp(domainApi: any, actor: Record<string, unknown> = boardA
 describe("connector routes", () => {
   const domainApi = {
     recordIntegrationRun: vi.fn(),
+    recordHumanWorkResult: vi.fn(),
     requestPullRequestAction: vi.fn(),
     approveAction: vi.fn(),
     executeAction: vi.fn(),
@@ -84,13 +121,14 @@ describe("connector routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     domainApi.recordIntegrationRun.mockResolvedValue(receipt("integration_run", CLAIM_ID));
+    domainApi.recordHumanWorkResult.mockResolvedValue(receipt("human_work_result", WORK_NODE_ID));
     domainApi.requestPullRequestAction.mockResolvedValue(receipt("action_request", ACTION_REQUEST_ID));
     domainApi.approveAction.mockResolvedValue(receipt("action_approval", APPROVAL_ID));
     domainApi.executeAction.mockResolvedValue(receipt("effect_receipt", RECEIPT_ID));
     domainApi.createGithubRepoBinding.mockResolvedValue(receipt("repo_binding", CONNECTION_ID));
   });
 
-  it("proxies the four connector commands to the Domain API", async () => {
+  it("proxies connector commands to the Domain API", async () => {
     const app = await createApp(domainApi);
 
     const integrationRun = await request(app)
@@ -99,6 +137,13 @@ describe("connector routes", () => {
       .send(integrationRunBody());
     expect(integrationRun.status).toBe(201);
     expect(integrationRun.body).toEqual(receipt("integration_run", CLAIM_ID));
+
+    const humanWorkResult = await request(app)
+      .post(`/api/workspaces/${WORKSPACE_ID}/human-work-results`)
+      .set("Idempotency-Key", "connector:human-work-result:record")
+      .send(humanWorkResultBody());
+    expect(humanWorkResult.status).toBe(201);
+    expect(humanWorkResult.body).toEqual(receipt("human_work_result", WORK_NODE_ID));
 
     const actionRequest = await request(app)
       .post(`/api/workspaces/${WORKSPACE_ID}/pull-request-actions`)
@@ -128,9 +173,16 @@ describe("connector routes", () => {
       idempotencyKey: "connector:integration-run:record",
       input: integrationRunBody(),
     }));
+    expect(domainApi.recordHumanWorkResult).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: WORKSPACE_ID,
+      principalType: "user",
+      principalId: "user-1",
+      idempotencyKey: "connector:human-work-result:record",
+      input: humanWorkResultBody(),
+    }));
     expect(domainApi.requestPullRequestAction).toHaveBeenCalledWith(expect.objectContaining({
       idempotencyKey: "connector:action-request:create",
-      input: actionRequestBody(),
+      input: normalizedActionRequestBody(),
     }));
     expect(domainApi.approveAction).toHaveBeenCalledWith(expect.objectContaining({
       actionRequestId: ACTION_REQUEST_ID,
@@ -140,8 +192,50 @@ describe("connector routes", () => {
     expect(domainApi.executeAction).toHaveBeenCalledWith(expect.objectContaining({
       actionRequestId: ACTION_REQUEST_ID,
       idempotencyKey: "connector:action:execute",
+      githubConnectionId: CONNECTION_ID,
+      githubAuthorization: "Bearer github-ephemeral-sentinel",
       input: { actionRequestId: ACTION_REQUEST_ID },
     }));
+  });
+
+  it("resolves the GitHub credential only for execution and never accepts one from the body", async () => {
+    const resolveGithubCredential = vi.fn().mockResolvedValue({
+      connectionId: CONNECTION_ID,
+      authorization: "Bearer github-ephemeral-sentinel",
+    });
+    const app = await createApp(domainApi, boardActor(), resolveGithubCredential);
+
+    const response = await request(app)
+      .post(`/api/workspaces/${WORKSPACE_ID}/pull-request-actions/${ACTION_REQUEST_ID}/executions`)
+      .set("Idempotency-Key", "connector:action:ephemeral")
+      .send({ actionRequestId: ACTION_REQUEST_ID });
+
+    expect(response.status).toBe(201);
+    expect(resolveGithubCredential).toHaveBeenCalledWith(WORKSPACE_ID, expect.objectContaining({
+      actorType: "user",
+      actorId: "user-1",
+    }));
+    expect(domainApi.executeAction).toHaveBeenCalledWith(expect.objectContaining({
+      githubAuthorization: "Bearer github-ephemeral-sentinel",
+    }));
+
+    const spoofed = await request(app)
+      .post(`/api/workspaces/${WORKSPACE_ID}/pull-request-actions/${ACTION_REQUEST_ID}/executions`)
+      .set("Idempotency-Key", "connector:action:spoofed-credential")
+      .send({ actionRequestId: ACTION_REQUEST_ID, githubAuthorization: "Bearer attacker" });
+    expect(spoofed.status).toBe(400);
+  });
+
+  it("does not call the Domain API when credential resolution fails", async () => {
+    const resolveGithubCredential = vi.fn().mockRejectedValue(new Error("credential unavailable"));
+    const app = await createApp(domainApi, boardActor(), resolveGithubCredential);
+    const response = await request(app)
+      .post(`/api/workspaces/${WORKSPACE_ID}/pull-request-actions/${ACTION_REQUEST_ID}/executions`)
+      .set("Idempotency-Key", "connector:action:no-credential")
+      .send({ actionRequestId: ACTION_REQUEST_ID });
+
+    expect(response.status).toBe(500);
+    expect(domainApi.executeAction).not.toHaveBeenCalled();
   });
 
   it("returns 200 for replayed command receipts", async () => {
@@ -199,6 +293,88 @@ describe("connector routes", () => {
       .send(integrationRunBody());
     expect(response.status).toBe(403);
     expect(domainApi.recordIntegrationRun).not.toHaveBeenCalled();
+  });
+
+  it("keeps HumanWorkResult human-only", async () => {
+    const app = await createApp(domainApi, {
+      type: "agent",
+      agentId: "agent-1",
+      companyId: WORKSPACE_ID,
+      source: "agent_key",
+      keyId: "key-1",
+    });
+    const response = await request(app)
+      .post(`/api/workspaces/${WORKSPACE_ID}/human-work-results`)
+      .set("Idempotency-Key", "connector:human-work-result:agent")
+      .send(humanWorkResultBody());
+    expect(response.status).toBe(403);
+    expect(domainApi.recordHumanWorkResult).not.toHaveBeenCalled();
+  });
+
+  it("allows an authenticated workspace agent to create an action request", async () => {
+    const app = await createApp(domainApi, {
+      type: "agent",
+      agentId: "agent-1",
+      companyId: WORKSPACE_ID,
+      source: "agent_key",
+      keyId: "key-1",
+    });
+    const response = await request(app)
+      .post(`/api/workspaces/${WORKSPACE_ID}/pull-request-actions`)
+      .set("Idempotency-Key", "connector:action-request:agent")
+      .send(actionRequestBody());
+
+    expect(response.status).toBe(201);
+    expect(domainApi.requestPullRequestAction).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: WORKSPACE_ID,
+      principalType: "agent",
+      principalId: "agent-1",
+    }));
+  });
+
+  it("keeps action approval human-only", async () => {
+    const app = await createApp(domainApi, {
+      type: "agent",
+      agentId: "agent-1",
+      companyId: WORKSPACE_ID,
+      source: "agent_key",
+      keyId: "key-1",
+    });
+    const response = await request(app)
+      .post(`/api/workspaces/${WORKSPACE_ID}/pull-request-actions/${ACTION_REQUEST_ID}/approvals`)
+      .set("Idempotency-Key", "connector:action:approve-agent")
+      .send({ ...approveBody(), approverPrincipalId: "agent-1" });
+
+    expect(response.status).toBe(403);
+    expect(domainApi.approveAction).not.toHaveBeenCalled();
+  });
+
+  it("rejects an agent creating an action request across workspace boundaries", async () => {
+    const app = await createApp(domainApi, {
+      type: "agent",
+      agentId: "agent-1",
+      companyId: FOREIGN_WORKSPACE_ID,
+      source: "agent_key",
+      keyId: "key-1",
+    });
+    const response = await request(app)
+      .post(`/api/workspaces/${WORKSPACE_ID}/pull-request-actions`)
+      .set("Idempotency-Key", "connector:action-request:foreign-agent")
+      .send(actionRequestBody());
+
+    expect(response.status).toBe(403);
+    expect(domainApi.requestPullRequestAction).not.toHaveBeenCalled();
+  });
+
+  it("rejects action requester principal fields supplied in the body", async () => {
+    const app = await createApp(domainApi);
+    const response = await request(app)
+      .post(`/api/workspaces/${WORKSPACE_ID}/pull-request-actions`)
+      .set("Idempotency-Key", "connector:action-request:spoof")
+      .send({ ...actionRequestBody(), principalType: "service", principalId: "spoofed-service" });
+
+    expect(response.status).toBe(400);
+    expect(domainApi.requestPullRequestAction).not.toHaveBeenCalled();
   });
 
   it("rejects board users outside the workspace with 403", async () => {

@@ -41,6 +41,14 @@ export {
 export { projectService } from "./projects.js";
 export { targetReadModelService } from "./target-read-model.js";
 export {
+  createDrizzleVerrailRunExecutorStore,
+  createVerrailRunExecutor,
+  type NativeHeartbeatExecutor,
+  type NativeHeartbeatRun,
+  type NativeRunLeaseCandidate,
+  type VerrailRunExecutorStore,
+} from "./verrail-run-executor.js";
+export {
   createVerrailDomainApiClient,
   type VerrailDomainApiClient,
   type CreateNativeTargetCommand,

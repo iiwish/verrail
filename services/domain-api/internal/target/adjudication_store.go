@@ -10,7 +10,7 @@ import (
 
 func (store *Store) CreateSubmission(ctx context.Context, command AgentLifecycleCommand[CreateSubmissionInput]) (AgentLifecycleResult, error) {
 	meta := lifecycleMeta(command)
-	tx, replay, err := store.beginAgentCommand(ctx, meta)
+	tx, replay, err := store.beginCandidateCommand(ctx, meta)
 	if err != nil {
 		return AgentLifecycleResult{}, err
 	}
@@ -75,7 +75,7 @@ func (store *Store) CreateSubmission(ctx context.Context, command AgentLifecycle
 		return AgentLifecycleResult{}, err
 	}
 	submissionID, _ := NewUUID()
-	if _, err := tx.Exec(ctx, `insert into verrail_submissions(id,workspace_id,target_id,target_revision_id,artifact_revision_ids,verification_result_ids,commit_ref,environment_summary,notes,submission_hash,submitted_by_principal_type,submitted_by_principal_id) values($1,$2,$3,$4,$5::uuid[],$6::uuid[],$7,$8,$9,$10,'user',$11)`, submissionID, command.WorkspaceID, command.Input.TargetID, command.Input.TargetRevisionID, command.Input.ArtifactRevisionIDs, command.Input.VerificationResultIDs, command.Input.CommitRef, command.Input.EnvironmentSummary, command.Input.Notes, submissionHash, command.Principal.ID); err != nil {
+	if _, err := tx.Exec(ctx, `insert into verrail_submissions(id,workspace_id,target_id,target_revision_id,artifact_revision_ids,verification_result_ids,commit_ref,environment_summary,notes,submission_hash,submitted_by_principal_type,submitted_by_principal_id) values($1,$2,$3,$4,$5::uuid[],$6::uuid[],$7,$8,$9,$10,$11,$12)`, submissionID, command.WorkspaceID, command.Input.TargetID, command.Input.TargetRevisionID, command.Input.ArtifactRevisionIDs, command.Input.VerificationResultIDs, command.Input.CommitRef, command.Input.EnvironmentSummary, command.Input.Notes, submissionHash, command.Principal.Type, command.Principal.ID); err != nil {
 		if assuranceUniqueViolation(err, "verrail_submissions_target_hash_uq") {
 			return AgentLifecycleResult{}, &Error{Status: 409, Code: "ADJUDICATION_SUBMISSION_DUPLICATE", Message: "An identical Submission already exists for this Target"}
 		}

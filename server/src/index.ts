@@ -64,6 +64,9 @@ import {
   statusCardService,
   toolAccessService,
   workspaceOperationService,
+  createDrizzleVerrailRunExecutorStore,
+  createVerrailDomainApiClient,
+  createVerrailRunExecutor,
 } from "./services/index.js";
 import { queueIssueAssignmentWakeup } from "./services/issue-assignment-wakeup.js";
 import { createSecretProposalsService } from "./services/secret-proposals.js";
@@ -825,6 +828,36 @@ export async function startServer(): Promise<StartedServer> {
     databaseUrl: activeDatabaseConnectionString,
     preferredPort: listenPort + 101,
   });
+  const nativeRunExecutor = heartbeat && domainApiRuntime
+    ? createVerrailRunExecutor({
+        store: createDrizzleVerrailRunExecutorStore(db as any),
+        domainApi: createVerrailDomainApiClient({
+          baseUrl: domainApiRuntime.baseUrl,
+          token: domainApiRuntime.token,
+        })!,
+        heartbeat: {
+          invoke: ({ agentId, idempotencyKey, responsibleUserId, contextSnapshot }) => heartbeat.wakeup(agentId, {
+            source: "automation",
+            triggerDetail: "system",
+            reason: "verrail_native_run",
+            requestedByActorType: "system",
+            requestedByActorId: "verrail-host-runner",
+            idempotencyKey,
+            contextSnapshot: {
+              ...contextSnapshot,
+              responsibleUserId,
+            },
+          }),
+          cancelRun: (runId, reason) => heartbeat.cancelRun(runId, reason),
+        },
+        onError: (err, candidate) => {
+          logger.error(
+            { err, runId: candidate.runId, runAttemptId: candidate.runAttemptId },
+            "native RunAttempt executor could not process lease",
+          );
+        },
+      })
+    : null;
   let app;
   try {
     app = await createApp(db as any, {
@@ -1441,6 +1474,20 @@ export async function startServer(): Promise<StartedServer> {
     };
     await runRetentionSweep();
 
+    const runNativeRunExecutorTick = () => {
+      if (!nativeRunExecutor || heartbeatSchedulerStopped) return Promise.resolve();
+      return nativeRunExecutor.tick()
+        .then((result) => {
+          if (result.processed > 0) {
+            logger.info({ ...result }, "native RunAttempt executor processed leases");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "native RunAttempt executor tick failed");
+        });
+    };
+    await runNativeRunExecutorTick();
+
     startHeartbeatSchedulerInterval(() => {
       // Track the outer async callback as well as the work it starts. Shutdown
       // can then wait through an already-running suppression check before it
@@ -1473,6 +1520,9 @@ export async function startServer(): Promise<StartedServer> {
               logger.error({ err }, "heartbeat timer tick failed");
             }));
         }
+
+        if (heartbeatSchedulerStopped) return;
+        trackHeartbeatSchedulerWork(runNativeRunExecutorTick());
 
         if (heartbeatSchedulerStopped) return;
         scheduleExternalObjectRefreshSweep(new Date());

@@ -3,7 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TargetReadModelV1, TargetWorkspaceV1 } from "@paperclipai/shared";
 
-const targetService = vi.hoisted(() => ({ list: vi.fn(), getByTargetId: vi.fn(), getByRevisionId: vi.fn(), workspace: vi.fn() }));
+const targetService = vi.hoisted(() => ({ list: vi.fn(), getByTargetId: vi.fn(), getByRevisionId: vi.fn(), workspace: vi.fn(), runOutboxFailures: vi.fn() }));
 const conversationService = vi.hoisted(() => ({ create: vi.fn() }));
 const logActivity = vi.hoisted(() => vi.fn());
 
@@ -32,6 +32,7 @@ function model(): TargetReadModelV1 {
     title: "Native Target",
     summary: null,
     status: "draft",
+    outcome: { state: "open", latestSubmissionId: null, latestReviewId: null, validAcceptanceId: null, effectReceiptIds: [], controls: [{ key: "graph_complete", state: "required", reason: "Activate graph.", resourceId: null }] },
     outcomeOwner: { principalType: "user", principalId: "user-1", displayName: "Owner" },
     currentStage: { key: "define", label: "Define" },
     risk: { level: "medium" },
@@ -47,15 +48,15 @@ function model(): TargetReadModelV1 {
 }
 
 function workspace(): TargetWorkspaceV1 {
-  return { schemaVersion: 1, targetId: TARGET_ID, targetRevisionId: REVISION_ID, workspaceId: WORKSPACE_ID, generatedAt: "2026-09-01T08:00:01.000Z", graph: null, stages: [], work: [], attention: [], submissions: [], artifacts: [], evidence: [], runs: [], timeline: [] };
+  return { schemaVersion: 1, targetId: TARGET_ID, targetRevisionId: REVISION_ID, workspaceId: WORKSPACE_ID, generatedAt: "2026-09-01T08:00:01.000Z", graph: null, outcome: { state: "open", latestSubmissionId: null, latestReviewId: null, validAcceptanceId: null, effectReceiptIds: [], controls: [{ key: "graph_complete", state: "required", reason: "Activate graph.", resourceId: null }] }, availableCommands: [], stages: [], work: [], attention: [], submissions: [], artifacts: [], evidence: [], runs: [], timeline: [] };
 }
 
-async function createApp(domainApi: any) {
+async function createApp(domainApi: any, actorOverride?: Record<string, unknown>) {
   const [{ targetRoutes }, { errorHandler }] = await Promise.all([import("../routes/targets.js"), import("../middleware/index.js")]);
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
-    (req as any).actor = { type: "board", userId: "user-1", companyIds: [WORKSPACE_ID], memberships: [{ companyId: WORKSPACE_ID, membershipRole: "owner", status: "active" }], source: "session", isInstanceAdmin: true };
+    (req as any).actor = actorOverride ?? { type: "board", userId: "user-1", companyIds: [WORKSPACE_ID], memberships: [{ companyId: WORKSPACE_ID, membershipRole: "owner", status: "active" }], source: "session", isInstanceAdmin: true };
     next();
   });
   app.use("/api", targetRoutes({} as any, { domainApiClient: domainApi }));
@@ -72,6 +73,7 @@ describe("native Target routes", () => {
     createRunAttempt: vi.fn(),
     reportRunEvent: vi.fn(),
     requestRunCancellation: vi.fn(),
+    retryRunOutbox: vi.fn(),
   };
   beforeEach(() => {
     vi.clearAllMocks();
@@ -79,12 +81,41 @@ describe("native Target routes", () => {
     targetService.getByTargetId.mockResolvedValue(model());
     targetService.getByRevisionId.mockResolvedValue(model());
     targetService.workspace.mockResolvedValue(workspace());
+    targetService.runOutboxFailures.mockResolvedValue([]);
     domainApi.createTarget.mockResolvedValue({ schemaVersion: 1, targetId: TARGET_ID, targetRevisionId: REVISION_ID, workGraphId: GRAPH_ID, graphRevisionId: GRAPH_REVISION_ID, workbenchHref: `/targets/${TARGET_ID}/overview`, replayed: false });
     domainApi.createGraphRevision.mockResolvedValue({ schemaVersion: 1, targetId: TARGET_ID, targetRevisionId: REVISION_ID, workGraphId: GRAPH_ID, graphRevisionId: GRAPH_REVISION_ID, revisionNumber: 2, replayed: false });
     domainApi.activateGraphRevision.mockResolvedValue({ schemaVersion: 1, targetId: TARGET_ID, targetRevisionId: REVISION_ID, workGraphId: GRAPH_ID, graphRevisionId: GRAPH_REVISION_ID, revisionNumber: 2, replayed: false, activatedAt: "2026-09-01T08:00:00Z" });
     domainApi.createRun.mockResolvedValue({ schemaVersion: 1, runId: "5de2d166-850e-4c74-ab63-beb86129b52a", targetId: TARGET_ID, targetRevisionId: REVISION_ID, graphRevisionId: GRAPH_REVISION_ID, workNodeId: NODE_ID, status: "queued", replayed: false });
     domainApi.createRunAttempt.mockResolvedValue({ schemaVersion: 1, runId: "5de2d166-850e-4c74-ab63-beb86129b52a", runAttemptId: "6de2d166-850e-4c74-ab63-beb86129b52a", leaseId: "7de2d166-850e-4c74-ab63-beb86129b52a", attemptNumber: 1, fencingToken: 1, status: "pending", leaseStatus: "offered", expiresAt: "2026-09-01T08:02:00Z", replayed: false });
     domainApi.requestRunCancellation.mockResolvedValue({ schemaVersion: 1, runId: "5de2d166-850e-4c74-ab63-beb86129b52a", runAttemptId: "6de2d166-850e-4c74-ab63-beb86129b52a", runStatus: "cancel_requested", attemptStatus: "cancel_requested", replayed: false });
+  });
+
+  it("lists scoped outbox failures and proxies an explicit idempotent retry", async () => {
+    const app = await createApp(domainApi);
+    domainApi.retryRunOutbox.mockResolvedValue({ schemaVersion: 1, runId: NODE_ID, eventId: GRAPH_ID, status: "pending", replayed: false });
+    await request(app).get(`/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}/run-outbox-failures`).expect(200, []);
+    expect(targetService.runOutboxFailures).toHaveBeenCalledWith(WORKSPACE_ID, TARGET_ID);
+    await request(app).post(`/api/workspaces/${WORKSPACE_ID}/runs/${NODE_ID}/outbox/retry`)
+      .set("Idempotency-Key", "outbox-retry-001").send({ eventId: GRAPH_ID, expectedAttemptCount: 3 }).expect(200);
+    expect(domainApi.retryRunOutbox).toHaveBeenCalledWith({ workspaceId: WORKSPACE_ID, runId: NODE_ID,
+      principalType: "user", principalId: "user-1", idempotencyKey: "outbox-retry-001",
+      input: { eventId: GRAPH_ID, expectedAttemptCount: 3 } });
+    expect(domainApi.createRunAttempt).not.toHaveBeenCalled();
+    await request(app).post(`/api/workspaces/${WORKSPACE_ID}/runs/${NODE_ID}/outbox/retry`)
+      .set("Idempotency-Key", "outbox-retry-002").send({ eventId: GRAPH_ID, expectedAttemptCount: 0 }).expect(400);
+    expect(domainApi.retryRunOutbox).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects outbox recovery outside the caller workspace and for agent callers", async () => {
+    for (const actor of [
+      { type: "board", userId: "outsider", companyIds: [], source: "session", isInstanceAdmin: false },
+      { type: "agent", agentId: "agent-1", companyId: WORKSPACE_ID },
+    ]) {
+      const app = await createApp(domainApi, actor);
+      await request(app).post(`/api/workspaces/${WORKSPACE_ID}/runs/${NODE_ID}/outbox/retry`)
+        .set("Idempotency-Key", "outbox-retry-001").send({ eventId: GRAPH_ID, expectedAttemptCount: 3 }).expect(403);
+    }
+    expect(domainApi.retryRunOutbox).not.toHaveBeenCalled();
   });
 
   it("lists and reads only native Targets", async () => {

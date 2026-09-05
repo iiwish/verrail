@@ -1,0 +1,38 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T020-A001",
+  "task_id": "T020",
+  "status": "passed_for_dependency_progression",
+  "failure_reproduction": {
+    "command": "pnpm test:run",
+    "suite": "server/src/__tests__/connector-routes.test.ts",
+    "test": "proxies connector commands to the Domain API",
+    "failure": "Expected the Domain API input params to omit body, but validation correctly supplied body as the canonical empty string."
+  },
+  "fix": {
+    "wire_fixture": "actionRequestBody continues to omit params.body and proves backward-compatible request acceptance.",
+    "domain_fixture": "normalizedActionRequestBody models the post-validation command with params.body equal to the empty string.",
+    "production_change": false
+  },
+  "verification": [
+    {
+      "command": "connector route focused suite",
+      "status": "passed",
+      "result": "16/16"
+    },
+    {
+      "command": "server typecheck",
+      "status": "passed"
+    },
+    {
+      "command": "diff gate",
+      "status": "passed"
+    }
+  ],
+  "review": {
+    "critical_or_high_findings": 0,
+    "scope_drift": false,
+    "recommendation": "accept_for_dependency_progression",
+    "reference": ".verrail/targets/g2-7-production-closure/runs/T020-A001/logs/review.md"
+  }
+}

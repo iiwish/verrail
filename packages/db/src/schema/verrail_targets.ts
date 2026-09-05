@@ -67,6 +67,10 @@ export const verrailTargets = pgTable(
       table.projectId,
       table.updatedAt,
     ),
+    statusCheck: check(
+      "verrail_targets_status_check",
+      sql`${table.status} in ('draft', 'ready', 'active', 'verifying', 'awaiting_acceptance', 'blocked', 'canceled', 'accepted')`,
+    ),
   }),
 );
 

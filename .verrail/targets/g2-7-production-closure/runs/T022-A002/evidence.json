@@ -1,0 +1,13 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T022-A002",
+  "status": "accepted_for_dependency_progression",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "output_commit": null,
+  "implementation_evidence": "../T022-A001/evidence.json",
+  "tests": [{"command": "pnpm test:e2e:verrail-acceptance", "status": "passed", "count": 6, "duration_seconds": 34, "port": 61267}],
+  "manual_notes": ["Disk space restored to 45 GiB free.", "Original persistent PostgreSQL and Temporal containers restored; no pending migrations.", "Live server on 3270 remained available alongside acceptance server 61267. CUA DOM on the final cache implementation renders the real Target's Runs tab and both expired attempts. Browser error/warning list is empty."],
+  "review": {"scope": "delegated intermediate technical gate, not independent final review", "spec_compliance": "passed", "engineering_quality": "instance/checkout/endpoint isolation and node_modules source-transform exclusion covered by 12 focused tests in A001", "qa": "passed"},
+  "missing": ["T010 real provider evidence, native delivery facts, independent final review, and human decisions remain outstanding."],
+  "recorded_at": "2026-09-05T05:36:41Z"
+}

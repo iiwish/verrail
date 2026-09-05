@@ -1,0 +1,63 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T019-A001",
+  "task_id": "T019",
+  "status": "passed_for_dependency_progression",
+  "failure_reproduction": {
+    "heartbeat_run_ids": [
+      "6d896af3-16af-49b7-bf69-215548607b95",
+      "9899c5ec-3d33-42c4-8bfa-e1d0882bc85b",
+      "eb68ff61-7d57-4701-9e4e-f88f05f0adaf"
+    ],
+    "error_code": "acpx_session_init_failed",
+    "failure": "The package-local @openai/codex shim could not resolve @openai/codex-darwin-arm64 while the host Codex 0.153.0 command was healthy."
+  },
+  "fix": {
+    "local_binding": "Codex ACP receives CODEX_PATH from runtimeCommandSpec.command, falling back to the configured command or codex.",
+    "override": "A non-empty operator-provided env.CODEX_PATH remains authoritative.",
+    "remote_boundary": "Host command paths are not projected into remote targets unless the operator explicitly supplies a target-side CODEX_PATH."
+  },
+  "real_execution": {
+    "heartbeat_run_id": "7ee30b95-3216-425a-b7c5-ca902c569a2b",
+    "status": "succeeded",
+    "started_at": "2026-09-04T16:36:34.639Z",
+    "finished_at": "2026-09-04T16:38:48.061Z",
+    "model": "gpt-5.6-sol",
+    "provider": "openai",
+    "biller": "chatgpt",
+    "billing_type": "subscription_included",
+    "input_tokens": 2041,
+    "cached_input_tokens": 38656,
+    "output_tokens": 114,
+    "session_id": "01a06d47-8548-71f0-bf81-ab86b5c9cadd",
+    "issue_id": "5713ce90-0265-4c60-8c25-bcd12ed52079",
+    "issue_identifier": "MYW-1",
+    "issue_status": "done",
+    "mutation_path": "The retry was invoked through the same board wakeup command while the Mac UI was locked; the final T010 browser journey remains required and is not claimed by this technical evidence."
+  },
+  "verification": [
+    {
+      "command": "Codex ACP focused suite",
+      "status": "passed",
+      "result": "29/29"
+    },
+    {
+      "command": "Codex adapter typecheck",
+      "status": "passed"
+    },
+    {
+      "command": "real runtime retry",
+      "status": "passed",
+      "result": "ACP session created, exact model recorded, issue completed, no optional-dependency error"
+    },
+    {
+      "command": "diff gate",
+      "status": "passed"
+    }
+  ],
+  "review": {
+    "critical_or_high_findings": 0,
+    "recommendation": "accept_for_dependency_progression",
+    "reference": ".verrail/targets/g2-7-production-closure/runs/T019-A001/logs/review.md"
+  }
+}

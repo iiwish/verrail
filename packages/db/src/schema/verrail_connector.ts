@@ -3,11 +3,13 @@ import {
   check,
   foreignKey,
   index,
+  integer,
   jsonb,
   pgTable,
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
@@ -18,8 +20,8 @@ import {
   verrailVerificationResults,
 } from "./verrail_assurance.js";
 import { verrailSubmissions } from "./verrail_adjudication.js";
-import { verrailWorkNodes } from "./verrail_delivery.js";
-import { verrailTargets } from "./verrail_targets.js";
+import { verrailGraphRevisions, verrailWorkNodes } from "./verrail_delivery.js";
+import { verrailTargetRevisions, verrailTargets } from "./verrail_targets.js";
 
 /**
  * Connector data spine (G2.5): integration runs binding CI evidence and
@@ -37,13 +39,22 @@ export const verrailIntegrationRuns = pgTable(
     id: uuid("id").primaryKey(),
     workspaceId: uuid("workspace_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
     targetId: uuid("target_id").notNull(),
+    targetRevisionId: uuid("target_revision_id"),
+    graphRevisionId: uuid("graph_revision_id"),
     claimId: uuid("claim_id").notNull(),
     workNodeId: uuid("work_node_id"),
+    connectorVersion: text("connector_version"),
+    connectionId: uuid("connection_id"),
     provider: text("provider").notNull(),
     externalRef: text("external_ref").notNull(),
+    commitRef: text("commit_ref"),
+    criterionKey: text("criterion_key"),
+    environmentRef: text("environment_ref"),
     conclusion: text("conclusion").notNull(),
     evidenceId: uuid("evidence_id").notNull(),
     verificationResultId: uuid("verification_result_id"),
+    providerReceipt: jsonb("provider_receipt").$type<Record<string, unknown>>(),
+    idempotencyKey: text("idempotency_key"),
     createdByPrincipalType: text("created_by_principal_type").notNull(),
     createdByPrincipalId: text("created_by_principal_id").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -54,6 +65,16 @@ export const verrailIntegrationRuns = pgTable(
       columns: [table.targetId, table.workspaceId],
       foreignColumns: [verrailTargets.id, verrailTargets.workspaceId],
       name: "verrail_integration_runs_target_workspace_fk",
+    }).onDelete("restrict"),
+    targetRevisionWorkspaceFk: foreignKey({
+      columns: [table.targetRevisionId, table.workspaceId],
+      foreignColumns: [verrailTargetRevisions.id, verrailTargetRevisions.workspaceId],
+      name: "verrail_integration_runs_target_revision_workspace_fk",
+    }).onDelete("restrict"),
+    graphWorkspaceFk: foreignKey({
+      columns: [table.graphRevisionId, table.workspaceId],
+      foreignColumns: [verrailGraphRevisions.id, verrailGraphRevisions.workspaceId],
+      name: "verrail_integration_runs_graph_workspace_fk",
     }).onDelete("restrict"),
     claimWorkspaceFk: foreignKey({
       columns: [table.claimId, table.workspaceId],
@@ -75,6 +96,14 @@ export const verrailIntegrationRuns = pgTable(
       foreignColumns: [verrailVerificationResults.id, verrailVerificationResults.workspaceId],
       name: "verrail_integration_runs_verification_result_workspace_fk",
     }).onDelete("restrict"),
+    connectionFk: foreignKey({
+      columns: [table.connectionId],
+      foreignColumns: [toolConnections.id],
+      name: "verrail_integration_runs_connection_fk",
+    }).onDelete("restrict"),
+    workspaceIdempotencyUq: uniqueIndex("verrail_integration_runs_workspace_idempotency_uq")
+      .on(table.workspaceId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
     workspaceTargetCreatedIdx: index("verrail_integration_runs_workspace_target_created_idx").on(
       table.workspaceId,
       table.targetId,
@@ -96,6 +125,44 @@ export const verrailIntegrationRuns = pgTable(
   }),
 );
 
+export const verrailIntegrationAttempts = pgTable(
+  "verrail_integration_attempts",
+  {
+    id: uuid("id").primaryKey(),
+    workspaceId: uuid("workspace_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    integrationRunId: uuid("integration_run_id").notNull(),
+    attemptNumber: integer("attempt_number").notNull(),
+    connectorVersion: text("connector_version").notNull(),
+    connectionId: uuid("connection_id").notNull(),
+    providerRef: text("provider_ref").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    providerReceipt: jsonb("provider_receipt").$type<Record<string, unknown>>().notNull(),
+    status: text("status").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    idWorkspaceUq: unique("verrail_integration_attempts_id_workspace_uq").on(table.id, table.workspaceId),
+    runAttemptUq: uniqueIndex("verrail_integration_attempts_run_number_uq").on(table.integrationRunId, table.attemptNumber),
+    connectionIdempotencyUq: uniqueIndex("verrail_integration_attempts_connection_idempotency_uq").on(
+      table.workspaceId,
+      table.connectionId,
+      table.idempotencyKey,
+    ),
+    runWorkspaceFk: foreignKey({
+      columns: [table.integrationRunId, table.workspaceId],
+      foreignColumns: [verrailIntegrationRuns.id, verrailIntegrationRuns.workspaceId],
+      name: "verrail_integration_attempts_run_workspace_fk",
+    }).onDelete("restrict"),
+    connectionFk: foreignKey({
+      columns: [table.connectionId],
+      foreignColumns: [toolConnections.id],
+      name: "verrail_integration_attempts_connection_fk",
+    }).onDelete("restrict"),
+    attemptNumberCheck: check("verrail_integration_attempts_number_check", sql`${table.attemptNumber} > 0`),
+    statusCheck: check("verrail_integration_attempts_status_check", sql`${table.status} in ('succeeded', 'failed', 'neutral')`),
+  }),
+);
+
 export const verrailActionRequests = pgTable(
   "verrail_action_requests",
   {
@@ -104,9 +171,14 @@ export const verrailActionRequests = pgTable(
     targetId: uuid("target_id").notNull(),
     submissionId: uuid("submission_id").notNull(),
     actionType: text("action_type").notNull(),
-    params: jsonb("params").$type<{ title: string; head: string; base: string }>().notNull(),
+    params: jsonb("params").$type<{ title: string; head: string; base: string; body?: string }>().notNull(),
     paramsHash: text("params_hash").notNull(),
+    expectedCommitRef: text("expected_commit_ref"),
     status: text("status").notNull().default("pending_approval"),
+    providerMarker: text("provider_marker"),
+    executionAttemptCount: integer("execution_attempt_count").notNull().default(0),
+    executionStartedAt: timestamp("execution_started_at", { withTimezone: true }),
+    lastReconciledAt: timestamp("last_reconciled_at", { withTimezone: true }),
     requestedByPrincipalType: text("requested_by_principal_type").notNull(),
     requestedByPrincipalId: text("requested_by_principal_id").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -139,8 +211,20 @@ export const verrailActionRequests = pgTable(
     ),
     statusCheck: check(
       "verrail_action_requests_status_check",
-      sql`${table.status} in ('pending_approval', 'approved', 'executed')`,
+      sql`${table.status} in ('pending_approval', 'approved', 'executing', 'unknown_effect', 'executed')`,
     ),
+    providerMarkerCheck: check(
+      "verrail_action_requests_provider_marker_check",
+      sql`(${table.status} in ('pending_approval', 'approved') and ${table.providerMarker} is null)
+        or (${table.status} in ('executing', 'unknown_effect', 'executed') and ${table.providerMarker} ~ '^[0-9a-f]{64}$')`,
+    ),
+    executionAttemptCountCheck: check(
+      "verrail_action_requests_execution_attempt_count_check",
+      sql`${table.executionAttemptCount} >= 0`,
+    ),
+    providerMarkerUq: uniqueIndex("verrail_action_requests_provider_marker_uq")
+      .on(table.providerMarker)
+      .where(sql`${table.providerMarker} is not null`),
     paramsKeysCheck: check(
       "verrail_action_requests_params_keys_check",
       sql`${table.params} ? 'title' and ${table.params} ? 'head' and ${table.params} ? 'base'`,
@@ -191,6 +275,7 @@ export const verrailEffectReceipts = pgTable(
     actionRequestId: uuid("action_request_id").notNull(),
     actionType: text("action_type").notNull(),
     provider: text("provider").notNull(),
+    providerMarker: text("provider_marker").notNull(),
     externalObjectId: text("external_object_id").notNull(),
     externalUrl: text("external_url").notNull(),
     effectHash: text("effect_hash").notNull(),
@@ -201,6 +286,8 @@ export const verrailEffectReceipts = pgTable(
   },
   (table) => ({
     idWorkspaceUq: unique("verrail_effect_receipts_id_workspace_uq").on(table.id, table.workspaceId),
+    actionRequestUq: unique("verrail_effect_receipts_action_request_uq").on(table.actionRequestId),
+    providerMarkerUq: unique("verrail_effect_receipts_provider_marker_uq").on(table.providerMarker),
     targetWorkspaceFk: foreignKey({
       columns: [table.targetId, table.workspaceId],
       foreignColumns: [verrailTargets.id, verrailTargets.workspaceId],
@@ -227,6 +314,10 @@ export const verrailEffectReceipts = pgTable(
     effectHashCheck: check(
       "verrail_effect_receipts_effect_hash_check",
       sql`${table.effectHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    providerMarkerCheck: check(
+      "verrail_effect_receipts_provider_marker_check",
+      sql`${table.providerMarker} ~ '^[0-9a-f]{64}$'`,
     ),
   }),
 );

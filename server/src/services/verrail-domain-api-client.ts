@@ -18,6 +18,8 @@ import type {
   ReportRunEventInputV1,
   ReportRunEventResponseV1,
   RequestRunCancellationResponseV1,
+  RetryRunOutboxInputV1,
+  RetryRunOutboxResponseV1,
   AcceptSubmissionInput,
   AddArtifactRevisionInput,
   ApproveActionInput,
@@ -28,6 +30,7 @@ import type {
   ExecuteActionInput,
   RecordDeliveryReviewInput,
   RecordEvidenceInput,
+  RecordHumanWorkResultInput,
   RecordIntegrationRunInput,
   RecordVerificationResultInput,
   RequestPullRequestActionInput,
@@ -43,6 +46,14 @@ type HumanCommand = {
 
 type ServiceCommand = Omit<HumanCommand, "principalType"> & {
   principalType: "service";
+};
+
+type CandidateCommand = Omit<HumanCommand, "principalType"> & {
+  principalType: "user" | "agent" | "service";
+};
+
+type ResultCommand = Omit<HumanCommand, "principalType"> & {
+  principalType: "user" | "service";
 };
 
 export interface CreateNativeTargetCommand extends HumanCommand {
@@ -98,12 +109,13 @@ export interface AdjudicationCommandResponseV1 {
 }
 
 // Mirrors the Go AgentLifecycleResult written by the connector handlers
-// (recordConnectorIntegrationRun, requestConnectorPullRequestAction,
+// (recordConnectorIntegrationRun, recordConnectorHumanWorkResult,
+// requestConnectorPullRequestAction,
 // approveConnectorAction, executeConnectorAction) in
 // services/domain-api/internal/httpapi/server.go; keep in sync.
 export interface ConnectorCommandResponseV1 {
   schemaVersion: 1;
-  resourceType: "integration_run" | "action_request" | "action_approval" | "effect_receipt" | "repo_binding";
+  resourceType: "integration_run" | "human_work_result" | "action_request" | "action_approval" | "effect_receipt" | "repo_binding";
   resourceId: string;
   replayed: boolean;
 }
@@ -116,6 +128,7 @@ export interface VerrailDomainApiClient {
   createRunAttempt(command: CreateNativeRunAttemptCommand): Promise<CreateRunAttemptResponseV1>;
   reportRunEvent(command: ReportNativeRunEventCommand): Promise<ReportRunEventResponseV1>;
   requestRunCancellation(command: RequestNativeRunCancellationCommand): Promise<RequestRunCancellationResponseV1>;
+  retryRunOutbox(command: HumanCommand & { runId: string; input: RetryRunOutboxInputV1 }): Promise<RetryRunOutboxResponseV1>;
   createAgentDefinition(command: HumanCommand & { input: CreateAgentDefinitionInputV1 }): Promise<AgentLifecycleCommandResponseV1>;
   updateAgentDefinition(command: HumanCommand & { definitionId: string; input: UpdateAgentDefinitionInputV1 }): Promise<AgentLifecycleCommandResponseV1>;
   publishAgentVersion(command: HumanCommand & { definitionId: string; input: PublishAgentVersionInputV1 }): Promise<AgentLifecycleCommandResponseV1>;
@@ -127,13 +140,19 @@ export interface VerrailDomainApiClient {
   createClaim(command: HumanCommand & { input: CreateClaimInput }): Promise<AssuranceCommandResponseV1>;
   recordEvidence(command: HumanCommand & { input: RecordEvidenceInput }): Promise<AssuranceCommandResponseV1>;
   recordVerificationResult(command: HumanCommand & { input: RecordVerificationResultInput }): Promise<AssuranceCommandResponseV1>;
-  createSubmission(command: HumanCommand & { input: CreateSubmissionInput }): Promise<AdjudicationCommandResponseV1>;
+  createSubmission(command: CandidateCommand & { input: CreateSubmissionInput }): Promise<AdjudicationCommandResponseV1>;
   recordDeliveryReview(command: HumanCommand & { input: RecordDeliveryReviewInput }): Promise<AdjudicationCommandResponseV1>;
   acceptSubmission(command: HumanCommand & { input: AcceptSubmissionInput }): Promise<AdjudicationCommandResponseV1>;
-  recordIntegrationRun(command: HumanCommand & { input: RecordIntegrationRunInput }): Promise<ConnectorCommandResponseV1>;
-  requestPullRequestAction(command: HumanCommand & { input: RequestPullRequestActionInput }): Promise<ConnectorCommandResponseV1>;
+  recordIntegrationRun(command: ResultCommand & { input: RecordIntegrationRunInput }): Promise<ConnectorCommandResponseV1>;
+  recordHumanWorkResult(command: HumanCommand & { input: RecordHumanWorkResultInput }): Promise<ConnectorCommandResponseV1>;
+  requestPullRequestAction(command: CandidateCommand & { input: RequestPullRequestActionInput }): Promise<ConnectorCommandResponseV1>;
   approveAction(command: HumanCommand & { actionRequestId: string; input: ApproveActionInput }): Promise<ConnectorCommandResponseV1>;
-  executeAction(command: HumanCommand & { actionRequestId: string; input: ExecuteActionInput }): Promise<ConnectorCommandResponseV1>;
+  executeAction(command: HumanCommand & {
+    actionRequestId: string;
+    githubConnectionId: string;
+    githubAuthorization: string;
+    input: ExecuteActionInput;
+  }): Promise<ConnectorCommandResponseV1>;
   createGithubRepoBinding(command: HumanCommand & { input: CreateGithubRepoBindingInput }): Promise<ConnectorCommandResponseV1>;
 }
 
@@ -151,7 +170,13 @@ export function createVerrailDomainApiClient(options: {
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? 15_000;
 
-  async function send<T>(command: HumanCommand | ServiceCommand, path: string, body?: unknown, method = "POST"): Promise<T> {
+  async function send<T>(
+    command: CandidateCommand,
+    path: string,
+    body?: unknown,
+    method = "POST",
+    ephemeralHeaders: Record<string, string> = {},
+  ): Promise<T> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     let response: Response;
@@ -164,6 +189,7 @@ export function createVerrailDomainApiClient(options: {
           "Idempotency-Key": command.idempotencyKey,
           "X-Verrail-Principal-Type": command.principalType,
           "X-Verrail-Principal-Id": command.principalId,
+          ...ephemeralHeaders,
         },
         body: JSON.stringify(body ?? {}),
         signal: controller.signal,
@@ -196,6 +222,7 @@ export function createVerrailDomainApiClient(options: {
     createRunAttempt: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/runs/${encodeURIComponent(command.runId)}/attempts`, command.input),
     reportRunEvent: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/runs/${encodeURIComponent(command.runId)}/attempts/${encodeURIComponent(command.runAttemptId)}/events`, command.input),
     requestRunCancellation: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/runs/${encodeURIComponent(command.runId)}/cancel`),
+    retryRunOutbox: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/runs/${encodeURIComponent(command.runId)}/outbox/retry`, command.input),
     createAgentDefinition: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/agent-definitions`, command.input),
     updateAgentDefinition: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/agent-definitions/${encodeURIComponent(command.definitionId)}`, command.input, "PATCH"),
     publishAgentVersion: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/agent-definitions/${encodeURIComponent(command.definitionId)}/versions`, command.input),
@@ -211,9 +238,19 @@ export function createVerrailDomainApiClient(options: {
     recordDeliveryReview: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/delivery-reviews`, command.input),
     acceptSubmission: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/acceptances`, command.input),
     recordIntegrationRun: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/integration-runs`, command.input),
+    recordHumanWorkResult: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/human-work-results`, command.input),
     requestPullRequestAction: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/pull-request-actions`, command.input),
     approveAction: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/pull-request-actions/${encodeURIComponent(command.actionRequestId)}/approvals`, command.input),
-    executeAction: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/pull-request-actions/${encodeURIComponent(command.actionRequestId)}/executions`, command.input),
+    executeAction: (command) => send(
+      command,
+      `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/pull-request-actions/${encodeURIComponent(command.actionRequestId)}/executions`,
+      command.input,
+      "POST",
+      {
+        "X-Verrail-GitHub-Connection-Id": command.githubConnectionId,
+        "X-Verrail-Ephemeral-GitHub-Authorization": command.githubAuthorization,
+      },
+    ),
     createGithubRepoBinding: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/github-repo-bindings`, command.input),
   };
 }

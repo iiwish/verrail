@@ -1,0 +1,59 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T009-A001",
+  "task_id": "T009",
+  "status": "passed_for_dependency_progression",
+  "connector_contract": {
+    "version": 1,
+    "plugin_id": "verrail.channel-connector-feishu",
+    "provider": "feishu",
+    "boundary": "The plugin authenticates and decrypts provider bytes; the Host receives only a validated challenge, ignored result or normalized message."
+  },
+  "webhook_security_matrix": [
+    { "case": "invalid signature", "result": "401 before plugin delivery or conversation writes" },
+    { "case": "invalid encryption key, verification token or app id", "result": "401 before durable event ingestion" },
+    { "case": "valid URL challenge", "result": "challenge returned without a Conversation fact" },
+    { "case": "unsupported or bot event", "result": "explicit ignored result without a Conversation fact" },
+    { "case": "forwarded headers", "result": "only the Feishu signature allowlist crosses the worker boundary" },
+    { "case": "durable diagnostics", "result": "stored delivery metadata excludes raw body, headers and secret values" }
+  ],
+  "idempotency_and_scope_proof": {
+    "claim": "verrail_channel_events has a unique workspace_id, connector_key, connection_id and provider_event_id tuple",
+    "concurrency": "The Host claims the provider event inside the same transaction before creating binding, message, draft or revision facts.",
+    "scope": "The route resolves one installed plugin and one connection for the URL workspace; provider fields cannot redirect ingestion.",
+    "reply": "The provider reply id is recorded on the claimed event, and a replay with that receipt skips the outbound reply."
+  },
+  "conversation_binding_proof": {
+    "group": "A Feishu chat id deterministically binds one group Conversation in the authenticated connection scope.",
+    "direct": "A Feishu peer identity deterministically binds one direct Conversation in the authenticated connection scope.",
+    "ordinary_message": "Unmapped provider users may append ordinary messages under a provider-scoped sender identity but cannot create a Target Draft.",
+    "explicit_draft": "Only the normalized /verrail target create command from a configured provider-user mapping to an active workspace human membership creates a recoverable Draft and initial revision."
+  },
+  "external_prerequisite": {
+    "task": "T010",
+    "required": "Run the connector against the user-configured real Feishu test app and record real challenge, inbound event, outbound reply and provider delivery identifiers.",
+    "status": "not_yet_executed",
+    "fabricated_identifiers": false
+  },
+  "verification": [
+    { "command": "focused shared/plugin/host/route suites", "status": "passed", "result": "43 tests passed" },
+    { "command": "real PostgreSQL channel host suite", "status": "passed", "result": "4 tests passed against schema through migration 0247" },
+    { "command": "pnpm -r typecheck", "status": "passed" },
+    { "command": "pnpm check:token-gates", "status": "passed" },
+    { "command": "pnpm --filter @paperclipai/db check:migrations", "status": "passed" },
+    { "command": "pnpm build", "status": "passed" },
+    { "command": "pnpm test:run", "status": "partial_environment_failure", "result": "306 files and 2,894 assertions passed; one unpublished optional embedded-postgres native package caused an unhandled startup rejection" },
+    { "command": "pnpm exec vitest run server/src/shutdown.test.ts", "status": "passed", "result": "10 tests passed after local native payload repair" },
+    { "command": "git diff --check", "status": "passed" }
+  ],
+  "review": {
+    "critical_or_high_findings": 0,
+    "recommendation": "accept_for_dependency_progression",
+    "final_product_authority": "not_granted",
+    "reference": ".verrail/targets/g2-7-production-closure/runs/T009-A001/logs/review.md"
+  },
+  "residual_risks": [
+    "Real Feishu network delivery and reply receipts remain an explicit T010 external prerequisite.",
+    "The upstream embedded-postgres 18.1.0-beta.16 meta package references an unpublished Darwin native package; final closure must run the full suite in a repaired or supported dependency environment."
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "packet_id": "EP-G2.7-T025",
+  "task_id": "T025",
+  "status": "in_progress",
+  "mode": "direct_execute",
+  "authority": "Delegated intermediate technical gate; T010 live retry exposed a wrong executor binding.",
+  "depends_on": ["T024"],
+  "parallel": false,
+  "goal": "Bind the Workbench host-trusted retry command to the actual verrail-host-runner executor, matching initial native execution.",
+  "allowed_files": ["ui/src/pages/TargetWorkbench.tsx", "ui/src/pages/TargetWorkbench.test.tsx", ".verrail/targets/g2-7-production-closure/**"],
+  "constraints": ["No database repair, fabricated run event, widening of executor authority, lease or fencing bypass.", "Retain historical failed attempts and allow normal expiry/recovery before replay."],
+  "validation": ["RED/GREEN retry payload regression", "Workbench focused tests", "UI typecheck and token gates", "real UI retry lease offered to registered executor"],
+  "observed_failure": {"run_id":"52d7048a-37b3-4c01-88fa-ad4251c519d0","attempt_id":"cdac7272-b090-44d9-a60d-d6d79dfa8497","attempt_number":3,"executor":"host-trusted-local","cursor":0}
+}

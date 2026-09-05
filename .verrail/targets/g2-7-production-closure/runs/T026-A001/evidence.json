@@ -1,0 +1,29 @@
+{
+  "task_id": "T026",
+  "attempt_id": "T026-A001",
+  "status": "requeue_green_workflow_recovery_incomplete",
+  "date": "2026-09-05",
+  "change": "Normalize the execution store's run.cancellation_requested payload only inside the verrail.run.cancellation_requested.v1 envelope. Preserve the existing canonical workflow event name and rejection of unknown aliases.",
+  "red": "TestTemporalDelivererNormalizesStoredCancellationPayload/run.cancellation_requested failed with unsupported Run event type.",
+  "green": [
+    "go test ./internal/orchestration -count=1 passed",
+    "go test ./... passed; environment-gated live integration tests were not enabled by this invocation",
+    "Regression covers empty, canonical and stored cancellation payload names, unchanged event and attempt identity, stale cancellation rejection, wrong envelope and unknown alias rejection"
+  ],
+  "scope": "The compatibility test reproduces the stored payload shape. The new explicit event-requeue command and failure-list API/UI are implemented and tested. They do not reopen a closed Workflow or change Run, Attempt or Lease state.",
+  "requeue_verification": {
+    "isolated_database": "A schema-only clone named verrail_g27_t026_20260905 was created, used only for generated integration fixtures and dropped after verification. The real acceptance workspace was not modified by these tests.",
+    "integration": "TestGraphOrchestrationContractsIntegration passed with VERRAIL_TEST_DATABASE_URL enabled; checks ordered predecessor blocking, stale attempt-count rejection, Run scoping, same-key replay, event/payload/count preservation, exactly one audit event and revoked-member rejection.",
+    "http": "Go handler tests verify token authentication and rejection of service callers. Seven TypeScript Target route tests passed, including workspace/agent denial and payload validation.",
+    "ui": "All 20 TargetWorkbench tests passed, including exact-event requeue without Attempt creation, idempotency-key reuse after uncertain transport and visible failure-list errors.",
+    "compile": "Shared build, server typecheck and UI typecheck passed. UI production build passed in 54.06 seconds with existing chunk warnings.",
+    "style": "Token gates clean for 818 files; git diff --check passed.",
+    "live_read_only": "The real failed event 90209717-9920-4198-95fd-abae0403d7a4 is returned by the scoped API and visibly rendered with its error and Retry event delivery button in native Chrome. Desktop screenshot inspected without overlap. The button was not activated because closed-workflow reuse remains unresolved."
+  },
+  "remaining": [
+    "Closed RunWorkflow recovery policy bound to authorized retry without duplicate execution",
+    "Authoritative lease expiry and one correctly fenced attempt through real UI recovery",
+    "Live producer-consumer replay and runtime failure recovery proof"
+  ],
+  "authority": "No real acceptance dead-letter rows were reset, no ordered predecessor was skipped, and no execution or governance receipt was fabricated. Failure injection was confined to the isolated test database. This is partial technical evidence, not task acceptance."
+}

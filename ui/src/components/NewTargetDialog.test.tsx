@@ -5,11 +5,15 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NewTargetDialog } from "./NewTargetDialog";
+import type { TargetCreationDraft } from "@paperclipai/shared";
+import { ApiError } from "../api/client";
 
 const createConversation = vi.hoisted(() => vi.fn());
 const appendStructuredMessage = vi.hoisted(() => vi.fn());
 const createTargetDraft = vi.hoisted(() => vi.fn());
 const confirmTargetDraft = vi.hoisted(() => vi.fn());
+const updateTargetDraft = vi.hoisted(() => vi.fn());
+const defaults = vi.hoisted(() => ({ collectionId: "collection-1", draft: undefined as TargetCreationDraft | undefined }));
 const closeNewTarget = vi.hoisted(() => vi.fn());
 const navigate = vi.hoisted(() => vi.fn());
 
@@ -18,6 +22,7 @@ vi.mock("../api/conversations", () => ({ conversationsApi: {
   appendStructuredMessage,
   createTargetDraft,
   confirmTargetDraft,
+  updateTargetDraft,
 } }));
 vi.mock("../api/collections", () => ({
   collectionsApi: { list: vi.fn().mockResolvedValue([{ id: "collection-1", name: "Control plane" }]) },
@@ -39,7 +44,7 @@ vi.mock("../context/CompanyContext", () => ({
 vi.mock("../context/DialogContext", () => ({
   useDialog: () => ({
     newTargetOpen: true,
-    newTargetDefaults: { collectionId: "collection-1" },
+    newTargetDefaults: defaults,
     closeNewTarget,
   }),
 }));
@@ -102,9 +107,52 @@ describe("NewTargetDialog", () => {
     createConversation.mockReset();
     appendStructuredMessage.mockReset();
     createTargetDraft.mockReset();
+    updateTargetDraft.mockReset();
+    defaults.draft = undefined;
     confirmTargetDraft.mockReset();
     closeNewTarget.mockReset();
     navigate.mockReset();
+  });
+
+  it.each([false, true])("resumes the original channel draft and fails closed on a stale revision (%s)", async (stale) => {
+    defaults.draft = {
+      id: "feishu-draft", workspaceId: "workspace-1", conversationId: "feishu-conversation",
+      sourceMessageId: "feishu-message", initiatedByPrincipalType: "user", initiatedByPrincipalId: "user-1",
+      activeRevisionId: "draft-revision-1", convertedTargetId: null, convertedTargetRevisionId: null,
+      confirmedByPrincipalType: null, confirmedByPrincipalId: null, confirmedAt: null, conversionIdempotencyKey: null,
+      createdAt: new Date(), updatedAt: new Date(),
+      activeRevisionNumber: 1, status: "collecting",
+      activeRevision: { id: "draft-revision-1", workspaceId: "workspace-1", draftId: "feishu-draft", revisionNumber: 1,
+        missingFields: [], fieldSources: {}, contentHash: "test-hash", createdByPrincipalType: "user", createdByPrincipalId: "user-1", createdAt: new Date(),
+        definition: { title: "Feishu outcome", goal: "Preserve the original source.", summary: null,
+        outcomeOwner: { principalType: "user", principalId: "user-1" }, collectionId: null,
+        constraints: [], acceptanceCriteria: [{ title: "Source identity retained" }], riskLevel: "low",
+        resourceRefs: [{ kind: "url", id: "https://example.com/source" }], deadline: null, policySummary: null } },
+    };
+    const updated = { ...defaults.draft, activeRevisionNumber: 2, status: "ready_for_confirmation" };
+    if (stale) updateTargetDraft.mockRejectedValue(new ApiError("Revision changed", 409, {}));
+    else updateTargetDraft.mockResolvedValue(updated);
+    confirmTargetDraft.mockResolvedValue({ target: { workbenchHref: "/targets/target-1/overview" } });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    act(() => root.render(<QueryClientProvider client={queryClient}><NewTargetDialog /></QueryClientProvider>));
+    await waitFor(() => expect((container.querySelector("#new-target-title") as HTMLInputElement).value).toBe("Feishu outcome"));
+    const button = () => Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.trim() === "Review draft")!;
+    await waitFor(() => expect(button().disabled).toBe(false));
+    await act(async () => button().click());
+    await waitFor(() => expect(updateTargetDraft).toHaveBeenCalledWith("workspace-1", "feishu-conversation", "feishu-draft", 1,
+      expect.objectContaining({ title: "Feishu outcome", resourceRefs: defaults.draft!.activeRevision.definition.resourceRefs })));
+    expect(createConversation).not.toHaveBeenCalled();
+    expect(appendStructuredMessage).not.toHaveBeenCalled();
+    expect(createTargetDraft).not.toHaveBeenCalled();
+    expect(confirmTargetDraft).not.toHaveBeenCalled();
+    if (stale) {
+      await waitFor(() => expect(container.querySelector('[role="alert"]')?.textContent).toContain("Reopen"));
+      expect(navigate).not.toHaveBeenCalled();
+    } else {
+      await waitFor(() => expect(container.textContent).toContain("Confirm Target"));
+      await act(async () => Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.trim() === "Confirm Target")!.click());
+      await waitFor(() => expect(confirmTargetDraft).toHaveBeenCalledWith("workspace-1", "feishu-conversation", "feishu-draft", 2));
+    }
   });
 
   afterEach(() => {

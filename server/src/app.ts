@@ -1,5 +1,6 @@
 import express, { Router, type Request as ExpressRequest } from "express";
 import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -119,6 +120,7 @@ import { createCachedViteHtmlRenderer } from "./vite-html-renderer.js";
 import { DEFAULT_JSON_BODY_LIMIT, PORTABLE_JSON_BODY_LIMIT } from "./http/body-limits.js";
 import { COMPANY_IMPORT_API_PATH } from "./routes/company-import-paths.js";
 import { apiCompression } from "./middleware/api-compression.js";
+import { resolvePaperclipInstanceRoot } from "./home-paths.js";
 
 type UiMode = "none" | "static" | "vite-dev";
 const FEEDBACK_EXPORT_FLUSH_INTERVAL_MS = 5_000;
@@ -149,6 +151,19 @@ export function isDatabaseConnectionUnavailableError(err: unknown): boolean {
 
 export function resolveViteHmrPort(serverPort: number): number {
   return derivePaperclipViteHmrPort(serverPort);
+}
+
+export function resolveViteCacheDir(input: {
+  instanceRoot: string;
+  uiRoot: string;
+  bindHost: string;
+  serverPort: number;
+}): string {
+  const identity = createHash("sha256")
+    .update(JSON.stringify([path.resolve(input.uiRoot), input.bindHost, input.serverPort]))
+    .digest("hex");
+  // Keep optimized files outside source transforms such as React Fast Refresh.
+  return path.join(input.instanceRoot, "cache", "vite", identity, "node_modules", ".vite");
 }
 
 export function resolveViteHmrHost(bindHost: string): string | undefined {
@@ -514,7 +529,7 @@ export async function createApp(
   api.use(agentLifecycleRoutes(db));
   api.use(assuranceRoutes());
   api.use(adjudicationRoutes());
-  api.use(connectorRoutes());
+  api.use(connectorRoutes({ db }));
   api.use(caseRoutes(db, opts.storageService));
   api.use(issueTreeControlRoutes(db));
   api.use(fileResourceRoutes(db));
@@ -744,6 +759,13 @@ export async function createApp(
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       root: uiRoot,
+      // Concurrent acceptance servers must not replace a live server's optimizer files.
+      cacheDir: resolveViteCacheDir({
+        instanceRoot: resolvePaperclipInstanceRoot(),
+        uiRoot,
+        bindHost: opts.bindHost,
+        serverPort: opts.serverPort,
+      }),
       appType: "custom",
       server: {
         // Listener binding and browser HMR hostname are deliberately separate:

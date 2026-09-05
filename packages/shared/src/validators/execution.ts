@@ -34,5 +34,10 @@ export const reportRunEventSchema = z.object({
 
 export const requestRunCancellationSchema = z.object({}).strict();
 
+export const retryRunOutboxSchema = z.object({
+  eventId: z.string().uuid(),
+  expectedAttemptCount: z.number().int().positive().max(2_147_483_647),
+}).strict();
+
 export type CreateRunAttemptInput = z.infer<typeof createRunAttemptSchema>;
 export type ReportRunEventInput = z.infer<typeof reportRunEventSchema>;

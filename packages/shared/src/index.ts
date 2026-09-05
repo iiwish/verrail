@@ -15,6 +15,9 @@ export {
   type ReportRunEventInputV1,
   type ReportRunEventResponseV1,
   type RequestRunCancellationResponseV1,
+  type RetryRunOutboxInputV1,
+  type RetryRunOutboxResponseV1,
+  type RunOutboxFailureV1,
 } from "./types/execution.js";
 export {
   runtimeProfileV1Schema,
@@ -23,6 +26,7 @@ export {
   reportRunEventSchema,
   requestRunCancellationSchema,
   type CreateRunAttemptInput,
+  retryRunOutboxSchema,
   type ReportRunEventInput,
 } from "./validators/execution.js";
 export {
@@ -32,9 +36,17 @@ export {
   TARGET_STATUSES,
   TARGET_STAGE_KEYS,
   TARGET_RISK_LEVELS,
+  TARGET_OUTCOME_CONTROL_KEYS,
+  TARGET_COMMAND_IDS,
   type TargetStatus,
   type TargetStageKey,
   type TargetRiskLevel,
+  type TargetOutcomeControlKey,
+  type TargetCommandId,
+  type TargetControlState,
+  type TargetOutcomeControlV1,
+  type TargetOutcomeV1,
+  type TargetAvailableCommandV1,
   type TargetAcceptanceCriterionV1,
   type TargetResourceRefV1,
   type CreateTargetInputV1,
@@ -2678,3 +2690,5 @@ export * from "./types/adjudication.js";
 export * from "./validators/adjudication.js";
 export * from "./types/connector.js";
 export * from "./validators/connector.js";
+export * from "./types/channel.js";
+export * from "./validators/channel.js";

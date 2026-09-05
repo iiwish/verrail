@@ -30,6 +30,13 @@ export const conversationsApi = {
     api.patch<Conversation>(`${workspacePath(workspaceId)}/${encodeURIComponent(conversationId)}`, input),
   appendStructuredMessage: (workspaceId: string, conversationId: string, body: string) =>
     api.post<ConversationMessage>(`${workspacePath(workspaceId)}/${encodeURIComponent(conversationId)}/messages`, { body }),
+  listTargetDrafts: (workspaceId: string, conversationId: string) =>
+    api.get<TargetCreationDraft[]>(`${workspacePath(workspaceId)}/${encodeURIComponent(conversationId)}/target-drafts`),
+  updateTargetDraft: (workspaceId: string, conversationId: string, draftId: string, revisionNumber: number, patch: Partial<TargetDraftDefinition>) =>
+    api.patch<TargetCreationDraft>(
+      `${workspacePath(workspaceId)}/${encodeURIComponent(conversationId)}/target-drafts/${encodeURIComponent(draftId)}`,
+      { expectedRevisionNumber: revisionNumber, patch, fieldSources: {} },
+    ),
   createTargetDraft: (
     workspaceId: string,
     conversationId: string,

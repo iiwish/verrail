@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T006",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T006",
+  "status": "ready",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T07:03:28Z",
+  "governance_inputs": [
+    ".verrail/targets/g2-7-production-closure/spec.md",
+    ".verrail/targets/g2-7-production-closure/plan.md",
+    ".verrail/targets/g2-7-production-closure/tasks.md",
+    ".verrail/targets/g2-7-production-closure/runs/T005-A001/evidence.json",
+    "docs/github-connector.md",
+    "docs/operational-ontology.md"
+  ],
+  "approval_gates": {
+    "ephemeral_credential_boundary": "approved_by_outcome_owner",
+    "intermediate_plan_authority": "delegated_to_codex",
+    "dependency_T005": "accepted_for_dependency_progression",
+    "analysis": "no_critical_or_high_findings"
+  },
+  "work_unit": {
+    "title": "实现短期 GitHub 凭证与 UnknownEffect 对账",
+    "goal": "在执行已批准 PR Action 的最后时刻由 TypeScript facade 解析短期凭证并仅通过已认证内部请求传给 Go；以稳定 Provider marker、显式 effect 状态和 lookup-before-retry 收敛不确定结果，保证同一批准最多产生一个 GitHub PR。",
+    "epic": "E003",
+    "requirements": ["AC-07", "AC-08", "AC-10"],
+    "depends_on": ["T005"],
+    "blocks": ["T007", "T008", "T010"],
+    "parallel": false
+  },
+  "codebase_context": {
+    "current_gap": "The Go GitHub client can create a pull request but receives no short-lived credential from the TypeScript Secret Service. Action execution has requested/approved/executed facts but no durable executing or unknown-effect reconciliation state, so provider success followed by timeout or database failure may be retried blindly.",
+    "existing_guards": "ActionRequest already binds Target, immutable Submission, acceptance, approval, params hash, repo binding and expected commit. T003 preserves candidate versus human authority and T004 supplies version-bound work results.",
+    "ownership": "Go Domain API owns ActionRequest, EffectReceipt, reconciliation facts and final execution validation. TypeScript owns secret resolution and may carry the credential only in the authenticated one-shot internal request."
+  },
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "allowed_files": [
+      "server/src/routes/connector.ts",
+      "server/src/app.ts",
+      "server/src/services/verrail-domain-api-client.ts",
+      "server/src/services/verrail-domain-api-client.test.ts",
+      "server/src/services/github-connector-credential.test.ts",
+      "server/src/services/secrets.ts",
+      "server/src/services/run-secret-redaction.ts",
+      "server/src/services/target-read-model.ts",
+      "server/src/__tests__/connector-routes.test.ts",
+      "server/src/__tests__/target-read-model.test.ts",
+      "packages/shared/src/types/connector.ts",
+      "packages/shared/src/validators/connector.ts",
+      "packages/shared/src/validators/connector.test.ts",
+      "packages/db/src/schema/verrail_connector.ts",
+      "packages/db/src/migrations/**",
+      "services/domain-api/internal/target/connector.go",
+      "services/domain-api/internal/target/connector_store.go",
+      "services/domain-api/internal/target/connector_test.go",
+      "services/domain-api/internal/httpapi/server.go",
+      "services/domain-api/internal/httpapi/candidate_principal_test.go",
+      "services/domain-api/internal/orchestration/dispatcher.go",
+      "services/domain-api/internal/orchestration/store.go",
+      "services/domain-api/internal/orchestration/store_integration_test.go",
+      "docs/github-connector.md",
+      ".verrail/targets/g2-7-production-closure/runs/T006-A001/**",
+      ".verrail/targets/g2-7-production-closure/timeline.jsonl"
+    ],
+    "authority_rules": [
+      "Only the authenticated internal facade request may carry the short-lived GitHub credential; body fields, public routes, domain inputs, receipts, audits, outbox events and Temporal payloads must not contain it.",
+      "Every execution revalidates active TargetRevision, immutable Submission and acceptance, ActionApproval, exact params hash, repo binding, expected commit, and requester/approver separation.",
+      "A stable provider marker is derived without secrets and is recorded before the provider call.",
+      "Retry from unknown_effect must query GitHub by the marker first; found converges to one EffectReceipt, confirmed absent may retry, and inconclusive remains unknown_effect.",
+      "No database transaction stays open across a GitHub network call."
+    ]
+  },
+  "tdd_plan": {
+    "required": true,
+    "red": "Add tests for credential omission from persisted/logged data, missing or malformed internal credential transport, provider timeout before and after creation, connection reset, post-effect database failure, lookup found/absent/inconclusive, duplicate execution, changed params, stale acceptance and cross-Workspace bindings.",
+    "green": "Add the minimum ephemeral credential bridge, credential-injected one-shot GitHub client, executing/unknown_effect transitions, stable provider marker, lookup port and reconciliation commands.",
+    "refactor": "Keep provider create/lookup behind the GitHub client port and centralize redaction and effect-state transitions after the fault matrix is green."
+  },
+  "validation_loop": {
+    "commands": [
+      "focused shared/server connector, secret and redaction tests",
+      "VERRAIL_TEST_DATABASE_URL=<fresh-postgres> go test -count=1 ./...",
+      "pnpm test:domain-api",
+      "pnpm -r typecheck",
+      "pnpm test:run",
+      "credential sentinel scan of database facts and captured logs",
+      "git diff --check"
+    ],
+    "retry_budget": 4
+  },
+  "evidence_contract": {
+    "run_id": "T006-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T006-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T006-A001/evidence.json",
+    "logs": ".verrail/targets/g2-7-production-closure/runs/T006-A001/logs/",
+    "required_items": [
+      "ephemeral credential boundary and sentinel non-persistence proof",
+      "provider create/lookup fault matrix",
+      "stable marker and one EffectReceipt proof",
+      "params, revision, acceptance, approval and Workspace invalidation proof",
+      "real GitHub credential and repository prerequisites for T010"
+    ]
+  },
+  "review_contract": {
+    "required": true,
+    "checks": [
+      "credential cannot enter durable or logged structures",
+      "provider call occurs outside database transactions",
+      "unknown results never blind-retry",
+      "lookup-found cannot create a second PR",
+      "lookup-absent retry preserves the same marker",
+      "final receipt is immutable and unique",
+      "execution-time invalidation fails closed"
+    ]
+  },
+  "stop_conditions": [
+    "The only feasible design persists or logs the GitHub credential.",
+    "GitHub lookup cannot identify the canonical marker with adequate certainty.",
+    "A provider call would need to occur inside the fact transaction.",
+    "Existing ActionRequest or approval facts cannot express safe invalidation without an unplanned destructive migration."
+  ]
+}

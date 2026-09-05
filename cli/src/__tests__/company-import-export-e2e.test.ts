@@ -124,6 +124,10 @@ function createBasePaperclipEnv(options: TestPaperclipEnv) {
   env.PAPERCLIP_INSTANCE_ID = options.instanceId;
   env.PAPERCLIP_CONTEXT = path.join(options.paperclipHome, "context.json");
   env.PAPERCLIP_AUTH_STORE = path.join(options.paperclipHome, "auth.json");
+  // This test deliberately changes HOME to prove CLI isolation. Preserve the
+  // already-installed Corepack cache so the child can launch the repository's
+  // pinned pnpm without making a network request from that empty test home.
+  env.COREPACK_HOME ??= path.join(os.homedir(), ".cache", "node", "corepack");
   if (options.shellHome) {
     env.HOME = options.shellHome;
   }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CreateTargetInputV1, TargetCreationDraft } from "@paperclipai/shared";
+import type { CreateTargetInputV1, TargetCreationDraft, TargetDraftDefinition } from "@paperclipai/shared";
 import { AlertCircle, LoaderCircle, Plus, Target, X } from "lucide-react";
 import { useNavigate } from "@/lib/router";
 import { accessApi } from "../api/access";
@@ -64,6 +64,26 @@ export function NewTargetDialog() {
   const [riskLevel, setRiskLevel] = useState<CreateTargetInputV1["riskLevel"]>("medium");
   const [deadline, setDeadline] = useState("");
   const [policySummary, setPolicySummary] = useState("");
+  const existingDraft = newTargetDefaults.draft;
+  const invalidDraftScope = Boolean(existingDraft && existingDraft.workspaceId !== selectedCompanyId);
+
+  useEffect(() => {
+    if (!newTargetOpen || !existingDraft || invalidDraftScope) return;
+    const definition = existingDraft.activeRevision.definition;
+    setCollectionId(definition.collectionId ?? "");
+    setTitle(definition.title ?? "");
+    setSummary(definition.summary ?? "");
+    setOwnerValue(definition.outcomeOwner ? `${definition.outcomeOwner.principalType}:${definition.outcomeOwner.principalId}` : "");
+    setGoal(definition.goal ?? "");
+    setConstraints(definition.constraints.join("\n"));
+    setCriteria(definition.acceptanceCriteria.length ? definition.acceptanceCriteria.map((criterion) => ({
+      key: crypto.randomUUID(), title: criterion.title, description: criterion.description ?? "",
+    })) : [freshCriterion()]);
+    setRiskLevel(definition.riskLevel ?? "medium");
+    setDeadline(definition.deadline ?? "");
+    setPolicySummary(definition.policySummary ?? "");
+    setDraft(existingDraft.status === "converting" ? existingDraft : null);
+  }, [existingDraft, invalidDraftScope, newTargetOpen]);
 
   const collectionsQuery = useQuery({
     queryKey: selectedCompanyId ? queryKeys.collections.list(selectedCompanyId) : ["collections", "disabled"],
@@ -90,21 +110,32 @@ export function NewTargetDialog() {
   );
 
   useEffect(() => {
-    if (!newTargetOpen || collectionId) return;
+    if (!newTargetOpen || collectionId || existingDraft) return;
     const preferred = newTargetDefaults.collectionId;
     if (preferred && collections.some((collection) => collection.id === preferred)) {
       setCollectionId(preferred);
     }
-  }, [collectionId, collections, newTargetDefaults.collectionId, newTargetOpen]);
+  }, [collectionId, collections, existingDraft, newTargetDefaults.collectionId, newTargetOpen]);
 
   useEffect(() => {
-    if (!newTargetOpen || ownerValue) return;
+    if (!newTargetOpen || ownerValue || existingDraft?.activeRevision.definition.outcomeOwner) return;
     const user = usersQuery.data?.users[0];
     if (user) setOwnerValue(`user:${user.principalId}`);
-  }, [newTargetOpen, ownerValue, usersQuery.data?.users]);
+  }, [existingDraft, newTargetOpen, ownerValue, usersQuery.data?.users]);
 
   const createDraft = useMutation({
     mutationFn: async (input: CreateTargetInputV1) => {
+      const definition: TargetDraftDefinition = {
+        collectionId: input.collectionId ?? null,
+        title: input.title, summary: input.summary ?? null, outcomeOwner: input.outcomeOwner,
+        goal: input.goal, constraints: input.constraints, acceptanceCriteria: input.acceptanceCriteria,
+        riskLevel: input.riskLevel, deadline: input.deadline ?? null, policySummary: input.policySummary ?? null,
+        resourceRefs: existingDraft?.activeRevision.definition.resourceRefs ?? input.resourceRefs ?? [],
+      };
+      if (existingDraft) {
+        return conversationsApi.updateTargetDraft(selectedCompanyId!, existingDraft.conversationId,
+          existingDraft.id, existingDraft.activeRevisionNumber, definition);
+      }
       const conversationId = newTargetDefaults.conversationId
         ?? (await conversationsApi.create(selectedCompanyId!, { title: input.title, contextBindings: [] })).id;
       const source = await conversationsApi.appendStructuredMessage(
@@ -112,19 +143,7 @@ export function NewTargetDialog() {
         conversationId,
         `Create Target: ${input.title}`,
       );
-      return conversationsApi.createTargetDraft(selectedCompanyId!, conversationId, source.id, {
-        collectionId: input.collectionId ?? null,
-        title: input.title,
-        summary: input.summary ?? null,
-        outcomeOwner: input.outcomeOwner,
-        goal: input.goal,
-        constraints: input.constraints,
-        acceptanceCriteria: input.acceptanceCriteria,
-        riskLevel: input.riskLevel,
-        deadline: input.deadline ?? null,
-        policySummary: input.policySummary ?? null,
-        resourceRefs: input.resourceRefs ?? [],
-      });
+      return conversationsApi.createTargetDraft(selectedCompanyId!, conversationId, source.id, definition);
     },
   });
   const confirmDraft = useMutation({
@@ -155,6 +174,8 @@ export function NewTargetDialog() {
   const validCriteria = criteria.filter((criterion) => criterion.title.trim());
   const canSubmit = Boolean(
     selectedCompanyId
+    && !invalidDraftScope
+    && (!existingDraft || ["collecting", "ready_for_confirmation", "converting"].includes(existingDraft.status))
     && title.trim()
     && ownerValue
     && goal.trim()
@@ -187,10 +208,12 @@ export function NewTargetDialog() {
     try {
       if (!draft) {
         setDraft(await createDraft.mutateAsync(input));
+        void queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all(selectedCompanyId) });
         return;
       }
       const created = (await confirmDraft.mutateAsync(draft)).target;
       await queryClient.invalidateQueries({ queryKey: ["targets", selectedCompanyId] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all(selectedCompanyId) });
       reset();
       closeNewTarget();
       navigate(created.workbenchHref);
@@ -202,7 +225,9 @@ export function NewTargetDialog() {
 
   const mutationError = confirmDraft.error ?? createDraft.error;
   const code = errorCode(mutationError);
-  const errorMessage = code === "TARGET_IDEMPOTENCY_CONFLICT"
+  const errorMessage = invalidDraftScope ? t("targets.create.errors.permission")
+    : existingDraft && mutationError instanceof ApiError && mutationError.status === 409 ? t("targets.create.errors.staleDraft")
+    : code === "TARGET_IDEMPOTENCY_CONFLICT"
     ? t("targets.create.errors.conflict")
     : code === "TARGET_CREATE_FORBIDDEN"
       ? t("targets.create.errors.permission")
@@ -228,7 +253,7 @@ export function NewTargetDialog() {
             <Target className="h-4 w-4" />
             {selectedCompany?.issuePrefix ? <span>{selectedCompany.issuePrefix}</span> : null}
           </div>
-          <DialogTitle>{t("targets.create.title")}</DialogTitle>
+          <DialogTitle>{t(existingDraft ? "targets.create.resume" : "targets.create.title")}</DialogTitle>
           <DialogDescription>{t("targets.create.description")}</DialogDescription>
         </DialogHeader>
 
@@ -317,7 +342,7 @@ export function NewTargetDialog() {
             <legend className="text-sm font-medium">{t("targets.create.acceptanceCriteria")}</legend>
             {criteria.map((criterion, index) => (
               <div key={criterion.key} className="grid gap-2 border-l border-border pl-3 sm:grid-cols-[1fr_1.5fr_auto]">
-                <Input
+                <Textarea
                   aria-label={t("targets.create.criterionName", { index: index + 1 })}
                   value={criterion.title}
                   maxLength={200}

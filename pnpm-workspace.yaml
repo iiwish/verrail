@@ -2,6 +2,7 @@ packages:
   - packages/*
   - packages/adapters/*
   - packages/plugins/*
+  - packages/plugins/channel-connectors/*
   # Keep sandbox-provider plugins installable as standalone packages without
   # forcing root pnpm-lock.yaml churn for their third-party deps.
   - "!packages/plugins/sandbox-providers/**"

@@ -1,0 +1,32 @@
+{
+  "task_id": "T024",
+  "attempt_id": "T024-A001",
+  "status": "accepted_for_dependency_progression",
+  "observed_at": "2026-09-05T07:22:00Z",
+  "red": "Two resume tests failed because the existing channel draft did not prefill the dialog.",
+  "green": [
+    "UI: 5 focused tests passed across NewTargetDialog and VerrailChat, including original identity, expected revision, stale rejection without replacement, draft discovery and load failure.",
+    "UI typecheck passed after correcting the typed test fixture.",
+    "UI production build passed in 51.46 seconds; existing highlight/font/chunk warnings remain.",
+    "Token gates clean, 818 files; git diff --check passed."
+  ],
+  "live": {
+    "entry": "Web Chat Continue draft row shows original draft ID and revision.",
+    "draft_id": "d033f001-039e-5944-a862-3ac3732d5c69",
+    "source_message_id": "0e789ded-dc54-5a2c-9c81-b6485e13af8c",
+    "reviewed_revision": 2,
+    "draft_revision_id": "6c8e6fee-05e6-4f06-ab8d-57e371512376",
+    "target_id": "2f0efd4a-d65d-4b49-82ee-126a8e5acb95",
+    "target_revision_id": "036e0d61-c489-4900-93ea-f40e8accdd5c",
+    "confirmed_at": "2026-09-05T07:17:21.537Z",
+    "conversion_idempotency_key": "target-draft:d033f001-039e-5944-a862-3ac3732d5c69:v2",
+    "conversation_message_count_after_confirmation": 2,
+    "conversation_draft_count_after_confirmation": 1,
+    "context_bindings": ["target", "target_revision"],
+    "browser_result": "Review step saved v2 and disabled editing; a separate Confirm Target command opened the native Workbench. Original message and draft identities were retained.",
+    "actor_disclosure": "Codex operated the user's local Board session for the authorized test. This is delegated creation-flow QA, not an independently performed human Review, ActionApproval or Acceptance.",
+    "execution_started": false,
+    "external_effect_created": false
+  },
+  "review": "Scoped self-review only. Existing server workspace, membership, optimistic-lock and conversion-idempotency contracts remain authoritative. Full repository release gates and final human assurance remain T010 obligations."
+}

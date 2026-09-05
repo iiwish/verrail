@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T012",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T012",
+  "status": "accepted_for_dependency_progression",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T13:29:49Z",
+  "trigger": {
+    "command": "pnpm test:run",
+    "result": "OpenAPI route coverage failure after the 413-file server and 489-file UI phases passed",
+    "failure": "POST /api/plugins/{pluginId}/channel-connectors/{connectorKey}/{workspaceId}/{connectionId}/webhook is mounted but absent from the OpenAPI registry."
+  },
+  "work_unit": {
+    "title": "补齐 Channel Connector webhook OpenAPI 契约",
+    "goal": "Register the public connection-bound Channel Connector V1 callback in the OpenAPI source of truth without misrepresenting its provider-authenticated boundary.",
+    "requirements": ["AC-02", "AC-11"],
+    "depends_on": ["T009"],
+    "blocks": ["T010"],
+    "parallel": false
+  },
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "allowed_files": [
+      "server/src/routes/openapi.ts",
+      ".verrail/targets/g2-7-production-closure/packets/T012.json",
+      ".verrail/targets/g2-7-production-closure/runs/T012-A001/**",
+      ".verrail/targets/g2-7-production-closure/tasks.md",
+      ".verrail/targets/g2-7-production-closure/target.json",
+      ".verrail/targets/g2-7-production-closure/timeline.jsonl"
+    ],
+    "invariants": [
+      "The route remains public at the HTTP boundary because the connector worker authenticates the exact raw provider request.",
+      "All plugin, connector, Workspace and connection path parameters are represented.",
+      "No raw provider payload, headers or credential values are persisted by this contract change."
+    ]
+  },
+  "tdd_plan": {
+    "required": true,
+    "red": "Use the failing exact mounted-route coverage assertion from the full suite.",
+    "green": "Add the single missing OpenAPI path registration with opaque provider request body and accurate response codes.",
+    "refactor": "Keep the registration adjacent to the existing generic plugin webhook contract."
+  },
+  "validation_loop": {
+    "commands": [
+      "pnpm exec vitest run server/src/__tests__/openapi-routes.test.ts",
+      "pnpm --filter @paperclipai/server typecheck",
+      "git diff --check"
+    ],
+    "retry_budget": 3
+  },
+  "evidence_contract": {
+    "run_id": "T012-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T012-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T012-A001/evidence.json",
+    "logs": ".verrail/targets/g2-7-production-closure/runs/T012-A001/logs/"
+  },
+  "stop_conditions": [
+    "The contract introduces board or agent authentication for the public callback.",
+    "Mounted-route coverage remains incomplete.",
+    "The change requires runtime route behavior changes."
+  ]
+}

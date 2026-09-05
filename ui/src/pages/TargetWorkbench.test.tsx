@@ -12,6 +12,16 @@ const getWorkspace = vi.hoisted(() => vi.fn());
 const createConversation = vi.hoisted(() => vi.fn());
 const createRunAttempt = vi.hoisted(() => vi.fn());
 const requestRunCancellation = vi.hoisted(() => vi.fn());
+const runOutboxFailures = vi.hoisted(() => vi.fn());
+const retryRunOutbox = vi.hoisted(() => vi.fn());
+const createGraphRevision = vi.hoisted(() => vi.fn());
+const activateGraphRevision = vi.hoisted(() => vi.fn());
+const createRun = vi.hoisted(() => vi.fn());
+const recordDeliveryReview = vi.hoisted(() => vi.fn());
+const acceptSubmission = vi.hoisted(() => vi.fn());
+const approveAction = vi.hoisted(() => vi.fn());
+const executeAction = vi.hoisted(() => vi.fn());
+const getAgentLifecycle = vi.hoisted(() => vi.fn());
 const navigate = vi.hoisted(() => vi.fn());
 const setBreadcrumbs = vi.hoisted(() => vi.fn());
 const route = vi.hoisted(() => ({ targetId: "target-1", tab: "overview", targetRevisionId: undefined as string | undefined }));
@@ -24,7 +34,29 @@ vi.mock("@/lib/router", () => ({
   useParams: () => route,
 }));
 vi.mock("../api/targets", () => ({
-  targetsApi: { get, getRevision, getWorkspace, createConversation, createRunAttempt, requestRunCancellation },
+  targetsApi: {
+    get,
+    getRevision,
+    getWorkspace,
+    createConversation,
+    createRunAttempt,
+    requestRunCancellation,
+    runOutboxFailures,
+    retryRunOutbox,
+    createGraphRevision,
+    activateGraphRevision,
+    createRun,
+    recordDeliveryReview,
+    acceptSubmission,
+    approveAction,
+    executeAction,
+  },
+}));
+vi.mock("../api/agentLifecycle", () => ({
+  agentLifecycleApi: { get: getAgentLifecycle },
+}));
+vi.mock("../api/companies-query", () => ({
+  useAccountIdentity: () => ({ userId: "owner-1", settled: true }),
 }));
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "workspace-1" }) }));
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs }) }));
@@ -71,6 +103,26 @@ function targetWorkspace() {
     workspaceId: "workspace-1",
     generatedAt: "2026-08-26T10:00:02.000Z",
     graph: { workGraphId: "graph-1", activeGraphRevisionId: "graph-revision-1", status: "active", revisionNumber: 1 },
+    outcome: {
+      state: "open",
+      latestSubmissionId: null,
+      latestReviewId: null,
+      validAcceptanceId: null,
+      effectReceiptIds: [],
+      controls: [],
+    },
+    availableCommands: [
+      { id: "create_graph_revision", state: "available", reason: null, resourceId: "graph-1" },
+      { id: "activate_graph_revision", state: "completed", reason: null, resourceId: "graph-revision-1" },
+      { id: "create_run", state: "blocked", reason: "No ready agent task is available.", resourceId: null },
+      { id: "create_submission", state: "blocked", reason: "Complete work first.", resourceId: null },
+      { id: "record_review", state: "blocked", reason: "A current complete Submission is required.", resourceId: null },
+      { id: "accept_submission", state: "blocked", reason: "A current approved Review is required.", resourceId: null },
+      { id: "request_pull_request", state: "blocked", reason: "A current Submission is required.", resourceId: null },
+      { id: "approve_action", state: "blocked", reason: "An ActionRequest is required.", resourceId: null },
+      { id: "execute_action", state: "blocked", reason: "An approved ActionRequest is required.", resourceId: null },
+      { id: "reconcile_action", state: "blocked", reason: "Only an unknown effect can be reconciled.", resourceId: null },
+    ],
     stages: [
       { key: "define", label: "Define", state: "completed" },
       { key: "execute", label: "Execute", state: "current" },
@@ -98,6 +150,11 @@ function targetWorkspace() {
     evidence: [],
     claims: [],
     verificationResults: [],
+    integrationRuns: [],
+    humanWorkResults: [],
+    actionRequests: [],
+    effectReceipts: [],
+    workspaceBinding: null,
     runs: [],
     timeline: [{
       id: "target:target-1:created",
@@ -323,6 +380,39 @@ function adjudicationFacts() {
   };
 }
 
+const ACTION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const ACTION_PARAMS_HASH = "8f14e45fceea167a5a36dedd4bea2543d4a0d5d7a8df6a8ca3e9d42e3a1f8201";
+
+function actionFact() {
+  return {
+    id: ACTION_ID,
+    targetId: "target-1",
+    submissionId: SUBMISSION_ID_A,
+    actionType: "create_pull_request",
+    params: { title: "Ship governed release", head: "codex/release", base: "main" },
+    paramsHash: ACTION_PARAMS_HASH,
+    expectedCommitRef: "e07fc1f90ae7",
+    status: "approved",
+    providerMarker: null,
+    executionAttemptCount: 0,
+    executionStartedAt: null,
+    lastReconciledAt: null,
+    requestedBy: { principalType: "agent", principalId: "agent-1" },
+    createdAt: "2026-08-26T11:25:00.000Z",
+    updatedAt: "2026-08-26T11:30:00.000Z",
+    approvals: {
+      count: 1,
+      latest: {
+        id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        approvedBy: { principalType: "user", principalId: "owner-1" },
+        paramsHash: ACTION_PARAMS_HASH,
+        createdAt: "2026-08-26T11:30:00.000Z",
+      },
+    },
+    executedReceipt: null,
+  };
+}
+
 async function flushReact() {
   await act(async () => {
     await Promise.resolve();
@@ -426,12 +516,54 @@ describe("TargetWorkbench", () => {
   let root: ReturnType<typeof createRoot>;
 
   beforeEach(() => {
+    runOutboxFailures.mockResolvedValue([]);
     route.targetId = "target-1";
     route.tab = "overview";
     route.targetRevisionId = undefined;
     get.mockResolvedValue(targetModel());
     getRevision.mockResolvedValue(targetModel());
     getWorkspace.mockResolvedValue(targetWorkspace());
+    getAgentLifecycle.mockResolvedValue({
+      schemaVersion: 1,
+      workspaceId: "workspace-1",
+      generatedAt: "2026-09-04T00:00:00.000Z",
+      defaultDeploymentId: "deployment-1",
+      definitions: [{
+        id: "definition-1",
+        workspaceId: "workspace-1",
+        compatibilityAgentId: "agent-42",
+        name: "Delivery Agent",
+        description: null,
+        status: "published",
+        versions: [],
+        evaluations: [],
+        deployments: [{
+          id: "deployment-1",
+          workspaceId: "workspace-1",
+          agentDefinitionId: "definition-1",
+          name: "Production",
+          status: "active",
+          isDefault: true,
+          activeRevision: {
+            id: "deployment-revision-1",
+            workspaceId: "workspace-1",
+            deploymentId: "deployment-1",
+            revisionNumber: 1,
+            agentVersionId: "agent-version-1",
+            evaluationRunId: "evaluation-1",
+            state: "active",
+            runtimeConfig: {},
+            contentHash: "a".repeat(64),
+            createdAt: "2026-09-04T00:00:00.000Z",
+          },
+          revisions: [],
+          createdAt: "2026-09-04T00:00:00.000Z",
+          updatedAt: "2026-09-04T00:00:00.000Z",
+        }],
+        createdAt: "2026-09-04T00:00:00.000Z",
+        updatedAt: "2026-09-04T00:00:00.000Z",
+      }],
+    });
     createConversation.mockResolvedValue({ id: "conversation-1" });
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -441,6 +573,7 @@ describe("TargetWorkbench", () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
@@ -525,6 +658,217 @@ describe("TargetWorkbench", () => {
     expect(navigate).toHaveBeenCalledWith("/chat/conversation-1");
   });
 
+  it("keeps candidate-only commands visible without offering board impersonation", async () => {
+    getWorkspace.mockResolvedValue({
+      ...targetWorkspace(),
+      availableCommands: targetWorkspace().availableCommands.map((command) =>
+        command.id === "create_submission" || command.id === "request_pull_request"
+          ? { ...command, state: "available", reason: null, resourceId: SUBMISSION_ID_A }
+          : command),
+    });
+
+    await renderWorkbench();
+
+    expect(container.textContent).toContain("An authorized Agent or Service must issue this candidate command");
+    expect(Array.from(container.querySelectorAll("button")).some(
+      (button) => button.textContent?.includes("Create submission") || button.textContent?.includes("Request pull request"),
+    )).toBe(false);
+  });
+
+  it("creates and activates a graph revision, then starts its bound Agent Run", async () => {
+    getWorkspace.mockResolvedValue({
+      ...targetWorkspace(),
+      work: [{ ...targetWorkspace().work[0], status: "ready" }],
+      availableCommands: targetWorkspace().availableCommands.map((command) => {
+        if (command.id === "activate_graph_revision") return { ...command, state: "available", resourceId: "graph-revision-2" };
+        if (command.id === "create_run") return { ...command, state: "available", reason: null, resourceId: "node-1" };
+        return command;
+      }),
+    });
+    createGraphRevision.mockResolvedValue({ schemaVersion: 1, targetId: "target-1", targetRevisionId: "revision-1", workGraphId: "graph-1", graphRevisionId: "graph-revision-2", revisionNumber: 2, replayed: false });
+    activateGraphRevision.mockResolvedValue({ schemaVersion: 1, targetId: "target-1", targetRevisionId: "revision-1", workGraphId: "graph-1", graphRevisionId: "graph-revision-2", revisionNumber: 2, activatedAt: new Date().toISOString(), replayed: false });
+    createRun.mockResolvedValue({ schemaVersion: 1, runId: "run-3", targetId: "target-1", targetRevisionId: "revision-1", graphRevisionId: "graph-revision-1", workNodeId: "node-1", deploymentRevisionId: null, agentVersionId: null, status: "queued", replayed: false });
+
+    await renderWorkbench();
+
+    const deploymentSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Delivery deployment revision"]');
+    expect(deploymentSelect?.value).toBe("deployment-revision-1");
+    const createButton = Array.from(container.querySelectorAll("button"))
+      .find((candidate) => candidate.textContent?.includes("Create revision"));
+    await act(async () => createButton?.click());
+    await flushReact();
+
+    expect(createGraphRevision).toHaveBeenCalledWith("workspace-1", "target-1", expect.objectContaining({
+      expectedTargetRevisionId: "revision-1",
+      nodes: expect.arrayContaining([
+        expect.objectContaining({ nodeKey: "deliver", responsiblePrincipal: { principalType: "agent", principalId: "deployment-revision-1" } }),
+        expect.objectContaining({ nodeKey: "verify", dependencyNodeKeys: ["deliver"] }),
+        expect.objectContaining({ nodeKey: "review", dependencyNodeKeys: ["verify"] }),
+        expect.objectContaining({ nodeKey: "accept", dependencyNodeKeys: ["review"] }),
+      ]),
+    }), expect.any(String));
+
+    const activateButton = Array.from(container.querySelectorAll("button"))
+      .find((candidate) => candidate.textContent === "Activate");
+    await act(async () => activateButton?.click());
+    await flushReact();
+    expect(activateGraphRevision).toHaveBeenCalledWith("workspace-1", "target-1", "graph-revision-2", expect.any(String));
+
+    const startButton = Array.from(container.querySelectorAll("button"))
+      .find((candidate) => candidate.textContent?.includes("Start run"));
+    await act(async () => startButton?.click());
+    await flushReact();
+    expect(createRun).toHaveBeenCalledWith(
+      "workspace-1",
+      "target-1",
+      "graph-revision-1",
+      "node-1",
+      { kind: "agent_run", actor: { principalType: "agent", principalId: "agent-1" } },
+      expect.any(String),
+    );
+  });
+
+  it("issues review, acceptance, approval, and execution as separate bound human commands", async () => {
+    const adjudication = adjudicationFacts();
+    const action = actionFact();
+    getWorkspace.mockResolvedValue({
+      ...targetWorkspace(),
+      ...adjudication,
+      actionRequests: [action],
+      availableCommands: targetWorkspace().availableCommands.map((command) => {
+        if (command.id === "record_review") return { ...command, state: "available", reason: null, resourceId: SUBMISSION_ID_A };
+        if (command.id === "accept_submission") return { ...command, state: "available", reason: null, resourceId: REVIEW_ID_A };
+        if (command.id === "approve_action" || command.id === "execute_action") return { ...command, state: "available", reason: null, resourceId: ACTION_ID };
+        return command;
+      }),
+    });
+    recordDeliveryReview.mockResolvedValue({ schemaVersion: 1, resourceType: "delivery_review", resourceId: REVIEW_ID_A, replayed: false });
+    acceptSubmission.mockResolvedValue({ schemaVersion: 1, resourceType: "acceptance", resourceId: ACCEPTANCE_ID_A, replayed: false });
+    approveAction.mockResolvedValue({ schemaVersion: 1, resourceType: "action_approval", resourceId: action.approvals.latest.id, replayed: false });
+    executeAction.mockResolvedValue({ schemaVersion: 1, resourceType: "effect_receipt", resourceId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", replayed: false });
+
+    await renderWorkbench();
+
+    expect(container.querySelector(`[title="${SUBMISSION_HASH_A}"]`)).not.toBeNull();
+    expect(container.querySelector(`[title="${REVIEW_HASH_A}"]`)).not.toBeNull();
+    expect(container.querySelector(`[title="${ACTION_PARAMS_HASH}"]`)).not.toBeNull();
+
+    const clickCommand = async (label: string) => {
+      const button = Array.from(container.querySelectorAll("button"))
+        .find((candidate) => candidate.textContent?.includes(label));
+      expect(button, label).toBeDefined();
+      await act(async () => button?.click());
+      await flushReact();
+    };
+
+    await clickCommand("Record review");
+    expect(recordDeliveryReview).toHaveBeenCalledWith("workspace-1", expect.objectContaining({
+      submissionId: SUBMISSION_ID_A,
+      reviewerPrincipalId: "owner-1",
+      verdict: "approved",
+    }), expect.any(String));
+
+    await clickCommand("Accept");
+    expect(acceptSubmission).toHaveBeenCalledWith("workspace-1", {
+      submissionId: SUBMISSION_ID_A,
+      reviewId: REVIEW_ID_A,
+    }, expect.any(String));
+
+    await clickCommand("Approve");
+    expect(approveAction).toHaveBeenCalledWith("workspace-1", ACTION_ID, expect.objectContaining({
+      approverPrincipalId: "owner-1",
+      paramsHash: ACTION_PARAMS_HASH,
+    }), expect.any(String));
+
+    await clickCommand("Create pull request");
+    expect(executeAction).toHaveBeenCalledWith("workspace-1", ACTION_ID, { actionRequestId: ACTION_ID }, expect.any(String));
+  });
+
+  it("shows a rejected command code and retries the identical command intent", async () => {
+    const { ApiError } = await import("../api/client");
+    getWorkspace.mockResolvedValue({
+      ...targetWorkspace(),
+      ...adjudicationFacts(),
+      availableCommands: targetWorkspace().availableCommands.map((command) =>
+        command.id === "record_review"
+          ? { ...command, state: "available", reason: null, resourceId: SUBMISSION_ID_A }
+          : command),
+    });
+    recordDeliveryReview
+      .mockRejectedValueOnce(new ApiError("Stale submission", 409, { code: "ADJUDICATION_SUBMISSION_STALE" }))
+      .mockResolvedValueOnce({ schemaVersion: 1, resourceType: "delivery_review", resourceId: REVIEW_ID_A, replayed: false });
+
+    await renderWorkbench();
+    const recordButton = Array.from(container.querySelectorAll("button"))
+      .find((candidate) => candidate.textContent?.includes("Record review"));
+    await act(async () => recordButton?.click());
+    await flushReact();
+
+    expect(container.textContent).toContain("ADJUDICATION_SUBMISSION_STALE");
+    const retryButton = Array.from(container.querySelectorAll("button"))
+      .find((candidate) => candidate.textContent === "Retry");
+    await act(async () => retryButton?.click());
+    await flushReact();
+
+    expect(recordDeliveryReview).toHaveBeenCalledTimes(2);
+    expect(recordDeliveryReview.mock.calls[1]?.[2]).toBe(recordDeliveryReview.mock.calls[0]?.[2]);
+    expect(container.textContent).toContain("authoritative facts were refreshed");
+  });
+
+  it("retries the exact failed event without creating an Attempt and reuses the command key after uncertainty", async () => {
+    route.tab = "runs";
+    getWorkspace.mockResolvedValue({ ...targetWorkspace(), runs: runFixtures() });
+    runOutboxFailures.mockResolvedValue([{ eventId: "event-1", runId: "run-1", eventType: "verrail.run.cancellation_requested.v1", attemptCount: 3, lastError: "unsupported Run event type", createdAt: "2026-09-05T00:00:00Z" }]);
+    retryRunOutbox.mockRejectedValue(new Error("connection lost"));
+    await renderWorkbench();
+    expect(runOutboxFailures).toHaveBeenCalledWith("workspace-1", "target-1");
+    expect(container.textContent).toContain("unsupported Run event type");
+    const button = Array.from(container.querySelectorAll("button")).find((item) => item.textContent === "Retry event delivery");
+    expect(button).toBeDefined();
+    await act(async () => button?.click());
+    await flushReact();
+    await act(async () => button?.click());
+    await flushReact();
+    expect(retryRunOutbox).toHaveBeenCalledTimes(2);
+    expect(retryRunOutbox.mock.calls[0]).toEqual(["workspace-1", "run-1", { eventId: "event-1", expectedAttemptCount: 3 }, expect.any(String)]);
+    expect(retryRunOutbox.mock.calls[1]).toEqual(retryRunOutbox.mock.calls[0]);
+    expect(createRunAttempt).not.toHaveBeenCalled();
+    expect(requestRunCancellation).not.toHaveBeenCalled();
+  });
+
+  it("refreshes asynchronous recovery facts on the Runs tab without allocating another Attempt", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    route.tab = "runs";
+    getWorkspace.mockResolvedValue({ ...targetWorkspace(), runs: [{ ...runFixtures()[0], status: "queued" }] });
+    await renderWorkbench();
+    expect(container.textContent).toContain("Queued");
+    const initialReads = getWorkspace.mock.calls.length;
+
+    getWorkspace.mockResolvedValue({ ...targetWorkspace(), runs: [runFixtures()[0]] });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    await flushReact();
+
+    expect(getWorkspace.mock.calls.length).toBeGreaterThan(initialReads);
+    expect(container.textContent).not.toContain("Queued");
+    expect(Array.from(container.querySelectorAll("button")).some((button) => button.textContent === "Retry")).toBe(true);
+    expect(createRunAttempt).not.toHaveBeenCalled();
+  });
+
+  it("does not poll the full workspace outside the Runs tab", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    await renderWorkbench();
+    const initialReads = getWorkspace.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(getWorkspace).toHaveBeenCalledTimes(initialReads);
+  });
+
+  it("shows outbox read failure rather than treating it as an empty recovery list", async () => {
+    route.tab = "runs";
+    runOutboxFailures.mockRejectedValue(new Error("unavailable"));
+    await renderWorkbench();
+    expect(container.textContent).toContain("Failed to load Run event delivery failures.");
+  });
+
   it("runs tab shows attempt fencing, cursor, lease evidence and drives retry and cancel", async () => {
     route.tab = "runs";
     getWorkspace.mockResolvedValue({ ...targetWorkspace(), runs: runFixtures() });
@@ -553,7 +897,7 @@ describe("TargetWorkbench", () => {
       "workspace-1",
       "run-1",
       expect.objectContaining({
-        executor: expect.objectContaining({ principalType: "service", principalId: "host-trusted-local" }),
+        executor: expect.objectContaining({ principalType: "service", principalId: "verrail-host-runner" }),
       }),
       expect.any(String),
     );

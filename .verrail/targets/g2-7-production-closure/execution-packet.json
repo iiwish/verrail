@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T001",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T001",
+  "status": "completed",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T03:13:24Z",
+  "governance_inputs": [
+    "docs/constitution.md",
+    "docs/product-goals.md",
+    "docs/product-design.md",
+    "docs/operational-ontology.md",
+    "docs/architecture.md",
+    ".verrail/targets/g2-7-production-closure/spec.md",
+    ".verrail/targets/g2-7-production-closure/checklists/requirements.md",
+    ".verrail/targets/g2-7-production-closure/plan.md",
+    ".verrail/targets/g2-7-production-closure/tasks.md",
+    ".verrail/targets/g2-7-production-closure/analysis.md"
+  ],
+  "approval_gates": {
+    "project_constitution": "confirmed",
+    "feature_spec": "confirmed_by_outcome_owner_2026-09-04",
+    "requirements_checklist": "completed_no_critical_or_high_findings",
+    "plan_and_work_graph": "confirmed_by_outcome_owner_2026-09-04",
+    "analysis": "completed_no_critical_or_high_findings"
+  },
+  "work_unit": {
+    "title": "建立交付证据与领域不变量差距矩阵",
+    "goal": "核对 G1、G2.0 至 G2.6 的仓库记录、运行时事实和领域不变量，形成不虚构完成度的 G2.7 基线。",
+    "epic": "E001",
+    "requirements": [
+      "AC-01",
+      "AC-11"
+    ],
+    "depends_on": [],
+    "blocks": [
+      "T002"
+    ],
+    "parallel": false
+  },
+  "codebase_context": {
+    "local_instructions": "AGENTS.md",
+    "relevant_sources": [
+      "docs/operational-ontology.md",
+      "docs/architecture.md",
+      ".verrail/targets/g1-*",
+      ".verrail/targets/g2-*",
+      "git history and referenced commits",
+      "runtime Target 6164560c-b3bc-4ebe-a9b1-0054433b8d1b"
+    ],
+    "existing_pattern": "Each governed target carries target metadata, canonical spec or plan, append-only timeline, task-scoped run evidence, review, and immutable commit references.",
+    "forbidden_changes": [
+      "Do not change historical target status, review, acceptance, or ship records.",
+      "Do not modify product code, schemas, migrations, tests, or runtime database facts.",
+      "Do not rewrite git history or reinterpret missing evidence as passed evidence.",
+      "Do not claim G1, G2, or G2.7 complete from fixture, mock, seed, or undocumented observation."
+    ]
+  },
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "branch_creation": "only_after_plan_and_work_graph_approval",
+    "allowed_files": [
+      ".verrail/targets/g2-7-production-closure/gap-matrix.md",
+      ".verrail/targets/g2-7-production-closure/runs/T001-A001/**",
+      ".verrail/targets/g2-7-production-closure/timeline.jsonl"
+    ],
+    "read_only_inputs": [
+      ".verrail/targets/g1-*/**",
+      ".verrail/targets/g2-*/**",
+      "docs/**",
+      "git objects and refs",
+      "runtime read models"
+    ],
+    "ownership": "If another change touches an allowed file or changes referenced evidence during execution, stop and reconcile rather than overwrite it."
+  },
+  "tdd_plan": {
+    "required": false,
+    "reason": "T001 is an artifact-only evidence audit and does not change product behavior."
+  },
+  "validation_loop": {
+    "commands": [
+      "jq -e . .verrail/targets/*/target.json",
+      "for file in .verrail/targets/*/timeline.jsonl; do jq -e . \"$file\" >/dev/null || exit 1; done",
+      "git diff --check"
+    ],
+    "reference_checks": [
+      "Every matrix assertion names an existing file, commit, command output, or runtime fact.",
+      "Every missing fact is labeled missing rather than inferred.",
+      "Fixtures, fake connectors, and manual seeds are labeled non-production evidence."
+    ],
+    "retry_budget": 1
+  },
+  "evidence_contract": {
+    "run_id": "T001-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T001-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T001-A001/evidence.json",
+    "logs": ".verrail/targets/g2-7-production-closure/runs/T001-A001/logs/",
+    "required_items": [
+      "audited input inventory",
+      "implemented, partial, and missing finding counts",
+      "reference-existence validation",
+      "changed-files and diff summary",
+      "T002 exact reconciliation candidates",
+      "residual risks"
+    ]
+  },
+  "review_contract": {
+    "required": true,
+    "checks": [
+      "Spec and ontology compliance",
+      "No historical user decision was altered",
+      "No unsupported closure claim",
+      "All citations resolve",
+      "T002 candidates are bounded and evidence-backed"
+    ]
+  },
+  "handoff": {
+    "issue": null,
+    "pull_request": null,
+    "merge": "not_authorized",
+    "release": "not_authorized"
+  },
+  "stop_conditions": [
+    "Technical plan and work graph are not explicitly approved.",
+    "The worktree contains a conflicting change in an allowed output file.",
+    "A referenced status or commit cannot be verified.",
+    "The audit would require changing a user-owned approval or acceptance decision.",
+    "The task expands into product implementation or runtime data repair."
+  ]
+}

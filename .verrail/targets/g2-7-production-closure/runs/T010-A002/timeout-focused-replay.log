@@ -1,0 +1,27 @@
+
+ RUN  v4.1.10 /Users/iiwish/self/verrail
+
+ ❯ |@paperclipai/server| src/__tests__/access-routes-permissions-upgrade.test.ts (2 tests | 1 failed) 27951ms
+     × rejects owner self-lockout through the member route after the permissions upgrade 10302ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |@paperclipai/server| src/__tests__/access-routes-permissions-upgrade.test.ts > access routes permissions upgrade compatibility > rejects owner self-lockout through the member route after the permissions upgrade
+Error: Test timed out in 10000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/__tests__/access-routes-permissions-upgrade.test.ts:102:3
+    100|   });
+    101|
+    102|   it("rejects owner self-lockout through the member route after the pe…
+       |   ^
+    103|     const { company, owner } = await createCompanyWithOwner(db);
+    104|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  21:03:23
+   Duration  38.07s (transform 16.50s, setup 904ms, import 8.45s, tests 27.95s, environment 0ms)
+

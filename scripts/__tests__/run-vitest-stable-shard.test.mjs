@@ -1,5 +1,15 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -35,6 +45,55 @@ function dryRunJson(args) {
 
 const SHARD_COUNT = 5;
 const SERIALIZED_SHARD_COUNT = 5;
+
+test("successful invocations remove their isolated test roots", () => {
+  const fixtureRoot = mkdtempSync(path.join(os.tmpdir(), "paperclip-vitest-runner-cleanup-"));
+  const fakeBin = path.join(fixtureRoot, "bin");
+  const invocationLog = path.join(fixtureRoot, "invocations.log");
+  const fakePnpm = path.join(fakeBin, process.platform === "win32" ? "pnpm.cmd" : "pnpm");
+  const recordedRoots = [];
+
+  try {
+    mkdirSync(fakeBin, { recursive: true });
+    if (process.platform === "win32") {
+      writeFileSync(fakePnpm, "@echo off\r\necho %TMPDIR%>>%PAPERCLIP_FAKE_PNPM_LOG%\r\n");
+    } else {
+      writeFileSync(
+        fakePnpm,
+        "#!/bin/sh\nprintf '%s\\n' \"$TMPDIR\" >> \"$PAPERCLIP_FAKE_PNPM_LOG\"\n",
+      );
+      chmodSync(fakePnpm, 0o755);
+    }
+
+    const result = spawnSync(
+      process.execPath,
+      [script, "--mode", "general", "--group", "general-workspaces-b"],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
+          PAPERCLIP_FAKE_PNPM_LOG: invocationLog,
+        },
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+
+    const tempDirs = readFileSync(invocationLog, "utf8").trim().split(/\r?\n/).filter(Boolean);
+    assert.ok(tempDirs.length > 0, "the fake pnpm must observe at least one invocation");
+    for (const tempDir of tempDirs) {
+      const testRoot = path.dirname(tempDir);
+      recordedRoots.push(testRoot);
+      assert.equal(existsSync(testRoot), false, `test root leaked after invocation: ${testRoot}`);
+    }
+  } finally {
+    for (const testRoot of recordedRoots) {
+      rmSync(testRoot, { recursive: true, force: true });
+    }
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
 
 
 test("the serialized shards form a complete, non-overlapping partition", () => {

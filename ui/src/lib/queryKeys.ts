@@ -5,6 +5,8 @@ export const queryKeys = {
       ["conversations", workspaceId, "list", status, q] as const,
     detail: (workspaceId: string, conversationId: string) =>
       ["conversations", workspaceId, "detail", conversationId] as const,
+    drafts: (workspaceId: string, conversationId: string) =>
+      ["conversations", workspaceId, "drafts", conversationId] as const,
   },
   targets: {
     list: (

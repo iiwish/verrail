@@ -228,6 +228,15 @@ Cloud Plane 管理账户、计费、配额、区域与租户单元生命周期�
 - Plugin 不得直连控制平面数据库、直接推进 Graph 或自行决定 Approval/Acceptance；
 - 所有扩展合同必须版本化并有 Contract Test。
 
+企业消息通过版本化 Channel Connector 合同归一化。飞书插件支持签名加密 Webhook
+与官方 SDK 长连接两种传输；长连接由插件 Worker 持有，后台 `channels.ingest` RPC
+要求 `webhooks.receive` Capability，并由 Host 重新验证 ready 插件的 Connector 声明、
+活跃 Workspace、当前连接配置指纹和已授权私聊身份。Secret 仅在 Workspace-scoped
+配置或回复调用中解析，后台事件不继承已结束的配置 Invocation 权限。
+配置替换或关闭会停止旧连接；同一 Worker 内一个飞书应用只绑定一个接收器。
+消息幂等、Conversation、Draft 和回复 Provider ID 由控制平面持久化；长连接只接收
+映射到活跃成员的私聊，普通消息不创建 Target，Draft 仍需显式人类确认。
+
 ## 9. 渐进式领域迁移
 
 领域重构按垂直切片推进：

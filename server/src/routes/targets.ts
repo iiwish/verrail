@@ -7,6 +7,7 @@ import {
   createGraphRevisionSchema,
   createRunSchema,
   createRunAttemptSchema,
+  retryRunOutboxSchema,
   reportRunEventSchema,
   targetIdempotencyKeySchema,
   targetListQuerySchema,
@@ -147,6 +148,27 @@ export function targetRoutes(
     ? createVerrailDomainApiClient()
     : options.domainApiClient;
   const etag = privateJsonEtag(principalKey);
+
+  router.get("/workspaces/:workspaceId/targets/:targetId/run-outbox-failures", async (req, res) => {
+    const workspaceId = req.params.workspaceId as string;
+    assertBoard(req);
+    assertWorkspaceRead(req, workspaceId);
+    const targetId = req.params.targetId as string;
+    if (!await svc.getByTargetId(workspaceId, targetId)) throw notFound("Target not found");
+    res.json(await svc.runOutboxFailures(workspaceId, targetId));
+  });
+
+  router.post("/workspaces/:workspaceId/runs/:runId/outbox/retry", validate(retryRunOutboxSchema), async (req, res) => {
+    const workspaceId = req.params.workspaceId as string;
+    assertBoard(req);
+    assertCompanyAccess(req, workspaceId);
+    if (!domainApi) throw new HttpError(503, "Verrail Domain API is unavailable", { code: "TARGET_DOMAIN_API_UNAVAILABLE", retryable: true });
+    const actor = getActorInfo(req);
+    const result = await domainApi.retryRunOutbox({ workspaceId, runId: req.params.runId as string,
+      principalType: "user", principalId: actor.actorId,
+      idempotencyKey: targetIdempotencyKeySchema.parse(req.header("Idempotency-Key")), input: req.body });
+    res.json(result);
+  });
 
   router.post(
     "/workspaces/:workspaceId/targets",

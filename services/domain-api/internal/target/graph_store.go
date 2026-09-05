@@ -69,7 +69,11 @@ func (store *Store) CreateGraphRevision(ctx context.Context, command CreateGraph
 	}
 	for _, node := range command.Input.Nodes {
 		nodeID, _ := NewUUID()
-		dependencies, _ := json.Marshal(node.DependencyNodeKeys)
+		dependencyNodeKeys := node.DependencyNodeKeys
+		if dependencyNodeKeys == nil {
+			dependencyNodeKeys = []string{}
+		}
+		dependencies, _ := json.Marshal(dependencyNodeKeys)
 		var principalType, principalID *string
 		if node.ResponsiblePrincipal != nil {
 			principalType = &node.ResponsiblePrincipal.PrincipalType
@@ -202,24 +206,210 @@ func insertActivationReceipt(ctx context.Context, tx pgx.Tx, command ActivateGra
 	return err
 }
 
+func assertSchedulingScope(ctx context.Context, tx pgx.Tx, workspaceID string, principal Principal) error {
+	switch principal.Type {
+	case "user":
+		return assertCreateScope(ctx, tx, CreateCommand{WorkspaceID: workspaceID, Principal: principal})
+	case "service":
+		var active bool
+		if err := tx.QueryRow(ctx, `select exists(select 1 from companies where id=$1 and status='active')`, workspaceID).Scan(&active); err != nil {
+			return fmt.Errorf("validate orchestration service scope: %w", err)
+		}
+		if !active {
+			return forbidden("ORCHESTRATION_COMMAND_FORBIDDEN", "Orchestration service cannot access this Workspace")
+		}
+		return nil
+	default:
+		return forbidden("ORCHESTRATION_COMMAND_FORBIDDEN", "Unsupported scheduling Principal")
+	}
+}
+
+func (store *Store) ReconcileGraph(ctx context.Context, command ReconcileGraphCommand) (ReconcileGraphResult, error) {
+	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	if err != nil {
+		return ReconcileGraphResult{}, fmt.Errorf("begin Graph reconciliation transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	lockKey := command.WorkspaceID + "\n" + command.Principal.Type + "\n" + command.Principal.ID + "\n" + GraphReconcileCommandType + "\n" + command.IdempotencyKey
+	if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock(hashtextextended($1, 0))`, lockKey); err != nil {
+		return ReconcileGraphResult{}, err
+	}
+	var existingHash string
+	var existingResponse []byte
+	err = tx.QueryRow(ctx, `select request_hash,response from verrail_command_receipts where workspace_id=$1 and principal_type=$2 and principal_id=$3 and command_type=$4 and idempotency_key=$5`, command.WorkspaceID, command.Principal.Type, command.Principal.ID, GraphReconcileCommandType, command.IdempotencyKey).Scan(&existingHash, &existingResponse)
+	if err == nil {
+		if existingHash != command.RequestHash {
+			return ReconcileGraphResult{}, IdempotencyConflict()
+		}
+		var result ReconcileGraphResult
+		if err := json.Unmarshal(existingResponse, &result); err != nil {
+			return result, err
+		}
+		result.Replayed = true
+		if err := tx.Commit(ctx); err != nil {
+			return result, err
+		}
+		return result, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return ReconcileGraphResult{}, err
+	}
+	if command.Principal.Type != "service" {
+		return ReconcileGraphResult{}, forbidden("GRAPH_RECONCILE_FORBIDDEN", "The internal orchestration service is required")
+	}
+	if err := assertSchedulingScope(ctx, tx, command.WorkspaceID, command.Principal); err != nil {
+		return ReconcileGraphResult{}, err
+	}
+	var activeTargetRevisionID, activeGraphRevisionID string
+	err = tx.QueryRow(ctx, `
+		select target.active_target_revision_id,graph.active_graph_revision_id
+		from verrail_targets target
+		join verrail_work_graphs graph on graph.target_id=target.id and graph.workspace_id=target.workspace_id
+		where target.id=$1 and target.workspace_id=$2
+		for update of target,graph
+	`, command.TargetID, command.WorkspaceID).Scan(&activeTargetRevisionID, &activeGraphRevisionID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ReconcileGraphResult{}, NotFound()
+	}
+	if err != nil {
+		return ReconcileGraphResult{}, err
+	}
+	if activeTargetRevisionID != command.TargetRevisionID || activeGraphRevisionID != command.GraphRevisionID {
+		return ReconcileGraphResult{}, &Error{Status: 409, Code: "GRAPH_RECONCILE_STALE_REVISION", Message: "Graph reconciliation must bind the active TargetRevision and GraphRevision"}
+	}
+	type storedNode struct {
+		id, key, kind, status string
+		responsibleType       *string
+		responsibleID         *string
+		dependencies          []string
+	}
+	rows, err := tx.Query(ctx, `select id,node_key,kind,status,responsible_principal_type,responsible_principal_id,dependency_node_keys from verrail_work_nodes where workspace_id=$1 and target_id=$2 and graph_revision_id=$3 order by node_key for update`, command.WorkspaceID, command.TargetID, command.GraphRevisionID)
+	if err != nil {
+		return ReconcileGraphResult{}, err
+	}
+	defer rows.Close()
+	nodes := make([]storedNode, 0)
+	for rows.Next() {
+		var node storedNode
+		var dependenciesJSON []byte
+		if err := rows.Scan(&node.id, &node.key, &node.kind, &node.status, &node.responsibleType, &node.responsibleID, &dependenciesJSON); err != nil {
+			return ReconcileGraphResult{}, err
+		}
+		if err := json.Unmarshal(dependenciesJSON, &node.dependencies); err != nil {
+			return ReconcileGraphResult{}, fmt.Errorf("decode WorkNode dependencies: %w", err)
+		}
+		nodes = append(nodes, node)
+	}
+	if err := rows.Err(); err != nil {
+		return ReconcileGraphResult{}, err
+	}
+	statusByKey := make(map[string]string, len(nodes))
+	for _, node := range nodes {
+		statusByKey[node.key] = node.status
+	}
+	activatedNodeIDs := make([]string, 0)
+	for index := range nodes {
+		if nodes[index].status != "pending" {
+			continue
+		}
+		ready := true
+		for _, dependency := range nodes[index].dependencies {
+			if statusByKey[dependency] != "completed" {
+				ready = false
+				break
+			}
+		}
+		if !ready {
+			continue
+		}
+		if _, err := tx.Exec(ctx, `update verrail_work_nodes set status='ready',updated_at=now() where id=$1 and status='pending'`, nodes[index].id); err != nil {
+			return ReconcileGraphResult{}, err
+		}
+		nodes[index].status = "ready"
+		statusByKey[nodes[index].key] = "ready"
+		activatedNodeIDs = append(activatedNodeIDs, nodes[index].id)
+	}
+	result := ReconcileGraphResult{
+		SchemaVersion:      SchemaVersion,
+		TargetID:           command.TargetID,
+		TargetRevisionID:   command.TargetRevisionID,
+		GraphRevisionID:    command.GraphRevisionID,
+		ActivatedNodeIDs:   activatedNodeIDs,
+		AgentNodes:         []SchedulableAgentNode{},
+		ActiveRunIDs:       []string{},
+		WaitingTaskNodeIDs: []string{},
+		WaitingGateNodeIDs: []string{},
+		BlockedNodeIDs:     []string{},
+		AllCompleted:       len(nodes) > 0,
+	}
+	for _, node := range nodes {
+		if node.status != "completed" {
+			result.AllCompleted = false
+		}
+		if node.status == "blocked" {
+			result.BlockedNodeIDs = append(result.BlockedNodeIDs, node.id)
+		}
+		if node.status != "ready" {
+			continue
+		}
+		switch node.kind {
+		case "agent_task":
+			if node.responsibleType == nil || node.responsibleID == nil || *node.responsibleType != "agent" {
+				return ReconcileGraphResult{}, &Error{Status: 409, Code: "GRAPH_AGENT_BINDING_INVALID", Message: "Ready AgentTask is missing its DeploymentRevision"}
+			}
+			result.AgentNodes = append(result.AgentNodes, SchedulableAgentNode{WorkNodeID: node.id, DeploymentRevisionID: *node.responsibleID})
+		case "integration_task", "human_task":
+			result.WaitingTaskNodeIDs = append(result.WaitingTaskNodeIDs, node.id)
+		default:
+			result.WaitingGateNodeIDs = append(result.WaitingGateNodeIDs, node.id)
+		}
+	}
+	runRows, err := tx.Query(ctx, `select id from verrail_runs where workspace_id=$1 and target_id=$2 and graph_revision_id=$3 and status in ('queued','running','cancel_requested') order by id`, command.WorkspaceID, command.TargetID, command.GraphRevisionID)
+	if err != nil {
+		return ReconcileGraphResult{}, err
+	}
+	for runRows.Next() {
+		var runID string
+		if err := runRows.Scan(&runID); err != nil {
+			runRows.Close()
+			return ReconcileGraphResult{}, err
+		}
+		result.ActiveRunIDs = append(result.ActiveRunIDs, runID)
+	}
+	runRows.Close()
+	if err := runRows.Err(); err != nil {
+		return ReconcileGraphResult{}, err
+	}
+	response, _ := json.Marshal(result)
+	payload, _ := json.Marshal(map[string]any{"schemaVersion": SchemaVersion, "targetId": command.TargetID, "targetRevisionId": command.TargetRevisionID, "graphRevisionId": command.GraphRevisionID, "activatedNodeIds": activatedNodeIDs})
+	receiptID, _ := NewUUID()
+	auditID, _ := NewUUID()
+	if _, err := tx.Exec(ctx, `insert into verrail_command_receipts(id,workspace_id,principal_type,principal_id,command_type,idempotency_key,request_hash,target_id,target_revision_id,response) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)`, receiptID, command.WorkspaceID, command.Principal.Type, command.Principal.ID, GraphReconcileCommandType, command.IdempotencyKey, command.RequestHash, command.TargetID, command.TargetRevisionID, response); err != nil {
+		return result, err
+	}
+	if _, err := tx.Exec(ctx, `insert into verrail_audit_events(id,workspace_id,principal_type,principal_id,event_type,aggregate_type,aggregate_id,idempotency_key,payload) values($1,$2,$3,$4,'graph.reconciled','target',$5,$6,$7::jsonb)`, auditID, command.WorkspaceID, command.Principal.Type, command.Principal.ID, command.TargetID, command.IdempotencyKey, payload); err != nil {
+		return result, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
 func (store *Store) CreateRun(ctx context.Context, command CreateRunCommand) (CreateRunResult, error) {
 	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return CreateRunResult{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := assertCreateScope(ctx, tx, CreateCommand{WorkspaceID: command.WorkspaceID, Principal: command.Principal}); err != nil {
+	if err := assertSchedulingScope(ctx, tx, command.WorkspaceID, command.Principal); err != nil {
 		return CreateRunResult{}, err
 	}
 	var existing CreateRunResult
 	var existingKind, existingActorType, existingActorID string
 	err = tx.QueryRow(ctx, `select id,target_id,target_revision_id,graph_revision_id,work_node_id,status,kind,actor_principal_type,actor_principal_id,deployment_revision_id,agent_version_id from verrail_runs where workspace_id=$1 and idempotency_key=$2`, command.WorkspaceID, command.IdempotencyKey).Scan(&existing.RunID, &existing.TargetID, &existing.TargetRevisionID, &existing.GraphRevisionID, &existing.WorkNodeID, &existing.Status, &existingKind, &existingActorType, &existingActorID, &existing.DeploymentRevisionID, &existing.AgentVersionID)
 	if err == nil {
-		expectedKind := "agent"
-		if command.Input.Kind == "integration_run" {
-			expectedKind = "integration"
-		}
-		if existing.TargetID != command.TargetID || existing.GraphRevisionID != command.GraphRevisionID || existing.WorkNodeID != command.WorkNodeID || existingKind != expectedKind || existingActorType != command.Input.Actor.PrincipalType || existingActorID != command.Input.Actor.PrincipalID {
+		if existing.TargetID != command.TargetID || existing.GraphRevisionID != command.GraphRevisionID || existing.WorkNodeID != command.WorkNodeID || existingKind != "agent" || existingActorType != command.Input.Actor.PrincipalType || existingActorID != command.Input.Actor.PrincipalID {
 			return CreateRunResult{}, IdempotencyConflict()
 		}
 		existing.SchemaVersion = SchemaVersion
@@ -241,28 +431,24 @@ func (store *Store) CreateRun(ctx context.Context, command CreateRunCommand) (Cr
 	if nodeStatus != "ready" {
 		return CreateRunResult{}, &Error{Status: 409, Code: "WORK_NODE_NOT_READY", Message: "WorkNode is not ready"}
 	}
-	if (command.Input.Kind == "agent_run" && nodeKind != "agent_task") || (command.Input.Kind == "integration_run" && nodeKind != "integration_task") {
-		return CreateRunResult{}, validation("Run kind does not match WorkNode")
+	if nodeKind != "agent_task" {
+		return CreateRunResult{}, validation("Agent Run requires an AgentTask WorkNode")
 	}
 	runID, _ := NewUUID()
 	storedKind := "agent"
 	var deploymentRevisionID, agentVersionID *string
-	if command.Input.Kind == "integration_run" {
-		storedKind = "integration"
-	} else {
-		if responsibleType == nil || responsibleID == nil || *responsibleType != "agent" || command.Input.Actor.PrincipalType != "agent" || command.Input.Actor.PrincipalID != *responsibleID {
-			return CreateRunResult{}, &Error{Status: 409, Code: "RUN_ACTOR_DEPLOYMENT_MISMATCH", Message: "Run actor must match the WorkNode DeploymentRevision"}
-		}
-		var resolvedVersionID string
-		err := tx.QueryRow(ctx, `select revision.agent_version_id from verrail_deployment_revisions revision join verrail_deployments deployment on deployment.id=revision.deployment_id and deployment.workspace_id=revision.workspace_id where revision.id=$1 and revision.workspace_id=$2 and revision.state='active' and deployment.status='active' and not exists(select 1 from verrail_deployment_revisions newer where newer.deployment_id=revision.deployment_id and newer.revision_number>revision.revision_number)`, *responsibleID, command.WorkspaceID).Scan(&resolvedVersionID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return CreateRunResult{}, &Error{Status: 409, Code: "DEPLOYMENT_REVISION_NOT_ACTIVE", Message: "Run DeploymentRevision is no longer active"}
-		}
-		if err != nil {
-			return CreateRunResult{}, err
-		}
-		deploymentRevisionID, agentVersionID = responsibleID, &resolvedVersionID
+	if responsibleType == nil || responsibleID == nil || *responsibleType != "agent" || command.Input.Actor.PrincipalType != "agent" || command.Input.Actor.PrincipalID != *responsibleID {
+		return CreateRunResult{}, &Error{Status: 409, Code: "RUN_ACTOR_DEPLOYMENT_MISMATCH", Message: "Run actor must match the WorkNode DeploymentRevision"}
 	}
+	var resolvedVersionID string
+	err = tx.QueryRow(ctx, `select revision.agent_version_id from verrail_deployment_revisions revision join verrail_deployments deployment on deployment.id=revision.deployment_id and deployment.workspace_id=revision.workspace_id where revision.id=$1 and revision.workspace_id=$2 and revision.state='active' and deployment.status='active' and not exists(select 1 from verrail_deployment_revisions newer where newer.deployment_id=revision.deployment_id and newer.revision_number>revision.revision_number)`, *responsibleID, command.WorkspaceID).Scan(&resolvedVersionID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return CreateRunResult{}, &Error{Status: 409, Code: "DEPLOYMENT_REVISION_NOT_ACTIVE", Message: "Run DeploymentRevision is no longer active"}
+	}
+	if err != nil {
+		return CreateRunResult{}, err
+	}
+	deploymentRevisionID, agentVersionID = responsibleID, &resolvedVersionID
 	if _, err := tx.Exec(ctx, `insert into verrail_runs(id,workspace_id,target_id,target_revision_id,graph_revision_id,work_node_id,kind,status,actor_principal_type,actor_principal_id,deployment_revision_id,agent_version_id,attempt_count,idempotency_key) values($1,$2,$3,$4,$5,$6,$7,'queued',$8,$9,$10,$11,0,$12)`, runID, command.WorkspaceID, command.TargetID, targetRevisionID, command.GraphRevisionID, command.WorkNodeID, storedKind, command.Input.Actor.PrincipalType, command.Input.Actor.PrincipalID, deploymentRevisionID, agentVersionID, command.IdempotencyKey); err != nil {
 		return CreateRunResult{}, err
 	}
@@ -272,7 +458,7 @@ func (store *Store) CreateRun(ctx context.Context, command CreateRunCommand) (Cr
 	auditID, _ := NewUUID()
 	outboxID, _ := NewUUID()
 	payload, _ := json.Marshal(map[string]any{"schemaVersion": SchemaVersion, "targetId": command.TargetID, "targetRevisionId": targetRevisionID, "graphRevisionId": command.GraphRevisionID, "workNodeId": command.WorkNodeID, "runId": runID})
-	if _, err := tx.Exec(ctx, `insert into verrail_audit_events(id,workspace_id,principal_type,principal_id,event_type,aggregate_type,aggregate_id,idempotency_key,payload) values($1,$2,'user',$3,'run.created','target',$4,$5,$6::jsonb)`, auditID, command.WorkspaceID, command.Principal.ID, command.TargetID, command.IdempotencyKey, payload); err != nil {
+	if _, err := tx.Exec(ctx, `insert into verrail_audit_events(id,workspace_id,principal_type,principal_id,event_type,aggregate_type,aggregate_id,idempotency_key,payload) values($1,$2,$3,$4,'run.created','target',$5,$6,$7::jsonb)`, auditID, command.WorkspaceID, command.Principal.Type, command.Principal.ID, command.TargetID, command.IdempotencyKey, payload); err != nil {
 		return CreateRunResult{}, err
 	}
 	if _, err := tx.Exec(ctx, `insert into verrail_outbox_events(id,workspace_id,aggregate_type,aggregate_id,event_type,payload) values($1,$2,'run',$3,'verrail.run.created.v1',$4::jsonb)`, outboxID, command.WorkspaceID, runID, payload); err != nil {

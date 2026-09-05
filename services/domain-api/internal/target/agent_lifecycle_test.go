@@ -268,6 +268,48 @@ func requireLifecycleCode(t *testing.T, err error, code string) {
 	require.Equal(t, code, lifecycleErr.Code)
 }
 
+func TestResumeDeploymentEvaluationGateIntegration(t *testing.T) {
+	databaseURL := os.Getenv("VERRAIL_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("VERRAIL_TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	harness := newLifecycleTestHarness(t, pool)
+	defer harness.cleanup(pool)
+
+	definitionID := harness.createDefinition()
+	versionID := harness.publishVersion(definitionID, "prompt for resume evaluation gate")
+	evaluationID := harness.recordPassingEvaluation(versionID)
+	deploymentID := harness.createDeployment(definitionID, versionID, evaluationID, "resume-evaluation-gate")
+
+	_, err = harness.revise("pause", deploymentID, ReviseDeploymentInput{})
+	require.NoError(t, err)
+	require.Equal(t, "paused", harness.deploymentStatus(deploymentID))
+
+	_, err = pool.Exec(ctx, `update verrail_evaluation_runs set status='inconclusive',safety_status='not_run' where id=$1`, evaluationID)
+	require.NoError(t, err)
+
+	var revisionCountBefore int
+	require.NoError(t, pool.QueryRow(ctx, `select count(*) from verrail_deployment_revisions where deployment_id=$1`, deploymentID).Scan(&revisionCountBefore))
+	var latestRevisionID, latestRevisionState string
+	require.NoError(t, pool.QueryRow(ctx, `select id,state from verrail_deployment_revisions where deployment_id=$1 order by revision_number desc limit 1`, deploymentID).Scan(&latestRevisionID, &latestRevisionState))
+
+	_, err = harness.revise("resume", deploymentID, ReviseDeploymentInput{})
+	requireLifecycleCode(t, err, "AGENT_EVALUATION_GATE_FAILED")
+
+	require.Equal(t, "paused", harness.deploymentStatus(deploymentID))
+	var revisionCountAfter int
+	require.NoError(t, pool.QueryRow(ctx, `select count(*) from verrail_deployment_revisions where deployment_id=$1`, deploymentID).Scan(&revisionCountAfter))
+	require.Equal(t, revisionCountBefore, revisionCountAfter)
+	var revisionStateAfter string
+	require.NoError(t, pool.QueryRow(ctx, `select state from verrail_deployment_revisions where id=$1`, latestRevisionID).Scan(&revisionStateAfter))
+	require.Equal(t, latestRevisionState, revisionStateAfter)
+}
+
 func TestReviseDeploymentRetiredGuardIntegration(t *testing.T) {
 	databaseURL := os.Getenv("VERRAIL_TEST_DATABASE_URL")
 	if databaseURL == "" {

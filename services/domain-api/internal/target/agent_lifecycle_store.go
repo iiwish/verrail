@@ -19,18 +19,29 @@ func lifecycleMeta[T any](command AgentLifecycleCommand[T]) agentCommandMeta {
 }
 
 func (store *Store) beginAgentCommand(ctx context.Context, meta agentCommandMeta) (pgx.Tx, *AgentLifecycleResult, error) {
+	if meta.Principal.Type != "user" || meta.Principal.ID == "" {
+		return nil, nil, forbidden("AGENT_LIFECYCLE_FORBIDDEN", "A human Workspace member is required")
+	}
+	return store.beginLifecycleCommand(ctx, meta, false)
+}
+
+func (store *Store) beginCandidateCommand(ctx context.Context, meta agentCommandMeta) (pgx.Tx, *AgentLifecycleResult, error) {
+	return store.beginLifecycleCommand(ctx, meta, true)
+}
+
+func (store *Store) beginLifecycleCommand(ctx context.Context, meta agentCommandMeta, candidate bool) (pgx.Tx, *AgentLifecycleResult, error) {
 	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return nil, nil, err
 	}
-	lockKey := meta.WorkspaceID + "\n" + meta.Principal.ID + "\n" + meta.CommandType + "\n" + meta.IdempotencyKey
+	lockKey := meta.WorkspaceID + "\n" + meta.Principal.Type + "\n" + meta.Principal.ID + "\n" + meta.CommandType + "\n" + meta.IdempotencyKey
 	if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock(hashtextextended($1, 0))`, lockKey); err != nil {
 		_ = tx.Rollback(ctx)
 		return nil, nil, err
 	}
 	var existingHash string
 	var response []byte
-	err = tx.QueryRow(ctx, `select request_hash,response from verrail_agent_command_receipts where workspace_id=$1 and principal_type='user' and principal_id=$2 and command_type=$3 and idempotency_key=$4`, meta.WorkspaceID, meta.Principal.ID, meta.CommandType, meta.IdempotencyKey).Scan(&existingHash, &response)
+	err = tx.QueryRow(ctx, `select request_hash,response from verrail_agent_command_receipts where workspace_id=$1 and principal_type=$2 and principal_id=$3 and command_type=$4 and idempotency_key=$5`, meta.WorkspaceID, meta.Principal.Type, meta.Principal.ID, meta.CommandType, meta.IdempotencyKey).Scan(&existingHash, &response)
 	if err == nil {
 		if existingHash != meta.RequestHash {
 			_ = tx.Rollback(ctx)
@@ -51,11 +62,44 @@ func (store *Store) beginAgentCommand(ctx context.Context, meta agentCommandMeta
 		_ = tx.Rollback(ctx)
 		return nil, nil, err
 	}
-	if err := assertCreateScope(ctx, tx, CreateCommand{WorkspaceID: meta.WorkspaceID, Principal: meta.Principal}); err != nil {
+	var scopeErr error
+	if candidate {
+		scopeErr = assertCandidateLifecycleScope(ctx, tx, meta)
+	} else {
+		scopeErr = assertCreateScope(ctx, tx, CreateCommand{WorkspaceID: meta.WorkspaceID, Principal: meta.Principal})
+	}
+	if scopeErr != nil {
 		_ = tx.Rollback(ctx)
-		return nil, nil, err
+		return nil, nil, scopeErr
 	}
 	return tx, nil, nil
+}
+
+func assertCandidateLifecycleScope(ctx context.Context, tx pgx.Tx, meta agentCommandMeta) error {
+	switch meta.Principal.Type {
+	case "user":
+		return assertCreateScope(ctx, tx, CreateCommand{WorkspaceID: meta.WorkspaceID, Principal: meta.Principal})
+	case "agent":
+		var exists bool
+		if err := tx.QueryRow(ctx, `select exists(select 1 from agents where id=$1 and company_id=$2)`, meta.Principal.ID, meta.WorkspaceID).Scan(&exists); err != nil {
+			return fmt.Errorf("validate Agent candidate scope: %w", err)
+		}
+		if !exists {
+			return forbidden("CANDIDATE_COMMAND_FORBIDDEN", "Agent Principal does not belong to this Workspace")
+		}
+		return nil
+	case "service":
+		var exists bool
+		if err := tx.QueryRow(ctx, `select exists(select 1 from companies where id=$1 and status='active')`, meta.WorkspaceID).Scan(&exists); err != nil {
+			return fmt.Errorf("validate Service candidate scope: %w", err)
+		}
+		if !exists {
+			return forbidden("CANDIDATE_COMMAND_FORBIDDEN", "Service Principal cannot access this Workspace")
+		}
+		return nil
+	default:
+		return forbidden("CANDIDATE_COMMAND_FORBIDDEN", "Unsupported candidate Principal")
+	}
 }
 
 func finishAgentCommand(ctx context.Context, tx pgx.Tx, meta agentCommandMeta, result AgentLifecycleResult, eventType string) error {
@@ -63,10 +107,10 @@ func finishAgentCommand(ctx context.Context, tx pgx.Tx, meta agentCommandMeta, r
 	auditID, _ := NewUUID()
 	response, _ := json.Marshal(result)
 	payload, _ := json.Marshal(map[string]any{"schemaVersion": SchemaVersion, "resourceType": result.ResourceType, "resourceId": result.ResourceID})
-	if _, err := tx.Exec(ctx, `insert into verrail_agent_command_receipts(id,workspace_id,principal_type,principal_id,command_type,idempotency_key,request_hash,response) values($1,$2,'user',$3,$4,$5,$6,$7::jsonb)`, receiptID, meta.WorkspaceID, meta.Principal.ID, meta.CommandType, meta.IdempotencyKey, meta.RequestHash, response); err != nil {
+	if _, err := tx.Exec(ctx, `insert into verrail_agent_command_receipts(id,workspace_id,principal_type,principal_id,command_type,idempotency_key,request_hash,response) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`, receiptID, meta.WorkspaceID, meta.Principal.Type, meta.Principal.ID, meta.CommandType, meta.IdempotencyKey, meta.RequestHash, response); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `insert into verrail_audit_events(id,workspace_id,principal_type,principal_id,event_type,aggregate_type,aggregate_id,idempotency_key,payload) values($1,$2,'user',$3,$4,$5,$6,$7,$8::jsonb)`, auditID, meta.WorkspaceID, meta.Principal.ID, eventType, result.ResourceType, result.ResourceID, meta.IdempotencyKey, payload); err != nil {
+	if _, err := tx.Exec(ctx, `insert into verrail_audit_events(id,workspace_id,principal_type,principal_id,event_type,aggregate_type,aggregate_id,idempotency_key,payload) values($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)`, auditID, meta.WorkspaceID, meta.Principal.Type, meta.Principal.ID, eventType, result.ResourceType, result.ResourceID, meta.IdempotencyKey, payload); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -368,6 +412,9 @@ func (store *Store) ReviseDeployment(ctx context.Context, command AgentLifecycle
 	case "resume":
 		if status != "paused" {
 			return AgentLifecycleResult{}, &Error{Status: 409, Code: "DEPLOYMENT_NOT_PAUSED", Message: "Deployment is not paused"}
+		}
+		if err := assertPassingEvaluation(ctx, tx, command.WorkspaceID, versionID, evaluationID); err != nil {
+			return AgentLifecycleResult{}, err
 		}
 		status = "active"
 	case "retire":

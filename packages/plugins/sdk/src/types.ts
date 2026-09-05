@@ -10,6 +10,8 @@
  */
 
 import type {
+  ChannelIngressRequestV1,
+  ChannelIngressResultV1,
   PaperclipPluginManifestV1,
   PluginStateScopeKind,
   PluginEventType,
@@ -2107,6 +2109,8 @@ export interface PluginDuplexChannelClient {
  * @see PLUGIN_SPEC.md §14 — SDK Surface
  */
 export interface PluginContext {
+  /** Background authenticated channel ingress, scoped by the host's current connection configuration. */
+  channels?: { ingest(input: ChannelIngressRequestV1): Promise<ChannelIngressResultV1> };
   /** The plugin's manifest as validated at install time. */
   manifest: PaperclipPluginManifestV1;
 

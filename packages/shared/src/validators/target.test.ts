@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createGraphRevisionSchema,
+  createRunSchema,
   createTargetSchema,
   targetIdempotencyKeySchema,
   targetListQuerySchema,
@@ -17,6 +18,16 @@ const nativeReadModel = {
   title: "Ship a governed Target",
   summary: null,
   status: "draft",
+  outcome: {
+    state: "open",
+    latestSubmissionId: null,
+    latestReviewId: null,
+    validAcceptanceId: null,
+    effectReceiptIds: [],
+    controls: [
+      { key: "graph_complete", state: "required", reason: "Activate the graph.", resourceId: null },
+    ],
+  },
   outcomeOwner: { principalType: "user", principalId: "user-1", displayName: "Owner" },
   currentStage: { key: "define", label: "Define" },
   risk: { level: "high" },
@@ -73,6 +84,11 @@ describe("native Target validators", () => {
   it("bounds Target command idempotency keys", () => {
     expect(targetIdempotencyKeySchema.parse("target:create:1234")).toBe("target:create:1234");
     expect(targetIdempotencyKeySchema.safeParse("short").success).toBe(false);
+  });
+
+  it("does not let IntegrationTask execution masquerade as an Agent Run", () => {
+    expect(createRunSchema.parse({ kind: "agent_run", actor: { principalType: "agent", principalId: "deployment-revision-1" } })).toMatchObject({ kind: "agent_run" });
+    expect(createRunSchema.safeParse({ kind: "integration_run", actor: { principalType: "service", principalId: "connector-1" } }).success).toBe(false);
   });
 
   it("accepts only the native Target read model", () => {

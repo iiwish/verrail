@@ -10,19 +10,24 @@ import (
 )
 
 type OutboxEvent struct {
-	ID            string
-	WorkspaceID   string
-	AggregateType string
-	AggregateID   string
-	EventType     string
-	Payload       []byte
-	AttemptCount  int
-	ClaimToken    string
-	CreatedAt     time.Time
+	ID                string
+	WorkspaceID       string
+	AggregateType     string
+	AggregateID       string
+	EventType         string
+	Payload           []byte
+	AttemptCount      int
+	ClaimToken        string
+	CreatedAt         time.Time
+	RecoveryRequested bool
 }
 
 type ClaimOptions struct {
 	LeaseDuration time.Duration
+	// WorkspaceID is an optional operational partition. Production dispatchers
+	// leave it empty; isolated verification can prevent unrelated workspaces
+	// from influencing one another while exercising the same claim query.
+	WorkspaceID string
 }
 
 type DeliveryResult struct {

@@ -1,0 +1,25 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T014-A001",
+  "task_id": "T014",
+  "status": "passed_for_dependency_progression",
+  "failure_reproduction": "The preflight showed that the connector always replaced the pull-request body with only the provider marker, so the mandatory repository template could not be satisfied.",
+  "fix": {
+    "contract": "ActionRequest params include body with a 65,536-character limit and a compatibility default of an empty string.",
+    "approval_binding": "body participates in params_hash and any change invalidates the prior ActionApproval.",
+    "provider_effect": "GitHub receives the reviewed body followed by exactly one stable provider marker.",
+    "read_model": "Legacy rows without body project an empty body; new rows preserve the reviewed body."
+  },
+  "verification": [
+    {"command":"shared connector validator suite","status":"passed","result":"8/8"},
+    {"command":"Go target and HTTP API tests","status":"passed"},
+    {"command":"server target read model suite","status":"passed","result":"11/11"},
+    {"command":"workspace typecheck","status":"passed","result":"35/36 projects in scope"},
+    {"command":"git diff --check","status":"passed"}
+  ],
+  "review": {
+    "critical_or_high_findings": 0,
+    "recommendation": "accept_for_dependency_progression",
+    "reference": ".verrail/targets/g2-7-production-closure/runs/T014-A001/logs/review.md"
+  }
+}

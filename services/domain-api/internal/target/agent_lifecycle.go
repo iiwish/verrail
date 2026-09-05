@@ -113,6 +113,16 @@ type AgentLifecycleCommand[T any] struct {
 }
 
 func ValidateAgentLifecycleCommand[T any](command *AgentLifecycleCommand[T]) error {
+	return validateLifecycleCommand(
+		command,
+		func(principalType string) bool { return principalType == "user" },
+		"AGENT_LIFECYCLE_FORBIDDEN",
+		"A human Workspace member is required",
+		"Invalid Agent lifecycle command",
+	)
+}
+
+func validateLifecycleCommand[T any](command *AgentLifecycleCommand[T], principalTypeAllowed func(string) bool, forbiddenCode, forbiddenMessage, invalidMessage string) error {
 	command.WorkspaceID = strings.TrimSpace(command.WorkspaceID)
 	command.ResourceID = strings.TrimSpace(command.ResourceID)
 	command.Principal.Type = strings.TrimSpace(command.Principal.Type)
@@ -124,15 +134,15 @@ func ValidateAgentLifecycleCommand[T any](command *AgentLifecycleCommand[T]) err
 	if command.ResourceID != "" && !uuidPattern.MatchString(command.ResourceID) {
 		return validation("resourceId must be a UUID")
 	}
-	if command.Principal.Type != "user" || command.Principal.ID == "" {
-		return forbidden("AGENT_LIFECYCLE_FORBIDDEN", "A human Workspace member is required")
+	if !principalTypeAllowed(command.Principal.Type) || command.Principal.ID == "" {
+		return forbidden(forbiddenCode, forbiddenMessage)
 	}
 	if len(command.IdempotencyKey) < 8 || len(command.IdempotencyKey) > 128 || !idempotencyKeyPattern.MatchString(command.IdempotencyKey) {
 		return validation("Idempotency-Key must contain 8 to 128 safe characters")
 	}
 	payload, err := json.Marshal(command.Input)
 	if err != nil {
-		return validation("Invalid Agent lifecycle command")
+		return validation(invalidMessage)
 	}
 	digest := sha256.Sum256(payload)
 	command.RequestHash = hex.EncodeToString(digest[:])

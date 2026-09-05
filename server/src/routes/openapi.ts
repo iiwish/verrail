@@ -215,6 +215,7 @@ import {
   recordEvaluationRunSchema,
   recordDeliveryReviewSchema,
   recordEvidenceSchema,
+  recordHumanWorkResultSchema,
   recordIntegrationRunSchema,
   recordVerificationResultSchema,
   reportRunEventSchema,
@@ -3311,6 +3312,19 @@ registry.registerPath({
     body: jsonBody(recordIntegrationRunSchema),
   },
   responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 502: r.badGateway, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/human-work-results",
+  tags: ["connector"],
+  summary: "Record an immutable, version-bound HumanWorkResult for a HumanTask",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": connectorIdempotencyKeySchema }),
+    body: jsonBody(recordHumanWorkResultSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
 });
 
 registry.registerPath({
@@ -6665,6 +6679,32 @@ registry.registerPath({
   summary: "Trigger a plugin job",
   request: { params: z.object({ pluginId: z.string(), jobId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/plugins/{pluginId}/channel-connectors/{connectorKey}/{workspaceId}/{connectionId}/webhook",
+  tags: ["plugins"],
+  summary: "Deliver a provider webhook to a configured channel connection",
+  description:
+    "Public Channel Connector V1 callback. The connector worker authenticates the exact provider request before the host persists normalized conversation facts.",
+  request: {
+    params: z.object({
+      pluginId: z.string(),
+      connectorKey: z.string(),
+      workspaceId: z.string(),
+      connectionId: z.string(),
+    }),
+    body: jsonBody(z.record(z.string(), z.unknown())),
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    404: r.notFound,
+    500: r.serverError,
+    501: r.serverError,
+  },
 });
 
 registry.registerPath({

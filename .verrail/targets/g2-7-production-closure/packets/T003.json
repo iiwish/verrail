@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T003",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T003",
+  "status": "completed",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T05:33:14Z",
+  "completed_at": "2026-09-04T05:51:45Z",
+  "governance_inputs": [
+    ".verrail/targets/g2-7-production-closure/spec.md",
+    ".verrail/targets/g2-7-production-closure/plan.md",
+    ".verrail/targets/g2-7-production-closure/tasks.md",
+    ".verrail/targets/g2-7-production-closure/gap-matrix.md",
+    ".verrail/targets/g2-7-production-closure/runs/T002-A001/evidence.json"
+  ],
+  "approval_gates": {
+    "plan_and_work_graph": "confirmed_by_outcome_owner_2026-09-04",
+    "intermediate_plan_authority": "delegated_to_codex",
+    "dependency_T002": "accepted_for_dependency_progression",
+    "identity_decision": "one_human_with_agent_or_service_submitter_and_requester",
+    "analysis": "no_critical_or_high_findings"
+  },
+  "work_unit": {
+    "title": "分离候选发起身份和人类治理权限",
+    "goal": "让认证 Agent 或 Service 发起 Submission 与 ActionRequest，同时把 Review、Action Approval 和 Acceptance 保持为认证真人的独立权限与不可伪造命令。",
+    "epic": "E002",
+    "requirements": ["AC-03", "AC-06", "AC-08"],
+    "depends_on": ["T002"],
+    "blocks": ["T004", "T006", "T007"],
+    "parallel": false
+  },
+  "codebase_context": {
+    "current_gap": "Go adjudication_store and connector_store persist a hard-coded user principal for candidate creation. The TypeScript facade already has authenticated actor context but does not transport a typed principal to the Go command boundary.",
+    "authority_rule": "Candidate authorship may be Agent or Service. Review, Action Approval, and Acceptance remain human commands. One human may hold all three human authorities when the candidate/request principal is distinct.",
+    "security_boundary": "Principal identity is derived from the authenticated HTTP/facade context. Request bodies may not select or override principal type or id."
+  },
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "allowed_files": [
+      "services/domain-api/internal/target/adjudication.go",
+      "services/domain-api/internal/target/adjudication_store.go",
+      "services/domain-api/internal/target/adjudication_test.go",
+      "services/domain-api/internal/target/agent_lifecycle.go",
+      "services/domain-api/internal/target/agent_lifecycle_store.go",
+      "services/domain-api/internal/target/connector.go",
+      "services/domain-api/internal/target/connector_store.go",
+      "services/domain-api/internal/target/connector_test.go",
+      "services/domain-api/internal/httpapi/server.go",
+      "services/domain-api/internal/httpapi/*_test.go",
+      "server/src/services/verrail-domain-api-client.ts",
+      "server/src/services/verrail-domain-api-client.test.ts",
+      "server/src/routes/adjudication.ts",
+      "server/src/routes/connector.ts",
+      "server/src/__tests__/adjudication-routes.test.ts",
+      "server/src/__tests__/connector-routes.test.ts",
+      "packages/shared/src/types/adjudication.ts",
+      "packages/shared/src/types/connector.ts",
+      "packages/shared/src/validators/adjudication.ts",
+      "packages/shared/src/validators/connector.ts",
+      "packages/shared/src/index.ts",
+      ".verrail/targets/g2-7-production-closure/runs/T003-A001/**",
+      ".verrail/targets/g2-7-production-closure/timeline.jsonl"
+    ],
+    "ownership": "Do not alter unrelated Paperclip authorization behavior. Keep compatibility for authenticated board users and existing read contracts."
+  },
+  "amendments": [
+    {
+      "at": "2026-09-04T05:39:24Z",
+      "approved_by": "codex_under_delegated_intermediate_technical_authority",
+      "reason": "TDD preparation found the shared lifecycle receipt and audit transaction hard-coded principal_type=user. T003 cannot truthfully persist Agent/Service candidate identity without changing this existing command boundary.",
+      "scope_added": [
+        "services/domain-api/internal/target/agent_lifecycle_store.go"
+      ],
+      "constraint": "Parameterize receipt, audit, idempotency, and scope handling only; unrelated lifecycle handlers remain human-only through their existing validators."
+    },
+    {
+      "at": "2026-09-04T05:49:15Z",
+      "approved_by": "codex_under_delegated_intermediate_technical_authority",
+      "reason": "GREEN introduced a narrow candidate validator with the same workspace, resource, idempotency, and request-hash mechanics as the human lifecycle validator. The packet's required refactor phase calls for converging that duplication without widening command authority.",
+      "scope_added": [
+        "services/domain-api/internal/target/agent_lifecycle.go"
+      ],
+      "constraint": "Extract only shared structural validation; principal allowlists and error codes remain command-specific."
+    }
+  ],
+  "tdd_plan": {
+    "required": true,
+    "red": "Add Go and facade/route tests proving Agent or Service candidate creation, body principal spoof rejection, human review/approval/acceptance, and existing self-governance rejection.",
+    "green": "Introduce the minimum typed command principal derived at the authenticated boundary and persist it on Submission or ActionRequest.",
+    "refactor": "After green, converge duplicated principal validation without broadening which commands non-human principals may execute."
+  },
+  "validation_loop": {
+    "commands": [
+      "pnpm test:domain-api",
+      "pnpm --filter @paperclipai/server exec vitest run src/services/verrail-domain-api-client.test.ts src/__tests__/adjudication-routes.test.ts src/__tests__/connector-routes.test.ts",
+      "pnpm --filter @paperclipai/shared typecheck",
+      "pnpm --filter @paperclipai/server typecheck",
+      "git diff --check"
+    ],
+    "failure_handling": "Keep authorization failures fail-closed. Fix the narrowest boundary that fails; do not accept a client-supplied principal field as authentication evidence.",
+    "retry_budget": 3
+  },
+  "evidence_contract": {
+    "run_id": "T003-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T003-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T003-A001/evidence.json",
+    "logs": ".verrail/targets/g2-7-production-closure/runs/T003-A001/logs/",
+    "required_items": [
+      "principal and authority matrix",
+      "body spoof rejection evidence",
+      "persisted candidate principal evidence",
+      "self-review/self-approval/non-owner rejection codes",
+      "RED and GREEN outputs",
+      "changed files and residual risks"
+    ]
+  },
+  "review_contract": {
+    "required": true,
+    "checks": [
+      "Agent and Service can author candidates but cannot issue human governance decisions",
+      "The authenticated boundary, not request JSON, selects principal identity",
+      "One human can govern a candidate authored by a distinct Agent or Service",
+      "Existing user self-review, self-approval, and owner acceptance constraints remain enforced",
+      "Stored audit and domain facts carry the actual authenticated principal"
+    ]
+  },
+  "stop_conditions": [
+    "Authentication context cannot distinguish human, agent, and trusted internal service without a new product decision.",
+    "A proposed implementation would let the request body impersonate a principal.",
+    "A proposed change would allow Agent or Service principals to issue Review, Action Approval, or Acceptance.",
+    "Required schema changes exceed the existing principal columns and would overlap T004 migration scope."
+  ]
+}

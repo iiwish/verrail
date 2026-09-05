@@ -51,6 +51,12 @@
 
 import type { PluginContext } from "./types.js";
 import type {
+  ChannelReplyRequestV1,
+  ChannelReplyResultV1,
+  ChannelWebhookRequestV1,
+  ChannelWebhookResultV1,
+} from "@paperclipai/shared";
+import type {
   PluginEnvironmentAcquireLeaseParams,
   PluginEnvironmentDestroyLeaseParams,
   PluginEnvironmentExecuteParams,
@@ -316,6 +322,12 @@ export interface PluginDefinition {
    * @see PLUGIN_SPEC.md §13.7 — `handleWebhook`
    */
   onWebhook?(input: PluginWebhookInput): Promise<void>;
+
+  /** Parse and authenticate one versioned enterprise-channel callback. */
+  onChannelWebhook?(input: ChannelWebhookRequestV1): Promise<ChannelWebhookResultV1>;
+
+  /** Deliver a normalized reply through the provider represented by this plugin. */
+  onChannelReply?(input: ChannelReplyRequestV1): Promise<ChannelReplyResultV1>;
 
   /**
    * Called for manifest-declared scoped JSON API routes under

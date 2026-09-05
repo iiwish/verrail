@@ -1681,6 +1681,48 @@
       "when": 1788425061049,
       "tag": "0241_easy_may_parker",
       "breakpoints": true
+    },
+    {
+      "idx": 242,
+      "version": "7",
+      "when": 1788501583777,
+      "tag": "0242_bizarre_meggan",
+      "breakpoints": true
+    },
+    {
+      "idx": 243,
+      "version": "7",
+      "when": 1788506049055,
+      "tag": "0243_hesitant_mimic",
+      "breakpoints": true
+    },
+    {
+      "idx": 244,
+      "version": "7",
+      "when": 1788506527904,
+      "tag": "0244_busy_logan",
+      "breakpoints": true
+    },
+    {
+      "idx": 245,
+      "version": "7",
+      "when": 1788510916222,
+      "tag": "0245_stale_squadron_supreme",
+      "breakpoints": true
+    },
+    {
+      "idx": 246,
+      "version": "7",
+      "when": 1788515056631,
+      "tag": "0246_fantastic_mindworm",
+      "breakpoints": true
+    },
+    {
+      "idx": 247,
+      "version": "7",
+      "when": 1788515812032,
+      "tag": "0247_happy_bug",
+      "breakpoints": true
     }
   ]
 }

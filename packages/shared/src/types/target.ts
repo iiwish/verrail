@@ -23,6 +23,56 @@ export type TargetStageKey = (typeof TARGET_STAGE_KEYS)[number] | "unknown";
 export type TargetRiskLevel = (typeof TARGET_RISK_LEVELS)[number];
 export type TargetStageState = "completed" | "current" | "pending" | "blocked";
 
+export const TARGET_OUTCOME_CONTROL_KEYS = [
+  "graph_complete",
+  "latest_submission",
+  "artifact_revisions_current",
+  "criteria_verified",
+  "review_approved",
+  "acceptance_valid",
+  "external_effects_settled",
+] as const;
+
+export const TARGET_COMMAND_IDS = [
+  "create_graph_revision",
+  "activate_graph_revision",
+  "create_run",
+  "create_submission",
+  "record_review",
+  "accept_submission",
+  "request_pull_request",
+  "approve_action",
+  "execute_action",
+  "reconcile_action",
+] as const;
+
+export type TargetOutcomeControlKey = (typeof TARGET_OUTCOME_CONTROL_KEYS)[number];
+export type TargetCommandId = (typeof TARGET_COMMAND_IDS)[number];
+export type TargetControlState = "satisfied" | "required" | "blocked" | "invalidated" | "not_applicable";
+
+export interface TargetOutcomeControlV1 {
+  key: TargetOutcomeControlKey;
+  state: TargetControlState;
+  reason: string | null;
+  resourceId: string | null;
+}
+
+export interface TargetOutcomeV1 {
+  state: "open" | "blocked" | "awaiting_acceptance" | "accepted" | "canceled";
+  latestSubmissionId: string | null;
+  latestReviewId: string | null;
+  validAcceptanceId: string | null;
+  effectReceiptIds: string[];
+  controls: TargetOutcomeControlV1[];
+}
+
+export interface TargetAvailableCommandV1 {
+  id: TargetCommandId;
+  state: "available" | "blocked" | "completed";
+  reason: string | null;
+  resourceId: string | null;
+}
+
 export interface TargetAcceptanceCriterionV1 {
   id: string;
   title: string;
@@ -75,6 +125,7 @@ export interface TargetReadModelV1 {
   title: string;
   summary: string | null;
   status: TargetStatus;
+  outcome: TargetOutcomeV1;
   outcomeOwner: {
     principalType: "user" | "agent";
     principalId: string;
@@ -198,19 +249,50 @@ export interface TargetRunV1 {
 export interface TargetAttentionItemV1 {
   id: string;
   severity: "info" | "warning" | "critical";
-  kind: "draft_graph" | "blocked_node" | "failed_run" | "awaiting_acceptance";
+  kind:
+    | "draft_graph"
+    | "blocked_node"
+    | "failed_run"
+    | "verification_failed"
+    | "verification_inconclusive"
+    | "missing_evidence"
+    | "awaiting_review"
+    | "awaiting_acceptance"
+    | "action_approval_required"
+    | "action_execution_required"
+    | "unknown_effect"
+    | "invalidated_decision";
   title: string;
   detail: string | null;
   workNodeId: string | null;
   runId: string | null;
+  resourceType: "target" | "submission" | "review" | "acceptance" | "verification_result" | "action_request" | null;
+  resourceId: string | null;
   createdAt: string;
 }
 
 export interface TargetTimelineEventV1 {
   id: string;
-  type: "target_created" | "target_revision_created" | "graph_revision_created" | "graph_activated" | "run_created" | "run_updated";
+  type:
+    | "target_created"
+    | "target_revision_created"
+    | "graph_revision_created"
+    | "graph_activated"
+    | "run_created"
+    | "run_updated"
+    | "submission_created"
+    | "review_recorded"
+    | "acceptance_created"
+    | "integration_result_recorded"
+    | "human_result_recorded"
+    | "action_requested"
+    | "action_approved"
+    | "action_executed"
+    | "domain_event";
   title: string;
   detail: string | null;
+  aggregateType: string;
+  aggregateId: string;
   occurredAt: string;
 }
 
@@ -221,6 +303,8 @@ export interface TargetWorkspaceV1 {
   workspaceId: string;
   generatedAt: string;
   graph: TargetGraphSummaryV1 | null;
+  outcome: TargetOutcomeV1;
+  availableCommands: TargetAvailableCommandV1[];
   stages: TargetStageProgressV1[];
   work: TargetWorkItemV1[];
   attention: TargetAttentionItemV1[];
@@ -259,8 +343,8 @@ export interface ActivateGraphRevisionResponseV1 extends CreateGraphRevisionResp
 }
 
 export interface CreateRunInputV1 {
-  kind: "agent_run" | "integration_run";
-  actor: { principalType: "agent" | "service"; principalId: string };
+  kind: "agent_run";
+  actor: { principalType: "agent"; principalId: string };
 }
 
 export interface CreateRunResponseV1 {

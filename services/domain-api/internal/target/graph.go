@@ -91,12 +91,56 @@ type CreateRunResult struct {
 	Replayed             bool    `json:"replayed"`
 }
 
+const GraphReconcileCommandType = "graph.reconcile.v1"
+
+type ReconcileGraphCommand struct {
+	WorkspaceID, TargetID, TargetRevisionID, GraphRevisionID string
+	Principal                                                Principal
+	IdempotencyKey, RequestHash                              string
+}
+
+type SchedulableAgentNode struct {
+	WorkNodeID           string `json:"workNodeId"`
+	DeploymentRevisionID string `json:"deploymentRevisionId"`
+}
+
+type ReconcileGraphResult struct {
+	SchemaVersion      int                    `json:"schemaVersion"`
+	TargetID           string                 `json:"targetId"`
+	TargetRevisionID   string                 `json:"targetRevisionId"`
+	GraphRevisionID    string                 `json:"graphRevisionId"`
+	ActivatedNodeIDs   []string               `json:"activatedNodeIds"`
+	AgentNodes         []SchedulableAgentNode `json:"agentNodes"`
+	ActiveRunIDs       []string               `json:"activeRunIds"`
+	WaitingTaskNodeIDs []string               `json:"waitingTaskNodeIds"`
+	WaitingGateNodeIDs []string               `json:"waitingGateNodeIds"`
+	BlockedNodeIDs     []string               `json:"blockedNodeIds"`
+	AllCompleted       bool                   `json:"allCompleted"`
+	Replayed           bool                   `json:"replayed"`
+}
+
 func validateCommandIdentity(workspaceID, targetID string, principal Principal, idempotencyKey string) error {
 	if !uuidPattern.MatchString(strings.TrimSpace(workspaceID)) || !uuidPattern.MatchString(strings.TrimSpace(targetID)) {
 		return validation("workspaceId and targetId must be UUIDs")
 	}
 	if strings.TrimSpace(principal.Type) != "user" || strings.TrimSpace(principal.ID) == "" {
 		return forbidden("TARGET_COMMAND_FORBIDDEN", "A human Workspace member is required")
+	}
+	key := strings.TrimSpace(idempotencyKey)
+	if len(key) < 8 || len(key) > 128 || !idempotencyKeyPattern.MatchString(key) {
+		return validation("Idempotency-Key must contain 8 to 128 safe characters")
+	}
+	return nil
+}
+
+func validateSchedulingCommandIdentity(workspaceID, resourceID string, principal Principal, idempotencyKey string) error {
+	if !uuidPattern.MatchString(strings.TrimSpace(workspaceID)) || !uuidPattern.MatchString(strings.TrimSpace(resourceID)) {
+		return validation("workspaceId and resourceId must be UUIDs")
+	}
+	principal.Type = strings.TrimSpace(principal.Type)
+	principal.ID = strings.TrimSpace(principal.ID)
+	if (principal.Type != "user" && principal.Type != "service") || principal.ID == "" {
+		return forbidden("ORCHESTRATION_COMMAND_FORBIDDEN", "An authenticated human or internal orchestration service is required")
 	}
 	key := strings.TrimSpace(idempotencyKey)
 	if len(key) < 8 || len(key) > 128 || !idempotencyKeyPattern.MatchString(key) {
@@ -210,17 +254,17 @@ func ValidateCreateRunCommand(command *CreateRunCommand) error {
 	command.Principal.Type = strings.TrimSpace(command.Principal.Type)
 	command.Principal.ID = strings.TrimSpace(command.Principal.ID)
 	command.IdempotencyKey = strings.TrimSpace(command.IdempotencyKey)
-	if err := validateCommandIdentity(command.WorkspaceID, command.TargetID, command.Principal, command.IdempotencyKey); err != nil {
+	if err := validateSchedulingCommandIdentity(command.WorkspaceID, command.TargetID, command.Principal, command.IdempotencyKey); err != nil {
 		return err
 	}
 	if !uuidPattern.MatchString(command.GraphRevisionID) || !uuidPattern.MatchString(command.WorkNodeID) {
 		return validation("graphRevisionId and workNodeId must be UUIDs")
 	}
-	if command.Input.Kind != "agent_run" && command.Input.Kind != "integration_run" {
-		return validation("Run kind is invalid")
+	if command.Input.Kind != "agent_run" {
+		return validation("Agent Run kind must be agent_run")
 	}
-	if command.Input.Actor.PrincipalType != "agent" && command.Input.Actor.PrincipalType != "service" {
-		return validation("Run actor is invalid")
+	if command.Input.Actor.PrincipalType != "agent" {
+		return validation("Agent Run actor must be an agent")
 	}
 	command.Input.Actor.PrincipalID = strings.TrimSpace(command.Input.Actor.PrincipalID)
 	if command.Input.Actor.PrincipalID == "" {
@@ -229,6 +273,36 @@ func ValidateCreateRunCommand(command *CreateRunCommand) error {
 	payload, err := json.Marshal(command.Input)
 	if err != nil {
 		return fmt.Errorf("marshal Run command: %w", err)
+	}
+	digest := sha256.Sum256(payload)
+	command.RequestHash = hex.EncodeToString(digest[:])
+	return nil
+}
+
+func ValidateReconcileGraphCommand(command *ReconcileGraphCommand) error {
+	command.WorkspaceID = strings.TrimSpace(command.WorkspaceID)
+	command.TargetID = strings.TrimSpace(command.TargetID)
+	command.TargetRevisionID = strings.TrimSpace(command.TargetRevisionID)
+	command.GraphRevisionID = strings.TrimSpace(command.GraphRevisionID)
+	command.Principal.Type = strings.TrimSpace(command.Principal.Type)
+	command.Principal.ID = strings.TrimSpace(command.Principal.ID)
+	command.IdempotencyKey = strings.TrimSpace(command.IdempotencyKey)
+	if err := validateSchedulingCommandIdentity(command.WorkspaceID, command.TargetID, command.Principal, command.IdempotencyKey); err != nil {
+		return err
+	}
+	if command.Principal.Type != "service" {
+		return forbidden("GRAPH_RECONCILE_FORBIDDEN", "The internal orchestration service is required")
+	}
+	if !uuidPattern.MatchString(command.TargetRevisionID) || !uuidPattern.MatchString(command.GraphRevisionID) {
+		return validation("targetRevisionId and graphRevisionId must be UUIDs")
+	}
+	payload, err := json.Marshal(map[string]string{
+		"targetId":         command.TargetID,
+		"targetRevisionId": command.TargetRevisionID,
+		"graphRevisionId":  command.GraphRevisionID,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal Graph reconciliation command: %w", err)
 	}
 	digest := sha256.Sum256(payload)
 	command.RequestHash = hex.EncodeToString(digest[:])

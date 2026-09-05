@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T005",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T005",
+  "status": "ready",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T06:23:43Z",
+  "governance_inputs": [
+    ".verrail/targets/g2-7-production-closure/spec.md",
+    ".verrail/targets/g2-7-production-closure/plan.md",
+    ".verrail/targets/g2-7-production-closure/tasks.md",
+    ".verrail/targets/g2-7-production-closure/runs/T004-A001/evidence.json",
+    "docs/temporal-target-workflow.md",
+    "docs/execution-runtime.md"
+  ],
+  "approval_gates": {
+    "intermediate_plan_authority": "delegated_to_codex",
+    "dependency_T004": "accepted_for_dependency_progression",
+    "analysis": "no_critical_or_high_findings"
+  },
+  "work_unit": {
+    "title": "实现主动且可恢复的 Graph/Temporal 编排",
+    "goal": "让 TargetWorkflow 通过幂等 Activity 请求 Graph Engine 激活依赖就绪节点、创建版本固定 Agent Run，并以稳定 Run ID 启动 RunWorkflow；让 RunWorkflow 创建和恢复 RunAttempt、等待领域事件、处理重试和取消，同时 PostgreSQL 继续拥有全部业务状态。",
+    "epic": "E002",
+    "requirements": ["AC-04", "AC-10"],
+    "depends_on": ["T004"],
+    "blocks": ["T006", "T007", "T010"],
+    "parallel": false
+  },
+  "codebase_context": {
+    "current_gap": "Current workflows only deduplicate signals and expose query state. They do not execute Activities, activate dependent nodes, create Runs or Attempts, wait on child workflows, apply timers, retry expired work, or propagate cancellation.",
+    "existing_guards": "RunAttempt and ExecutionLease already enforce cursor monotonicity, fencing, lease expiry, observable cancellation, and idempotent command receipts.",
+    "ownership": "Target package remains Graph Engine and execution fact owner. Temporal workflow code only schedules Activities, child workflows, signals, and timers."
+  },
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "allowed_files": [
+      "services/domain-api/internal/orchestration/**",
+      "services/domain-api/cmd/orchestration-worker/main.go",
+      "services/domain-api/internal/target/graph.go",
+      "services/domain-api/internal/target/graph_store.go",
+      "services/domain-api/internal/target/graph_test.go",
+      "services/domain-api/internal/target/execution.go",
+      "services/domain-api/internal/target/execution_store.go",
+      "services/domain-api/internal/target/execution_test.go",
+      "services/domain-api/internal/httpapi/server.go",
+      "docs/temporal-target-workflow.md",
+      ".verrail/targets/g2-7-production-closure/runs/T005-A001/**",
+      ".verrail/targets/g2-7-production-closure/timeline.jsonl"
+    ],
+    "authority_rules": [
+      "Only the authenticated internal orchestration service may use service-principal scheduling commands; human board behavior remains compatible.",
+      "Activities call versioned target Store commands and never issue direct workflow-side SQL.",
+      "Graph reconciliation may move pending nodes to ready only when all declared dependencies are completed; terminal result commands own completed/blocked/canceled states.",
+      "Workflow IDs, Activity IDs, and idempotency keys are derived from immutable Workspace, Target, GraphRevision, WorkNode, Run, and retry identities.",
+      "Workflow payloads contain no credentials, prompts, logs, artifact bodies, or provider receipts."
+    ]
+  },
+  "tdd_plan": {
+    "required": true,
+    "red": "Add workflow tests for dependency progression, stable child IDs, duplicate signals, Activity retry, lease timeout recovery, cancellation, Continue-As-New, and replay; add PostgreSQL tests for service scheduling, exactly-once node activation, idempotent Run creation, expired-attempt fencing, and human command compatibility.",
+    "green": "Add the minimum Graph reconciliation command, service scheduling authority, registered Activities, active TargetWorkflow cycle, and RunWorkflow attempt/timer/cancel loop.",
+    "refactor": "Centralize deterministic identifiers and workflow carried state only after replay and fault tests remain green."
+  },
+  "validation_loop": {
+    "commands": [
+      "go test ./internal/orchestration ./internal/target",
+      "VERRAIL_TEST_DATABASE_URL=<fresh-postgres> go test -count=1 ./...",
+      "go test workflow replay fixtures",
+      "pnpm -r typecheck",
+      "git diff --check"
+    ],
+    "retry_budget": 4
+  },
+  "evidence_contract": {
+    "run_id": "T005-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T005-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T005-A001/evidence.json",
+    "logs": ".verrail/targets/g2-7-production-closure/runs/T005-A001/logs/",
+    "required_items": [
+      "deterministic Workflow/Activity/child IDs",
+      "dependency and gate-wait behavior",
+      "retry, timeout, cancellation, restart, and stale-fence matrix",
+      "Continue-As-New carried-state and replay proof",
+      "PostgreSQL fact and duplicate-protection proof"
+    ]
+  },
+  "review_contract": {
+    "required": true,
+    "checks": [
+      "workflow code performs no direct database or provider writes",
+      "Graph Engine remains the only WorkNode state writer",
+      "Activity retry cannot create duplicate Run or RunAttempt facts",
+      "child workflow IDs remain stable and Workspace-scoped",
+      "expired attempts cannot overwrite newer attempts",
+      "cancellation is requested and observed before terminal state",
+      "replay and Continue-As-New remain deterministic"
+    ]
+  },
+  "stop_conditions": [
+    "The workflow needs credentials or mutable business snapshots in Temporal payloads.",
+    "A required state transition cannot be expressed through an idempotent Domain command.",
+    "Temporal would become the authority for WorkNode, Run, Lease, Gate, Review, or Acceptance facts."
+  ]
+}

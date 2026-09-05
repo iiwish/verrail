@@ -1,0 +1,5 @@
+?   	github.com/verrail/verrail/services/domain-api/cmd/domain-api	[no test files]
+?   	github.com/verrail/verrail/services/domain-api/cmd/orchestration-worker	[no test files]
+ok  	github.com/verrail/verrail/services/domain-api/internal/httpapi	1.219s
+ok  	github.com/verrail/verrail/services/domain-api/internal/orchestration	3.149s
+ok  	github.com/verrail/verrail/services/domain-api/internal/target	2.274s

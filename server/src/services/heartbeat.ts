@@ -182,6 +182,7 @@ import {
 } from "./issue-continuation-summary.js";
 import { buildDocumentReviewContext, buildPlanReviewContext } from "./plan-review-context.js";
 import { executionWorkspaceService, mergeExecutionWorkspaceConfig } from "./execution-workspaces.js";
+import { resolveNativeRunWorkspace } from "./verrail-native-workspace.js";
 import {
   GIT_BRANCH_OWNERSHIP_METADATA_KEY,
   GIT_BRANCH_OWNERSHIP_METADATA_VERSION,
@@ -6364,6 +6365,14 @@ export function buildPaperclipTaskMarkdown(input: {
   return lines.join("\n");
 }
 
+export function resolveHeartbeatTaskMarkdown(
+  generatedTaskMarkdown: string | null,
+  nativeTargetTaskMarkdown: unknown,
+) {
+  if (generatedTaskMarkdown) return generatedTaskMarkdown;
+  return readNonEmptyString(nativeTargetTaskMarkdown) ?? null;
+}
+
 // A positive liveness check means some process currently owns the PID.
 // On Linux, PIDs can be recycled, so this is a best-effort signal rather
 // than proof that the original child is still alive.
@@ -11423,7 +11432,10 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         agent,
         contextSnapshot,
         retryReason,
-        enforceIssueExecutionLock: retryReason === MAX_TURN_CONTINUATION_RETRY_REASON,
+        // The serialized transaction checks for an existing matching continuation
+        // before enforcing the issue lock. A concurrent duplicate may observe the
+        // lock already transferred to that continuation and must coalesce to it.
+        enforceIssueExecutionLock: false,
       });
       if (!gate.allowed) {
         await appendRunEvent(run, await nextRunEventSeq(run.id), {
@@ -14339,7 +14351,11 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           }
         : null,
     });
-    const config = parseObject(agent.adapterConfig);
+    const nativeWorkspace = await resolveNativeRunWorkspace(db, {
+      heartbeatRunId: run.id, workspaceId: agent.companyId, agentId: agent.id, context,
+    });
+    const config: Record<string, unknown> = { ...parseObject(agent.adapterConfig), ...(nativeWorkspace ? {cwd: nativeWorkspace.cwd} : {}) };
+    if (nativeWorkspace) context.verrailEnvironmentManifest = nativeWorkspace;
     const taskSession = taskKey
       ? await getTaskSession(agent.companyId, agent.id, agent.adapterType, taskKey)
       : null;
@@ -14463,7 +14479,10 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         readNonEmptyString(context.workspaceRefreshReason) === "accepted_plan_confirmation"
         && Object.keys(parseObject(context.acceptedPlanWakeRouting)).length === 0,
     };
-    const taskMarkdown = buildPaperclipTaskMarkdown(taskMarkdownInput);
+    const taskMarkdown = resolveHeartbeatTaskMarkdown(
+      buildPaperclipTaskMarkdown(taskMarkdownInput),
+      context.verrailTaskMarkdown,
+    );
     const taskMarkdownCompact = buildPaperclipTaskMarkdown({ ...taskMarkdownInput, includeDescription: false });
     if (issueRef) {
       context.paperclipIssue = {
@@ -14887,7 +14906,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       );
     const {
       selectedEnvironmentDriver: lowTrustPreflightEnvironmentDriver,
-      workspace: resolvedWorkspace,
+      workspace: defaultResolvedWorkspace,
     } = await resolveWorkspaceAfterLowTrustPreflight({
       db,
       trustPreset,
@@ -14923,6 +14942,13 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           },
         ),
     });
+    if (nativeWorkspace && selectedEnvironmentForConfig?.driver !== "local") {
+      throw new Error("NATIVE_WORKSPACE_INVALID: a pinned host workspace requires a local environment");
+    }
+    // Preserve the compatibility source enum; the native manifest records actual ownership.
+    const resolvedWorkspace = nativeWorkspace
+      ? {...defaultResolvedWorkspace, cwd: nativeWorkspace.cwd, warnings: []}
+      : defaultResolvedWorkspace;
     const hostExecutionWorkspaceConfig = stripHostWorkspaceProvisionForLowTrustSandbox({
       config: mergedConfig,
       trustPreset,

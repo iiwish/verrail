@@ -2,6 +2,9 @@ import type {
   AdjudicationAcceptanceV1,
   AdjudicationDeliveryReviewV1,
   AdjudicationSubmissionV1,
+  AcceptSubmissionInput,
+  ActivateGraphRevisionResponseV1,
+  ApproveActionInput,
   AssuranceArtifactV1,
   AssuranceClaimV1,
   AssuranceEvidenceV1,
@@ -11,7 +14,20 @@ import type {
   CreateTargetResponseV1,
   CreateRunAttemptInputV1,
   CreateRunAttemptResponseV1,
+  CreateGraphRevisionInputV1,
+  CreateGraphRevisionResponseV1,
+  CreateRunInputV1,
+  CreateRunResponseV1,
+  ConnectorActionRequestV1,
+  ConnectorEffectReceiptV1,
+  ConnectorIntegrationRunV1,
+  ExecuteActionInput,
+  HumanWorkResultV1,
+  RecordDeliveryReviewInput,
   RequestRunCancellationResponseV1,
+  RetryRunOutboxInputV1,
+  RetryRunOutboxResponseV1,
+  RunOutboxFailureV1,
   TargetListResponseV1,
   TargetReadModelV1,
   TargetStatus,
@@ -33,7 +49,19 @@ export type TargetWorkspaceAssuranceFactsV1 = Omit<TargetWorkspaceV1, "artifacts
   claims: AssuranceClaimV1[];
   evidence: AssuranceEvidenceV1[];
   verificationResults: AssuranceVerificationResultV1[];
+  integrationRuns: ConnectorIntegrationRunV1[];
+  humanWorkResults: HumanWorkResultV1[];
+  actionRequests: ConnectorActionRequestV1[];
+  effectReceipts: ConnectorEffectReceiptV1[];
+  workspaceBinding: { repoOwner: string; repoName: string } | null;
 };
+
+export interface TargetCommandResponseV1 {
+  schemaVersion: 1;
+  resourceType: string;
+  resourceId: string;
+  replayed: boolean;
+}
 
 export interface TargetListOptions {
   limit?: number;
@@ -57,6 +85,12 @@ function listPath(workspaceId: string, options: TargetListOptions = {}) {
 }
 
 export const targetsApi = {
+  runOutboxFailures: (workspaceId: string, targetId: string) =>
+    api.get<RunOutboxFailureV1[]>(`/workspaces/${workspaceId}/targets/${targetId}/run-outbox-failures`),
+  retryRunOutbox: (workspaceId: string, runId: string, input: RetryRunOutboxInputV1, idempotencyKey: string) =>
+    api.post<RetryRunOutboxResponseV1>(`/workspaces/${workspaceId}/runs/${runId}/outbox/retry`, input, {
+      headers: { "Idempotency-Key": idempotencyKey },
+    }),
   create: (workspaceId: string, input: CreateTargetInputV1, idempotencyKey: string) =>
     api.post<CreateTargetResponseV1>(`/workspaces/${workspaceId}/targets`, input, {
       headers: { "Idempotency-Key": idempotencyKey },
@@ -81,6 +115,38 @@ export const targetsApi = {
     api.get<TargetWorkspaceAssuranceFactsV1>(`/workspaces/${workspaceId}/targets/${targetId}/workspace`),
   createConversation: (workspaceId: string, targetId: string) =>
     api.post<ConversationDetail>(`/workspaces/${workspaceId}/targets/${targetId}/conversation`, {}),
+  createGraphRevision: (
+    workspaceId: string,
+    targetId: string,
+    input: CreateGraphRevisionInputV1,
+    idempotencyKey: string,
+  ) => api.post<CreateGraphRevisionResponseV1>(
+    `/workspaces/${workspaceId}/targets/${targetId}/graph-revisions`,
+    input,
+    { headers: { "Idempotency-Key": idempotencyKey } },
+  ),
+  activateGraphRevision: (
+    workspaceId: string,
+    targetId: string,
+    graphRevisionId: string,
+    idempotencyKey: string,
+  ) => api.post<ActivateGraphRevisionResponseV1>(
+    `/workspaces/${workspaceId}/targets/${targetId}/graph-revisions/${graphRevisionId}/activate`,
+    {},
+    { headers: { "Idempotency-Key": idempotencyKey } },
+  ),
+  createRun: (
+    workspaceId: string,
+    targetId: string,
+    graphRevisionId: string,
+    workNodeId: string,
+    input: CreateRunInputV1,
+    idempotencyKey: string,
+  ) => api.post<CreateRunResponseV1>(
+    `/workspaces/${workspaceId}/targets/${targetId}/graph-revisions/${graphRevisionId}/nodes/${workNodeId}/runs`,
+    input,
+    { headers: { "Idempotency-Key": idempotencyKey } },
+  ),
   createRunAttempt: (workspaceId: string, runId: string, input: CreateRunAttemptInputV1, idempotencyKey: string) =>
     api.post<CreateRunAttemptResponseV1>(`/workspaces/${workspaceId}/runs/${runId}/attempts`, input, {
       headers: { "Idempotency-Key": idempotencyKey },
@@ -89,6 +155,40 @@ export const targetsApi = {
     api.post<RequestRunCancellationResponseV1>(`/workspaces/${workspaceId}/runs/${runId}/cancel`, {}, {
       headers: { "Idempotency-Key": idempotencyKey },
     }),
+  recordDeliveryReview: (
+    workspaceId: string,
+    input: RecordDeliveryReviewInput,
+    idempotencyKey: string,
+  ) => api.post<TargetCommandResponseV1>(`/workspaces/${workspaceId}/delivery-reviews`, input, {
+    headers: { "Idempotency-Key": idempotencyKey },
+  }),
+  acceptSubmission: (
+    workspaceId: string,
+    input: AcceptSubmissionInput,
+    idempotencyKey: string,
+  ) => api.post<TargetCommandResponseV1>(`/workspaces/${workspaceId}/acceptances`, input, {
+    headers: { "Idempotency-Key": idempotencyKey },
+  }),
+  approveAction: (
+    workspaceId: string,
+    actionRequestId: string,
+    input: ApproveActionInput,
+    idempotencyKey: string,
+  ) => api.post<TargetCommandResponseV1>(
+    `/workspaces/${workspaceId}/pull-request-actions/${actionRequestId}/approvals`,
+    input,
+    { headers: { "Idempotency-Key": idempotencyKey } },
+  ),
+  executeAction: (
+    workspaceId: string,
+    actionRequestId: string,
+    input: ExecuteActionInput,
+    idempotencyKey: string,
+  ) => api.post<TargetCommandResponseV1>(
+    `/workspaces/${workspaceId}/pull-request-actions/${actionRequestId}/executions`,
+    input,
+    { headers: { "Idempotency-Key": idempotencyKey } },
+  ),
   getRevision: (workspaceId: string, targetId: string, targetRevisionId: string) =>
     api.get<TargetReadModelV1>(
       `/workspaces/${workspaceId}/targets/${targetId}/revisions/${targetRevisionId}`,
