@@ -1,4 +1,5 @@
 import { constants } from "node:fs";
+import { createHash } from "node:crypto";
 import { lstat, open, realpath } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
@@ -26,7 +27,8 @@ export function nativeRunArtifactDirectory(runAttemptId: string) {
   return `.verrail/run-artifacts/${runAttemptId}`;
 }
 
-async function readBoundedFile(filename: string, limit: number, root: string) {
+async function readBoundedFile(filename: string, limit: number, root: string, check: () => void) {
+  check();
   const handle = await open(filename, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const before = await handle.stat();
@@ -35,11 +37,13 @@ async function readBoundedFile(filename: string, limit: number, root: string) {
     const body = Buffer.alloc(before.size);
     let offset = 0;
     while (offset < body.length) {
+      check();
       const { bytesRead } = await handle.read(body, offset, body.length - offset, offset);
       if (!bytesRead) throw new Error("Artifact changed during collection");
       offset += bytesRead;
     }
     const after = await handle.stat();
+    check();
     const current = await lstat(filename);
     if (after.size !== before.size || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs
       || !current.isFile() || current.ino !== before.ino || current.dev !== before.dev
@@ -48,51 +52,88 @@ async function readBoundedFile(filename: string, limit: number, root: string) {
   } finally { await handle.close(); }
 }
 
-export async function collectNativeRunArtifacts(input: {
+export interface NativeArtifactMapping {
+  ordinal: number;
+  path: string;
+  title: string;
+  kind: RunArtifactInputV1["kind"];
+  bytes: number;
+  contentHash: string;
+  contentRef: string;
+}
+
+export async function prepareNativeRunArtifacts(input: {
   cwd: string;
   workspaceId: string;
   runAttemptId: string;
-  storage: Pick<StorageService, "putFile">;
-}): Promise<RunArtifactInputV1[]> {
+  check?: () => void;
+}) {
+  const check = input.check ?? (() => {});
+  const readStartedAt = new Date().toISOString();
   const files: Array<{ item: z.infer<typeof manifestSchema>["artifacts"][number]; body: Buffer }> = [];
-  try {
-    z.string().uuid().parse(input.workspaceId);
-    z.string().uuid().parse(input.runAttemptId);
-    const cwd = await realpath(input.cwd);
-    const relative = nativeRunArtifactDirectory(input.runAttemptId);
-    let root = cwd;
-    for (const segment of relative.split("/")) {
-      root = path.join(root, segment);
-      let entry;
-      try { entry = await lstat(root); } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+  let collectionStatus: "collected" | "no_manifest" = "no_manifest";
+  const read = async () => {
+    try {
+      check();
+      z.string().uuid().parse(input.workspaceId);
+      z.string().uuid().parse(input.runAttemptId);
+      const cwd = await realpath(input.cwd);
+      const relative = nativeRunArtifactDirectory(input.runAttemptId);
+      let root = cwd;
+      for (const segment of relative.split("/")) {
+        root = path.join(root, segment);
+        let entry;
+        try { entry = await lstat(root); } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+          throw error;
+        }
+        if (!entry.isDirectory() || entry.isSymbolicLink() || await realpath(root) !== root) throw new Error("Linked output directory");
+      }
+      const manifestPath = path.join(root, "manifest.json");
+      try { await lstat(manifestPath); } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
         throw error;
       }
-      if (!entry.isDirectory() || entry.isSymbolicLink() || await realpath(root) !== root) throw new Error("Linked output directory");
+      const manifest = manifestSchema.parse(JSON.parse((await readBoundedFile(manifestPath, 65_536, root, check)).toString("utf8")));
+      let total = 0;
+      for (const item of manifest.artifacts) {
+        const body = await readBoundedFile(path.join(root, item.path), 32 * 1024 * 1024, root, check);
+        total += body.length;
+        if (total > 64 * 1024 * 1024) throw new Error("Artifact total exceeds 64 MiB");
+        files.push({ item, body });
+      }
+      collectionStatus = "collected";
+    } catch (error) {
+      throw new NativeRunArtifactError(error);
     }
-    const manifestPath = path.join(root, "manifest.json");
-    try { await lstat(manifestPath); } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-      throw error;
+  };
+  await read();
+  const readFinishedAt = new Date().toISOString();
+  // Buffers stay private: later source scans and uploads never reread the workspace.
+  return { collectionStatus, readStartedAt, readFinishedAt, async upload(storage?: Pick<StorageService, "putFile">): Promise<NativeArtifactMapping[]> {
+    const artifacts: NativeArtifactMapping[] = [];
+    for (const { item, body } of files) {
+      check();
+      if (!storage) throw new NativeRunArtifactError(new Error("Storage unavailable"));
+      const contentHash = createHash("sha256").update(body).digest("hex");
+      const stored = await storage.putFile({
+        companyId: input.workspaceId, namespace: "verrail/run-artifacts", originalFilename: item.path,
+        contentType: "application/octet-stream", body, contentAddressed: true,
+      });
+      check();
+      if (stored.sha256 !== contentHash || stored.byteSize !== body.length
+        || stored.objectKey !== `${input.workspaceId}/verrail/run-artifacts/sha256/${contentHash}`) {
+        throw new NativeRunArtifactError(new Error("Storage metadata mismatch"));
+      }
+      artifacts.push({ ordinal: artifacts.length, path: item.path, title: item.title, kind: item.kind, bytes: body.length, contentHash, contentRef: `storage:${stored.objectKey}` });
     }
-    const manifest = manifestSchema.parse(JSON.parse((await readBoundedFile(manifestPath, 65_536, root)).toString("utf8")));
-    let total = 0;
-    for (const item of manifest.artifacts) {
-      const body = await readBoundedFile(path.join(root, item.path), 32 * 1024 * 1024, root);
-      total += body.length;
-      if (total > 64 * 1024 * 1024) throw new Error("Artifact total exceeds 64 MiB");
-      files.push({ item, body });
-    }
-  } catch (error) {
-    throw new NativeRunArtifactError(error);
-  }
-  const artifacts: RunArtifactInputV1[] = [];
-  for (const { item, body } of files) {
-    const stored = await input.storage.putFile({
-      companyId: input.workspaceId, namespace: "verrail/run-artifacts", originalFilename: item.path,
-      contentType: "application/octet-stream", body, contentAddressed: true,
-    });
-    artifacts.push({ title: item.title, kind: item.kind, contentHash: stored.sha256, contentRef: `storage:${stored.objectKey}` });
-  }
-  return artifacts;
+    return artifacts;
+  } };
+}
+
+export async function collectNativeRunArtifacts(input: {
+  cwd: string; workspaceId: string; runAttemptId: string; storage: Pick<StorageService, "putFile">;
+}): Promise<RunArtifactInputV1[]> {
+  const prepared = await prepareNativeRunArtifacts(input);
+  return (await prepared.upload(input.storage)).map(({ title, kind, contentHash, contentRef }) => ({ title, kind, contentHash, contentRef }));
 }

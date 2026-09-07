@@ -133,7 +133,19 @@ Target 存在可选 Collection 关联时可以附加对应 ContextBinding。Conv
 
 负责 AcceptanceCriterion、Claim、ArtifactContract、ArtifactRevision、内容 Hash、Materialization、IntegrationRun/IntegrationAttempt、Provider Receipt、Evidence、VerificationResult、Submission、DeliveryReview、ReviewComment 和 Acceptance。大对象写入 Object Store，关系、Hash 和生命周期写入 PostgreSQL。
 
+Submission 固定活动 GraphRevision，Acceptance 按 Submission/Review 对追加并保持唯一；所有读者按当前 Review 解析有效决定。CI 验证通过 Evidence 对象 Hash 和 IntegrationRun 的 GraphRevision/Commit 等绑定校验候选，重新提交不能复用不匹配的旧证明。变更与应用回滚边界见 [ADR-0008](adrs/0008-review-bound-acceptance.md)。
+
+Criterion 的可选 v1 proofContract 存于不可变 TargetRevision JSON。Go 通过版本检查和幂等命令创建修订，并由领域事务解除旧活动图关联；后续图创建/激活使用既有 Graph Engine 和 outbox。CriterionProof 作为追加式关联保存独立验证的完整合同与版本上下文，来源 IntegrationRun 和其 Evidence/VerificationResult 在同一事务绑定，保持 CI 结果身份不变。TypeScript 投影与 Go 门禁分别按验收前证明和最终 all-of 证明计算，后置结果不能污染前置验证最新值选择器。详见 [ADR-0009](adrs/0009-phased-criterion-proof.md)。
+
 HostTrusted 原生 Run 的文件产物由实际执行器 service Principal 通过成功事件登记：TypeScript Runner 验证不可变部署目录及有界输出 manifest，完成内容寻址 Storage 写入；Go Domain API 在当前 Attempt、租约、fencing 和游标校验后，将 ArtifactRevision、来源 Run/WorkNode、审计及执行终态原子提交。该通道不扩展人工 Review、ActionApproval 或 Acceptance 权限，详见 [ADR 0007](adrs/0007-native-run-artifact-ingress.md)。
+
+原生 HostTrusted Codex 在实际 Adapter 调用前重新校验 Run、Attempt、系统唤醒及部署目录绑定，并由服务端持久化 `NativeSourceObservation`；持久化失败不启动 Adapter。观察覆盖该工作树中 Git 跟踪文件和未被忽略的未跟踪文件，仅排除根目录下 `.verrail/run-artifacts/**`。普通文件记录实际字节哈希与 Git 内容模式（所有者执行位决定 `100644`/`100755`）；相对且不逃出仓库的符号链接只记录链接目标字节，不读取目标内容。完整状态摘要包含 HEAD、索引和删除项；独立内容摘要仅包含实际存在文件的路径、类型、内容模式和字节哈希，暂存或提交本身不改变该内容摘要。观察有文件数、字节数和时限约束，检测到变动或无法读取时明确为 `unavailable`，不返回部分成功。服务端通过可信系统唤醒关联读取已存观察，并随既有 fenced RunEvent 保存；历史运行不补造调用前观察。
+
+本地 HostTrusted Codex 的成功 Adapter 返回后，Runner 在 `workspace_finalize` 屏障前采集 `after_adapter_return` 输出回执：两次终端源码观察包围有界 manifest 和文件字节读取，随后仅上传内存中固定的字节。回执保留输出顺序、相对路径、实际大小、哈希和 Workspace 内容寻址引用；Storage 返回的大小、哈希及完整 key 必须与本地字节匹配。源码变化、无 manifest、源码不可用和不支持的执行模式保持独立语义。读取和上传时间分开记录；总采集期限为 60 秒，超时不表示底层上传已取消，迟到上传不形成产物事实。
+
+Runner 在 Heartbeat 成功条件更新中原子保存回执、完成时间及已定稿的日志、用量、退出和部署环境事实。取消竞争、检测到租约失效、finalize 或持久化失败不能发布成功关联。该条件更新只对 Heartbeat 状态原子化，不是跨引擎租约授权事务；最后一次租约检查后失去租约可以留下未登记的本地观察，Go fenced 登记必须拒绝失效执行权。执行器只从可信系统唤醒关联读取已存回执，领域报告重试和进程重启重用相同事实、哈希、引用和时间，不重新读取工作目录；历史缺失保持缺失，无效回执不回退为文件重采集。ArtifactRevision 仍由 Go 的 fenced 成功事件原子登记。
+
+调用前和调用后观察描述源工作树与实际采集产物的有界关联，不证明运行中的 Server、Go 或 Plugin 构建来源、实际权限、任意 `code_change` 文件与完整代码树的等价关系或完整 CriterionProof。忽略文件、依赖、构建输出及符号链接所指内容不因链接记录而纳入覆盖；HostTrusted 的观察和复查不是对同权限恶意进程的隔离保证。
 
 ### Capability Gateway
 
@@ -314,6 +326,49 @@ Go 重构遵守以下边界：
 - 强隔离调度必须匹配经过准入的 RuntimeProfile；
 - Adapter、Harness、镜像和 Plugin 固定版本、来源 Hash、许可证和 SBOM；
 - AuditEvent 追加保存，敏感字段按分类脱敏或仅保存 Hash。
+
+### Compatibility Tool Gateway 审批边界
+
+当前 TypeScript Tool Gateway 的立即审批执行、已审批恢复、显式
+`approvedActionRequestId` 和 Test 来源调用共用一次性数据库执行 claim。
+审批决定保留实际 User/Agent 身份；Test 的实际 User 与所选 Agent 分别记录，
+不构造代理人或默认 Board 身份。没有 execute-on-approve 标记的存量审批保持
+惰性，只能经原有显式审批 ID、原始 Run/Issue scope 路径执行。
+具名 Gateway 的持久身份用于重新检查当前状态、Scope 与 Profile/Policy 绑定。
+原始 Heartbeat Run 结束及短期 bearer 的例行撤销、过期不取消已记录的人类审批；
+当前 token 存储不区分例行清理与人工撤销意图，因此 bearer 撤销本身不构成对
+持久审批的撤销。禁用 Gateway、拒绝策略、暂停 Agent 或取消审批分别通过其
+持久控制边界阻止执行。
+
+执行前重新读取审批状态、有效期、正式审批、发起上下文与当前策略。
+未变化的 require-approval 策略由已记录的批准满足；新增审批要求、当前拒绝或
+撤销优先。普通未批准调用保持策略优先级；审批执行先检查所有适用的拒绝、限流与
+新增审批要求。创建审批请求时记录全部适用审批策略，并为适用限流策略预留一次
+请求配额，包括优先级在审批规则之后的限流器。限流预留 Hash 保存在现有 Invocation
+policyExplanation 中，绑定策略配置、Scope、bucket 与窗口；最终验证只认可本次
+请求已实际消费的同一预留，不重复增加计数。新增或变更限流器、窗口滚动及缺少
+预留证明的存量审批需重新创建请求和审阅，不借用空闲配额无计数执行。
+完整原始参数通过签名绑定，脱敏摘要 Hash
+仅用于检索，不作为参数相等或重放授权依据。MCP 目标快照覆盖连接配置、实际
+输入输出 Schema、风险、凭证版本与本地 stdio 命令模板；凭证解析的记账时间不
+作为凭证版本。远程凭证准备及本地初始化完成后，在 tools/call 发出前再次验证。
+该边界不跨 Provider IO 持有数据库锁；最终验证与外部执行之间仍存在不可消除的
+撤销竞态，也不提供 Provider 端 expected-parent、CAS 或分布式事务。
+
+远程及本地 MCP 的 `isError` 是失败信封，不是成功内容；普通 Builtin/Plugin
+返回值中的同名字段不采用该协议语义。已批准写操作一旦发出，传输、协议、结果
+验证或结果持久化失败按 `provider_effect_unknown` 保守处理：可持久化时，Action
+与 Invocation 原子落为 `failed` 并保留禁止重试诊断，现有结果 API 与交互投影展示
+失败，不伪装成执行中。无法持久化结果时，已提交的 `executing` claim 继续阻止
+重试。成功结果与 Action 消费状态原子提交，后续审计或交互投影失败不改写成功。
+
+同 Workspace、所选 Agent、Issue、工具和完整签名参数的未确定结果阻止新幂等键、
+新进程、另一实际 Test User 及已存在的另一审批再次发出相同写操作；普通结果重放
+与审批权限仍限定原始主体。历史核验逐行读取，最多扫描 32 个候选及累计 32 MiB
+签名载荷，达到界限或无法核验未结算签名时 fail closed，不忽略较早的未知结果。
+执行中的其他相同签名请求也阻止并发发出。该兼容边界只提供持久禁止重试，不提供
+自动 Provider 对账、人工解除流程或完整发布器；处理未知效果需要先独立核验外部
+事实，不能通过修改参数、换主体、清除状态或重发调用宣称成功。
 
 ## 12. 可靠性与运维
 

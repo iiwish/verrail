@@ -80,6 +80,22 @@ func TestCreateSubmissionInputValidation(t *testing.T) {
 	require.Equal(t, "git:abc123", *trimmed.CommitRef, "optional text fields are trimmed")
 }
 
+func TestSubmissionHashBindsGraphRevisionWithoutRewritingLegacyHashes(t *testing.T) {
+	targetRevisionID := "11111111-1111-4111-8111-111111111111"
+	artifacts := []string{"22222222-2222-4222-8222-222222222222"}
+	legacy, err := submissionHash(targetRevisionID, artifacts, nil, nil, nil)
+	require.NoError(t, err)
+	unbound, err := submissionHash(targetRevisionID, artifacts, nil, nil, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, legacy, unbound)
+	first, err := submissionHash(targetRevisionID, artifacts, nil, nil, nil, ptr("33333333-3333-4333-8333-333333333333"))
+	require.NoError(t, err)
+	second, err := submissionHash(targetRevisionID, artifacts, nil, nil, nil, ptr("44444444-4444-4444-8444-444444444444"))
+	require.NoError(t, err)
+	require.NotEqual(t, legacy, first)
+	require.NotEqual(t, first, second)
+}
+
 func TestRecordDeliveryReviewInputValidation(t *testing.T) {
 	valid := RecordDeliveryReviewInput{
 		SubmissionID:          "22222222-2222-4222-8222-222222222222",
@@ -414,37 +430,38 @@ func TestAdjudicationContractsIntegration(t *testing.T) {
 	defer pool.Close()
 
 	harness := newAdjudicationTestHarness(t, pool)
-	defer harness.cleanup(pool)
+	ci := &connectorTestHarness{assuranceTestHarness: harness.assuranceTestHarness, storeWithFake: harness.store}
+	defer func() { harness.cleanup(pool); ci.cleanup(pool) }()
+	ci.createCIConnection()
 
 	targetID, targetRevisionID := harness.createTarget()
 	artifactID := harness.createArtifact(targetID)
 	revisionResult, err := harness.addRevision(artifactID, AddArtifactRevisionInput{ContentHash: assuranceTestHash, ContentRef: "git:one"})
 	require.NoError(t, err)
 	artifactRevisionID := revisionResult.ResourceID
-	claimID := harness.createClaim(targetID, targetRevisionID, "ac-1")
-	evidenceID := harness.recordEvidence(targetID, &claimID, "6666666666666666666666666666666666666666666666666666666666666666")
-	verification, err := harness.recordVerificationResult(RecordVerificationResultInput{
-		ClaimID:         claimID,
-		Verdict:         "passed",
-		VerifierVersion: "ci.v1",
-		EvidenceIDs:     []string{evidenceID},
-	})
+	fixture := ci.provisionTaskForTarget("integration_task", targetID, targetRevisionID)
+	integration, err := ci.recordIntegrationRun(ci.integrationRunInput(fixture, "ci/adjudication", "success", assuranceTestHash, "ci/adjudication"))
 	require.NoError(t, err)
+	verification := AgentLifecycleResult{}
+	require.NoError(t, pool.QueryRow(ctx, `select verification_result_id from verrail_integration_runs where id=$1`, integration.ResourceID).Scan(&verification.ResourceID))
 
 	submissionInput := CreateSubmissionInput{
 		TargetID:              targetID,
 		TargetRevisionID:      targetRevisionID,
 		ArtifactRevisionIDs:   []string{artifactRevisionID},
 		VerificationResultIDs: []string{verification.ResourceID},
-		CommitRef:             ptr("git:candidate-1"),
+		CommitRef:             ptr("abc123"),
+		EnvironmentSummary:    ptr("candidate-1"),
 	}
 	newSubmission := func(t *testing.T, commitRef string) string {
 		t.Helper()
 		submission, err := harness.createSubmission(t, CreateSubmissionInput{
-			TargetID:            targetID,
-			TargetRevisionID:    targetRevisionID,
-			ArtifactRevisionIDs: []string{artifactRevisionID},
-			CommitRef:           ptr(commitRef),
+			TargetID:              targetID,
+			TargetRevisionID:      targetRevisionID,
+			ArtifactRevisionIDs:   []string{artifactRevisionID},
+			VerificationResultIDs: []string{verification.ResourceID},
+			CommitRef:             ptr("abc123"),
+			EnvironmentSummary:    ptr(commitRef),
 		})
 		require.NoError(t, err)
 		harness.aggregateIDs = append(harness.aggregateIDs, submission.ResourceID)
@@ -455,7 +472,7 @@ func TestAdjudicationContractsIntegration(t *testing.T) {
 
 	t.Run("service submission keeps its authenticated principal and one human can govern it", func(t *testing.T) {
 		input := submissionInput
-		input.CommitRef = ptr("git:service-candidate")
+		input.EnvironmentSummary = ptr("service-candidate")
 		command := buildAdjudicationCandidateCommandFor(t, harness, "service", "graph-orchestrator", AdjudicationSubmissionCreateCommand, input)
 		submission, err := harness.store.CreateSubmission(ctx, command)
 		require.NoError(t, err)

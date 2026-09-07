@@ -82,6 +82,7 @@ export {
   verrailActionApprovals,
   verrailEffectReceipts,
   verrailGithubRepoBindings,
+  verrailCriterionProofs,
 } from "./verrail_connector.js";
 export { verrailHumanWorkResults } from "./verrail_work_results.js";
 export { projectMemberships } from "./project_memberships.js";

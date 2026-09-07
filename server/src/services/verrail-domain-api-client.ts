@@ -121,6 +121,7 @@ export interface ConnectorCommandResponseV1 {
 }
 
 export interface VerrailDomainApiClient {
+  reviseTargetProof(command: HumanCommand & { targetId: string; input: import("@paperclipai/shared").ReviseTargetProofInput }): Promise<import("@paperclipai/shared").ReviseTargetProofResultV1>;
   createTarget(command: CreateNativeTargetCommand): Promise<CreateTargetResponseV1>;
   createGraphRevision(command: CreateNativeGraphRevisionCommand): Promise<CreateGraphRevisionResponseV1>;
   activateGraphRevision(command: ActivateNativeGraphRevisionCommand): Promise<ActivateGraphRevisionResponseV1>;
@@ -216,6 +217,7 @@ export function createVerrailDomainApiClient(options: {
 
   return {
     createTarget: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/targets`, command.input),
+    reviseTargetProof: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/targets/${encodeURIComponent(command.targetId)}/revisions`, command.input),
     createGraphRevision: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/targets/${encodeURIComponent(command.targetId)}/graph-revisions`, command.input),
     activateGraphRevision: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/targets/${encodeURIComponent(command.targetId)}/graph-revisions/${encodeURIComponent(command.graphRevisionId)}/activate`),
     createRun: (command) => send(command, `/v1/workspaces/${encodeURIComponent(command.workspaceId)}/targets/${encodeURIComponent(command.targetId)}/graph-revisions/${encodeURIComponent(command.graphRevisionId)}/nodes/${encodeURIComponent(command.workNodeId)}/runs`, command.input),

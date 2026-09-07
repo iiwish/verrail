@@ -183,6 +183,9 @@ import {
 import { buildDocumentReviewContext, buildPlanReviewContext } from "./plan-review-context.js";
 import { executionWorkspaceService, mergeExecutionWorkspaceConfig } from "./execution-workspaces.js";
 import { resolveNativeRunWorkspace } from "./verrail-native-workspace.js";
+import { captureNativeSource, NATIVE_SOURCE_CONTEXT_KEY, unavailableNativeSource } from "./verrail-native-source.js";
+import { captureNativeOutput, finalizeNativeOutputReceipt, NATIVE_OUTPUT_CONTEXT_KEY, type NativeOutputReceipt } from "./verrail-native-output.js";
+import type { StorageService } from "../storage/types.js";
 import {
   GIT_BRANCH_OWNERSHIP_METADATA_KEY,
   GIT_BRANCH_OWNERSHIP_METADATA_VERSION,
@@ -6700,6 +6703,7 @@ export function resolveNextSessionState(input: {
 export type HeartbeatEnvironmentRuntime = ReturnType<typeof environmentRuntimeService>;
 
 export interface HeartbeatServiceOptions {
+  nativeOutputStorage?: Pick<StorageService, "putFile">;
   pluginWorkerManager?: PluginWorkerManager;
   environmentRuntime?: HeartbeatEnvironmentRuntime;
   runtimeEnv?: Record<string, string | undefined>;
@@ -14174,6 +14178,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
 
     const runtime = await ensureRuntimeState(agent);
     const context = parseObject(run.contextSnapshot);
+    delete context[NATIVE_SOURCE_CONTEXT_KEY];
+    delete context[NATIVE_OUTPUT_CONTEXT_KEY];
     const taskKey = deriveTaskKeyWithHeartbeatFallback(context, null);
     const sessionCodec = getAdapterSessionCodec(agent.adapterType);
     const issueId = readNonEmptyString(context.issueId);
@@ -15971,13 +15977,16 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           }
         }
         const modelProfileMetadata = modelProfileRunMetadata(modelProfileApplication);
+        const invocationMetadata = { ...(meta as unknown as Record<string, unknown>) };
+        delete invocationMetadata[NATIVE_SOURCE_CONTEXT_KEY];
+        delete invocationMetadata[NATIVE_OUTPUT_CONTEXT_KEY];
         await appendRunEvent(currentRun, seq++, {
           eventType: "adapter.invoke",
           stream: "system",
           level: "info",
           message: "adapter invocation",
           payload: {
-            ...(meta as unknown as Record<string, unknown>),
+            ...invocationMetadata,
             ...(modelProfileMetadata ? { modelProfile: modelProfileMetadata } : {}),
           },
         });
@@ -16201,6 +16210,9 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       };
 
       let adapterResult: Awaited<ReturnType<typeof adapter.execute>>;
+      let nativeOutputReceipt: NativeOutputReceipt | undefined;
+      let nativeSourceAtDispatch: Awaited<ReturnType<typeof captureNativeSource>> | undefined;
+      let nativeDispatchBinding: typeof nativeWorkspace = null;
       try {
         const adapterContext = { ...context };
         const runtimeMcpServers = await buildPaperclipRuntimeMcpServers({
@@ -16219,6 +16231,38 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         });
         if (managedMcpConfig) {
           adapterContext.paperclipManagedMcp = managedMcpConfig;
+        }
+        if (nativeWorkspace) {
+          const bindingInput = { heartbeatRunId: run.id, workspaceId: agent.companyId, agentId: agent.id, context };
+          const binding = await resolveNativeRunWorkspace(db, bindingInput);
+          if (!binding) throw new Error("NATIVE_SOURCE_BINDING_INVALID");
+          const identity = {
+            workspaceId: binding.workspaceId, heartbeatRunId: binding.heartbeatRunId, agentId: binding.agentId,
+            runId: binding.runId, attemptId: binding.attemptId,
+            deploymentRevisionId: binding.deploymentRevisionId, agentVersionId: binding.agentVersionId,
+          };
+          // Codex resolves in-place realization first, then workspace/config cwd.
+          // Other adapters and remote targets remain explicitly outside this observation.
+          const workspaceContext = parseObject(adapterContext.paperclipWorkspace);
+          const configuredCwd = readNonEmptyString(runtimeConfig.cwd);
+          const dispatchCwd = executionTarget?.workspaceRealization?.mode === "in_place"
+            ? executionTarget.workspaceRealization.authoritativeRoot
+            : workspaceContext.source === "agent_home" && configuredCwd
+              ? configuredCwd : readNonEmptyString(workspaceContext.cwd) ?? configuredCwd;
+          const observation = agent.adapterType !== "codex_local" || executionTarget?.kind === "remote" || remoteExecution
+            ? unavailableNativeSource(identity, "unsupported_execution")
+            : !dispatchCwd || await fs.realpath(dispatchCwd).catch(() => null) !== binding.cwd
+              ? unavailableNativeSource(identity, "cwd_mismatch")
+              : await captureNativeSource({ cwd: binding.cwd, identity });
+          const rechecked = await resolveNativeRunWorkspace(db, bindingInput);
+          if (!rechecked || rechecked.contentHash !== binding.contentHash) throw new Error("NATIVE_SOURCE_BINDING_CHANGED");
+          nativeDispatchBinding = binding;
+          nativeSourceAtDispatch = structuredClone(observation);
+          context[NATIVE_SOURCE_CONTEXT_KEY] = observation;
+          const persisted = await db.update(heartbeatRuns).set({ contextSnapshot: context, updatedAt: new Date() })
+            .where(and(eq(heartbeatRuns.id, run.id), eq(heartbeatRuns.companyId, agent.companyId), eq(heartbeatRuns.agentId, agent.id), eq(heartbeatRuns.status, "running")))
+            .returning({ id: heartbeatRuns.id });
+          if (persisted.length !== 1) throw new Error("NATIVE_SOURCE_PERSISTENCE_FAILED");
         }
         adapterResult = await adapter.execute({
           runId: run.id,
@@ -16255,6 +16299,21 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           },
           authToken: authToken ?? undefined,
         });
+        if (nativeWorkspace && nativeSourceAtDispatch && nativeDispatchBinding
+          && !adapterResult.timedOut && (adapterResult.exitCode ?? 0) === 0 && !adapterResult.errorMessage) {
+          const binding = nativeDispatchBinding;
+          const revalidate = async () => {
+            const current = await getRun(run.id);
+            if (current?.status !== "running") throw new Error("NATIVE_OUTPUT_RUN_NOT_RUNNING");
+            const checked = await resolveNativeRunWorkspace(db, {
+              heartbeatRunId: run.id, workspaceId: agent.companyId, agentId: agent.id,
+              context: { verrailRunId: binding.runId, verrailRunAttemptId: binding.attemptId },
+            });
+            if (!checked || checked.contentHash !== binding.contentHash) throw new Error("NATIVE_OUTPUT_BINDING_CHANGED");
+          };
+          nativeOutputReceipt = await captureNativeOutput({ cwd: binding.cwd, identity: nativeSourceAtDispatch.identity,
+            beforeSource: nativeSourceAtDispatch, storage: options.nativeOutputStorage, revalidate });
+        }
         // Adapter returned cleanly, which means its workspace-restore finally
         // block also ran without throwing. Record the workspace_finalize
         // barrier so dependents that share this executionWorkspace can wake.
@@ -16499,9 +16558,29 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         }),
         adapterResult.summary ?? null,
       );
+      if (persistedResultJson) delete persistedResultJson[NATIVE_OUTPUT_CONTEXT_KEY];
+
+      let terminalContext: Record<string, unknown> | undefined;
+      const terminalFinishedAt = new Date();
+      if (status === "succeeded" && nativeOutputReceipt && nativeDispatchBinding) {
+        const checked = await resolveNativeRunWorkspace(db, {
+          heartbeatRunId: run.id, workspaceId: agent.companyId, agentId: agent.id,
+          context: { verrailRunId: nativeDispatchBinding.runId, verrailRunAttemptId: nativeDispatchBinding.attemptId },
+        });
+        if (!checked || checked.contentHash !== nativeDispatchBinding.contentHash) throw new Error("NATIVE_OUTPUT_BINDING_CHANGED");
+        const finalized = finalizeNativeOutputReceipt(nativeOutputReceipt, {
+          heartbeatRunId: run.id, heartbeatStatus: status, agentId: agent.id,
+          logStore: handle?.store ?? null, logRef: handle?.logRef ?? null,
+          logSha256: logSummary?.sha256 ?? null, logBytes: logSummary?.bytes ?? null,
+          usage: usageJson, exitCode: adapterResult.exitCode ?? null, errorCode: runErrorCode,
+          environmentManifest: nativeDispatchBinding,
+        }, terminalFinishedAt.toISOString());
+        terminalContext = { ...context, [NATIVE_OUTPUT_CONTEXT_KEY]: finalized };
+      }
 
       const persistedRunWrite = await setRunStatusIfRunning(run.id, status, {
-        finishedAt: new Date(),
+        ...(terminalContext ? { contextSnapshot: terminalContext } : {}),
+        finishedAt: terminalFinishedAt,
         error: runErrorMessage,
         errorCode: runErrorCode,
         exitCode: adapterResult.exitCode,
@@ -17806,6 +17885,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     const source = opts.source ?? "on_demand";
     const triggerDetail = opts.triggerDetail ?? null;
     const contextSnapshot: Record<string, unknown> = { ...(opts.contextSnapshot ?? {}) };
+    delete contextSnapshot[NATIVE_SOURCE_CONTEXT_KEY];
+    delete contextSnapshot[NATIVE_OUTPUT_CONTEXT_KEY];
     const reason = opts.reason ?? null;
     const payload = opts.payload ?? null;
     const {

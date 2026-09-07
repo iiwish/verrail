@@ -1,0 +1,242 @@
+name: Verrail Candidate Verify
+
+# This push trigger works before a PR or a workflow on the default branch exists.
+on:
+  push:
+    branches:
+      - 'codex/g2-7-candidate-*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verrail-candidate-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  candidate_verify:
+    name: candidate_verify
+    if: github.repository == 'iiwish/verrail' && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/codex/g2-7-candidate-') && github.event.deleted == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    outputs:
+      steps: ${{ steps.capture_results.outputs.steps }}
+    env:
+      CI: 'true'
+      DO_NOT_TRACK: '1'
+      GOTOOLCHAIN: local
+    steps:
+      - name: checkout
+        id: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: source_identity
+        id: source_identity
+        run: |
+          [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$GITHUB_REF" =~ ^refs/heads/codex/g2-7-candidate-[a-zA-Z0-9][a-zA-Z0-9._-]{0,100}$ ]]
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          test "$GITHUB_WORKFLOW_REF" = "$GITHUB_REPOSITORY/.github/workflows/verrail-candidate-verify.yml@$GITHUB_REF"
+          git diff --exit-code HEAD
+
+      - name: setup_pnpm
+        id: setup_pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 9.15.4
+          run_install: false
+          cache: false
+
+      - name: setup_node
+        id: setup_node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.20.0'
+          package-manager-cache: false
+
+      - name: setup_go
+        id: setup_go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.0'
+          cache: false
+
+      - name: install
+        id: install
+        run: pnpm install --frozen-lockfile
+
+      - name: proof_tests
+        id: proof_tests
+        run: node --test .github/scripts/verrail-candidate-proof.test.mjs
+
+      - name: ts_typecheck
+        id: ts_typecheck
+        run: pnpm -r typecheck
+
+      - name: ts_tests
+        id: ts_tests
+        run: pnpm test:run
+
+      - name: ts_build
+        id: ts_build
+        run: pnpm build
+
+      - name: go_tests
+        id: go_tests
+        timeout-minutes: 25
+        run: |
+          node cli/node_modules/tsx/dist/cli.mjs --input-type=module <<'NODE'
+          import { spawn, spawnSync } from 'node:child_process';
+          import { randomUUID } from 'node:crypto';
+          import { once } from 'node:events';
+          import { createInterface } from 'node:readline';
+          import { companies, createDb, startEmbeddedPostgresTestDatabase } from './packages/db/src/index.ts';
+          import { createGoTestValidator, stopOwnedGoProcessGroup } from './.github/scripts/verrail-candidate-proof.mjs';
+
+          const cwd = new URL('./services/domain-api/', `file://${process.cwd()}/`);
+          const containerName = `verrail-candidate-temporal-${randomUUID()}`;
+          const image = 'temporalio/temporal@sha256:cf86707827fac99e4d1c4a47dc11b105382d796199c7bd41fb3213fb0471628e';
+          let database;
+          let child;
+          let goDeadline;
+          let goTimedOut = false;
+          function run(command, args, options = {}) {
+            const result = spawnSync(command, args, { encoding: 'utf8', timeout: 120000, maxBuffer: 8388608, ...options });
+            if (result.error || result.status !== 0) throw new Error(`${command} ${args[0]} failed: ${result.error?.message ?? result.stderr}`);
+            return result.stdout?.trim() ?? '';
+          }
+          try {
+            // Inventory excludes only packages with no test files; build still covers every package.
+            const testPackages = run('go', ['list', '-mod=readonly', '-f',
+              '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}', './...'], { cwd })
+              .split('\n').filter(Boolean);
+            const validator = createGoTestValidator(testPackages);
+            run('docker', ['run', '--detach', '--rm', '--name', containerName, '--publish', '127.0.0.1::7233',
+              image, 'server', 'start-dev', '--ip', '0.0.0.0']);
+            const address = run('docker', ['port', containerName, '7233/tcp']);
+            if (!/^127\.0\.0\.1:[0-9]+$/.test(address)) throw new Error('Temporal address is not isolated loopback');
+            let healthy = false;
+            for (let attempt = 0; attempt < 30; attempt += 1) {
+              const result = spawnSync('docker', ['exec', containerName, 'temporal', 'operator', 'cluster', 'health',
+                '--address', '127.0.0.1:7233'], { encoding: 'utf8', timeout: 5000 });
+              if (!result.error && result.status === 0) { healthy = true; break; }
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            if (!healthy) throw new Error('Isolated Temporal did not become healthy');
+            database = await startEmbeddedPostgresTestDatabase('verrail-candidate-isolated-');
+            const seedDb = createDb(database.connectionString);
+            try { await seedDb.insert(companies).values({ name: 'Candidate isolated integration', issuePrefix: 'CI' }); }
+            finally { await seedDb.$client.end(); }
+            child = spawn('go', ['test', '-json', '-count=1', '-mod=readonly', ...testPackages], {
+              cwd, timeout: 1200000, detached: true,
+              env: { ...process.env, VERRAIL_TEST_DATABASE_URL: database.connectionString, VERRAIL_TEST_TEMPORAL_ADDRESS: address },
+              stdio: ['ignore', 'pipe', 'inherit'],
+            });
+            goDeadline = setTimeout(() => {
+              goTimedOut = true;
+              try { process.kill(-child.pid, 'SIGKILL'); }
+              catch (error) { if (error.code !== 'ESRCH') console.error('Owned Go deadline shutdown failed'); }
+            }, 1200000);
+            const completion = new Promise(resolve => {
+              child.once('error', error => resolve({ code: null, error }));
+              child.once('close', code => resolve({ code }));
+            });
+            const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+            for await (const line of lines) {
+              if (!process.stdout.write(`${line}\n`)) await once(process.stdout, 'drain');
+              validator.observeLine(line);
+            }
+            const result = await completion;
+            if (result.error) throw result.error;
+            if (goTimedOut) throw new Error('Owned Go process group exceeded twenty minutes');
+            clearTimeout(goDeadline);
+            const summary = validator.finish(result.code);
+            run('go', ['build', '-mod=readonly', './...'], { cwd, stdio: 'inherit' });
+            console.log(`VERRAIL_GO_ZERO_SKIP_SUMMARY=${JSON.stringify(summary)}`);
+          } finally {
+            clearTimeout(goDeadline);
+            const cleanupFailures = [];
+            try { await stopOwnedGoProcessGroup(child?.pid); } catch (error) { cleanupFailures.push(error); }
+            try { await database?.cleanup(); } catch (error) { cleanupFailures.push(error); }
+            try {
+              // Check only our exact UUID name even if docker run timed out after creating it.
+              const existing = run('docker', ['container', 'ls', '--all', '--filter', `name=^/${containerName}$`, '--format', '{{.Names}}']);
+              if (existing === containerName) run('docker', ['rm', '--force', containerName]);
+              else if (existing !== '') throw new Error('Unexpected owned-container lookup result');
+            } catch (error) { cleanupFailures.push(error); }
+            if (cleanupFailures.length) throw new AggregateError(cleanupFailures, 'Owned candidate resource cleanup failed');
+            console.log('Isolated candidate PostgreSQL/Temporal cleanup completed');
+          }
+          NODE
+
+      - name: source_unchanged
+        id: source_unchanged
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --exit-code HEAD
+
+      - name: capture_results
+        id: capture_results
+        if: always()
+        env:
+          STEPS_JSON: ${{ toJSON(steps) }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+          const steps = Object.fromEntries(Object.entries(JSON.parse(process.env.STEPS_JSON))
+            .map(([id, step]) => [id, { outcome: step.outcome, conclusion: step.conclusion }]));
+          const text = JSON.stringify(steps);
+          if (Buffer.byteLength(text) > 16384) throw new Error('Step result bound exceeded');
+          appendFileSync(process.env.GITHUB_OUTPUT, `steps=${text}\n`);
+          NODE
+
+  candidate_report:
+    name: candidate_report
+    needs: candidate_verify
+    if: always() && github.repository == 'iiwish/verrail' && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/codex/g2-7-candidate-') && github.event.deleted == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # A clean runner does not execute candidate install/build/test code before reporting.
+      - name: checkout
+        id: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: setup_node
+        id: setup_node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.20.0'
+          package-manager-cache: false
+
+      - name: report
+        id: report
+        env:
+          VERIFY_RESULT: ${{ needs.candidate_verify.result }}
+          VERIFY_STEPS: ${{ needs.candidate_verify.outputs.steps }}
+        run: node .github/scripts/verrail-candidate-proof.mjs
+
+      - name: upload
+        id: upload
+        if: always() && steps.checkout.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: verrail-fixed-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          path: verrail-fixed-ci.json
+          archive: true
+          overwrite: false
+          if-no-files-found: error
+          retention-days: 7

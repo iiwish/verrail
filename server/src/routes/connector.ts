@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import {
   approveActionSchema,
+  collectGithubCiObservationSchema,
   createGithubRepoBindingSchema,
   executeActionSchema,
   recordHumanWorkResultSchema,
@@ -10,6 +11,7 @@ import {
   targetIdempotencyKeySchema,
 } from "@paperclipai/shared";
 import { HttpError } from "../errors.js";
+import { createGitHubCiObservationCollector } from "../services/github-ci-proof-collector.js";
 import { validate } from "../middleware/validate.js";
 import { createVerrailDomainApiClient, type VerrailDomainApiClient } from "../services/verrail-domain-api-client.js";
 import {
@@ -17,11 +19,12 @@ import {
   type GithubConnectorCredential,
   type GithubConnectorCredentialActor,
 } from "../services/secrets.js";
-import { assertBoard, assertBoardOrAgent, assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertAuthenticated, assertBoard, assertBoardOrAgent, assertCompanyAccess, getActorInfo } from "./authz.js";
 
 export function connectorRoutes(options: {
   db?: Db;
   domainApiClient?: VerrailDomainApiClient | null;
+  collectGithubCiObservation?: ReturnType<typeof createGitHubCiObservationCollector>["collect"];
   resolveGithubCredential?: (
     workspaceId: string,
     actor: GithubConnectorCredentialActor,
@@ -29,6 +32,8 @@ export function connectorRoutes(options: {
 } = {}) {
   const router = Router();
   const domainApi = options.domainApiClient === undefined ? createVerrailDomainApiClient() : options.domainApiClient;
+  const collectGithubCiObservation = options.collectGithubCiObservation
+    ?? (options.db ? createGitHubCiObservationCollector({ db: options.db }).collect : null);
   const resolveGithubCredential = options.resolveGithubCredential
     ?? (options.db ? (workspaceId: string, actor: GithubConnectorCredentialActor) =>
       resolveGithubConnectorCredential(options.db!, workspaceId, actor) : null);
@@ -49,6 +54,33 @@ export function connectorRoutes(options: {
     if (!domainApi) throw new HttpError(503, "Verrail Domain API is unavailable", { code: "CONNECTOR_DOMAIN_API_UNAVAILABLE", retryable: true });
     return { workspaceId, principalType: actor.actorType, principalId: actor.actorId, idempotencyKey: targetIdempotencyKeySchema.parse(req.header("Idempotency-Key")) };
   }
+
+  router.post("/workspaces/:workspaceId/targets/:targetId/github-ci-observations", validate(collectGithubCiObservationSchema), async (req, res) => {
+    const workspaceId = req.params.workspaceId as string;
+    assertAuthenticated(req);
+    assertBoard(req);
+    assertCompanyAccess(req, workspaceId);
+    const { userId, source } = req.actor;
+    if (!userId?.trim() || !["session", "board_key", "cloud_tenant", "local_implicit"].includes(source ?? "")) {
+      throw new HttpError(403, "An authenticated Workspace user is required", { code: "GITHUB_CI_COLLECTION_FORBIDDEN" });
+    }
+    if (source !== "local_implicit") {
+      const membership = req.actor.memberships?.find((item) => item.companyId === workspaceId);
+      if (!membership || membership.status !== "active" || membership.membershipRole === "viewer") {
+        throw new HttpError(403, "Active non-viewer Workspace membership is required", { code: "GITHUB_CI_COLLECTION_FORBIDDEN" });
+      }
+    }
+    if (!collectGithubCiObservation) {
+      throw new HttpError(503, "GitHub CI collection is unavailable", { code: "GITHUB_CI_COLLECTION_UNAVAILABLE", retryable: false });
+    }
+    const result = await collectGithubCiObservation({
+      workspaceId,
+      targetId: req.params.targetId as string,
+      actor: { actorType: "user", actorId: userId, actorSource: source as "session" | "board_key" | "cloud_tenant" | "local_implicit" },
+      input: req.body,
+    });
+    res.status(201).json(result);
+  });
 
   router.post("/workspaces/:workspaceId/integration-runs", validate(recordIntegrationRunSchema), async (req, res) => {
     const context = humanCommandContext(req, req.params.workspaceId as string);

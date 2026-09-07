@@ -52,6 +52,10 @@ func (store *Store) RecordIntegrationRun(ctx context.Context, command AgentLifec
 	if activeTargetRevisionID != command.Input.TargetRevisionID {
 		return AgentLifecycleResult{}, &Error{Status: 409, Code: "INTEGRATION_TARGET_REVISION_MISMATCH", Message: "IntegrationRun must bind the active TargetRevision"}
 	}
+	proof, err := validateIntegrationProof(ctx, tx, command)
+	if err != nil {
+		return AgentLifecycleResult{}, err
+	}
 	var claimTargetID, claimTargetRevisionID, criterionKey string
 	if err := tx.QueryRow(ctx, `select target_id,target_revision_id,criterion_key from verrail_claims where id=$1 and workspace_id=$2`, command.Input.ClaimID, command.WorkspaceID).Scan(&claimTargetID, &claimTargetRevisionID, &criterionKey); errors.Is(err, pgx.ErrNoRows) {
 		return AgentLifecycleResult{}, connectorNotFound("Claim")
@@ -81,7 +85,15 @@ func (store *Store) RecordIntegrationRun(ctx context.Context, command AgentLifec
 		return AgentLifecycleResult{}, &Error{Status: 409, Code: "INTEGRATION_GRAPH_BINDING_MISMATCH", Message: "IntegrationRun must bind the active GraphRevision and TargetRevision"}
 	}
 	if nodeStatus != "ready" && nodeStatus != "running" {
-		return AgentLifecycleResult{}, &Error{Status: 409, Code: "INTEGRATION_NODE_NOT_ACTIVE", Message: "IntegrationTask WorkNode is not ready or running"}
+		var repeatedProof bool
+		if proof != nil && (nodeStatus == "completed" || nodeStatus == "blocked") {
+			if err := tx.QueryRow(ctx, `select exists(select 1 from verrail_criterion_proofs previous join verrail_integration_runs integration on integration.id=previous.integration_run_id and integration.workspace_id=previous.workspace_id where previous.workspace_id=$1 and integration.work_node_id=$2 and previous.target_revision_id=$3 and previous.graph_revision_id=$4 and previous.criterion_key=$5 and previous.requirement_id=$6 and previous.submission_id is not distinct from $7::uuid and previous.effect_receipt_id is not distinct from $8::uuid)`, command.WorkspaceID, command.Input.WorkNodeID, command.Input.TargetRevisionID, command.Input.GraphRevisionID, command.Input.CriterionKey, proof.requirement.ID, proof.context.SubmissionID, proof.context.EffectReceiptID).Scan(&repeatedProof); err != nil {
+				return AgentLifecycleResult{}, err
+			}
+		}
+		if !repeatedProof {
+			return AgentLifecycleResult{}, &Error{Status: 409, Code: "INTEGRATION_NODE_NOT_ACTIVE", Message: "IntegrationTask WorkNode is not ready or running"}
+		}
 	}
 	var connectionExists bool
 	if err := tx.QueryRow(ctx, `select exists(select 1 from tool_connections where id=$1 and company_id=$2 and enabled and status='active')`, command.Input.ConnectionID, command.WorkspaceID).Scan(&connectionExists); err != nil {
@@ -89,6 +101,27 @@ func (store *Store) RecordIntegrationRun(ctx context.Context, command AgentLifec
 	}
 	if !connectionExists {
 		return AgentLifecycleResult{}, &Error{Status: 409, Code: "INTEGRATION_CONNECTION_NOT_ACTIVE", Message: "IntegrationRun Connection is not active in this Workspace"}
+	}
+	if proof != nil {
+		// A new command key cannot promote an already observed Provider attempt.
+		if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock(hashtextextended($1,0))`, proof.sourceIdentityHash); err != nil {
+			return AgentLifecycleResult{}, err
+		}
+		var originalRunID, originalPayloadHash string
+		err := tx.QueryRow(ctx, `select integration_run_id,source_payload_hash from verrail_criterion_proofs where source_identity_hash=$1`, proof.sourceIdentityHash).Scan(&originalRunID, &originalPayloadHash)
+		if err == nil {
+			if originalPayloadHash != command.RequestHash {
+				return AgentLifecycleResult{}, &Error{Status: 409, Code: "CRITERION_PROOF_SOURCE_CONFLICT", Message: "A Provider run attempt is immutable; changed proof requires a new Provider attempt"}
+			}
+			result := AgentLifecycleResult{SchemaVersion: SchemaVersion, ResourceType: connectorResourceIntegrationRun, ResourceID: originalRunID, Replayed: true}
+			if err := finishAgentCommand(ctx, tx, meta, result, connectorIntegrationRunRecordedEvent); err != nil {
+				return AgentLifecycleResult{}, err
+			}
+			return result, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return AgentLifecycleResult{}, err
+		}
 	}
 	providerReceipt, err := json.Marshal(command.Input.ProviderReceipt)
 	if err != nil {
@@ -101,7 +134,11 @@ func (store *Store) RecordIntegrationRun(ctx context.Context, command AgentLifec
 		return AgentLifecycleResult{}, fmt.Errorf("insert integration run Evidence: %w", err)
 	}
 	var verificationResultID *string
-	if verdict, ok := connectorConclusionVerdict(command.Input.Conclusion); ok {
+	verdict, hasVerdict := connectorConclusionVerdict(command.Input.Conclusion)
+	if proof != nil && command.Input.Conclusion == "neutral" {
+		verdict, hasVerdict = "inconclusive", true
+	}
+	if hasVerdict {
 		// Identical verification payloads deduplicate by result hash, mirroring
 		// the assurance path (unique (claim_id, result_hash)).
 		resultHash, err := verificationResultHash(command.Input.ClaimID, verdict, connectorVerifierVersion, []string{evidenceID}, nil)
@@ -139,6 +176,11 @@ func (store *Store) RecordIntegrationRun(ctx context.Context, command AgentLifec
 	`, runID, command.WorkspaceID, command.Input.TargetID, command.Input.TargetRevisionID, command.Input.GraphRevisionID, command.Input.ClaimID, command.Input.WorkNodeID, command.Input.ConnectorVersion, command.Input.ConnectionID, command.Input.Provider, command.Input.ExternalRef, command.Input.CommitRef, command.Input.CriterionKey, command.Input.EnvironmentRef, command.Input.Conclusion, evidenceID, verificationResultID, providerReceipt, command.IdempotencyKey, command.Principal.Type, command.Principal.ID); err != nil {
 		return AgentLifecycleResult{}, fmt.Errorf("insert IntegrationRun: %w", err)
 	}
+	if proof != nil && verificationResultID != nil {
+		if err := insertIntegrationProof(ctx, tx, command, proof, runID, *verificationResultID); err != nil {
+			return AgentLifecycleResult{}, err
+		}
+	}
 	attemptStatus := "neutral"
 	if command.Input.Conclusion == "success" {
 		attemptStatus = "succeeded"
@@ -150,7 +192,7 @@ func (store *Store) RecordIntegrationRun(ctx context.Context, command AgentLifec
 		return AgentLifecycleResult{}, fmt.Errorf("insert IntegrationAttempt: %w", err)
 	}
 	nextNodeStatus := "completed"
-	if command.Input.Conclusion == "failure" {
+	if command.Input.Conclusion == "failure" || proof != nil && command.Input.Conclusion == "neutral" {
 		nextNodeStatus = "blocked"
 	}
 	if _, err := tx.Exec(ctx, `update verrail_work_nodes set status=$1,updated_at=now() where id=$2`, nextNodeStatus, command.Input.WorkNodeID); err != nil {
@@ -505,6 +547,13 @@ func (store *Store) prepareActionExecution(ctx context.Context, command AgentLif
 	}
 	if !acceptanceExists {
 		return nil, nil, &Error{Status: 409, Code: "CONNECTOR_SUBMISSION_NOT_ACCEPTED", Message: "The Submission Acceptance is missing or invalid"}
+	}
+	facts, err := readDeliveryFacts(ctx, tx, command.WorkspaceID, requestTargetID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !facts.acceptanceValid() {
+		return nil, nil, &Error{Status: 409, Code: "CONNECTOR_SUBMISSION_NOT_ACCEPTED", Message: "Acceptance no longer binds the current ArtifactRevisions, VerificationResults, and latest Review"}
 	}
 	// A GitHub connection must be bound for the workspace with a repo binding
 	// and an enabled connection (409 CONNECTOR_NOT_BOUND when absent).

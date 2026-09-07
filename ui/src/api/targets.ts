@@ -42,6 +42,7 @@ import { api } from "./client";
  * TargetWorkspaceV1 stays unchanged until the domain migration completes.
  */
 export type TargetWorkspaceAssuranceFactsV1 = Omit<TargetWorkspaceV1, "artifacts" | "evidence" | "submissions"> & {
+  criterionProofs: import("@paperclipai/shared").CriterionProofStatusV1[];
   submissions: AdjudicationSubmissionV1[];
   reviews: AdjudicationDeliveryReviewV1[];
   acceptances: AdjudicationAcceptanceV1[];
@@ -85,6 +86,8 @@ function listPath(workspaceId: string, options: TargetListOptions = {}) {
 }
 
 export const targetsApi = {
+  reviseProof: (workspaceId: string, targetId: string, input: import("@paperclipai/shared").ReviseTargetProofInput, idempotencyKey: string) =>
+    api.post<import("@paperclipai/shared").ReviseTargetProofResultV1>(`/workspaces/${workspaceId}/targets/${targetId}/revisions`, input, { headers: { "Idempotency-Key": idempotencyKey } }),
   runOutboxFailures: (workspaceId: string, targetId: string) =>
     api.get<RunOutboxFailureV1[]>(`/workspaces/${workspaceId}/targets/${targetId}/run-outbox-failures`),
   retryRunOutbox: (workspaceId: string, runId: string, input: RetryRunOutboxInputV1, idempotencyKey: string) =>

@@ -199,6 +199,7 @@ import {
   adjudicationIdempotencyKeySchema,
   approveActionSchema,
   connectorIdempotencyKeySchema,
+  collectGithubCiObservationSchema,
   createAgentDefinitionSchema,
   createArtifactSchema,
   createClaimSchema,
@@ -209,6 +210,7 @@ import {
   createRunSchema,
   createSubmissionSchema,
   createTargetSchema,
+  reviseTargetProofSchema,
   createGithubRepoBindingSchema,
   executeActionSchema,
   publishAgentVersionSchema,
@@ -219,6 +221,7 @@ import {
   recordIntegrationRunSchema,
   recordVerificationResultSchema,
   reportRunEventSchema,
+  retryRunOutboxSchema,
   requestPullRequestActionSchema,
   reviseDeploymentSchema,
   targetIdempotencyKeySchema,
@@ -887,6 +890,9 @@ const BOARD_ONLY_PREFIXES = [
 ];
 
 const BOARD_ONLY_OPERATIONS = new Set([
+  "POST /api/workspaces/{workspaceId}/targets/{targetId}/github-ci-observations",
+  "GET /api/workspaces/{workspaceId}/targets/{targetId}/run-outbox-failures",
+  "POST /api/workspaces/{workspaceId}/runs/{runId}/outbox/retry",
   "GET /api/cloud/stacks",
   "GET /api/companies",
   "POST /api/companies",
@@ -3010,6 +3016,19 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
+  path: "/api/workspaces/{workspaceId}/targets/{targetId}/revisions",
+  tags: ["targets"],
+  summary: "Append a TargetRevision with explicit mandatory proof contracts",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(reviseTargetProofSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
   path: "/api/workspaces/{workspaceId}/targets",
   tags: ["targets"],
   summary: "Create a native Target through the Go Domain API",
@@ -3108,6 +3127,41 @@ registry.registerPath({
     headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/targets/{targetId}/run-outbox-failures",
+  tags: ["targets"],
+  summary: "List up to 100 failed Run outbox events for a Workspace Target",
+  request: { params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid() }) },
+  responses: {
+    200: r.ok(z.array(z.object({
+      eventId: z.string().uuid(), runId: z.string().uuid(), eventType: z.string(),
+      attemptCount: z.number().int(), lastError: z.string().nullable(), createdAt: z.string().datetime(),
+    }))),
+    401: r.unauthorized, 403: r.forbidden, 404: r.notFound,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/runs/{runId}/outbox/retry",
+  tags: ["targets"],
+  summary: "Retry a failed Run outbox event with a version-bound human command",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), runId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(retryRunOutboxSchema),
+  },
+  responses: {
+    200: r.ok(z.object({
+      schemaVersion: z.literal(1), runId: z.string().uuid(), eventId: z.string().uuid(),
+      status: z.literal("pending"), replayed: z.boolean(),
+    })),
+    400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound,
+    409: r.conflict, 503: r.serviceUnavailable,
+  },
 });
 
 registry.registerPath({
@@ -3224,6 +3278,21 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/artifact-revisions/{revisionId}/content",
+  tags: ["assurance"],
+  summary: "Download immutable ArtifactRevision content from Workspace storage",
+  request: { params: z.object({ workspaceId: z.string().uuid(), revisionId: z.string().uuid() }) },
+  responses: {
+    200: {
+      description: "Binary attachment with private, no-store caching and nosniff content handling",
+      content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } },
+    },
+    400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 503: r.serviceUnavailable,
+  },
+});
+
+registry.registerPath({
   method: "post",
   path: "/api/workspaces/{workspaceId}/claims",
   tags: ["assurance"],
@@ -3299,6 +3368,43 @@ registry.registerPath({
     body: jsonBody(acceptSubmissionSchema),
   },
   responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+
+const githubCiObservationReceiptSchema = z.object({
+  schemaVersion: z.literal(1),
+  workspaceId: z.string().uuid(),
+  targetId: z.string().uuid(),
+  targetRevisionId: z.string().uuid(),
+  graphRevisionId: z.string().uuid(),
+  connectionId: z.string().uuid(),
+  bindingId: z.string().uuid(),
+  policySha256: z.string().regex(/^[a-f0-9]{64}$/),
+  auditEventId: z.string().uuid(),
+  observation: z.object({
+    kind: z.literal("verrail.fixed-ci-observation"), schemaVersion: z.literal(1),
+    repository: z.string(), repositoryId: z.number().int().positive(),
+    providerRunId: z.string(), providerAttempt: z.number().int().positive(),
+    workflowExecutionSha: z.string(), testedCandidateSha: z.string(), workflowPath: z.string(),
+    workflowSha256: z.string(), helperSha256: z.string(), artifactId: z.string(),
+    archiveSha256: z.string(), reportSha256: z.string(), verifiedAt: z.string().datetime(),
+    reference: z.string().url(),
+    checks: z.array(z.object({ id: z.enum(["ts_tests", "ts_typecheck", "ts_build", "go_tests"]), status: z.literal("passed") }).strict()).length(4),
+    unsupportedObligations: z.array(z.enum(["live_feishu", "live_codex", "live_recovery", "secret_non_persistence", "human_governance", "pr_effect"])).length(6),
+    receiptSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  }).strict(),
+}).strict();
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/targets/{targetId}/github-ci-observations",
+  tags: ["connector"],
+  summary: "Collect an exact-attempt fixed CI observation under operator-owned trust pins",
+  description: "Requires an actual authenticated user, active non-viewer Workspace membership (including instance admins), and explicit policy authorization. The existing local-board/local_implicit identity is exempt from session membership, but not policy authorization. Disabled by default. Persists a sanitized audit receipt only; does not create IntegrationRun, Evidence, VerificationResult or CriterionProof, establish Artifact equivalence, or complete compound requirements. Each request is a distinct audited collection, not an idempotent domain command.",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid() }),
+    body: jsonBody(collectGithubCiObservationSchema),
+  },
+  responses: { 201: r.ok(githubCiObservationReceiptSchema), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 409: r.conflict, 429: r.tooManyRequests, 502: r.badGateway, 503: r.serviceUnavailable },
 });
 
 registry.registerPath({

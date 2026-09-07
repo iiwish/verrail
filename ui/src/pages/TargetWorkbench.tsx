@@ -43,6 +43,7 @@ import type {
   TargetAvailableCommandV1,
 } from "@paperclipai/shared";
 import { useTranslation } from "@/i18n";
+import { CriterionProofEditor } from "@/components/targets/CriterionProofEditor";
 
 const TARGET_TABS = [
   "overview",
@@ -321,7 +322,21 @@ export function TargetWorkbench() {
       const workspaceId = selectedCompanyId!;
       const actorId = accountUserId ?? "board";
       switch (request.id) {
-        case "create_graph_revision":
+        case "create_graph_revision": {
+          const criteria = query.data!.definition.acceptanceCriteria;
+          const typed = criteria.some((criterion) => criterion.proofContract);
+          const verificationNodes = typed ? criteria.flatMap((criterion, index) => {
+            const requirements = criterion.proofContract?.allOf ?? [{ id: "legacy", kind: "independent_verification" as const, phase: "pre_acceptance" as const, assertions: [criterion.description ?? criterion.title] }];
+            return requirements.filter((requirement) => requirement.kind === "independent_verification").map((requirement) => ({
+              nodeKey: `verify-${index}-${requirement.id}`,
+              kind: "integration_task" as const,
+              stage: requirement.phase === "pre_acceptance" ? "verify" as const : "accept" as const,
+              title: criterion.title,
+              dependencyNodeKeys: [requirement.phase === "pre_acceptance" ? "deliver" : "accept"],
+              completionDefinition: JSON.stringify({ criterionKey: criterion.id, requirementId: requirement.id, assertions: requirement.kind === "independent_verification" ? requirement.assertions : [] }),
+            }));
+          }) : [{ nodeKey: "verify", kind: "integration_task" as const, stage: "verify" as const, title: t("targets.commands.defaultNodes.verify"), dependencyNodeKeys: ["deliver"], completionDefinition: t("targets.commands.defaultNodes.verifyCompletion") }];
+          const preNodes = verificationNodes.filter((node) => node.stage === "verify");
           return targetsApi.createGraphRevision(workspaceId, targetId!, {
             expectedTargetRevisionId: query.data!.activeTargetRevisionId,
             nodes: [
@@ -334,20 +349,13 @@ export function TargetWorkbench() {
                 dependencyNodeKeys: [],
                 completionDefinition: request.completionDefinition,
               },
-              {
-                nodeKey: "verify",
-                kind: "integration_task",
-                stage: "verify",
-                title: t("targets.commands.defaultNodes.verify"),
-                dependencyNodeKeys: ["deliver"],
-                completionDefinition: t("targets.commands.defaultNodes.verifyCompletion"),
-              },
+              ...preNodes,
               {
                 nodeKey: "review",
                 kind: "review_gate",
                 stage: "accept",
                 title: t("targets.commands.defaultNodes.review"),
-                dependencyNodeKeys: ["verify"],
+                dependencyNodeKeys: preNodes.length ? preNodes.map((node) => node.nodeKey) : ["deliver"],
                 completionDefinition: t("targets.commands.defaultNodes.reviewCompletion"),
               },
               {
@@ -358,8 +366,10 @@ export function TargetWorkbench() {
                 dependencyNodeKeys: ["review"],
                 completionDefinition: t("targets.commands.defaultNodes.acceptCompletion"),
               },
+              ...verificationNodes.filter((node) => node.stage === "accept"),
             ],
           }, idempotencyKey);
+        }
         case "activate_graph_revision":
           return targetsApi.activateGraphRevision(workspaceId, targetId!, request.graphRevisionId, idempotencyKey);
         case "create_run":
@@ -826,8 +836,24 @@ export function TargetWorkbench() {
                 <ol className="mt-2 space-y-3">
                   {target.definition.acceptanceCriteria.map((criterion, index) => (
                     <li key={criterion.id} className="border-l border-border pl-3 text-sm">
-                      <p className="font-medium">{index + 1}. {criterion.title}</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-medium">{index + 1}. {criterion.title}</p>
+                        {!isRevision ? <CriterionProofEditor criterion={criterion} targetRevisionId={target.activeTargetRevisionId} disabled={!accountIdentitySettled} onSave={async (proofContract, expectedTargetRevisionId, idempotencyKey) => {
+                          await targetsApi.reviseProof(selectedCompanyId!, target.targetId, { expectedTargetRevisionId, criteria: [{ criterionId: criterion.id, proofContract }] }, idempotencyKey);
+                          await refreshWorkspace();
+                        }} /> : null}
+                      </div>
                       {criterion.description ? <p className="mt-1 text-muted-foreground">{criterion.description}</p> : null}
+                      <ul className="mt-2 space-y-2">
+                        {(criterion.proofContract?.allOf ?? [{ id: "legacy", kind: "independent_verification" as const, phase: "pre_acceptance" as const, assertions: [] }]).map((requirement) => {
+                          const proof = workspace?.criterionProofs?.find((item) => item.criterionId === criterion.id && item.requirementId === requirement.id);
+                          return <li key={requirement.id} className="space-y-1">
+                            <p className="text-xs text-muted-foreground">{t(`targets.criterionProof.phases.${requirement.phase}`)} · {t(`targets.criterionProof.kinds.${requirement.kind}`)} · {t(`targets.criterionProof.states.${proof?.state ?? "required"}`)}</p>
+                            {requirement.kind === "independent_verification" ? requirement.assertions.map((assertion) => <p key={assertion} className="text-sm">{assertion}</p>) : null}
+                            {proof?.resourceIds.map((id) => <Link key={id} to={`/targets/${target.targetId}/${requirement.kind === "human_governance" ? "acceptance" : requirement.kind === "pull_request_effect" ? "submission" : "evidence"}`} className="mr-2 break-all font-mono text-xs text-muted-foreground underline">{id}</Link>)}
+                          </li>;
+                        })}
+                      </ul>
                     </li>
                   ))}
                 </ol>

@@ -46,22 +46,23 @@ type PullRequestParams struct {
 }
 
 type RecordIntegrationRunInput struct {
-	TargetID         string         `json:"targetId"`
-	TargetRevisionID string         `json:"targetRevisionId"`
-	GraphRevisionID  string         `json:"graphRevisionId"`
-	ClaimID          string         `json:"claimId"`
-	WorkNodeID       string         `json:"workNodeId"`
-	ConnectorVersion string         `json:"connectorVersion"`
-	ConnectionID     string         `json:"connectionId"`
-	Provider         string         `json:"provider"`
-	ExternalRef      string         `json:"externalRef"`
-	CommitRef        string         `json:"commitRef"`
-	CriterionKey     string         `json:"criterionKey"`
-	EnvironmentRef   string         `json:"environmentRef"`
-	Conclusion       string         `json:"conclusion"`
-	ObjectHash       string         `json:"objectHash"`
-	Reference        string         `json:"reference"`
-	ProviderReceipt  map[string]any `json:"providerReceipt"`
+	TargetID         string                 `json:"targetId"`
+	TargetRevisionID string                 `json:"targetRevisionId"`
+	GraphRevisionID  string                 `json:"graphRevisionId"`
+	ClaimID          string                 `json:"claimId"`
+	WorkNodeID       string                 `json:"workNodeId"`
+	ConnectorVersion string                 `json:"connectorVersion"`
+	ConnectionID     string                 `json:"connectionId"`
+	Provider         string                 `json:"provider"`
+	ExternalRef      string                 `json:"externalRef"`
+	CommitRef        string                 `json:"commitRef"`
+	CriterionKey     string                 `json:"criterionKey"`
+	EnvironmentRef   string                 `json:"environmentRef"`
+	Conclusion       string                 `json:"conclusion"`
+	ObjectHash       string                 `json:"objectHash"`
+	Reference        string                 `json:"reference"`
+	ProviderReceipt  map[string]any         `json:"providerReceipt"`
+	ProofContext     *CriterionProofContext `json:"proofContext,omitempty"`
 }
 
 type RecordHumanWorkResultInput struct {
@@ -119,6 +120,9 @@ func connectorUnknownEffect(message string) error {
 }
 
 func ValidateRecordIntegrationRunInput(input *RecordIntegrationRunInput) error {
+	if err := ValidateCriterionProofContext(input.ProofContext); err != nil {
+		return err
+	}
 	if !uuidPattern.MatchString(input.TargetID) || !uuidPattern.MatchString(input.TargetRevisionID) || !uuidPattern.MatchString(input.GraphRevisionID) || !uuidPattern.MatchString(input.ClaimID) || !uuidPattern.MatchString(input.WorkNodeID) || !uuidPattern.MatchString(input.ConnectionID) {
 		return validation("Integration run binding IDs must be UUIDs")
 	}

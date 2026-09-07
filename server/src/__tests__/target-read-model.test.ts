@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { getTableName } from "drizzle-orm";
@@ -14,6 +14,7 @@ import {
   verrailArtifacts,
   verrailAuditEvents,
   verrailClaims,
+  verrailCriterionProofs,
   verrailDeliveryReviews,
   verrailEffectReceipts,
   verrailEvidence,
@@ -46,6 +47,7 @@ describePostgres("native TargetReadModel", () => {
   }, 30_000);
 
   afterEach(async () => {
+    await db.delete(verrailCriterionProofs);
     await db.delete(verrailAuditEvents);
     await db.delete(verrailEffectReceipts);
     await db.delete(verrailActionApprovals);
@@ -344,8 +346,8 @@ describePostgres("native TargetReadModel", () => {
         submissionId: submissionB.id,
         targetRevisionId: seeded.targetRevisionId,
         authority: "outcome_owner",
-        validity: "valid",
-        invalidReason: null,
+        validity: "invalid",
+        invalidReason: "candidate_changed",
       }),
       expect.objectContaining({
         id: acceptanceA.id,
@@ -412,7 +414,7 @@ describePostgres("native TargetReadModel", () => {
     const evidence = await db.insert(verrailEvidence).values({
       id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId, claimId: claim.id,
       kind: "ci_result", producerPrincipalType: "service", producerPrincipalId: "ci",
-      objectHash: "2".repeat(64), reference: "ci:green", trustLevel: "high",
+      objectHash: artifactRevision.contentHash, reference: "ci:green", trustLevel: "high",
       createdByPrincipalType: "service", createdByPrincipalId: "ci",
     }).returning().then((rows) => rows[0]!);
     const verification = await db.insert(verrailVerificationResults).values({
@@ -420,9 +422,14 @@ describePostgres("native TargetReadModel", () => {
       verdict: "passed", verifierVersion: "ci.v1", evidenceIds: [evidence.id], waiverReference: null,
       resultHash: "3".repeat(64), createdByPrincipalType: "service", createdByPrincipalId: "ci",
     }).returning().then((rows) => rows[0]!);
+    const ciNode = await db.insert(verrailWorkNodes).values({ ...seeded.node, id: randomUUID(), nodeKey: "ci", kind: "integration_task", status: "completed", dependencyNodeKeys: ["implement"] }).returning().then((rows) => rows[0]!);
+    const application = await db.insert(toolApplications).values({ companyId: seeded.workspace.id, name: "CI", type: "mcp_http" }).returning().then((rows) => rows[0]!);
+    const connection = await db.insert(toolConnections).values({ companyId: seeded.workspace.id, applicationId: application.id, name: "CI", uid: "ci", transport: "rest_api" }).returning().then((rows) => rows[0]!);
+    await db.insert(verrailIntegrationRuns).values({ id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId, targetRevisionId: seeded.targetRevisionId, graphRevisionId: seeded.graphRevisionId, claimId: claim.id, workNodeId: ciNode.id, connectorVersion: "github.v1", connectionId: connection.id, provider: "github", externalRef: "ci:green", commitRef: "git:one", criterionKey: "criterion-1", environmentRef: "test", conclusion: "success", evidenceId: evidence.id, verificationResultId: verification.id, providerReceipt: { conclusion: "success" }, idempotencyKey: "ci:green", createdByPrincipalType: "service", createdByPrincipalId: "ci" });
     const submission = await db.insert(verrailSubmissions).values({
       id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId,
       targetRevisionId: seeded.targetRevisionId, artifactRevisionIds: [artifactRevision.id],
+      graphRevisionId: seeded.graphRevisionId,
       verificationResultIds: [verification.id], commitRef: "git:one", environmentSummary: "test",
       notes: null, submissionHash: "4".repeat(64), submittedByPrincipalType: "agent",
       submittedByPrincipalId: "agent-1",
@@ -433,6 +440,8 @@ describePostgres("native TargetReadModel", () => {
       risks: null, unprovenItems: [], comments: null, reviewHash: "5".repeat(64),
     }).returning().then((rows) => rows[0]!);
     const service = targetReadModelService(db);
+    const acceptanceNode = await db.insert(verrailWorkNodes).values({ ...seeded.node, id: randomUUID(), nodeKey: "accept", kind: "acceptance_gate", status: "ready", dependencyNodeKeys: ["implement"] }).returning().then((rows) => rows[0]!);
+    const action = await db.insert(verrailActionRequests).values({ id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId, submissionId: submission.id, actionType: "create_pull_request", params: { title: "Ship", head: "feat", base: "main" }, paramsHash: "a".repeat(64), status: "approved", requestedByPrincipalType: "service", requestedByPrincipalId: "worker" }).returning().then((rows) => rows[0]!);
     const awaitingAcceptance = await service.getByTargetId(seeded.workspace.id, seeded.targetId);
     const awaitingAcceptanceWorkspace = await service.workspace(awaitingAcceptance!);
     expect(awaitingAcceptanceWorkspace.availableCommands.find(
@@ -444,6 +453,15 @@ describePostgres("native TargetReadModel", () => {
       authority: "outcome_owner", acceptedByPrincipalType: "user", acceptedByPrincipalId: "user-1",
       acceptanceHash: "6".repeat(64),
     }).returning().then((rows) => rows[0]!);
+    const beforeEffect = await service.workspace((await service.getByTargetId(seeded.workspace.id, seeded.targetId))!);
+    expect(beforeEffect.availableCommands.find((command) => command.id === "accept_submission")?.state).toBe("completed");
+    expect(beforeEffect.availableCommands.find((command) => command.id === "execute_action")?.state).toBe("available");
+    expect(beforeEffect.outcome.controls.find((control) => control.key === "acceptance_valid")?.state).toBe("satisfied");
+    expect(beforeEffect.outcome.state).not.toBe("accepted");
+    await db.update(verrailWorkNodes).set({ status: "completed" }).where(eq(verrailWorkNodes.id, acceptanceNode.id));
+    expect((await service.getByTargetId(seeded.workspace.id, seeded.targetId))?.outcome.state).not.toBe("accepted");
+    await db.update(verrailActionRequests).set({ status: "executed" }).where(eq(verrailActionRequests.id, action.id));
+    await db.insert(verrailEffectReceipts).values({ id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId, actionRequestId: action.id, actionType: "create_pull_request", provider: "github", providerMarker: "c".repeat(64), externalObjectId: "42", externalUrl: "https://github.com/owner/repo/pull/42", effectHash: "b".repeat(64), payload: {}, createdByPrincipalType: "service", createdByPrincipalId: "worker" });
     await db.insert(verrailAuditEvents).values({
       id: randomUUID(), workspaceId: seeded.workspace.id, principalType: "agent", principalId: "agent-1",
       eventType: "adjudication.submission_created.v1", aggregateType: "submission", aggregateId: submission.id,
@@ -462,6 +480,53 @@ describePostgres("native TargetReadModel", () => {
       expect.objectContaining({ type: "submission_created", aggregateType: "submission", aggregateId: submission.id }),
     ]));
 
+    const proofContract = { schemaVersion: 1 as const, allOf: [
+      { id: "technical", kind: "independent_verification" as const, phase: "pre_acceptance" as const, assertions: ["CI"] },
+      { id: "governance", kind: "human_governance" as const, phase: "post_governance" as const },
+      { id: "effect", kind: "pull_request_effect" as const, phase: "post_effect" as const },
+      { id: "late", kind: "independent_verification" as const, phase: "post_effect" as const, assertions: ["recovery", "secret non-persistence"] },
+    ] };
+    const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, entry]) => [key, canonical(entry)])) : value;
+    const contractHash = createHash("sha256").update(JSON.stringify(canonical(proofContract))).digest("hex");
+    await db.update(verrailTargetRevisions).set({ acceptanceCriteria: [{ id: "criterion-1", title: "Native only", description: null, proofContract }] }).where(eq(verrailTargetRevisions.id, seeded.targetRevisionId));
+    const integration = await db.select().from(verrailIntegrationRuns).then((rows) => rows.find((row) => row.verificationResultId === verification.id)!);
+    const proofBase = { workspaceId: seeded.workspace.id, targetId: seeded.targetId, targetRevisionId: seeded.targetRevisionId, graphRevisionId: seeded.graphRevisionId, criterionKey: "criterion-1", contractHash, contextHash: "0".repeat(64) };
+    await db.insert(verrailCriterionProofs).values({ ...proofBase, id: randomUUID(), requirementId: "technical", phase: "pre_acceptance", verificationResultId: verification.id, integrationRunId: integration.id });
+    await db.update(verrailActionRequests).set({ expectedCommitRef: submission.commitRef, providerMarker: "c".repeat(64) }).where(eq(verrailActionRequests.id, action.id));
+    await db.insert(verrailActionApprovals).values({ id: randomUUID(), workspaceId: seeded.workspace.id, actionRequestId: action.id, approvedByPrincipalType: "user", approvedByPrincipalId: "approver", paramsHash: action.paramsHash });
+    const receipt = await db.select().from(verrailEffectReceipts).then((rows) => rows.find((row) => row.actionRequestId === action.id)!);
+    const missingLate = await service.workspace((await service.getByTargetId(seeded.workspace.id, seeded.targetId))!);
+    expect(missingLate.outcome.state).not.toBe("accepted");
+    expect(missingLate.outcome.controls.find((control) => control.key === "acceptance_valid")?.state).toBe("satisfied");
+    expect(missingLate.criterionProofs.find((proof) => proof.requirementId === "late")?.state).toBe("required");
+    for (const [index, verdict] of (["passed", "inconclusive", "failed", "passed"] as const).entries()) {
+      const lateEvidence = { ...evidence, id: randomUUID(), reference: `ci:late:${index}`, createdAt: new Date(evidence.createdAt.getTime() + (index + 1) * 1000) };
+      await db.insert(verrailEvidence).values(lateEvidence);
+      const lateResult = { ...verification, id: randomUUID(), verdict, evidenceIds: [lateEvidence.id], resultHash: `${index + 6}`.repeat(64), createdAt: new Date(verification.createdAt.getTime() + (index + 1) * 1000) };
+      await db.insert(verrailVerificationResults).values(lateResult);
+      const lateRun = { ...integration, id: randomUUID(), evidenceId: lateEvidence.id, verificationResultId: lateResult.id, conclusion: verdict === "passed" ? "success" : verdict === "failed" ? "failure" : "neutral", idempotencyKey: `ci:late:${index}` };
+      await db.insert(verrailIntegrationRuns).values(lateRun);
+      await db.insert(verrailCriterionProofs).values({ ...proofBase, id: randomUUID(), requirementId: "late", phase: "post_effect", submissionId: submission.id, effectReceiptId: receipt.id, verificationResultId: lateResult.id, integrationRunId: lateRun.id, createdAt: lateResult.createdAt });
+      const state = await service.workspace((await service.getByTargetId(seeded.workspace.id, seeded.targetId))!);
+      expect(state.outcome.state === "accepted").toBe(verdict === "passed");
+      expect(state.outcome.controls.find((control) => control.key === "acceptance_valid")?.state).toBe("satisfied");
+      expect(state.criterionProofs.find((proof) => proof.requirementId === "late")?.state).toBe(verdict === "passed" ? "satisfied" : verdict === "failed" ? "blocked" : "required");
+    }
+    await db.insert(verrailVerificationResults).values({ ...verification, id: randomUUID(), verdict: "failed", verifierVersion: "unbound-manual", resultHash: "a".repeat(64), createdAt: new Date(verification.createdAt.getTime() + 5000) });
+    expect((await service.getByTargetId(seeded.workspace.id, seeded.targetId))?.outcome.state).toBe("accepted");
+
+    const secondReview = await db.insert(verrailDeliveryReviews).values({ ...review, id: randomUUID(), reviewHash: "d".repeat(64), createdAt: new Date(review.createdAt.getTime() + 1000) }).returning().then((rows) => rows[0]!);
+    const awaitingReacceptance = await service.workspace((await service.getByTargetId(seeded.workspace.id, seeded.targetId))!);
+    expect(awaitingReacceptance.acceptances.find((row) => row.id === acceptance.id)?.validity).toBe("invalid");
+    expect(awaitingReacceptance.availableCommands.find((command) => command.id === "accept_submission")?.state).toBe("available");
+    const secondAcceptance = await db.insert(verrailAcceptances).values({ ...acceptance, id: randomUUID(), reviewId: secondReview.id, acceptanceHash: "e".repeat(64), createdAt: new Date(acceptance.createdAt.getTime() + 2000) }).returning().then((rows) => rows[0]!);
+    const reaccepted = await service.workspace((await service.getByTargetId(seeded.workspace.id, seeded.targetId))!);
+    expect(reaccepted.outcome).toMatchObject({ state: "accepted", validAcceptanceId: secondAcceptance.id });
+    expect(reaccepted.acceptances).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: acceptance.id, validity: "invalid" }),
+      expect.objectContaining({ id: secondAcceptance.id, validity: "valid" }),
+    ]));
+
     await db.insert(verrailArtifactRevisions).values({
       id: randomUUID(), workspaceId: seeded.workspace.id, artifactId: artifact.id, revisionNumber: 2,
       contentHash: "7".repeat(64), contentRef: "git:two", sourceRunId: null, sourceWorkNodeId: null,
@@ -471,10 +536,43 @@ describePostgres("native TargetReadModel", () => {
     expect(invalidated).toMatchObject({ status: "blocked", outcome: { state: "blocked", validAcceptanceId: null } });
     const invalidatedWorkspace = await service.workspace(invalidated!);
     expect(invalidatedWorkspace.attention).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: "invalidated_decision", resourceType: "acceptance", resourceId: acceptance.id }),
+      expect.objectContaining({ kind: "invalidated_decision", resourceType: "acceptance", resourceId: secondAcceptance.id }),
     ]));
     expect(invalidatedWorkspace.outcome.controls).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: "artifact_revisions_current", state: "invalidated" }),
+    ]));
+    const currentArtifact = await db.select().from(verrailArtifactRevisions).where(eq(verrailArtifactRevisions.artifactId, artifact.id)).then((rows) => rows.find((row) => row.revisionNumber === 2)!);
+    const staleProofCandidate = await db.insert(verrailSubmissions).values({ ...submission, id: randomUUID(), artifactRevisionIds: [currentArtifact.id], submissionHash: "f".repeat(64), createdAt: new Date(submission.createdAt.getTime() + 3000) }).returning().then((rows) => rows[0]!);
+    await db.insert(verrailDeliveryReviews).values({ ...review, id: randomUUID(), submissionId: staleProofCandidate.id, reviewHash: "0".repeat(64), createdAt: new Date(review.createdAt.getTime() + 4000) });
+    const staleProof = await service.workspace((await service.getByTargetId(seeded.workspace.id, seeded.targetId))!);
+    expect(staleProof.outcome.controls.find((control) => control.key === "criteria_verified")?.state).not.toBe("satisfied");
+    expect(staleProof.availableCommands.find((command) => command.id === "accept_submission")?.state).toBe("blocked");
+  });
+
+  it("prepares a reviewable candidate before governance and keeps incomplete Outcome controls required", async () => {
+    const seeded = await seed();
+    await db.update(verrailWorkNodes).set({ status: "completed" }).where(eq(verrailWorkNodes.id, seeded.node.id));
+    await db.insert(verrailWorkNodes).values([
+      { ...seeded.node, id: randomUUID(), nodeKey: "ci", kind: "integration_task", status: "completed", dependencyNodeKeys: ["implement"] },
+      { ...seeded.node, id: randomUUID(), nodeKey: "review", kind: "review_gate", status: "ready", dependencyNodeKeys: ["ci"] },
+      { ...seeded.node, id: randomUUID(), nodeKey: "accept", kind: "acceptance_gate", status: "pending", dependencyNodeKeys: ["review"] },
+      { ...seeded.node, id: randomUUID(), nodeKey: "publish-check", kind: "integration_task", status: "pending", dependencyNodeKeys: ["accept"] },
+    ]);
+    const artifact = await db.insert(verrailArtifacts).values({ id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId, kind: "code_change", title: "Candidate", createdByPrincipalType: "service", createdByPrincipalId: "worker" }).returning().then((rows) => rows[0]!);
+    const revision = await db.insert(verrailArtifactRevisions).values({ id: randomUUID(), workspaceId: seeded.workspace.id, artifactId: artifact.id, revisionNumber: 1, contentHash: "1".repeat(64), contentRef: "git:one", createdByPrincipalType: "service", createdByPrincipalId: "worker" }).returning().then((rows) => rows[0]!);
+    const service = targetReadModelService(db);
+    const read = async () => service.workspace((await service.getByTargetId(seeded.workspace.id, seeded.targetId))!);
+    expect((await read()).availableCommands.find((command) => command.id === "create_submission")?.state).toBe("available");
+    const submission = await db.insert(verrailSubmissions).values({ id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId, targetRevisionId: seeded.targetRevisionId, graphRevisionId: seeded.graphRevisionId, artifactRevisionIds: [revision.id], verificationResultIds: [], submissionHash: "2".repeat(64), submittedByPrincipalType: "service", submittedByPrincipalId: "worker" }).returning().then((rows) => rows[0]!);
+    expect((await read()).availableCommands.find((command) => command.id === "record_review")?.state).toBe("available");
+    await db.insert(verrailDeliveryReviews).values({ id: randomUUID(), workspaceId: seeded.workspace.id, targetId: seeded.targetId, submissionId: submission.id, reviewerPrincipalType: "user", reviewerPrincipalId: "reviewer", verdict: "approved", unprovenItems: ["Final external effect"], reviewHash: "3".repeat(64) });
+    await db.update(verrailWorkNodes).set({ status: "completed" }).where(eq(verrailWorkNodes.nodeKey, "review"));
+    await db.update(verrailWorkNodes).set({ status: "ready" }).where(eq(verrailWorkNodes.nodeKey, "accept"));
+    expect((await read()).availableCommands.find((command) => command.id === "accept_submission")?.state).toBe("blocked");
+    const acceptedCandidate = await read();
+    expect(acceptedCandidate.outcome.state).not.toBe("accepted");
+    expect(acceptedCandidate.outcome.controls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "criteria_verified", state: "required" }),
     ]));
   });
 

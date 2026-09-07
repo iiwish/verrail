@@ -1,0 +1,3 @@
+ALTER TABLE "verrail_integration_runs" DROP CONSTRAINT "verrail_integration_runs_verification_conclusion_check";--> statement-breakpoint
+ALTER TABLE "verrail_integration_runs" ADD CONSTRAINT "verrail_integration_runs_verification_conclusion_check" CHECK (("verrail_integration_runs"."conclusion" in ('success', 'failure') and "verrail_integration_runs"."verification_result_id" is not null)
+        or ("verrail_integration_runs"."conclusion" = 'neutral'));

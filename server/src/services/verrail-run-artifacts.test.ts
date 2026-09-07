@@ -63,4 +63,10 @@ describe("native Run artifact collection", () => {
     await writeFile(path.join(output, "manifest.json"), " ".repeat(65_537));
     await expect(collect()).rejects.toThrow(/NATIVE_ARTIFACT_INVALID/);
   });
+  it("rejects storage metadata that does not match locally read artifact bytes", async () => {
+    await writeFile(path.join(output, "review.md"), "actual bytes");
+    await writeFile(path.join(output, "manifest.json"), manifest());
+    const putFile = vi.fn().mockResolvedValue({ sha256: "a".repeat(64), byteSize: 12, objectKey: `${workspaceId}/verrail/run-artifacts/sha256/${"a".repeat(64)}` });
+    await expect(collectNativeRunArtifacts({ cwd, workspaceId, runAttemptId, storage: { putFile } })).rejects.toThrow(/NATIVE_ARTIFACT_INVALID/);
+  });
 });

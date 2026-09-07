@@ -104,6 +104,8 @@ export async function resolveNativeRunWorkspace(
   const binding = validateNativeWorkspaceBinding(rows[0] ?? null, {...input, attemptId, runId});
   const cwd = await realpath(binding.cwd);
   if (!(await stat(cwd)).isDirectory()) throw new Error("NATIVE_WORKSPACE_INVALID: cwd must be an existing directory");
-  const manifest = { schemaVersion: 1, source: "deployment_revision", ...binding, requestedCwd: binding.cwd, cwd };
+  const manifest = { schemaVersion: 1, source: "deployment_revision", ...binding,
+    workspaceId: input.workspaceId, heartbeatRunId: input.heartbeatRunId, agentId: input.agentId, runId, attemptId,
+    requestedCwd: binding.cwd, cwd };
   return { ...manifest, contentHash: createHash("sha256").update(JSON.stringify(manifest)).digest("hex") };
 }

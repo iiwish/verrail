@@ -121,9 +121,15 @@ TargetRevision 的版本化执行计划。GraphRevision 是不可变快照，包
 
 AcceptanceCriterion 属于 TargetRevision，定义可判定要求和允许的证明方式。Submission 针对 Criterion 提出 Claim；Evidence 是来自 Run、CI、扫描器、Provider 或人工核验的不可变证明；VerificationResult 记录特定验证器对 Claim 和 Evidence 的 `passed`、`failed`、`inconclusive` 或有权 `waived` 结论。
 
+显式版本化证明合同将每项必需义务安排在验收前、治理决定后或外部动作后。所有义务仍须满足才能完成 Target；多项要求采用 all-of，PR Receipt 不代表恢复演练或秘密扫描通过。Workbench 显示每个条件的证明阶段、来源和缺口，通过版本命令修改合同，并保留所有历史版本。后置独立证明沿正常验证入口登记，不以界面勾选或代理自述制造通过结果。
+
 ### Artifact / Submission / Review / Acceptance
 
 Artifact 是稳定交付对象，ArtifactRevision 是内容寻址的不可变版本。Submission 是一次不可变的交付候选，固定 TargetRevision、ArtifactRevision、VerificationResult、Commit/外部对象和环境摘要。DeliveryReview 评审 Submission，Acceptance 是具备责任的人对该 Review 和 Submission 的版本绑定决定。
+
+活动图上的 Submission 同时固定 GraphRevision。用户可以检查尚有未证明事项的候选并记录 Review；Acceptance 要求完整的验收前必需验证和当前批准 Review。候选准备不等待未来的治理决定，Acceptance 不等待以自身为执行前置的外部 Effect；只有完整工作图、各阶段必需 Criterion 证明、有效 Acceptance 和外部 Effect 全部满足，Target Outcome 才能显示为 `accepted`。图重规划、候选内容、验收前验证或 Review 变化不继承旧决定的有效性。后置证明的追加不修改 Submission，不使既有有效候选 Acceptance 陷入循环依赖。
+
+同一候选再次接受独立 Review 后，责任人可以对最新批准 Review 追加一次版本绑定 Acceptance，无需伪造内容变化。界面保留历次决定，并只把当前 Review 对应的 Acceptance 计入有效性。
 
 ### 产品对象可见性
 

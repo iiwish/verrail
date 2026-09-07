@@ -467,7 +467,13 @@ type connectorTaskFixture struct {
 func (h *connectorTestHarness) provisionTask(kind string) connectorTaskFixture {
 	h.t.Helper()
 	targetID, targetRevisionID := h.createTarget()
-	criterionKey := "ac-connector-run"
+	return h.provisionTaskForTarget(kind, targetID, targetRevisionID)
+}
+
+func (h *connectorTestHarness) provisionTaskForTarget(kind, targetID, targetRevisionID string) connectorTaskFixture {
+	h.t.Helper()
+	var criterionKey string
+	require.NoError(h.t, h.pool.QueryRow(context.Background(), `select acceptance_criteria->0->>'id' from verrail_target_revisions where id=$1`, targetRevisionID).Scan(&criterionKey))
 	claimID := h.createClaim(targetID, targetRevisionID, criterionKey)
 	completion := "Record the version-bound task result."
 	create := CreateGraphRevisionCommand{
@@ -532,25 +538,24 @@ func (h *connectorTestHarness) integrationRunInput(fixture connectorTaskFixture,
 // whose derived acceptance validity is "valid" on a fresh target.
 func (h *connectorTestHarness) createAcceptedSubmission(contentHash string) (string, string, string) {
 	h.t.Helper()
-	targetID, targetRevisionID := h.createTarget()
+	if len(h.connectionIDs) == 0 {
+		h.createCIConnection()
+	}
+	fixture := h.provisionTask("integration_task")
+	targetID, targetRevisionID := fixture.targetID, fixture.targetRevisionID
 	artifactID := h.createArtifact(targetID)
 	revision, err := h.addRevision(artifactID, AddArtifactRevisionInput{ContentHash: contentHash, ContentRef: "git:" + contentHash[:8]})
 	require.NoError(h.t, err)
-	claimID := h.createClaim(targetID, targetRevisionID, "ac-connector")
-	evidenceID := h.recordEvidence(targetID, &claimID, contentHash)
-	_, err = h.recordVerificationResult(RecordVerificationResultInput{
-		ClaimID:         claimID,
-		Verdict:         "passed",
-		VerifierVersion: "ci.v1",
-		EvidenceIDs:     []string{evidenceID},
-	})
+	integration, err := h.recordIntegrationRun(h.integrationRunInput(fixture, "ci/"+targetID, "success", contentHash, "ci/"+targetID))
 	require.NoError(h.t, err)
+	var verificationID string
+	require.NoError(h.t, h.pool.QueryRow(context.Background(), `select verification_result_id from verrail_integration_runs where id=$1`, integration.ResourceID).Scan(&verificationID))
 	submission, err := h.store.CreateSubmission(context.Background(), buildAssuranceCommand(h.assuranceTestHarness, AdjudicationSubmissionCreateCommand, "", CreateSubmissionInput{
 		TargetID:              targetID,
 		TargetRevisionID:      targetRevisionID,
 		ArtifactRevisionIDs:   []string{revision.ResourceID},
-		VerificationResultIDs: []string{},
-		CommitRef:             ptr("git:" + contentHash[:12]),
+		VerificationResultIDs: []string{verificationID},
+		CommitRef:             ptr("abc123"),
 	}))
 	require.NoError(h.t, err)
 	h.submissionIDs = append(h.submissionIDs, submission.ResourceID)
@@ -577,7 +582,8 @@ func (h *connectorTestHarness) supersedeSubmission(targetID, previousSubmissionI
 	ctx := context.Background()
 	var targetRevisionID string
 	var artifactRevisionIDs []string
-	if err := h.pool.QueryRow(ctx, `select target_revision_id, artifact_revision_ids from verrail_submissions where id=$1`, previousSubmissionID).Scan(&targetRevisionID, &artifactRevisionIDs); err != nil {
+	var verificationResultIDs []string
+	if err := h.pool.QueryRow(ctx, `select target_revision_id, artifact_revision_ids, verification_result_ids from verrail_submissions where id=$1`, previousSubmissionID).Scan(&targetRevisionID, &artifactRevisionIDs, &verificationResultIDs); err != nil {
 		return "", err
 	}
 	var artifactID string
@@ -589,11 +595,23 @@ func (h *connectorTestHarness) supersedeSubmission(targetID, previousSubmissionI
 	if err != nil {
 		return "", err
 	}
+	fixture := h.provisionTaskForTarget("integration_task", targetID, targetRevisionID)
+	ciInput := h.integrationRunInput(fixture, "ci/"+freshHash, "success", freshHash, "ci/"+freshHash)
+	ciInput.CommitRef = "git:" + freshHash[:12]
+	integration, err := h.recordIntegrationRun(ciInput)
+	if err != nil {
+		return "", err
+	}
+	var verificationID string
+	if err := h.pool.QueryRow(ctx, `select verification_result_id from verrail_integration_runs where id=$1`, integration.ResourceID).Scan(&verificationID); err != nil {
+		return "", err
+	}
+	verificationResultIDs = []string{verificationID}
 	submission, err := h.store.CreateSubmission(ctx, buildAssuranceCommand(h.assuranceTestHarness, AdjudicationSubmissionCreateCommand, "", CreateSubmissionInput{
 		TargetID:              targetID,
 		TargetRevisionID:      targetRevisionID,
 		ArtifactRevisionIDs:   []string{revision.ResourceID},
-		VerificationResultIDs: []string{},
+		VerificationResultIDs: verificationResultIDs,
 		CommitRef:             ptr("git:" + freshHash[:12]),
 	}))
 	if err != nil {
@@ -638,6 +656,15 @@ func (h *connectorTestHarness) rotateActiveRevision(targetID string) error {
 }
 
 func (h *connectorTestHarness) bindGitHubConnection() {
+	h.createCIConnection()
+	_, err := h.pool.Exec(context.Background(), `
+		insert into verrail_github_repo_bindings (id, workspace_id, connection_id, repo_owner, repo_name, created_by_principal_type, created_by_principal_id)
+		values ($1, $2, $3, 'owner', 'repo', 'user', $4)
+	`, mustNewUUID(h.t), h.workspaceID, h.connectionIDs[len(h.connectionIDs)-1], h.principalID)
+	require.NoError(h.t, err)
+}
+
+func (h *connectorTestHarness) createCIConnection() {
 	h.t.Helper()
 	ctx := context.Background()
 	applicationID := mustNewUUID(h.t)
@@ -654,11 +681,6 @@ func (h *connectorTestHarness) bindGitHubConnection() {
 	`, connectionID, h.workspaceID, applicationID, "connector-test-"+mustNewUUID(h.t))
 	require.NoError(h.t, err)
 	h.connectionIDs = append(h.connectionIDs, connectionID)
-	_, err = h.pool.Exec(ctx, `
-		insert into verrail_github_repo_bindings (id, workspace_id, connection_id, repo_owner, repo_name, created_by_principal_type, created_by_principal_id)
-		values ($1, $2, $3, 'owner', 'repo', 'user', $4)
-	`, mustNewUUID(h.t), h.workspaceID, connectionID, h.principalID)
-	require.NoError(h.t, err)
 }
 
 func (h *connectorTestHarness) actionStatus(actionRequestID string) string {
@@ -974,6 +996,72 @@ func TestConnectorContractsIntegration(t *testing.T) {
 		require.Equal(t, "42", externalObjectID)
 		require.Equal(t, "https://github.com/owner/repo/pull/42", externalURL)
 	})
+
+	for _, changed := range []string{"artifact", "review", "verification"} {
+		t.Run("changed "+changed+" invalidates acceptance before provider access", func(t *testing.T) {
+			targetID, _, submissionID := harness.createAcceptedSubmission(assuranceTestHash)
+			params := PullRequestParams{Title: "Bound candidate", Head: "feat/" + changed, Base: "main"}
+			request, err := harness.requestAction(RequestPullRequestActionInput{TargetID: targetID, SubmissionID: submissionID, Params: params})
+			require.NoError(t, err)
+			paramsHash, err := pullRequestParamsHash(params)
+			require.NoError(t, err)
+			_, err = harness.approveActionAs(harness.approverID, ApproveActionInput{ActionRequestID: request.ResourceID, ApproverPrincipalType: "user", ApproverPrincipalID: harness.approverID, ParamsHash: paramsHash})
+			require.NoError(t, err)
+			switch changed {
+			case "artifact":
+				var artifactID string
+				require.NoError(t, pool.QueryRow(ctx, `select id from verrail_artifacts where target_id=$1`, targetID).Scan(&artifactID))
+				_, err = harness.addRevision(artifactID, AddArtifactRevisionInput{ContentHash: strings.Repeat("9", 64), ContentRef: "git:changed"})
+			case "review":
+				_, err = harness.store.RecordDeliveryReview(ctx, buildConnectorCommandAs(harness, harness.approverID, AdjudicationReviewRecordCommand, RecordDeliveryReviewInput{SubmissionID: submissionID, ReviewerPrincipalType: "user", ReviewerPrincipalID: harness.approverID, Verdict: "approved", UnprovenItems: []string{}}))
+			case "verification":
+				var claimID string
+				require.NoError(t, pool.QueryRow(ctx, `select id from verrail_claims where target_id=$1`, targetID).Scan(&claimID))
+				evidenceID := harness.recordEvidence(targetID, &claimID, strings.Repeat("8", 64))
+				_, err = harness.recordVerificationResult(RecordVerificationResultInput{ClaimID: claimID, Verdict: "passed", VerifierVersion: "ci.v2", EvidenceIDs: []string{evidenceID}})
+			}
+			require.NoError(t, err)
+			calls := harness.fake.calls
+			_, err = harness.executeAction(ExecuteActionInput{ActionRequestID: request.ResourceID})
+			requireLifecycleCode(t, err, "CONNECTOR_SUBMISSION_NOT_ACCEPTED")
+			require.Equal(t, calls, harness.fake.calls)
+		})
+	}
+	for _, changed := range []string{"artifact", "commit", "graph"} {
+		t.Run("resubmission cannot reuse verification from another "+changed, func(t *testing.T) {
+			targetID, revisionID, original := harness.createAcceptedSubmission(assuranceTestHash)
+			var artifacts, results []string
+			var commit string
+			require.NoError(t, pool.QueryRow(ctx, `select artifact_revision_ids,verification_result_ids,commit_ref from verrail_submissions where id=$1`, original).Scan(&artifacts, &results, &commit))
+			switch changed {
+			case "artifact":
+				var artifactID string
+				require.NoError(t, pool.QueryRow(ctx, `select artifact_id from verrail_artifact_revisions where id=$1`, artifacts[0]).Scan(&artifactID))
+				revision, err := harness.addRevision(artifactID, AddArtifactRevisionInput{ContentHash: strings.Repeat("7", 64), ContentRef: "git:unverified-B"})
+				require.NoError(t, err)
+				artifacts = []string{revision.ResourceID}
+			case "commit":
+				commit = "different-unverified-commit"
+			case "graph":
+				completion := "Verify the replanned candidate"
+				command := CreateGraphRevisionCommand{WorkspaceID: harness.workspaceID, TargetID: targetID, Principal: Principal{Type: "user", ID: harness.principalID}, IdempotencyKey: "proof-replan-create", Input: CreateGraphRevisionInput{ExpectedTargetRevisionID: revisionID, Nodes: []WorkNodeInput{{NodeKey: "ci", Kind: "integration_task", Title: "CI", Stage: "verify", CompletionDefinition: &completion}}}}
+				require.NoError(t, ValidateCreateGraphRevisionCommand(&command))
+				graph, err := harness.store.CreateGraphRevision(ctx, command)
+				require.NoError(t, err)
+				activation := ActivateGraphRevisionCommand{WorkspaceID: harness.workspaceID, TargetID: targetID, GraphRevisionID: graph.GraphRevisionID, Principal: command.Principal, IdempotencyKey: "proof-replan-activate"}
+				require.NoError(t, ValidateActivationCommand(&activation))
+				_, err = harness.store.ActivateGraphRevision(ctx, activation)
+				require.NoError(t, err)
+			}
+			submission, err := harness.store.CreateSubmission(ctx, buildAssuranceCommand(harness.assuranceTestHarness, AdjudicationSubmissionCreateCommand, "", CreateSubmissionInput{TargetID: targetID, TargetRevisionID: revisionID, ArtifactRevisionIDs: artifacts, VerificationResultIDs: results, CommitRef: &commit}))
+			require.NoError(t, err)
+			harness.submissionIDs = append(harness.submissionIDs, submission.ResourceID)
+			review, err := harness.store.RecordDeliveryReview(ctx, buildConnectorCommandAs(harness, harness.approverID, AdjudicationReviewRecordCommand, RecordDeliveryReviewInput{SubmissionID: submission.ResourceID, ReviewerPrincipalType: "user", ReviewerPrincipalID: harness.approverID, Verdict: "approved", UnprovenItems: []string{}}))
+			require.NoError(t, err)
+			_, err = harness.store.AcceptSubmission(ctx, buildConnectorCommandAs(harness, harness.principalID, AdjudicationAcceptanceCreateCommand, AcceptSubmissionInput{SubmissionID: submission.ResourceID, ReviewID: review.ResourceID}))
+			requireLifecycleCode(t, err, "ADJUDICATION_CRITERIA_NOT_VERIFIED")
+		})
+	}
 
 	t.Run("receipt replay returns the stored result", func(t *testing.T) {
 		params := PullRequestParams{Title: "Replay PR", Head: "feat/replay", Base: "main"}

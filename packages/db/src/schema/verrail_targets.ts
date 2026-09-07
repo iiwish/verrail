@@ -21,6 +21,14 @@ export interface VerrailAcceptanceCriterionRecord {
   id: string;
   title: string;
   description: string | null;
+  proofContract?: {
+    schemaVersion: 1;
+    allOf: Array<
+      | { id: string; kind: "independent_verification"; phase: "pre_acceptance" | "post_effect"; assertions: string[] }
+      | { id: string; kind: "human_governance"; phase: "post_governance" }
+      | { id: string; kind: "pull_request_effect"; phase: "post_effect" }
+    >;
+  };
 }
 
 export const verrailTargets = pgTable(

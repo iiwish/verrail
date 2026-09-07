@@ -38,7 +38,7 @@ Codex 等 Harness 负责高质量执行单个编码任务；Verrail 负责跨任
 1. 这次运行固定了哪个 AgentVersion、模型、Skill、权限与环境；
 2. 谁有权调用、决策、批准外部动作和验收结果；
 3. 本次 Submission 对应哪个 TargetRevision、ArtifactRevision、Base Revision 和内容 Hash；
-4. 每个 AcceptanceCriterion 是否由独立 Claim、Evidence 和 VerificationResult 覆盖，而不是 Agent 自述；
+4. 每个 AcceptanceCriterion 是否按显式版本化证明合同获得完整覆盖，独立验证义务由 Claim、Evidence 和 VerificationResult 证明，后置治理与外部动作义务由真实版本绑定事实证明，而不是 Agent 自述；
 5. 中断、重试、改派或 Runner 失联后，权威状态是否仍然一致；
 6. 企业代码与凭证能否留在客户网络，同时由统一控制平面治理。
 
@@ -208,7 +208,7 @@ GitHub 需求
 ## 8. 成功指标
 
 - 首次可验收交付时间：从 TargetRevision 发布到首个可审阅 Submission；
-- 证明完整率：已验收 Submission 中每个必需 Criterion 都有有效 VerificationResult，且具备版本、权限、环境、CI 与内容 Hash 的比例；
+- 证明完整率：已完成 Target 的每个必需 Criterion 均按显式版本化合同获得全部阶段证明，独立验证具备有效 VerificationResult，治理与动作具备真实绑定事实，且版本、权限、环境、CI 与内容 Hash 完整的比例；
 - 恢复成功率：服务或 Runner 中断后无需人工改库即可收敛的运行比例；
 - 编排恢复率：Temporal Worker、API 或控制平面重启后能够从 Workflow History 和 PostgreSQL 事实自动继续的比例；
 - 人工注意力质量：Inbox 中确实需要责任人处理的事项比例；

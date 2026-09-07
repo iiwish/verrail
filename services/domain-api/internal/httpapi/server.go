@@ -172,6 +172,31 @@ func New(token string, store *target.Store, logger *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", server.health)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/targets", server.createTarget)
+	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/targets/{targetId}/revisions", func(response http.ResponseWriter, request *http.Request) {
+		if !server.authorized(request) {
+			writeError(response, &target.Error{Status: 401, Code: "DOMAIN_API_UNAUTHORIZED", Message: "Unauthorized"})
+			return
+		}
+		command := target.ReviseTargetProofCommand{WorkspaceID: request.PathValue("workspaceId"), TargetID: request.PathValue("targetId"), Principal: principal(request), IdempotencyKey: request.Header.Get("Idempotency-Key")}
+		if err := decodeBody(response, request, &command.Input); err != nil {
+			writeError(response, err)
+			return
+		}
+		if err := target.ValidateReviseTargetProofCommand(&command); err != nil {
+			writeError(response, target.AsError(err))
+			return
+		}
+		result, err := store.ReviseTargetProof(request.Context(), command)
+		if err != nil {
+			writeError(response, target.AsError(err))
+			return
+		}
+		status := http.StatusCreated
+		if result.Replayed {
+			status = http.StatusOK
+		}
+		writeJSON(response, status, result)
+	})
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/targets/{targetId}/graph-revisions", server.createGraph)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/targets/{targetId}/graph-revisions/{graphRevisionId}/activate", server.activateGraph)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/targets/{targetId}/graph-revisions/{graphRevisionId}/nodes/{workNodeId}/runs", server.createNativeRun)

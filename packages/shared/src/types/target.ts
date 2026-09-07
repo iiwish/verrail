@@ -77,6 +77,7 @@ export interface TargetAcceptanceCriterionV1 {
   id: string;
   title: string;
   description: string | null;
+  proofContract?: import("./criterion-proof.js").CriterionProofContractV1;
 }
 
 export interface TargetResourceRefV1 {

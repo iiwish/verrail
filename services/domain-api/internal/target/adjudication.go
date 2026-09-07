@@ -189,7 +189,7 @@ func ValidateAcceptSubmissionInput(input *AcceptSubmissionInput) error {
 // canonical JSON payload of the binding facts, with the artifact revision and
 // verification result sets sorted so logically identical submissions hash
 // identically regardless of list order.
-func submissionHash(targetRevisionID string, artifactRevisionIDs, verificationResultIDs []string, commitRef, environmentSummary *string) (string, error) {
+func submissionHash(targetRevisionID string, artifactRevisionIDs, verificationResultIDs []string, commitRef, environmentSummary *string, graphRevisionIDs ...*string) (string, error) {
 	sortedArtifacts := make([]string, len(artifactRevisionIDs))
 	copy(sortedArtifacts, artifactRevisionIDs)
 	sort.Strings(sortedArtifacts)
@@ -202,6 +202,9 @@ func submissionHash(targetRevisionID string, artifactRevisionIDs, verificationRe
 		"verificationResultIds": sortedResults,
 		"commitRef":             commitRef,
 		"environmentSummary":    environmentSummary,
+	}
+	if len(graphRevisionIDs) > 0 && graphRevisionIDs[0] != nil {
+		payload["graphRevisionId"] = *graphRevisionIDs[0]
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {

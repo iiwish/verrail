@@ -50,13 +50,18 @@ func (store *Store) CreateSubmission(ctx context.Context, command AgentLifecycle
 		select count(*) from verrail_verification_results result
 		join verrail_claims claim on claim.id = result.claim_id and claim.workspace_id = result.workspace_id
 		where result.workspace_id=$1 and result.id = any($2::uuid[]) and claim.target_revision_id=$3
+		and not exists(select 1 from verrail_criterion_proofs late where late.verification_result_id=result.id and late.phase='post_effect')
 	`, command.WorkspaceID, command.Input.VerificationResultIDs, command.Input.TargetRevisionID).Scan(&resultCount); err != nil {
 		return AgentLifecycleResult{}, err
 	}
 	if resultCount != len(command.Input.VerificationResultIDs) {
 		return AgentLifecycleResult{}, adjudicationNotFound("VerificationResult")
 	}
-	submissionHash, err := submissionHash(command.Input.TargetRevisionID, command.Input.ArtifactRevisionIDs, command.Input.VerificationResultIDs, command.Input.CommitRef, command.Input.EnvironmentSummary)
+	var graphRevisionID *string
+	if err := tx.QueryRow(ctx, `select graph.active_graph_revision_id from verrail_targets target left join verrail_work_graphs graph on graph.workspace_id=target.workspace_id and graph.target_id=target.id where target.workspace_id=$1 and target.id=$2 for update of target`, command.WorkspaceID, command.Input.TargetID).Scan(&graphRevisionID); err != nil {
+		return AgentLifecycleResult{}, err
+	}
+	submissionHash, err := submissionHash(command.Input.TargetRevisionID, command.Input.ArtifactRevisionIDs, command.Input.VerificationResultIDs, command.Input.CommitRef, command.Input.EnvironmentSummary, graphRevisionID)
 	if err != nil {
 		return AgentLifecycleResult{}, err
 	}
@@ -75,7 +80,7 @@ func (store *Store) CreateSubmission(ctx context.Context, command AgentLifecycle
 		return AgentLifecycleResult{}, err
 	}
 	submissionID, _ := NewUUID()
-	if _, err := tx.Exec(ctx, `insert into verrail_submissions(id,workspace_id,target_id,target_revision_id,artifact_revision_ids,verification_result_ids,commit_ref,environment_summary,notes,submission_hash,submitted_by_principal_type,submitted_by_principal_id) values($1,$2,$3,$4,$5::uuid[],$6::uuid[],$7,$8,$9,$10,$11,$12)`, submissionID, command.WorkspaceID, command.Input.TargetID, command.Input.TargetRevisionID, command.Input.ArtifactRevisionIDs, command.Input.VerificationResultIDs, command.Input.CommitRef, command.Input.EnvironmentSummary, command.Input.Notes, submissionHash, command.Principal.Type, command.Principal.ID); err != nil {
+	if _, err := tx.Exec(ctx, `insert into verrail_submissions(id,workspace_id,target_id,target_revision_id,artifact_revision_ids,verification_result_ids,commit_ref,environment_summary,notes,submission_hash,submitted_by_principal_type,submitted_by_principal_id,graph_revision_id) values($1,$2,$3,$4,$5::uuid[],$6::uuid[],$7,$8,$9,$10,$11,$12,$13)`, submissionID, command.WorkspaceID, command.Input.TargetID, command.Input.TargetRevisionID, command.Input.ArtifactRevisionIDs, command.Input.VerificationResultIDs, command.Input.CommitRef, command.Input.EnvironmentSummary, command.Input.Notes, submissionHash, command.Principal.Type, command.Principal.ID, graphRevisionID); err != nil {
 		if assuranceUniqueViolation(err, "verrail_submissions_target_hash_uq") {
 			return AgentLifecycleResult{}, &Error{Status: 409, Code: "ADJUDICATION_SUBMISSION_DUPLICATE", Message: "An identical Submission already exists for this Target"}
 		}
@@ -158,11 +163,11 @@ func (store *Store) AcceptSubmission(ctx context.Context, command AgentLifecycle
 	if reviewSubmissionID != command.Input.SubmissionID || reviewVerdict != "approved" {
 		return AgentLifecycleResult{}, &Error{Status: 409, Code: "ADJUDICATION_REVIEW_NOT_APPROVED", Message: "Acceptance requires an approved DeliveryReview of this Submission"}
 	}
-	var latestVerdict string
-	if err := tx.QueryRow(ctx, `select verdict from verrail_delivery_reviews where submission_id=$1 order by created_at desc, id desc limit 1`, command.Input.SubmissionID).Scan(&latestVerdict); err != nil {
+	var latestVerdict, latestReviewID string
+	if err := tx.QueryRow(ctx, `select verdict,id from verrail_delivery_reviews where submission_id=$1 order by created_at desc, id desc limit 1`, command.Input.SubmissionID).Scan(&latestVerdict, &latestReviewID); err != nil {
 		return AgentLifecycleResult{}, err
 	}
-	if latestVerdict != "approved" {
+	if latestVerdict != "approved" || latestReviewID != command.Input.ReviewID {
 		return AgentLifecycleResult{}, &Error{Status: 409, Code: "ADJUDICATION_REVIEW_NOT_APPROVED", Message: "The latest DeliveryReview for this Submission is not approved"}
 	}
 	// AcceptanceAuthority (ontology section 5): the accepting principal must
@@ -174,10 +179,19 @@ func (store *Store) AcceptSubmission(ctx context.Context, command AgentLifecycle
 	if ownerType != "user" || ownerID != command.Principal.ID {
 		return AgentLifecycleResult{}, &Error{Status: 403, Code: "ADJUDICATION_NOT_OUTCOME_OWNER", Message: "Only the TargetRevision outcome owner can accept a Submission"}
 	}
-	// One acceptance per submission (unique (submission_id)): a replayed
-	// acceptance returns the existing acceptance id.
+	facts, err := readDeliveryFacts(ctx, tx, command.WorkspaceID, targetID)
+	if err != nil {
+		return AgentLifecycleResult{}, err
+	}
+	if facts.submissionID != command.Input.SubmissionID || !facts.candidateCurrent {
+		return AgentLifecycleResult{}, &Error{Status: 409, Code: "ADJUDICATION_SUBMISSION_STALE", Message: "Acceptance requires the latest Submission and current TargetRevision and ArtifactRevisions"}
+	}
+	if !facts.criteriaVerified {
+		return AgentLifecycleResult{}, &Error{Status: 409, Code: "ADJUDICATION_CRITERIA_NOT_VERIFIED", Message: "Acceptance requires current passing VerificationResults for every criterion bound in the Submission"}
+	}
+	// Each exact Review can be accepted once; re-review appends a new decision.
 	var existingAcceptanceID string
-	err = tx.QueryRow(ctx, `select id from verrail_acceptances where submission_id=$1`, command.Input.SubmissionID).Scan(&existingAcceptanceID)
+	err = tx.QueryRow(ctx, `select id from verrail_acceptances where submission_id=$1 and review_id=$2`, command.Input.SubmissionID, command.Input.ReviewID).Scan(&existingAcceptanceID)
 	if err == nil {
 		result := AgentLifecycleResult{SchemaVersion: SchemaVersion, ResourceType: adjudicationResourceAcceptance, ResourceID: existingAcceptanceID, Replayed: true}
 		if err := finishAgentCommand(ctx, tx, meta, result, adjudicationAcceptanceCreatedEvent); err != nil {
@@ -196,9 +210,9 @@ func (store *Store) AcceptSubmission(ctx context.Context, command AgentLifecycle
 	// on conflict do nothing keeps the transaction usable if a concurrent
 	// acceptance won the race; the row is then read back as a replay.
 	var insertedID string
-	err = tx.QueryRow(ctx, `insert into verrail_acceptances(id,workspace_id,target_id,target_revision_id,submission_id,review_id,authority,accepted_by_principal_type,accepted_by_principal_id,acceptance_hash) values($1,$2,$3,$4,$5,$6,$7,'user',$8,$9) on conflict (submission_id) do nothing returning id`, acceptanceID, command.WorkspaceID, targetID, targetRevisionID, command.Input.SubmissionID, command.Input.ReviewID, adjudicationAuthorityOutcomeOwner, command.Principal.ID, acceptanceHash).Scan(&insertedID)
+	err = tx.QueryRow(ctx, `insert into verrail_acceptances(id,workspace_id,target_id,target_revision_id,submission_id,review_id,authority,accepted_by_principal_type,accepted_by_principal_id,acceptance_hash) values($1,$2,$3,$4,$5,$6,$7,'user',$8,$9) on conflict (submission_id,review_id) do nothing returning id`, acceptanceID, command.WorkspaceID, targetID, targetRevisionID, command.Input.SubmissionID, command.Input.ReviewID, adjudicationAuthorityOutcomeOwner, command.Principal.ID, acceptanceHash).Scan(&insertedID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		if err := tx.QueryRow(ctx, `select id from verrail_acceptances where submission_id=$1`, command.Input.SubmissionID).Scan(&insertedID); err != nil {
+		if err := tx.QueryRow(ctx, `select id from verrail_acceptances where submission_id=$1 and review_id=$2`, command.Input.SubmissionID, command.Input.ReviewID).Scan(&insertedID); err != nil {
 			return AgentLifecycleResult{}, err
 		}
 		result := AgentLifecycleResult{SchemaVersion: SchemaVersion, ResourceType: adjudicationResourceAcceptance, ResourceID: insertedID, Replayed: true}

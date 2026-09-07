@@ -174,7 +174,7 @@ func (store *Store) ActivateGraphRevision(ctx context.Context, command ActivateG
 	if _, err := tx.Exec(ctx, `update verrail_work_graphs set status='active',active_graph_revision_id=$1,updated_at=$2 where id=$3`, command.GraphRevisionID, now, workGraphID); err != nil {
 		return ActivateGraphRevisionResult{}, err
 	}
-	if _, err := tx.Exec(ctx, `update verrail_work_nodes set status='ready',updated_at=$1 where graph_revision_id=$2 and dependency_node_keys='[]'::jsonb`, now, command.GraphRevisionID); err != nil {
+	if _, err := tx.Exec(ctx, `update verrail_work_nodes set status='ready',updated_at=$1 where graph_revision_id=$2 and status='pending' and dependency_node_keys='[]'::jsonb`, now, command.GraphRevisionID); err != nil {
 		return ActivateGraphRevisionResult{}, err
 	}
 	auditID, _ := NewUUID()
@@ -304,30 +304,70 @@ func (store *Store) ReconcileGraph(ctx context.Context, command ReconcileGraphCo
 		return ReconcileGraphResult{}, err
 	}
 	statusByKey := make(map[string]string, len(nodes))
-	for _, node := range nodes {
+	facts, err := readDeliveryFacts(ctx, tx, command.WorkspaceID, command.TargetID)
+	if err != nil {
+		return ReconcileGraphResult{}, err
+	}
+	indexByKey := make(map[string]int, len(nodes))
+	for index, node := range nodes {
 		statusByKey[node.key] = node.status
+		indexByKey[node.key] = index
 	}
 	activatedNodeIDs := make([]string, 0)
-	for index := range nodes {
-		if nodes[index].status != "pending" {
-			continue
+	gateTransitions := make([]map[string]string, 0)
+	// Visit prerequisites first, including revalidating completed governance Gates.
+	// Node-key ordering must not let a dependent consume an obsolete Gate status.
+	visited := make(map[string]bool, len(nodes))
+	var reconcileNode func(int) error
+	reconcileNode = func(index int) error {
+		if visited[nodes[index].key] {
+			return nil
 		}
+		visited[nodes[index].key] = true
 		ready := true
 		for _, dependency := range nodes[index].dependencies {
+			if dependencyIndex, ok := indexByKey[dependency]; ok {
+				if err := reconcileNode(dependencyIndex); err != nil {
+					return err
+				}
+			}
 			if statusByKey[dependency] != "completed" {
 				ready = false
-				break
 			}
 		}
-		if !ready {
-			continue
+		node := &nodes[index]
+		next := node.status
+		if (node.kind == "review_gate" || node.kind == "acceptance_gate") && node.status != "canceled" && node.status != "blocked" {
+			next = "pending"
+			if ready {
+				next = "ready"
+				if node.kind == "review_gate" && facts.candidateCurrent && facts.reviewApproved || node.kind == "acceptance_gate" && facts.acceptanceValid() {
+					next = "completed"
+				}
+			}
+		} else if node.status == "pending" && ready {
+			next = "ready"
 		}
-		if _, err := tx.Exec(ctx, `update verrail_work_nodes set status='ready',updated_at=now() where id=$1 and status='pending'`, nodes[index].id); err != nil {
+		if next == node.status {
+			return nil
+		}
+		if node.kind == "review_gate" || node.kind == "acceptance_gate" {
+			gateTransitions = append(gateTransitions, map[string]string{"workNodeId": node.id, "from": node.status, "to": next, "submissionId": facts.submissionID, "reviewId": facts.reviewID, "acceptanceId": facts.acceptanceID})
+		}
+		if _, err := tx.Exec(ctx, `update verrail_work_nodes set status=$1,updated_at=now() where id=$2`, next, node.id); err != nil {
+			return err
+		}
+		if node.status == "pending" && next != "pending" {
+			activatedNodeIDs = append(activatedNodeIDs, node.id)
+		}
+		node.status = next
+		statusByKey[node.key] = next
+		return nil
+	}
+	for index := range nodes {
+		if err := reconcileNode(index); err != nil {
 			return ReconcileGraphResult{}, err
 		}
-		nodes[index].status = "ready"
-		statusByKey[nodes[index].key] = "ready"
-		activatedNodeIDs = append(activatedNodeIDs, nodes[index].id)
 	}
 	result := ReconcileGraphResult{
 		SchemaVersion:      SchemaVersion,
@@ -381,7 +421,7 @@ func (store *Store) ReconcileGraph(ctx context.Context, command ReconcileGraphCo
 		return ReconcileGraphResult{}, err
 	}
 	response, _ := json.Marshal(result)
-	payload, _ := json.Marshal(map[string]any{"schemaVersion": SchemaVersion, "targetId": command.TargetID, "targetRevisionId": command.TargetRevisionID, "graphRevisionId": command.GraphRevisionID, "activatedNodeIds": activatedNodeIDs})
+	payload, _ := json.Marshal(map[string]any{"schemaVersion": SchemaVersion, "targetId": command.TargetID, "targetRevisionId": command.TargetRevisionID, "graphRevisionId": command.GraphRevisionID, "activatedNodeIds": activatedNodeIDs, "gateTransitions": gateTransitions})
 	receiptID, _ := NewUUID()
 	auditID, _ := NewUUID()
 	if _, err := tx.Exec(ctx, `insert into verrail_command_receipts(id,workspace_id,principal_type,principal_id,command_type,idempotency_key,request_hash,target_id,target_revision_id,response) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)`, receiptID, command.WorkspaceID, command.Principal.Type, command.Principal.ID, GraphReconcileCommandType, command.IdempotencyKey, command.RequestHash, command.TargetID, command.TargetRevisionID, response); err != nil {

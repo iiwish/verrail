@@ -726,6 +726,16 @@
     }
   },
   "targets": {
+    "criterionProof": {
+      "revise": "修订证明合同",
+      "revisionWarning": "所有证明均为必需。保存将创建 TargetRevision 并要求建立新工作图；现有决定保留为历史。",
+      "invalid": "证明要求须唯一且断言完整，每个阶段最多包含一项独立验证。",
+      "saveError": "证明合同修订失败，请刷新目标后重试。",
+      "kind": "证明来源", "phase": "证明阶段", "assertions": "必需断言", "remove": "移除证明要求", "add": "添加证明要求", "saveRevision": "创建修订",
+      "kinds": { "independent_verification": "独立验证", "human_governance": "真人决定", "pull_request_effect": "Pull Request 回执" },
+      "phases": { "pre_acceptance": "验收前", "post_governance": "真人决定后", "post_effect": "外部动作后" },
+      "states": { "satisfied": "已证明", "required": "缺少证明", "blocked": "未通过" }
+    },
     "title": "目标",
     "target": "目标",
     "section": "目标区域",
@@ -1038,7 +1048,8 @@
       },
       "invalidReasons": {
         "superseded_submission": "已被更新的提交取代",
-        "target_revision_changed": "目标修订版本已变更"
+        "target_revision_changed": "目标修订版本已变更",
+        "candidate_changed": "候选版本绑定已变更或验证不完整"
       }
     }
   },

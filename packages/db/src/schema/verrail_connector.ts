@@ -120,7 +120,7 @@ export const verrailIntegrationRuns = pgTable(
     verificationConclusionCheck: check(
       "verrail_integration_runs_verification_conclusion_check",
       sql`(${table.conclusion} in ('success', 'failure') and ${table.verificationResultId} is not null)
-        or (${table.conclusion} = 'neutral' and ${table.verificationResultId} is null)`,
+        or (${table.conclusion} = 'neutral')`,
     ),
   }),
 );
@@ -361,3 +361,37 @@ export const verrailGithubRepoBindings = pgTable(
     ),
   }),
 );
+
+export const verrailCriterionProofs = pgTable("verrail_criterion_proofs", {
+  id: uuid("id").primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => companies.id),
+  targetId: uuid("target_id").notNull(),
+  targetRevisionId: uuid("target_revision_id").notNull(),
+  graphRevisionId: uuid("graph_revision_id").notNull(),
+  criterionKey: text("criterion_key").notNull(),
+  requirementId: text("requirement_id").notNull(),
+  phase: text("phase").notNull(),
+  contractHash: text("contract_hash").notNull(),
+  submissionId: uuid("submission_id"),
+  effectReceiptId: uuid("effect_receipt_id"),
+  verificationResultId: uuid("verification_result_id").notNull(),
+  integrationRunId: uuid("integration_run_id").notNull(),
+  contextHash: text("context_hash").notNull(),
+  sourceIdentityHash: text("source_identity_hash"),
+  sourcePayloadHash: text("source_payload_hash"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  resultUq: unique("verrail_criterion_proofs_result_uq").on(table.verificationResultId),
+  sourceUq: unique("verrail_criterion_proofs_source_uq").on(table.sourceIdentityHash),
+  targetFk: foreignKey({ columns: [table.targetId, table.workspaceId], foreignColumns: [verrailTargets.id, verrailTargets.workspaceId], name: "verrail_criterion_proofs_target_fk" }),
+  revisionFk: foreignKey({ columns: [table.targetRevisionId, table.workspaceId], foreignColumns: [verrailTargetRevisions.id, verrailTargetRevisions.workspaceId], name: "verrail_criterion_proofs_revision_fk" }),
+  graphFk: foreignKey({ columns: [table.graphRevisionId, table.workspaceId], foreignColumns: [verrailGraphRevisions.id, verrailGraphRevisions.workspaceId], name: "verrail_criterion_proofs_graph_fk" }),
+  submissionFk: foreignKey({ columns: [table.submissionId, table.workspaceId], foreignColumns: [verrailSubmissions.id, verrailSubmissions.workspaceId], name: "verrail_criterion_proofs_submission_fk" }),
+  effectFk: foreignKey({ columns: [table.effectReceiptId, table.workspaceId], foreignColumns: [verrailEffectReceipts.id, verrailEffectReceipts.workspaceId], name: "verrail_criterion_proofs_effect_fk" }),
+  resultFk: foreignKey({ columns: [table.verificationResultId, table.workspaceId], foreignColumns: [verrailVerificationResults.id, verrailVerificationResults.workspaceId], name: "verrail_criterion_proofs_result_fk" }),
+  integrationFk: foreignKey({ columns: [table.integrationRunId, table.workspaceId], foreignColumns: [verrailIntegrationRuns.id, verrailIntegrationRuns.workspaceId], name: "verrail_criterion_proofs_integration_fk" }),
+  lookupIdx: index("verrail_criterion_proofs_lookup_idx").on(table.workspaceId, table.targetId, table.targetRevisionId, table.criterionKey, table.requirementId, table.createdAt),
+  phaseCheck: check("verrail_criterion_proofs_phase_check", sql`(${table.phase}='pre_acceptance' and ${table.submissionId} is null and ${table.effectReceiptId} is null) or (${table.phase}='post_effect' and ${table.submissionId} is not null and ${table.effectReceiptId} is not null)`),
+  hashCheck: check("verrail_criterion_proofs_hash_check", sql`${table.contractHash} ~ '^[0-9a-f]{64}$' and ${table.contextHash} ~ '^[0-9a-f]{64}$'`),
+  sourceHashCheck: check("verrail_criterion_proofs_source_hash_check", sql`(${table.sourceIdentityHash} is null and ${table.sourcePayloadHash} is null) or (${table.sourceIdentityHash} is not null and ${table.sourcePayloadHash} is not null and ${table.sourceIdentityHash} ~ '^[0-9a-f]{64}$' and ${table.sourcePayloadHash} ~ '^[0-9a-f]{64}$')`),
+}));

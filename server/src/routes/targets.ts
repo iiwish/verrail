@@ -4,6 +4,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { verrailCollections, type Db } from "@paperclipai/db";
 import {
   createTargetSchema,
+  reviseTargetProofSchema,
   createGraphRevisionSchema,
   createRunSchema,
   createRunAttemptSchema,
@@ -148,6 +149,19 @@ export function targetRoutes(
     ? createVerrailDomainApiClient()
     : options.domainApiClient;
   const etag = privateJsonEtag(principalKey);
+
+  router.post("/workspaces/:workspaceId/targets/:targetId/revisions", validate(reviseTargetProofSchema), async (req, res) => {
+    const workspaceId = req.params.workspaceId as string;
+    const targetId = req.params.targetId as string;
+    assertBoard(req);
+    assertCompanyAccess(req, workspaceId);
+    const actor = getActorInfo(req);
+    if (actor.actorType !== "user") throw new HttpError(403, "A human Workspace member is required");
+    if (!domainApi) throw new HttpError(503, "Verrail Domain API is unavailable");
+    if (!await svc.getByTargetId(workspaceId, targetId)) throw notFound("Target not found");
+    const result = await domainApi.reviseTargetProof({ workspaceId, targetId, principalType: "user", principalId: actor.actorId, idempotencyKey: targetIdempotencyKeySchema.parse(req.header("Idempotency-Key")), input: req.body });
+    res.status(result.replayed ? 200 : 201).json(result);
+  });
 
   router.get("/workspaces/:workspaceId/targets/:targetId/run-outbox-failures", async (req, res) => {
     const workspaceId = req.params.workspaceId as string;

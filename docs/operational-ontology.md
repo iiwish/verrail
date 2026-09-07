@@ -138,6 +138,10 @@ EvaluationRun 在版本化评测集上比较 AgentVersion 的质量、成本、�
 
 AcceptanceCriterion 属于 TargetRevision，定义可判定的验收要求和允许的证明方式。Submission 针对每个适用 Criterion 提出 Claim。Evidence 是支持或反驳 Claim 的不可变来源记录，包含类型、生产主体、对象 Hash、时间、有效期、信任等级和原始引用。
 
+Criterion 可以固定 `proofContract` v1，其中 `allOf` 的每项要求均为最终 Outcome 的强制条件。独立验证要求明确列出全部 assertions，并固定 `pre_acceptance` 或 `post_effect` 阶段；`human_governance` 固定在 `post_governance` 阶段，要求同一候选的三个独立真人决定记录（DeliveryReview、ActionApproval、Acceptance）以及 Agent/Service 提交者和动作请求者；`pull_request_effect` 固定在 `post_effect` 阶段，要求同一候选和参数绑定动作的真实 EffectReceipt。Receipt 不替代故障恢复、秘密不落盘等独立验证义务。缺省合同保持原有验收前独立验证语义，不从条件文本推断阶段，不回填或重算历史 Hash。
+
+CriterionProof 是独立 VerificationResult 的不可变上下文绑定，固定 TargetRevision、GraphRevision、Criterion、requirement、完整合同 Hash，以及后置证明适用的 Submission 和 EffectReceipt。它与来源验证事务原子登记，不复制 CI VerificationResult，也不以人工补填 assertion 名称代替验证器的真实覆盖。后置证明可以在 Submission 后追加；其失败或缺失阻止最终 Outcome，但不混入候选原有的验收前验证选择器。新候选、图、目标版本或不匹配动作的证明不能复用。
+
 VerificationResult 绑定 Criterion、Claim、Evidence 集合和验证器版本，结果为 `passed`、`failed`、`inconclusive` 或 `waived`。`waived` 必须引用具备权限的人类例外决定及有效范围。Agent 自述只能作为低信任 Observation，不能冒充 CI、扫描器或人工核验结果。
 
 ### ArtifactContract、Artifact 与 ArtifactRevision
@@ -148,9 +152,21 @@ ArtifactContract 定义交付类型、结构、必需字段、渲染方式和证
 
 Submission 是一次不可变的待评审交付候选，固定 TargetRevision、ArtifactRevision 集合、VerificationResult 集合、Commit 或外部对象快照、EnvironmentManifest 摘要和提交主体。Artifact、Evidence、目标条件或外部对象发生实质变化时必须创建新 Submission，不能静默修改已评审候选。
 
+活动 Work Graph 下创建的 Submission 同时固定 GraphRevision，并将其纳入内容 Hash；历史未绑定 GraphRevision 的候选保留原始事实，不推断或回填其图版本，也不能满足活动图的治理 Gate。候选准备只等待治理 Gate 之前的工作，不等待 Review、Acceptance 或其下游工作预先完成。缺少证明的候选可供 Reviewer 检查并记录未证明事项，但不能据此完成 Acceptance。
+
 ### DeliveryReview 与 Acceptance
 
 DeliveryReview 绑定一个 Submission，记录风险、未证明事项、评论和 Reviewer 结论。Acceptance 绑定 DeliveryReview、Submission、TargetRevision 和 AcceptanceAuthority。新 Submission 或新 TargetRevision 不继承旧 Acceptance。
+
+Acceptance 要求当前候选绑定全部验收前独立验证要求的当前通过结果及最新独立批准 Review。没有显式证明合同的 Criterion 全部按验收前要求计算。Graph Engine 在依赖满足后，以同一活动 GraphRevision 的当前 Submission、ArtifactRevision、VerificationResult 和 Review/Acceptance 事实结算治理 Gate；版本失效时撤销派生的 Gate 完成状态，不修改历史决定，也不覆盖显式阻塞或取消。
+
+每个 Submission/Review 对最多有一个 Acceptance。同一候选产生新的独立 Review 后，Outcome Owner 可以通过新命令为最新批准 Review 追加 Acceptance；旧 Acceptance 保持不可变，并且不适用于新 Review。重复接受同一个 Submission/Review 对保持幂等。存储与恢复合同见 [ADR-0008](adrs/0008-review-bound-acceptance.md)。
+
+候选的通过验证必须能沿 VerificationResult 的 Evidence 引用解析到同 Workspace、Target 和 Claim 的独立证据，Evidence 对象 Hash 必须匹配候选 ArtifactRevision。CI 证明还必须绑定对应 IntegrationRun 的 TargetRevision、GraphRevision、Commit、Criterion、Evidence 与 VerificationResult，且运行结论为成功。缺失绑定或旧内容/旧图上的结果不能因重新提交候选而成为有效证明；Agent Observation 不满足独立证明门禁。
+
+候选 Acceptance 与最终 Outcome 分离：Acceptance 是既定 GitHub 外部动作的执行前置，不能反向等待该动作的 EffectReceipt；Target 的 `accepted` 仍要求完整活动图、全部必需 Criterion、有效 Acceptance 和全部强制外部 Effect 收口。自由文本 Criterion 不自动获得阶段分类或替代证明方式；后置治理与 Effect 要求的证明合同必须由具备权限的人明确确认，不能伪造预先通过的 VerificationResult。
+
+证明合同的修改使用真人授权、expected TargetRevision 和幂等键保护的版本命令。命令只替换明确提交的证明结构，保留 Criterion ID、文本及其余责任合同，追加新 TargetRevision；Graph Engine 在同一事务解除旧活动图关联，新图通过正常创建和激活命令绑定新版本。旧 Revision、节点、Run、证据和决定保持历史身份，不重新标记版本。不存在活动新图时不得派生完成。
 
 ### RuntimePool、Runner 与 Lease
 

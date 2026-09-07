@@ -1,5 +1,7 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import {
+  verrailCriterionProofs,
   verrailAcceptances,
   verrailActionApprovals,
   verrailActionRequests,
@@ -154,6 +156,7 @@ type ExecutionFacts = {
 };
 
 export type TargetWorkspaceAssuranceFactsV1 = Omit<TargetWorkspaceV1, "artifacts" | "evidence" | "submissions"> & {
+  criterionProofs: import("@paperclipai/shared").CriterionProofStatusV1[];
   submissions: AdjudicationSubmissionV1[];
   reviews: AdjudicationDeliveryReviewV1[];
   acceptances: AdjudicationAcceptanceV1[];
@@ -169,6 +172,7 @@ export type TargetWorkspaceAssuranceFactsV1 = Omit<TargetWorkspaceV1, "artifacts
 };
 
 type AssuranceFacts = {
+  criterionProofs: Array<typeof verrailCriterionProofs.$inferSelect>;
   artifacts: Array<typeof verrailArtifacts.$inferSelect>;
   artifactRevisions: Array<typeof verrailArtifactRevisions.$inferSelect>;
   claims: Array<typeof verrailClaims.$inferSelect>;
@@ -197,6 +201,7 @@ type NativeFacts = AssuranceFacts & {
 };
 
 const EMPTY_ASSURANCE_FACTS: AssuranceFacts = {
+  criterionProofs: [],
   artifacts: [],
   artifactRevisions: [],
   claims: [],
@@ -311,6 +316,7 @@ function mapSubmission(row: typeof verrailSubmissions.$inferSelect): Adjudicatio
     id: row.id,
     targetId: row.targetId,
     targetRevisionId: row.targetRevisionId,
+    graphRevisionId: row.graphRevisionId,
     artifactRevisionIds: row.artifactRevisionIds,
     verificationResultIds: row.verificationResultIds,
     commitRef: row.commitRef,
@@ -337,7 +343,7 @@ function mapDeliveryReview(row: typeof verrailDeliveryReviews.$inferSelect): Adj
   };
 }
 
-function mapAcceptance(row: typeof verrailAcceptances.$inferSelect, latestSubmissionId: string | null, activeTargetRevisionId: string): AdjudicationAcceptanceV1 {
+function mapAcceptance(row: typeof verrailAcceptances.$inferSelect, latestSubmissionId: string | null, activeTargetRevisionId: string, currentAcceptanceId: string | null): AdjudicationAcceptanceV1 {
   const derived = deriveAcceptanceValidity(row.submissionId === latestSubmissionId, row.targetRevisionId === activeTargetRevisionId);
   return {
     id: row.id,
@@ -349,8 +355,8 @@ function mapAcceptance(row: typeof verrailAcceptances.$inferSelect, latestSubmis
     acceptedBy: assurancePrincipal(row.acceptedByPrincipalType, row.acceptedByPrincipalId),
     acceptanceHash: row.acceptanceHash,
     createdAt: row.createdAt.toISOString(),
-    validity: derived.validity,
-    invalidReason: derived.invalidReason,
+    validity: derived.validity === "valid" && row.id !== currentAcceptanceId ? "invalid" : derived.validity,
+    invalidReason: derived.validity === "valid" && row.id !== currentAcceptanceId ? "candidate_changed" : derived.invalidReason,
   };
 }
 
@@ -566,7 +572,7 @@ type ProjectionInput = {
   activityAt: string;
   persistedStatus: string;
   outcomeOwner: { principalType: string; principalId: string };
-  criteria: Array<{ id: string }>;
+  criteria: Array<{ id: string; proofContract?: import("@paperclipai/shared").CriterionProofContractV1 }>;
   graph: typeof verrailWorkGraphs.$inferSelect | null;
   nodes: TargetWorkItemV1[];
   runs: TargetRunV1[];
@@ -608,6 +614,7 @@ function targetActivityAt(
 }
 
 type TargetProjection = {
+  criterionProofs: import("@paperclipai/shared").CriterionProofStatusV1[];
   status: TargetReadModelV1["status"];
   outcome: TargetOutcomeV1;
   attention: TargetAttentionItemV1[];
@@ -624,6 +631,12 @@ function control(
 }
 
 function deriveTargetProjection(input: ProjectionInput): TargetProjection {
+  const contractHash = (contract: import("@paperclipai/shared").CriterionProofContractV1) => {
+    const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical)
+      : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, entry]) => [key, canonical(entry)])) : value;
+    const payload = JSON.stringify(canonical(contract)).replace(/[<>&\u2028\u2029]/g, (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`);
+    return createHash("sha256").update(payload).digest("hex");
+  };
   const targetFacts = {
     artifacts: input.facts.artifacts.filter((row) => row.targetId === input.targetId),
     claims: input.facts.claims.filter((row) => row.targetId === input.targetId),
@@ -657,33 +670,82 @@ function deriveTargetProjection(input: ProjectionInput): TargetProjection {
     && [...latestArtifactRevisionIds].every((id) => submittedArtifactRevisionIds.has(id));
 
   const activeClaims = targetFacts.claims.filter((row) => row.targetRevisionId === input.activeTargetRevisionId);
+  const bindings = input.facts.criterionProofs ?? [];
+  const lateResultIds = new Set(bindings.filter((proof) => proof.phase === "post_effect").map((proof) => proof.verificationResultId));
+  const preCriteria = input.criteria.filter((criterion) => !criterion.proofContract || criterion.proofContract.allOf.some((proof) => proof.phase === "pre_acceptance"));
   const submittedVerificationIds = new Set(latestSubmission?.verificationResultIds ?? []);
   const criterionResults = new Map<string, typeof verrailVerificationResults.$inferSelect>();
-  for (const criterion of input.criteria) {
+  for (const criterion of preCriteria) {
     const claimIds = new Set(activeClaims.filter((claim) => claim.criterionKey === criterion.id).map((claim) => claim.id));
     const latest = targetFacts.verificationResults
-      .filter((result) => claimIds.has(result.claimId))
+      .filter((result) => claimIds.has(result.claimId) && !lateResultIds.has(result.id)
+        && (!criterion.proofContract || bindings.some((proof) => proof.verificationResultId === result.id
+          && proof.targetRevisionId === input.activeTargetRevisionId && proof.graphRevisionId === input.graph?.activeGraphRevisionId
+          && proof.contractHash === contractHash(criterion.proofContract!)
+          && proof.phase === "pre_acceptance" && criterion.proofContract?.allOf.some((requirement) => requirement.id === proof.requirementId && requirement.phase === "pre_acceptance"))))
       .sort(byCreatedAtDesc)[0];
     if (latest) criterionResults.set(criterion.id, latest);
   }
   const criteriaVerifiedBeforeSubmission = input.criteria.length > 0
-    && input.criteria.every((criterion) => criterionResults.get(criterion.id)?.verdict === "passed");
+    && preCriteria.every((criterion) => criterionResults.get(criterion.id)?.verdict === "passed");
+  const submittedHashes = new Set(input.facts.artifactRevisions
+    .filter((revision) => submittedArtifactRevisionIds.has(revision.id))
+    .map((revision) => revision.contentHash));
+  const proofMatchesCandidate = (result: typeof verrailVerificationResults.$inferSelect) =>
+    result.evidenceIds.length > 0 && result.evidenceIds.every((id) => {
+      const evidence = input.facts.evidence.find((row) => row.id === id && row.targetId === input.targetId && row.claimId === result.claimId);
+      if (!evidence || evidence.producerPrincipalType === "agent" || evidence.kind === "agent_observation"
+        || !["medium", "high"].includes(evidence.trustLevel) || !submittedHashes.has(evidence.objectHash)) return false;
+      if (evidence.kind !== "ci_result") return true;
+      return evidence.producerPrincipalType === "service" && input.facts.integrationRuns.some((run) =>
+        run.targetId === input.targetId && run.targetRevisionId === latestSubmission?.targetRevisionId
+        && run.graphRevisionId != null && run.graphRevisionId === latestSubmission?.graphRevisionId
+        && run.commitRef != null && run.commitRef === latestSubmission?.commitRef
+        && run.claimId === result.claimId && run.criterionKey === activeClaims.find((claim) => claim.id === result.claimId)?.criterionKey
+        && run.verificationResultId === result.id && run.evidenceId === evidence.id && run.conclusion === "success");
+    });
   const criteriaVerified = criteriaVerifiedBeforeSubmission
     && Boolean(latestSubmission)
-    && [...criterionResults.values()].every((result) => submittedVerificationIds.has(result.id));
+    && [...criterionResults.values()].every((result) => submittedVerificationIds.has(result.id) && proofMatchesCandidate(result));
+  const currentVerificationIds = new Set([...criterionResults.values()].map((result) => result.id));
+  const verificationBindingsCurrent = [...submittedVerificationIds].every((id) => currentVerificationIds.has(id));
   const failedResults = [...criterionResults.values()].filter((result) => result.verdict === "failed");
   const inconclusiveResults = [...criterionResults.values()].filter((result) => result.verdict === "inconclusive");
 
   const graphComplete = Boolean(input.graph?.activeGraphRevisionId)
     && input.nodes.length > 0
     && input.nodes.every((node) => node.status === "completed");
+  const postPreparationKeys = new Set(input.nodes
+    .filter((node) => node.kind === "review_gate" || node.kind === "acceptance_gate")
+    .map((node) => node.nodeKey));
+  // Post-governance tasks are Outcome work, not prerequisites of the candidate.
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const node of input.nodes) {
+      if (!postPreparationKeys.has(node.nodeKey)
+        && node.dependencyNodeKeys.some((key) => postPreparationKeys.has(key))) {
+        postPreparationKeys.add(node.nodeKey);
+        changed = true;
+      }
+    }
+  }
+  const preparationNodes = input.nodes.filter((node) => !postPreparationKeys.has(node.nodeKey));
+  const preparationComplete = Boolean(input.graph?.activeGraphRevisionId)
+    && input.nodes.length > 0
+    && preparationNodes.every((node) => node.status === "completed");
   // Graph Engine node state is current authority; historical Runs remain inspectable.
   const hasBlockedWork = input.nodes.some((node) => node.status === "blocked" || node.status === "canceled");
   const submissionCurrent = Boolean(latestSubmission)
-    && latestSubmission?.targetRevisionId === input.activeTargetRevisionId;
-  const reviewApproved = Boolean(latestReview) && latestReview?.verdict === "approved";
+    && latestSubmission?.targetRevisionId === input.activeTargetRevisionId
+    && latestSubmission?.graphRevisionId === (input.graph?.activeGraphRevisionId ?? null);
+  const reviewApproved = Boolean(latestReview) && latestReview?.verdict === "approved"
+    && latestReview?.reviewerPrincipalType === "user"
+    && !(latestSubmission?.submittedByPrincipalType === "user"
+      && latestSubmission?.submittedByPrincipalId === latestReview?.reviewerPrincipalId)
+    && verificationBindingsCurrent;
   const storedAcceptance = latestSubmission
-    ? targetFacts.acceptances.find((row) => row.submissionId === latestSubmission.id) ?? null
+    ? targetFacts.acceptances.find((row) => row.submissionId === latestSubmission.id && row.reviewId === latestReview?.id)
+      ?? targetFacts.acceptances.find((row) => row.submissionId === latestSubmission.id) ?? null
     : null;
   const supersededAcceptance = targetFacts.acceptances.find((row) => row.submissionId !== latestSubmission?.id) ?? null;
   const acceptanceMatches = Boolean(storedAcceptance)
@@ -696,11 +758,53 @@ function deriveTargetProjection(input: ProjectionInput): TargetProjection {
   const unknownEffect = submissionActions.find((row) => row.status === "unknown_effect") ?? null;
   const unsettledAction = submissionActions.find((row) => row.status !== "executed" || !receiptByActionId.has(row.id)) ?? null;
   const effectsSettled = submissionActions.length === 0 || !unsettledAction;
-  const closureInputsValid = graphComplete
-    && submissionCurrent
+  const acceptanceInputsValid = preparationComplete && submissionCurrent
     && artifactsCurrent
     && criteriaVerified
-    && reviewApproved
+    && reviewApproved;
+  const currentAcceptance = acceptanceInputsValid && acceptanceMatches ? storedAcceptance : null;
+  const exactActions = submissionActions.filter((action) => action.expectedCommitRef === latestSubmission?.commitRef
+    && input.facts.actionApprovals.some((approval) => approval.actionRequestId === action.id
+      && approval.paramsHash === action.paramsHash && approval.approvedByPrincipalType === "user"));
+  const exactReceipts = exactActions.flatMap((action) => {
+    const receipt = receiptByActionId.get(action.id);
+    return action.status === "executed" && receipt?.providerMarker === action.providerMarker ? [receipt] : [];
+  });
+  const criterionProofs: import("@paperclipai/shared").CriterionProofStatusV1[] = input.criteria.flatMap((criterion) => {
+    const requirements = criterion.proofContract?.allOf ?? [{ id: "legacy", kind: "independent_verification" as const, phase: "pre_acceptance" as const, assertions: [] }];
+    return requirements.map((requirement) => {
+      let satisfied = false;
+      let failed = false;
+      let resourceIds: string[] = [];
+      if (requirement.phase === "pre_acceptance") {
+        const result = criterionResults.get(criterion.id);
+        satisfied = Boolean(result && result.verdict === "passed" && submittedVerificationIds.has(result.id) && proofMatchesCandidate(result));
+        failed = result?.verdict === "failed";
+        resourceIds = result ? [result.id] : [];
+      } else if (requirement.kind === "human_governance") {
+        const action = exactActions.find((row) => ["agent", "service"].includes(row.requestedByPrincipalType));
+        satisfied = Boolean(currentAcceptance && action && latestSubmission && ["agent", "service"].includes(latestSubmission.submittedByPrincipalType));
+        resourceIds = satisfied ? [latestReview!.id, currentAcceptance!.id, input.facts.actionApprovals.find((row) => row.actionRequestId === action!.id)!.id] : [];
+      } else if (requirement.kind === "pull_request_effect") {
+        satisfied = Boolean(currentAcceptance && exactReceipts.length === 1);
+        resourceIds = exactReceipts.map((row) => row.id);
+      } else {
+        const binding = bindings.filter((proof) => proof.targetRevisionId === input.activeTargetRevisionId
+          && proof.graphRevisionId === input.graph?.activeGraphRevisionId && proof.submissionId === latestSubmission?.id
+          && proof.criterionKey === criterion.id && proof.requirementId === requirement.id && proof.phase === "post_effect"
+          && criterion.proofContract && proof.contractHash === contractHash(criterion.proofContract)
+          && exactReceipts.some((receipt) => receipt.id === proof.effectReceiptId)).sort(byCreatedAtDesc)[0];
+        const result = binding ? targetFacts.verificationResults.find((row) => row.id === binding.verificationResultId) : null;
+        satisfied = Boolean(currentAcceptance && result?.verdict === "passed" && proofMatchesCandidate(result));
+        failed = result?.verdict === "failed";
+        resourceIds = binding ? [binding.verificationResultId, binding.integrationRunId, binding.effectReceiptId!] : [];
+      }
+      return { criterionId: criterion.id, requirementId: requirement.id, kind: requirement.kind, phase: requirement.phase, state: satisfied ? "satisfied" as const : failed ? "blocked" as const : "required" as const, resourceIds };
+    });
+  });
+  const allProofsSatisfied = criterionProofs.length > 0 && criterionProofs.every((proof) => proof.state === "satisfied");
+  const closureInputsValid = graphComplete && acceptanceInputsValid
+    && allProofsSatisfied
     && effectsSettled
     && !unknownEffect;
   const validAcceptance = closureInputsValid && acceptanceMatches ? storedAcceptance : null;
@@ -715,7 +819,7 @@ function deriveTargetProjection(input: ProjectionInput): TargetProjection {
     control(
       "latest_submission",
       !latestSubmission ? "required" : submissionCurrent ? "satisfied" : "invalidated",
-      !latestSubmission ? "A Submission is required." : submissionCurrent ? null : "The latest Submission targets a superseded TargetRevision.",
+      !latestSubmission ? "A Submission is required." : submissionCurrent ? null : "The latest Submission does not bind the current TargetRevision and GraphRevision.",
       latestSubmission?.id ?? null,
     ),
     control(
@@ -738,8 +842,8 @@ function deriveTargetProjection(input: ProjectionInput): TargetProjection {
     ),
     control(
       "acceptance_valid",
-      validAcceptance ? "satisfied" : storedAcceptance || supersededAcceptance ? "invalidated" : reviewApproved ? "required" : "not_applicable",
-      validAcceptance ? null : storedAcceptance || supersededAcceptance ? "A recorded Acceptance no longer matches the latest current closure facts." : reviewApproved ? "The outcome owner must accept the approved Submission." : null,
+      currentAcceptance ? "satisfied" : storedAcceptance || supersededAcceptance ? "invalidated" : reviewApproved ? "required" : "not_applicable",
+      currentAcceptance ? null : storedAcceptance || supersededAcceptance ? "A recorded Acceptance no longer matches the latest current candidate facts." : reviewApproved ? "The outcome owner must accept the approved Submission." : null,
       storedAcceptance?.id ?? supersededAcceptance?.id ?? null,
     ),
     control(
@@ -753,16 +857,18 @@ function deriveTargetProjection(input: ProjectionInput): TargetProjection {
   const canceled = input.persistedStatus === "canceled" || input.graph?.status === "canceled";
   const invalidated = controls.some((item) => item.state === "invalidated");
   const blocked = hasBlockedWork || failedResults.length > 0 || unknownEffect != null
+    || criterionProofs.some((proof) => proof.state === "blocked")
     || latestReview?.verdict === "rejected" || latestReview?.verdict === "changes_requested" || invalidated;
   let status: TargetReadModelV1["status"];
   if (canceled) status = "canceled";
   else if (validAcceptance) status = "accepted";
   else if (blocked) status = "blocked";
   else if (!input.graph?.activeGraphRevisionId) status = "draft";
-  else if (!graphComplete) {
+  else if (acceptanceInputsValid && !currentAcceptance) status = "awaiting_acceptance";
+  else if (!preparationComplete) {
     const started = input.nodes.some((node) => node.status === "running" || node.status === "completed") || input.runs.length > 0;
     status = started ? "active" : "ready";
-  } else if (reviewApproved) status = "awaiting_acceptance";
+  } else if (reviewApproved && !currentAcceptance) status = "awaiting_acceptance";
   else status = "verifying";
 
   const items: TargetAttentionItemV1[] = [];
@@ -814,7 +920,7 @@ function deriveTargetProjection(input: ProjectionInput): TargetProjection {
   for (const result of inconclusiveResults) {
     items.push({ id: `verification-inconclusive:${result.id}`, severity: "warning", kind: "verification_inconclusive", title: "A current acceptance criterion is inconclusive", detail: null, workNodeId: null, runId: null, resourceType: "verification_result", resourceId: result.id, createdAt: result.createdAt.toISOString() });
   }
-  if (graphComplete && !criteriaVerifiedBeforeSubmission && failedResults.length === 0 && inconclusiveResults.length === 0) {
+  if (preparationComplete && !criteriaVerifiedBeforeSubmission && failedResults.length === 0 && inconclusiveResults.length === 0) {
     items.push({ id: `missing-evidence:${input.activeTargetRevisionId}`, severity: "warning", kind: "missing_evidence", title: "Current acceptance criteria need evidence", detail: "Record passing VerificationResults for every criterion before submission.", workNodeId: null, runId: null, resourceType: "target", resourceId: input.targetId, createdAt: input.createdAt });
   }
   if (latestSubmission && submissionCurrent && artifactsCurrent && criteriaVerified && !latestReview) {
@@ -857,16 +963,17 @@ function deriveTargetProjection(input: ProjectionInput): TargetProjection {
     { id: "create_graph_revision", state: canceled || status === "accepted" ? "blocked" : "available", reason: canceled || status === "accepted" ? "Target is terminal." : null, resourceId: input.graph?.id ?? null },
     { id: "activate_graph_revision", state: draftGraphRevisionId ? "available" : input.graph?.activeGraphRevisionId ? "completed" : "blocked", reason: draftGraphRevisionId || input.graph?.activeGraphRevisionId ? null : "A draft GraphRevision is required.", resourceId: draftGraphRevisionId ?? input.graph?.activeGraphRevisionId ?? null },
     { id: "create_run", state: readyAgentNode ? "available" : graphComplete ? "completed" : "blocked", reason: readyAgentNode || graphComplete ? null : "No ready agent task is available.", resourceId: readyAgentNode?.id ?? null },
-    { id: "create_submission", state: latestSubmission && submissionCurrent && artifactsCurrent && criteriaVerified ? "completed" : graphComplete && criteriaVerifiedBeforeSubmission && latestArtifactRevisionIds.size > 0 ? "available" : "blocked", reason: graphComplete && criteriaVerifiedBeforeSubmission && latestArtifactRevisionIds.size > 0 ? null : "Complete work, current artifacts, and criterion verification first.", resourceId: latestSubmission?.id ?? null },
-    { id: "record_review", state: reviewApproved ? "completed" : latestSubmission && submissionCurrent && artifactsCurrent && criteriaVerified ? "available" : "blocked", reason: latestSubmission && submissionCurrent && artifactsCurrent && criteriaVerified ? null : "A current complete Submission is required.", resourceId: latestSubmission?.id ?? null },
-    { id: "accept_submission", state: validAcceptance ? "completed" : reviewApproved && closureInputsValid ? "available" : "blocked", reason: reviewApproved && closureInputsValid ? null : "A current approved Review and settled controls are required.", resourceId: latestReview?.id ?? null },
+    { id: "create_submission", state: latestSubmission && submissionCurrent && artifactsCurrent && criteriaVerified ? "completed" : preparationComplete && latestArtifactRevisionIds.size > 0 ? "available" : "blocked", reason: preparationComplete && latestArtifactRevisionIds.size > 0 ? null : "Complete preparation work and current artifacts first.", resourceId: latestSubmission?.id ?? null },
+    { id: "record_review", state: reviewApproved && submissionCurrent && artifactsCurrent ? "completed" : latestSubmission && submissionCurrent && artifactsCurrent ? "available" : "blocked", reason: latestSubmission && submissionCurrent && artifactsCurrent ? null : "A current Submission is required; unproven criteria remain visible for review.", resourceId: latestSubmission?.id ?? null },
+    { id: "accept_submission", state: currentAcceptance ? "completed" : acceptanceInputsValid ? "available" : "blocked", reason: acceptanceInputsValid ? null : "Current verified criteria and an approved Review are required; Acceptance precedes external effects.", resourceId: latestReview?.id ?? null },
     { id: "request_pull_request", state: action ? "completed" : latestSubmission && submissionCurrent ? "available" : "blocked", reason: latestSubmission && submissionCurrent ? null : "A current Submission is required.", resourceId: latestSubmission?.id ?? null },
     { id: "approve_action", state: action?.status === "pending_approval" ? "available" : action ? "completed" : "blocked", reason: action ? null : "An ActionRequest is required.", resourceId: action?.id ?? null },
-    { id: "execute_action", state: action?.status === "approved" ? "available" : action?.status === "executed" ? "completed" : "blocked", reason: action?.status === "approved" ? null : "An approved ActionRequest is required.", resourceId: action?.id ?? null },
+    { id: "execute_action", state: action?.status === "approved" && currentAcceptance ? "available" : action?.status === "executed" ? "completed" : "blocked", reason: action?.status === "approved" && currentAcceptance ? null : "An approved ActionRequest and current Acceptance are required.", resourceId: action?.id ?? null },
     { id: "reconcile_action", state: action?.status === "unknown_effect" ? "available" : action?.status === "executed" ? "completed" : "blocked", reason: action?.status === "unknown_effect" ? null : "Only an unknown effect can be reconciled.", resourceId: action?.id ?? null },
   ];
   const outcomeState: TargetOutcomeV1["state"] = canceled ? "canceled" : validAcceptance ? "accepted" : blocked ? "blocked" : status === "awaiting_acceptance" ? "awaiting_acceptance" : "open";
   return {
+    criterionProofs,
     status,
     outcome: {
       state: outcomeState,
@@ -915,7 +1022,7 @@ export function targetReadModelService(db: Db) {
         ...EMPTY_ASSURANCE_FACTS,
       };
     }
-    const [graphs, graphRevisions, nodes, runs, artifacts, claims, evidence, verificationResults, submissions, deliveryReviews, acceptances, integrationRuns, humanWorkResults, actionRequests, actionApprovals, effectReceipts, githubRepoBindings] = await Promise.all([
+    const [graphs, graphRevisions, nodes, runs, artifacts, claims, evidence, verificationResults, submissions, deliveryReviews, acceptances, integrationRuns, humanWorkResults, actionRequests, actionApprovals, effectReceipts, githubRepoBindings, criterionProofs] = await Promise.all([
       db.select().from(verrailWorkGraphs).where(and(
         eq(verrailWorkGraphs.workspaceId, workspaceId),
         inArray(verrailWorkGraphs.targetId, targetIds),
@@ -978,6 +1085,7 @@ export function targetReadModelService(db: Db) {
         inArray(verrailEffectReceipts.targetId, targetIds),
       )),
       db.select().from(verrailGithubRepoBindings).where(eq(verrailGithubRepoBindings.workspaceId, workspaceId)),
+      db.select().from(verrailCriterionProofs).where(and(eq(verrailCriterionProofs.workspaceId, workspaceId), inArray(verrailCriterionProofs.targetId, targetIds))),
     ]);
     const runIds = runs.map((run) => run.id);
     const integrationRunIds = integrationRuns.map((run) => run.id);
@@ -1004,7 +1112,7 @@ export function targetReadModelService(db: Db) {
         inArray(verrailIntegrationAttempts.integrationRunId, integrationRunIds),
       )),
     ]);
-    return { graphs, graphRevisions, nodes, runs, attempts, leases, events, artifacts, artifactRevisions, claims, evidence, verificationResults, submissions, deliveryReviews, acceptances, integrationRuns, integrationAttempts, humanWorkResults, actionRequests, actionApprovals, effectReceipts, githubRepoBindings };
+    return { graphs, graphRevisions, nodes, runs, attempts, leases, events, artifacts, artifactRevisions, claims, evidence, verificationResults, submissions, deliveryReviews, acceptances, integrationRuns, integrationAttempts, humanWorkResults, actionRequests, actionApprovals, effectReceipts, githubRepoBindings, criterionProofs };
   }
 
   function buildModel(
@@ -1217,6 +1325,7 @@ export function targetReadModelService(db: Db) {
           revisionNumber: activeRevision?.revisionNumber ?? null,
         } : null,
         outcome: projection.outcome,
+        criterionProofs: projection.criterionProofs,
         availableCommands: projection.availableCommands,
         stages,
         work,
@@ -1229,7 +1338,8 @@ export function targetReadModelService(db: Db) {
         acceptances: facts.acceptances
           .filter((item) => item.targetId === model.targetId)
           .sort((left, right) => byCreatedAtDesc(left, right))
-          .map((acceptance) => mapAcceptance(acceptance, latestSubmissionId, model.activeTargetRevisionId)),
+          .map((acceptance) => mapAcceptance(acceptance, latestSubmissionId, model.activeTargetRevisionId,
+            projection.outcome.controls.find((control) => control.key === "acceptance_valid" && control.state === "satisfied")?.resourceId ?? null)),
         artifacts: facts.artifacts
           .filter((item) => item.targetId === model.targetId)
           .sort((left, right) => byCreatedAtAsc(left, right))

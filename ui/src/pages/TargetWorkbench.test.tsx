@@ -675,6 +675,35 @@ describe("TargetWorkbench", () => {
     )).toBe(false);
   });
 
+  it("creates separate normal IntegrationTasks for all four compound criteria", async () => {
+    const model = targetModel();
+    const criteria = [
+      { id: "feishu", title: "Feishu intake", proofContract: { schemaVersion: 1, allOf: [{ id: "intake", kind: "independent_verification", phase: "pre_acceptance", assertions: ["intake is bound"] }] } },
+      { id: "execution", title: "Codex and CI", proofContract: { schemaVersion: 1, allOf: [{ id: "ci", kind: "independent_verification", phase: "pre_acceptance", assertions: ["execution passes", "independent CI passes"] }] } },
+      { id: "governance", title: "Human decisions", proofContract: { schemaVersion: 1, allOf: [{ id: "human", kind: "human_governance", phase: "post_governance" }] } },
+      { id: "effect", title: "PR and recovery", proofContract: { schemaVersion: 1, allOf: [{ id: "pr", kind: "pull_request_effect", phase: "post_effect" }, { id: "recovery", kind: "independent_verification", phase: "post_effect", assertions: ["recovery passes", "secrets are not persisted"] }] } },
+    ];
+    get.mockResolvedValue({ ...model, definition: { ...model.definition, acceptanceCriteria: criteria } });
+    createGraphRevision.mockResolvedValue({ graphRevisionId: "new-graph" });
+    await renderWorkbench();
+    const completion = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Delivery task completion"]');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")!.set!.call(completion, "Produce the governed candidate");
+      completion!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const create = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("Create revision"));
+    await act(async () => create?.click());
+    await flushReact();
+    const input = createGraphRevision.mock.calls[0][2];
+    expect(input.nodes).toHaveLength(6);
+    expect(input.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ nodeKey: "verify-0-intake", dependencyNodeKeys: ["deliver"] }),
+      expect.objectContaining({ nodeKey: "verify-1-ci", dependencyNodeKeys: ["deliver"] }),
+      expect.objectContaining({ nodeKey: "verify-3-recovery", dependencyNodeKeys: ["accept"], completionDefinition: JSON.stringify({ criterionKey: "effect", requirementId: "recovery", assertions: ["recovery passes", "secrets are not persisted"] }) }),
+      expect.objectContaining({ nodeKey: "review", dependencyNodeKeys: ["verify-0-intake", "verify-1-ci"] }),
+    ]));
+  });
+
   it("creates and activates a graph revision, then starts its bound Agent Run", async () => {
     getWorkspace.mockResolvedValue({
       ...targetWorkspace(),

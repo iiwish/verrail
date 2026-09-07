@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import {
   agents,
+  agentWakeupRequests,
   heartbeatRuns,
   verrailAgentDefinitions,
   verrailAgentVersions,
@@ -14,8 +15,10 @@ import {
   type Db,
 } from "@paperclipai/db";
 import type { ReportRunEventResponseV1, RunArtifactInputV1 } from "@paperclipai/shared";
-import { NativeRunArtifactError, nativeRunArtifactDirectory } from "./verrail-run-artifacts.js";
+import { nativeRunArtifactDirectory } from "./verrail-run-artifacts.js";
+import { NATIVE_OUTPUT_CONTEXT_KEY, validateNativeOutputReceipt, type NativeOutputReceipt } from "./verrail-native-output.js";
 import type { VerrailDomainApiClient } from "./verrail-domain-api-client.js";
+import { NATIVE_SOURCE_CONTEXT_KEY, validateNativeSourceObservation, type NativeSourceObservation } from "./verrail-native-source.js";
 
 const EXECUTOR_PRINCIPAL_ID = "verrail-host-runner";
 const ACTIVE_HEARTBEAT_STATUSES = new Set(["queued", "running", "scheduled_retry"]);
@@ -70,6 +73,10 @@ export interface NativeHeartbeatRun {
   agentId: string;
   status: string;
   contextSnapshot: Record<string, unknown> | null;
+  /** Populated only by the store after independently joining the trusted wakeup. */
+  nativeSourceObservation?: NativeSourceObservation | null;
+  nativeOutputReceipt?: NativeOutputReceipt | null;
+  nativeOutputReceiptInvalid?: boolean;
   usageJson: Record<string, unknown> | null;
   logStore: string | null;
   logRef: string | null;
@@ -186,7 +193,7 @@ function validateCandidate(candidate: NativeRunLeaseCandidate, executorPrincipal
   return null;
 }
 
-function executionFacts(run: NativeHeartbeatRun) {
+function executionFacts(run: NativeHeartbeatRun, candidate: NativeRunLeaseCandidate) {
   return {
     heartbeatRunId: run.id,
     heartbeatStatus: run.status,
@@ -199,6 +206,12 @@ function executionFacts(run: NativeHeartbeatRun) {
     exitCode: run.exitCode,
     errorCode: run.errorCode,
     environmentManifest: run.contextSnapshot?.verrailEnvironmentManifest ?? null,
+    outputReceipt: null,
+    sourceObservation: validateNativeSourceObservation(run.nativeSourceObservation, {
+      workspaceId: candidate.workspaceId, heartbeatRunId: run.id, agentId: candidate.compatibilityAgentId ?? "",
+      runId: candidate.runId, attemptId: candidate.runAttemptId,
+      deploymentRevisionId: candidate.deploymentRevisionId, agentVersionId: candidate.agentVersionId,
+    }),
   };
 }
 
@@ -307,12 +320,39 @@ export function createDrizzleVerrailRunExecutorStore(db: Db): VerrailRunExecutor
           exitCode: heartbeatRuns.exitCode,
           errorCode: heartbeatRuns.errorCode,
           error: heartbeatRuns.error,
+          sourceWorkspaceId: verrailRunAttempts.workspaceId,
+          sourceRunId: verrailRunAttempts.runId,
+          sourceDeploymentRevisionId: verrailRunAttempts.deploymentRevisionId,
+          sourceAgentVersionId: verrailRunAttempts.agentVersionId,
         })
         .from(heartbeatRuns)
-        .where(sql`${heartbeatRuns.contextSnapshot} ->> 'verrailRunAttemptId' = ${runAttemptId}`)
+        .innerJoin(agentWakeupRequests, and(
+          eq(agentWakeupRequests.id, heartbeatRuns.wakeupRequestId), eq(agentWakeupRequests.runId, heartbeatRuns.id),
+          eq(agentWakeupRequests.companyId, heartbeatRuns.companyId), eq(agentWakeupRequests.agentId, heartbeatRuns.agentId),
+          eq(agentWakeupRequests.requestedByActorType, "system"), eq(agentWakeupRequests.requestedByActorId, EXECUTOR_PRINCIPAL_ID),
+          eq(agentWakeupRequests.idempotencyKey, `verrail-run-attempt:${runAttemptId}`),
+        ))
+        .innerJoin(verrailRunAttempts, and(eq(verrailRunAttempts.id, runAttemptId), eq(verrailRunAttempts.workspaceId, heartbeatRuns.companyId), eq(verrailRunAttempts.executorPrincipalId, EXECUTOR_PRINCIPAL_ID), eq(verrailRunAttempts.runtimeProfile, "host_trusted")))
+        .innerJoin(verrailRuns, and(eq(verrailRuns.id, verrailRunAttempts.runId), eq(verrailRuns.workspaceId, verrailRunAttempts.workspaceId), eq(verrailRuns.deploymentRevisionId, verrailRunAttempts.deploymentRevisionId), eq(verrailRuns.agentVersionId, verrailRunAttempts.agentVersionId)))
+        .innerJoin(verrailDeploymentRevisions, and(eq(verrailDeploymentRevisions.id, verrailRunAttempts.deploymentRevisionId), eq(verrailDeploymentRevisions.workspaceId, verrailRunAttempts.workspaceId), eq(verrailDeploymentRevisions.agentVersionId, verrailRunAttempts.agentVersionId)))
+        .innerJoin(verrailAgentVersions, and(eq(verrailAgentVersions.id, verrailRunAttempts.agentVersionId), eq(verrailAgentVersions.workspaceId, verrailRunAttempts.workspaceId)))
+        .innerJoin(verrailAgentDefinitions, and(eq(verrailAgentDefinitions.id, verrailAgentVersions.agentDefinitionId), eq(verrailAgentDefinitions.workspaceId, verrailRunAttempts.workspaceId), eq(verrailAgentDefinitions.compatibilityAgentId, heartbeatRuns.agentId)))
+        .where(and(sql`${heartbeatRuns.contextSnapshot} ->> 'verrailRunAttemptId' = ${runAttemptId}`, sql`${heartbeatRuns.contextSnapshot} ->> 'verrailRunId' = ${verrailRuns.id}::text`))
         .orderBy(desc(heartbeatRuns.createdAt), desc(heartbeatRuns.id))
         .limit(1)
-        .then((rows) => rows[0] ?? null);
+        .then((rows) => {
+          const row = rows[0];
+          if (!row) return null;
+          const { sourceWorkspaceId, sourceRunId, sourceDeploymentRevisionId, sourceAgentVersionId, ...run } = row;
+          const identity = {
+            workspaceId: sourceWorkspaceId, heartbeatRunId: run.id, agentId: run.agentId, runId: sourceRunId,
+            attemptId: runAttemptId, deploymentRevisionId: sourceDeploymentRevisionId, agentVersionId: sourceAgentVersionId,
+          };
+          const rawOutput = run.contextSnapshot?.[NATIVE_OUTPUT_CONTEXT_KEY];
+          const nativeOutputReceipt = validateNativeOutputReceipt(rawOutput, identity);
+          return { ...run, nativeSourceObservation: validateNativeSourceObservation(run.contextSnapshot?.[NATIVE_SOURCE_CONTEXT_KEY], identity),
+            nativeOutputReceipt, nativeOutputReceiptInvalid: rawOutput !== undefined && (!nativeOutputReceipt || !nativeOutputReceipt.executionFacts) };
+        });
     },
   };
 }
@@ -321,7 +361,6 @@ export function createVerrailRunExecutor(input: {
   store: VerrailRunExecutorStore;
   domainApi: Pick<VerrailDomainApiClient, "reportRunEvent">;
   heartbeat: NativeHeartbeatExecutor;
-  collectArtifacts?: (candidate: NativeRunLeaseCandidate, heartbeatRun: NativeHeartbeatRun) => Promise<RunArtifactInputV1[]>;
   executorPrincipalId?: string;
   leaseExtensionSeconds?: number;
   onError?: (error: unknown, candidate: NativeRunLeaseCandidate) => void;
@@ -340,6 +379,7 @@ export function createVerrailRunExecutor(input: {
       payload: Record<string, unknown> = {},
       extendLeaseSeconds?: number,
       artifacts?: RunArtifactInputV1[],
+      emittedAt?: string,
     ): Promise<ReportRunEventResponseV1> => {
       const nextCursor = cursor + 1;
       const response = await input.domainApi.reportRunEvent({
@@ -354,7 +394,7 @@ export function createVerrailRunExecutor(input: {
           fencingToken: candidate.fencingToken,
           cursor: nextCursor,
           eventType,
-          emittedAt: new Date(candidate.attemptUpdatedAt.getTime() + nextCursor).toISOString(),
+          emittedAt: emittedAt ?? new Date(candidate.attemptUpdatedAt.getTime() + nextCursor).toISOString(),
           payload,
           ...(artifacts?.length ? { artifacts } : {}),
           ...(extendLeaseSeconds ? { extendLeaseSeconds } : {}),
@@ -377,10 +417,10 @@ export function createVerrailRunExecutor(input: {
         heartbeatRun = await input.store.findHeartbeatRun(candidate.runAttemptId);
       }
       if (attemptStatus === "cancel_requested") {
-        await report("cancel_acknowledged", heartbeatRun ? executionFacts(heartbeatRun) : {});
+        await report("cancel_acknowledged", heartbeatRun ? executionFacts(heartbeatRun, candidate) : {});
       }
       if (!heartbeatRun || TERMINAL_HEARTBEAT_STATUSES.has(heartbeatRun.status)) {
-        await report("terminated", heartbeatRun ? executionFacts(heartbeatRun) : { heartbeatRunId: null });
+        await report("terminated", heartbeatRun ? executionFacts(heartbeatRun, candidate) : { heartbeatRunId: null });
         return "terminated" as const;
       }
       return "canceling" as const;
@@ -427,26 +467,34 @@ export function createVerrailRunExecutor(input: {
         });
         return "failed" as const;
       }
+      // invoke returns a raw heartbeat row, never the store's trusted provenance projection.
+      if (TERMINAL_HEARTBEAT_STATUSES.has(heartbeatRun.status)) {
+        heartbeatRun = await input.store.findHeartbeatRun(candidate.runAttemptId);
+        if (!heartbeatRun) throw new Error("NATIVE_OUTPUT_TRUSTED_RUN_MISSING");
+      }
     }
 
     if (heartbeatRun.status === "succeeded") {
       if (attemptStatus === "pending") {
         await report("started", { heartbeatRunId: heartbeatRun.id, agentId: heartbeatRun.agentId });
       }
-      let artifacts: RunArtifactInputV1[] | undefined;
-      try {
-        artifacts = await input.collectArtifacts?.(candidate, heartbeatRun);
-      } catch (error) {
-        if (!(error instanceof NativeRunArtifactError)) throw error;
-        await report("failed", { ...executionFacts(heartbeatRun), errorCode: "NATIVE_ARTIFACT_INVALID", errorMessage: error.message });
+      const receipt = validateNativeOutputReceipt(heartbeatRun.nativeOutputReceipt, {
+        workspaceId: candidate.workspaceId, heartbeatRunId: heartbeatRun.id, agentId: candidate.compatibilityAgentId ?? "",
+        runId: candidate.runId, attemptId: candidate.runAttemptId, deploymentRevisionId: candidate.deploymentRevisionId, agentVersionId: candidate.agentVersionId,
+      });
+      if (heartbeatRun.nativeOutputReceiptInvalid || (heartbeatRun.nativeOutputReceipt && (!receipt || !receipt.executionFacts))) {
+        await report("failed", { ...executionFacts(heartbeatRun, candidate), errorCode: "NATIVE_OUTPUT_RECEIPT_INVALID" });
         return "failed" as const;
       }
-      await report("succeeded", executionFacts(heartbeatRun), undefined, artifacts);
+      const artifacts = receipt?.artifacts.map(({ title, kind, contentHash, contentRef }) => ({ title, kind, contentHash, contentRef }));
+      await report("succeeded", receipt?.executionFacts
+        ? { ...receipt.executionFacts, sourceObservation: receipt.beforeSource, outputReceipt: receipt }
+        : executionFacts(heartbeatRun, candidate), undefined, artifacts, receipt?.finalizedAt);
       return "succeeded" as const;
     }
     if (TERMINAL_HEARTBEAT_STATUSES.has(heartbeatRun.status)) {
       await report("failed", {
-        ...executionFacts(heartbeatRun),
+        ...executionFacts(heartbeatRun, candidate),
         errorCode: heartbeatRun.errorCode ?? "HEARTBEAT_EXECUTION_FAILED",
         errorMessage: heartbeatRun.error ?? `Heartbeat run ended with status ${heartbeatRun.status}.`,
       });

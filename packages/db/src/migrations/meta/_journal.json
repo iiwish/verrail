@@ -1723,6 +1723,41 @@
       "when": 1788515812032,
       "tag": "0247_happy_bug",
       "breakpoints": true
+    },
+    {
+      "idx": 248,
+      "version": "7",
+      "when": 1788623414717,
+      "tag": "0248_broad_naoko",
+      "breakpoints": true
+    },
+    {
+      "idx": 249,
+      "version": "7",
+      "when": 1788624728324,
+      "tag": "0249_messy_hammerhead",
+      "breakpoints": true
+    },
+    {
+      "idx": 250,
+      "version": "7",
+      "when": 1788652605103,
+      "tag": "0250_keen_gravity",
+      "breakpoints": true
+    },
+    {
+      "idx": 251,
+      "version": "7",
+      "when": 1788653604218,
+      "tag": "0251_cold_scrambler",
+      "breakpoints": true
+    },
+    {
+      "idx": 252,
+      "version": "7",
+      "when": 1788654278483,
+      "tag": "0252_last_zeigeist",
+      "breakpoints": true
     }
   ]
 }

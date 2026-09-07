@@ -1,9 +1,17 @@
 import { z } from "zod";
+import { criterionProofContextSchema } from "./criterion-proof.js";
 import { targetIdempotencyKeySchema } from "./target.js";
 
 const sha256Hex = z.string().regex(/^[0-9a-f]{64}$/, "Must be a lowercase 64-character sha256 hex digest");
 
 export const connectorIdempotencyKeySchema = targetIdempotencyKeySchema;
+
+export const collectGithubCiObservationSchema = z.object({
+  runId: z.string().max(16).regex(/^[1-9][0-9]*$/).refine((value) => Number.isSafeInteger(Number(value)), "Must be a safe positive run ID"),
+  runAttempt: z.number().int().positive().max(2_147_483_647),
+}).strict();
+
+export type CollectGithubCiObservationInput = z.infer<typeof collectGithubCiObservationSchema>;
 
 export const connectorProviderSchema = z.literal("github");
 export const connectorActionTypeSchema = z.literal("create_pull_request");
@@ -54,6 +62,7 @@ export const recordIntegrationRunSchema = z.object({
   objectHash: sha256Hex,
   reference: z.string().trim().min(1).max(500),
   providerReceipt: credentialFreeRecordSchema,
+  proofContext: criterionProofContextSchema.optional(),
 }).strict();
 
 export const recordHumanWorkResultSchema = z.object({

@@ -726,6 +726,16 @@
     }
   },
   "targets": {
+    "criterionProof": {
+      "revise": "Revise proof contract",
+      "revisionWarning": "Every proof remains mandatory. Saving creates a TargetRevision and requires a new work graph; existing decisions stay in history.",
+      "invalid": "Use unique proof requirements and complete assertions, with at most one independent verification per phase.",
+      "saveError": "Proof revision failed. Refresh the target and try again.",
+      "kind": "Proof source", "phase": "Proof phase", "assertions": "Required assertions", "remove": "Remove proof requirement", "add": "Add proof requirement", "saveRevision": "Create revision",
+      "kinds": { "independent_verification": "Independent verification", "human_governance": "Human decisions", "pull_request_effect": "Pull request receipt" },
+      "phases": { "pre_acceptance": "Before acceptance", "post_governance": "After human decisions", "post_effect": "After external effect" },
+      "states": { "satisfied": "Proven", "required": "Proof required", "blocked": "Failed" }
+    },
     "title": "Targets",
     "target": "Target",
     "section": "Target section",
@@ -1038,7 +1048,8 @@
       },
       "invalidReasons": {
         "superseded_submission": "Superseded by a newer submission",
-        "target_revision_changed": "Target revision changed"
+        "target_revision_changed": "Target revision changed",
+        "candidate_changed": "Candidate bindings changed or verification is incomplete"
       }
     }
   },

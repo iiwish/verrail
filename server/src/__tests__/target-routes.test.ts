@@ -66,6 +66,7 @@ async function createApp(domainApi: any, actorOverride?: Record<string, unknown>
 
 describe("native Target routes", () => {
   const domainApi = {
+    reviseTargetProof: vi.fn(),
     createTarget: vi.fn(),
     createGraphRevision: vi.fn(),
     activateGraphRevision: vi.fn(),
@@ -88,6 +89,21 @@ describe("native Target routes", () => {
     domainApi.createRun.mockResolvedValue({ schemaVersion: 1, runId: "5de2d166-850e-4c74-ab63-beb86129b52a", targetId: TARGET_ID, targetRevisionId: REVISION_ID, graphRevisionId: GRAPH_REVISION_ID, workNodeId: NODE_ID, status: "queued", replayed: false });
     domainApi.createRunAttempt.mockResolvedValue({ schemaVersion: 1, runId: "5de2d166-850e-4c74-ab63-beb86129b52a", runAttemptId: "6de2d166-850e-4c74-ab63-beb86129b52a", leaseId: "7de2d166-850e-4c74-ab63-beb86129b52a", attemptNumber: 1, fencingToken: 1, status: "pending", leaseStatus: "offered", expiresAt: "2026-09-01T08:02:00Z", replayed: false });
     domainApi.requestRunCancellation.mockResolvedValue({ schemaVersion: 1, runId: "5de2d166-850e-4c74-ab63-beb86129b52a", runAttemptId: "6de2d166-850e-4c74-ab63-beb86129b52a", runStatus: "cancel_requested", attemptStatus: "cancel_requested", replayed: false });
+  });
+
+  it("proxies a human expected-version proof revision without accepting identity fields", async () => {
+    const app = await createApp(domainApi);
+    const input = { expectedTargetRevisionId: REVISION_ID, criteria: [{ criterionId: "criterion-1", proofContract: { schemaVersion: 1, allOf: [{ id: "pre", kind: "independent_verification", phase: "pre_acceptance", assertions: ["CI"] }] } }] };
+    domainApi.reviseTargetProof.mockResolvedValue({ schemaVersion: 1, targetId: TARGET_ID, targetRevisionId: GRAPH_ID, revisionNumber: 2, replayed: false });
+    await request(app).post(`/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}/revisions`).set("Idempotency-Key", "revision-command-1").send(input).expect(201);
+    expect(domainApi.reviseTargetProof).toHaveBeenCalledWith({ workspaceId: WORKSPACE_ID, targetId: TARGET_ID, principalType: "user", principalId: "user-1", idempotencyKey: "revision-command-1", input });
+    await request(app).post(`/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}/revisions`).set("Idempotency-Key", "revision-command-1").send({ ...input, principalId: "other-user" }).expect(400);
+  });
+
+  it("rejects nonhuman proof revision callers before dispatch", async () => {
+    const app = await createApp(domainApi, { type: "agent", agentId: "agent-1", companyId: WORKSPACE_ID });
+    await request(app).post(`/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}/revisions`).set("Idempotency-Key", "revision-command-1").send({ expectedTargetRevisionId: REVISION_ID, criteria: [{ criterionId: "criterion-1", proofContract: { schemaVersion: 1, allOf: [{ id: "effect", kind: "pull_request_effect", phase: "post_effect" }] } }] }).expect(403);
+    expect(domainApi.reviseTargetProof).not.toHaveBeenCalled();
   });
 
   it("lists scoped outbox failures and proxies an explicit idempotent retry", async () => {

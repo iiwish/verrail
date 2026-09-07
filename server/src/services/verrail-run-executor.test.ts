@@ -7,7 +7,12 @@ import {
   type VerrailRunExecutorStore,
 } from "./verrail-run-executor.js";
 import { resolveHeartbeatTaskMarkdown } from "./heartbeat.js";
-import { NativeRunArtifactError } from "./verrail-run-artifacts.js";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+import { createHash } from "node:crypto";
+import { captureNativeOutput, finalizeNativeOutputReceipt } from "./verrail-native-output.js";
+import { NATIVE_SOURCE_CONTEXT_KEY, unavailableNativeSource } from "./verrail-native-source.js";
 
 function candidate(overrides: Partial<NativeRunLeaseCandidate> = {}): NativeRunLeaseCandidate {
   return {
@@ -74,7 +79,7 @@ function heartbeatRun(overrides: Partial<NativeHeartbeatRun> = {}): NativeHeartb
   };
 }
 
-function harness(input: { lease?: NativeRunLeaseCandidate; heartbeat?: NativeHeartbeatRun | null; collectArtifacts?: Parameters<typeof createVerrailRunExecutor>[0]["collectArtifacts"] } = {}) {
+function harness(input: { lease?: NativeRunLeaseCandidate; heartbeat?: NativeHeartbeatRun | null; collectArtifacts?: (...args: unknown[]) => Promise<unknown[]> } = {}) {
   let lease = input.lease ?? candidate();
   let heartbeat = input.heartbeat ?? null;
   const store: VerrailRunExecutorStore = {
@@ -126,31 +131,71 @@ function harness(input: { lease?: NativeRunLeaseCandidate; heartbeat?: NativeHea
     reports,
     domainApi,
     heartbeatExecutor,
-    runner: createVerrailRunExecutor({ store, domainApi, heartbeat: heartbeatExecutor, collectArtifacts: input.collectArtifacts }),
+    runner: createVerrailRunExecutor({ store, domainApi, heartbeat: heartbeatExecutor, ...{ collectArtifacts: input.collectArtifacts } }),
   };
 }
 
 describe("verrail native run executor", () => {
-  it("attaches collected outputs only to the succeeded service event", async () => {
-    const artifacts = [{ title: "Candidate", kind: "report" as const, contentHash: "a".repeat(64), contentRef: "storage:workspace-1/verrail/run-artifacts/sha256/" + "a".repeat(64) }];
-    const collectArtifacts = vi.fn().mockResolvedValue(artifacts);
-    const test = harness({ heartbeat: heartbeatRun({ status: "succeeded" }), collectArtifacts });
-    await expect(test.runner.tick()).resolves.toMatchObject({ succeeded: 1 });
-    expect(collectArtifacts).toHaveBeenCalledOnce();
-    expect(test.domainApi.reportRunEvent).toHaveBeenLastCalledWith(expect.objectContaining({ principalType: "service", principalId: "verrail-host-runner", input: expect.objectContaining({ eventType: "succeeded", artifacts }) }));
+  it.each(["succeeded", "failed"])("projects only independently correlated persisted source into %s facts", async (status) => {
+    const source = unavailableNativeSource({ workspaceId: "workspace-1", heartbeatRunId: "heartbeat-1", agentId: "agent-1", runId: "run-1", attemptId: "attempt-1", deploymentRevisionId: "deployment-revision-1", agentVersionId: "version-1" }, "not_git");
+    const test = harness({ heartbeat: heartbeatRun({ status, nativeSourceObservation: source }) });
+    await test.runner.tick();
+    expect(test.reports.at(-1)?.payload?.sourceObservation).toEqual(source);
   });
-  it("does not declare success when output collection fails", async () => {
-    const collectArtifacts = vi.fn().mockRejectedValue(new Error("NATIVE_ARTIFACT_INVALID"));
-    const test = harness({ heartbeat: heartbeatRun({ status: "succeeded" }), collectArtifacts });
-    await expect(test.runner.tick()).resolves.toMatchObject({ succeeded: 0, errors: 1 });
-    expect(test.reports.some((event) => event.eventType === "succeeded")).toBe(false);
+  it("does not trust even structurally valid caller context or foreign stored source", async () => {
+    const source = unavailableNativeSource({ workspaceId: "workspace-1", heartbeatRunId: "heartbeat-1", agentId: "agent-1", runId: "foreign-run", attemptId: "attempt-1", deploymentRevisionId: "deployment-revision-1", agentVersionId: "version-1" }, "not_git");
+    const test = harness({ heartbeat: heartbeatRun({ status: "succeeded", nativeSourceObservation: source, contextSnapshot: { [NATIVE_SOURCE_CONTEXT_KEY]: { ...source, identity: { ...source.identity, runId: "run-1" } } } }) });
+    await test.runner.tick();
+    expect(test.reports.at(-1)?.payload?.sourceObservation).toBeNull();
   });
-  it("records an observable native failure for invalid output without leaking file contents", async () => {
-    const collectArtifacts = vi.fn().mockRejectedValue(new NativeRunArtifactError(new Error("private contents")));
+  it("never backfills source for historical terminal runs", async () => {
+    const test = harness({ heartbeat: heartbeatRun({ status: "succeeded" }) });
+    await test.runner.tick();
+    expect(test.reports.at(-1)?.payload?.sourceObservation).toBeNull();
+  });
+  it("does not recollect mutable files for a historical terminal run with no receipt", async () => {
+    const collectArtifacts = vi.fn().mockResolvedValue([]);
     const test = harness({ heartbeat: heartbeatRun({ status: "succeeded" }), collectArtifacts });
+    await test.runner.tick();
+    expect(collectArtifacts).not.toHaveBeenCalled();
+    expect(test.reports.at(-1)?.payload?.outputReceipt).toBeNull();
+  });
+  it("records invalid stored receipt as native failure without fallback or private data", async () => {
+    const collectArtifacts = vi.fn().mockRejectedValue(new Error("private contents"));
+    const test = harness({ heartbeat: heartbeatRun({ status: "succeeded", nativeOutputReceiptInvalid: true }), collectArtifacts });
     await expect(test.runner.tick()).resolves.toMatchObject({ failed: 1, succeeded: 0, errors: 0 });
-    expect(test.reports.at(-1)).toMatchObject({ eventType: "failed", payload: { errorCode: "NATIVE_ARTIFACT_INVALID" } });
+    expect(collectArtifacts).not.toHaveBeenCalled();
+    expect(test.reports.at(-1)).toMatchObject({ eventType: "failed", payload: { errorCode: "NATIVE_OUTPUT_RECEIPT_INVALID" } });
     expect(JSON.stringify(test.reports)).not.toContain("private contents");
+  });
+  it("replays byte-identical full success commands after lost response, workspace deletion and executor restart", async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "native-replay-"));
+    const lease = candidate({ workspaceId: "86679997-3f3a-4477-a2fa-d4da812140ae", compatibilityAgentWorkspaceId: "86679997-3f3a-4477-a2fa-d4da812140ae", runAttemptId: "1e82be4a-a466-4c28-bee6-eb9609b68401", leaseStatus: "active", attemptStatus: "running", lastEventCursor: 2 });
+    const identity = { workspaceId: lease.workspaceId, heartbeatRunId: "heartbeat-1", agentId: "agent-1", runId: lease.runId, attemptId: lease.runAttemptId, deploymentRevisionId: lease.deploymentRevisionId, agentVersionId: lease.agentVersionId };
+    try {
+      const output = path.join(cwd, ".verrail/run-artifacts", lease.runAttemptId);
+      await mkdir(output, { recursive: true });
+      await writeFile(path.join(output, "report.txt"), "frozen bytes");
+      await writeFile(path.join(output, "manifest.json"), JSON.stringify({ schemaVersion: 1, artifacts: [{ path: "report.txt", title: "Report", kind: "report" }] }));
+      const receipt = finalizeNativeOutputReceipt(await captureNativeOutput({ cwd, identity,
+        beforeSource: unavailableNativeSource(identity, "not_git"), revalidate: async () => {},
+        storage: { putFile: async (input) => { const sha256 = createHash("sha256").update(input.body).digest("hex"); return { sha256, byteSize: input.body.length, objectKey: `${identity.workspaceId}/verrail/run-artifacts/sha256/${sha256}` } as any; } },
+      }), { heartbeatRunId: identity.heartbeatRunId, heartbeatStatus: "succeeded", agentId: identity.agentId,
+        logStore: "local_file", logRef: "actual.log", logSha256: "a".repeat(64), logBytes: 123, usage: { inputTokens: 42, costUsd: 0.02 }, exitCode: 0, errorCode: null, environmentManifest: null });
+      const heartbeat = heartbeatRun({ status: "succeeded", nativeOutputReceipt: receipt });
+      const test = harness({ lease, heartbeat });
+      test.domainApi.reportRunEvent.mockRejectedValueOnce(new Error("ambiguous response"));
+      await expect(test.runner.tick()).resolves.toMatchObject({ errors: 1 });
+      const first = JSON.stringify(test.domainApi.reportRunEvent.mock.calls[0]?.[0]);
+      await rm(cwd, { recursive: true, force: true });
+      heartbeat.usageJson = { inputTokens: 999 };
+      heartbeat.logRef = "mutated.log";
+      heartbeat.contextSnapshot = { verrailEnvironmentManifest: { forged: true } };
+      const restarted = harness({ lease: { ...lease, attemptUpdatedAt: new Date() }, heartbeat });
+      await expect(restarted.runner.tick()).resolves.toMatchObject({ succeeded: 1 });
+      expect(JSON.stringify(restarted.domainApi.reportRunEvent.mock.calls[0]?.[0])).toBe(first);
+      expect(restarted.domainApi.reportRunEvent).toHaveBeenCalledWith(expect.objectContaining({ input: expect.objectContaining({ artifacts: [expect.objectContaining({ contentHash: receipt.artifacts[0]!.contentHash })], payload: expect.objectContaining({ usage: { inputTokens: 42, costUsd: 0.02 }, logRef: "actual.log" }) }) }));
+    } finally { await rm(cwd, { recursive: true, force: true }); }
   });
   it("claims before invoking and starts the correlated heartbeat run", async () => {
     const test = harness();
@@ -169,6 +214,15 @@ describe("verrail native run executor", () => {
         verrailTaskMarkdown: expect.stringContaining("Deliver the production change."),
       }),
     }));
+  });
+  it("reloads a fast terminal invocation through the trusted store before reporting", async () => {
+    const test = harness();
+    test.heartbeatExecutor.invoke.mockResolvedValueOnce(heartbeatRun({ status: "succeeded" }));
+    (test.store.findHeartbeatRun as any).mockResolvedValueOnce(null).mockResolvedValueOnce(heartbeatRun({ status: "succeeded", nativeOutputReceiptInvalid: true }));
+    await test.runner.tick();
+    expect(test.store.findHeartbeatRun).toHaveBeenCalledTimes(2);
+    expect(test.reports.some((event) => event.eventType === "succeeded")).toBe(false);
+    expect(test.reports.at(-1)).toMatchObject({ eventType: "failed", payload: { errorCode: "NATIVE_OUTPUT_RECEIPT_INVALID" } });
   });
 
   it("isolates different Runs on the same node while retaining the session across attempts", async () => {

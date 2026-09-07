@@ -495,14 +495,10 @@ func TestAssuranceContractsIntegration(t *testing.T) {
 	})
 
 	t.Run("verification rejects evidence outside the workspace", func(t *testing.T) {
-		var otherWorkspace string
-		err := pool.QueryRow(ctx, `select id from companies where status='active' and id <> $1 order by created_at limit 1`, harness.workspaceID).Scan(&otherWorkspace)
-		if err != nil {
-			otherWorkspace = mustNewUUID(t)
-			_, err = pool.Exec(ctx, `insert into companies (id, name, issue_prefix) values ($1, 'assurance cross workspace test', $2)`, otherWorkspace, "AXT"+mustNewUUID(t)[:8])
-			require.NoError(t, err)
-			harness.extraWorkspaceID = &otherWorkspace
-		}
+		otherWorkspace := mustNewUUID(t)
+		_, err := pool.Exec(ctx, `insert into companies (id, name, issue_prefix) values ($1, 'assurance cross workspace test', $2)`, otherWorkspace, "AXT"+mustNewUUID(t)[:8])
+		require.NoError(t, err)
+		harness.extraWorkspaceID = &otherWorkspace
 		foreignEvidence := mustNewUUID(t)
 		harness.aggregateIDs = append(harness.aggregateIDs, foreignEvidence)
 		_, err = pool.Exec(ctx, `

@@ -328,6 +328,38 @@ describe("openapi routes", () => {
     expect(spec.paths["/api/routines/{id}/run"].post.responses["422"]).toBeDefined();
   });
 
+  it("documents native artifact downloads and board-governed outbox recovery", () => {
+    const { spec } = loadSpecRoutes();
+    const download = spec.paths["/api/workspaces/{workspaceId}/artifact-revisions/{revisionId}/content"]?.get;
+    expect(download).toBeDefined();
+    expect(download["x-paperclip-authorization"]).toEqual({ actor: "board_or_agent" });
+    expect(download.responses["200"].content).toEqual({
+      "application/octet-stream": { schema: { type: "string", format: "binary" } },
+    });
+    expect(download.responses["503"]).toBeDefined();
+    const failures = spec.paths["/api/workspaces/{workspaceId}/targets/{targetId}/run-outbox-failures"]?.get;
+    expect(failures).toBeDefined();
+    expect(failures["x-paperclip-authorization"]).toEqual({ actor: "board" });
+    expect(failures.responses["200"].content["application/json"].schema.type).toBe("array");
+    const retry = spec.paths["/api/workspaces/{workspaceId}/runs/{runId}/outbox/retry"]?.post;
+    expect(retry).toBeDefined();
+    expect(retry["x-paperclip-authorization"]).toEqual({ actor: "board" });
+    expect(retry.parameters).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "workspaceId", in: "path", required: true }),
+      expect.objectContaining({ name: "runId", in: "path", required: true }),
+      expect.objectContaining({ name: "Idempotency-Key", in: "header", required: true }),
+    ]));
+    expect(retry.requestBody.content["application/json"].schema).toMatchObject({
+      required: ["eventId", "expectedAttemptCount"],
+      additionalProperties: false,
+      properties: {
+        eventId: { type: "string", format: "uuid" },
+        expectedAttemptCount: { type: "integer", minimum: 0, exclusiveMinimum: true, maximum: 2_147_483_647 },
+      },
+    });
+    expect(Object.keys(retry.responses).sort()).toEqual(["200", "400", "401", "403", "404", "409", "503"]);
+  });
+
   it("publishes the Claude browser-code grammar and strict setup-token response shapes", () => {
     const { spec } = loadSpecRoutes();
     const base = "/api/companies/{companyId}/setup-token-login-sessions";
@@ -384,6 +416,23 @@ describe("openapi routes", () => {
       "authorizationUrl",
       "transportAdvisory",
     ]);
+  });
+
+  it("documents strict observation collection without proof or credential inputs", () => {
+    const { spec } = loadSpecRoutes();
+    const operation = spec.paths["/api/workspaces/{workspaceId}/targets/{targetId}/github-ci-observations"]?.post;
+    expect(operation).toBeDefined();
+    expect(operation["x-paperclip-authorization"]).toEqual({ actor: "board" });
+    const body = operation.requestBody.content["application/json"].schema;
+    expect(body.additionalProperties).toBe(false);
+    expect(Object.keys(body.properties)).toEqual(["runId", "runAttempt"]);
+    expect(body.properties.runId.type).toBe("string");
+    expect(body.properties.runAttempt.maximum).toBe(2_147_483_647);
+    expect(Object.keys(operation.responses).sort()).toEqual(["201", "400", "401", "403", "409", "429", "502", "503"]);
+    const response = operation.responses["201"].content["application/json"].schema;
+    expect(response.additionalProperties).toBe(false);
+    expect(Object.keys(response.properties)).toEqual(["schemaVersion", "workspaceId", "targetId", "targetRevisionId", "graphRevisionId", "connectionId", "bindingId", "policySha256", "auditEventId", "observation"]);
+    expect(response.properties.observation.properties.kind.enum).toEqual(["verrail.fixed-ci-observation"]);
   });
 
   it("documents the 404 non-member gate on the Claude setup-token cancel route", () => {

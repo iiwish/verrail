@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { criterionProofContractSchema } from "./criterion-proof.js";
 import {
   TARGET_READ_MODEL_POLICY_VERSION,
   TARGET_READ_MODEL_SCHEMA_VERSION,
@@ -32,6 +33,7 @@ const targetDefinitionSchema = z.object({
     id: z.string().min(1),
     title: z.string(),
     description: z.string().nullable(),
+    proofContract: criterionProofContractSchema.optional(),
   }).strict()),
   deadline: z.iso.date().nullable(),
   policySummary: z.string().nullable(),
