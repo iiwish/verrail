@@ -11,6 +11,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// This fixture exercises the real atomic writer and phase checks, not verifier
+// admission. It does not collect independent evidence and is absent from builds.
+func recordTrustedIntegrationProofFixture(ctx context.Context, store *Store, command AgentLifecycleCommand[RecordIntegrationRunInput]) (AgentLifecycleResult, error) {
+	tx, replay, err := store.beginCandidateCommand(ctx, lifecycleMeta(command))
+	if err != nil {
+		return AgentLifecycleResult{}, err
+	}
+	if replay != nil {
+		return *replay, nil
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	proof, err := validateIntegrationProof(ctx, tx, command)
+	if err != nil {
+		return AgentLifecycleResult{}, err
+	}
+	return store.recordIntegrationRun(ctx, tx, command, proof)
+}
+
 func TestPhasedCriterionProofIntegration(t *testing.T) {
 	url := os.Getenv("VERRAIL_TEST_DATABASE_URL")
 	if url == "" {
@@ -96,7 +114,7 @@ func TestPhasedCriterionProofIntegration(t *testing.T) {
 	}
 	record := func(input RecordIntegrationRunInput) (AgentLifecycleResult, error) {
 		cmd := buildConnectorCandidateCommandAs(h, "service", "independent-ci-collector", ConnectorIntegrationRunRecordCommand, input)
-		return h.store.RecordIntegrationRun(ctx, cmd)
+		return recordTrustedIntegrationProofFixture(ctx, h.store, cmd)
 	}
 	preInput := makeInput("technical", nil, nil)
 	_, err = h.store.RecordIntegrationRun(ctx, buildConnectorCommandAs(h, h.principalID, ConnectorIntegrationRunRecordCommand, preInput))
@@ -293,7 +311,7 @@ func TestFourCriteriaCollectSeparatePreProofs(t *testing.T) {
 		input := h.integrationRunInput(fixture, "ci/"+mustNewUUID(t), "success", assuranceTestHash, "ci:four-criteria")
 		input.ProofContext = &CriterionProofContext{RequirementID: requirement.ID}
 		input.ProviderReceipt["criterionProof"] = map[string]any{"contractHash": proofHash(contracts[index]), "requirementId": requirement.ID, "assertions": requirement.Assertions, "targetRevisionId": revision.TargetRevisionID, "graphRevisionId": graph.GraphRevisionID, "commitRef": "abc123", "verifiedAt": time.Now().UTC().Format(time.RFC3339Nano), "providerRunId": input.ExternalRef, "providerAttempt": 1}
-		result, err := h.store.RecordIntegrationRun(ctx, buildConnectorCandidateCommandAs(h, "service", "independent-ci-collector", ConnectorIntegrationRunRecordCommand, input))
+		result, err := recordTrustedIntegrationProofFixture(ctx, h.store, buildConnectorCandidateCommandAs(h, "service", "independent-ci-collector", ConnectorIntegrationRunRecordCommand, input))
 		require.NoError(t, err, "each pre requirement owns a distinct active node, even after the first completes")
 		h.runIDs = append(h.runIDs, result.ResourceID)
 		var resultID string

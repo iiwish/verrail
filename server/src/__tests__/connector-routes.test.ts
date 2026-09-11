@@ -97,6 +97,7 @@ async function createApp(
     authorization: "Bearer github-ephemeral-sentinel",
   }),
   collectGithubCiObservation?: (...args: any[]) => Promise<any>,
+  recordGithubFixedCiProof?: (...args: any[]) => Promise<any>,
 ) {
   const [{ connectorRoutes }, { errorHandler }] = await Promise.all([
     import("../routes/connector.js"),
@@ -108,7 +109,7 @@ async function createApp(
     (req as any).actor = actor;
     next();
   });
-  app.use("/api", connectorRoutes({ domainApiClient: domainApi, resolveGithubCredential, collectGithubCiObservation }));
+  app.use("/api", connectorRoutes({ domainApiClient: domainApi, resolveGithubCredential, collectGithubCiObservation, recordGithubFixedCiProof }));
   app.use(errorHandler);
   return app;
 }
@@ -411,6 +412,60 @@ describe("connector routes", () => {
       .send({ actionRequestId: "11111111-2222-4333-8444-555555555555" });
     expect(response.status).toBe(400);
     expect(domainApi.executeAction).not.toHaveBeenCalled();
+  });
+});
+
+describe("GitHub fixed CI proof route", () => {
+  const path = `/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}/github-fixed-ci-proofs`;
+  const input = { runId: "123", runAttempt: 2, claimId: CLAIM_ID, workNodeId: WORK_NODE_ID,
+    artifactRevisionId: RECEIPT_ID, requirementId: "fixed-ci" };
+
+  it("executes the dedicated recorder with actual user provenance and idempotency", async () => {
+    const record = vi.fn().mockResolvedValue(receipt("integration_run", RECEIPT_ID));
+    const general = { recordIntegrationRun: vi.fn() };
+    const app = await createApp(general, boardActor(), vi.fn(), undefined, record);
+    const result = await request(app).post(path).set("Idempotency-Key", "fixed-ci:test").send(input);
+    expect(result.status).toBe(201);
+    expect(record).toHaveBeenCalledWith({ workspaceId: WORKSPACE_ID, targetId: TARGET_ID,
+      idempotencyKey: "fixed-ci:test", actor: { actorType: "user", actorId: "user-1", actorSource: "session" }, input });
+    expect(general.recordIntegrationRun).not.toHaveBeenCalled();
+  });
+
+  it("requires explicit configured verifier capability", async () => {
+    const app = await createApp(null);
+    expect((await request(app).post(path).set("Idempotency-Key", "fixed-ci:disabled").send(input)).status).toBe(503);
+  });
+
+  it("returns 200 only for a dedicated domain replay", async () => {
+    const record = vi.fn().mockResolvedValue(receipt("integration_run", RECEIPT_ID, true));
+    const app = await createApp(null, { type: "board", userId: "local-board", source: "local_implicit" }, vi.fn(), undefined, record);
+    expect((await request(app).post(path).set("Idempotency-Key", "fixed-ci:replay").send(input)).status).toBe(200);
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({ actor: { actorType: "user", actorId: "local-board", actorSource: "local_implicit" } }));
+  });
+
+  it.each([
+    ["anonymous", { type: "none", source: "none" }, 401],
+    ["agent", { type: "agent", agentId: "agent-1", companyId: WORKSPACE_ID, source: "agent_key" }, 403],
+    ["foreign user", boardActor([FOREIGN_WORKSPACE_ID]), 403],
+    ["viewer", { ...boardActor(), memberships: [{ companyId: WORKSPACE_ID, membershipRole: "viewer", status: "active" }] }, 403],
+    ["inactive", { ...boardActor(), memberships: [{ companyId: WORKSPACE_ID, membershipRole: "owner", status: "inactive" }] }, 403],
+    ["unidentified", { ...boardActor(), userId: undefined }, 403],
+  ])("rejects %s before dedicated recorder invocation", async (_name, actor, status) => {
+    const record = vi.fn(); const app = await createApp(null, actor as Record<string, unknown>, vi.fn(), undefined, record);
+    expect((await request(app).post(path).set("Idempotency-Key", "fixed-ci:authz").send(input)).status).toBe(status);
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it("requires a valid idempotency key before proof collection", async () => {
+    const record = vi.fn(); const app = await createApp(null, boardActor(), vi.fn(), undefined, record);
+    expect((await request(app).post(path).send(input)).status).toBe(400);
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it.each(["observation", "auditEventId", "verdict", "assertions", "candidateSha", "principalId", "source", "mapping", "policy"])("rejects caller-owned %s before recording", async field => {
+    const record = vi.fn(); const app = await createApp(null, boardActor(), vi.fn(), undefined, record);
+    expect((await request(app).post(path).set("Idempotency-Key", "fixed-ci:spoof").send({ ...input, [field]: "spoof" })).status).toBe(400);
+    expect(record).not.toHaveBeenCalled();
   });
 });
 

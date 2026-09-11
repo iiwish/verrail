@@ -47,6 +47,7 @@ import type {
   RequestConfirmationInteraction,
   SuggestTasksInteraction,
   ChannelReplyRequestV1,
+  ChannelReplyReadRequestV1,
   ChannelWebhookRequestV1,
 } from "@paperclipai/shared";
 
@@ -1601,6 +1602,8 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
 
       case "handleChannelReply":
         return handleChannelReply(params as ChannelReplyRequestV1);
+      case "handleChannelReplyRead":
+        return handleChannelReplyRead(params as ChannelReplyReadRequestV1);
 
       case "handleApiRequest":
         return handleApiRequest(params as PluginApiRequestInput);
@@ -1909,6 +1912,13 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       );
     }
     return plugin.definition.onChannelReply(params);
+  }
+
+  async function handleChannelReplyRead(params: ChannelReplyReadRequestV1) {
+    if (!plugin.definition.onChannelReplyRead) {
+      throw Object.assign(new Error("handleChannelReplyRead is not implemented by this plugin"), { code: PLUGIN_RPC_ERROR_CODES.METHOD_NOT_IMPLEMENTED });
+    }
+    return plugin.definition.onChannelReplyRead(params);
   }
 
   async function handleApiRequest(params: PluginApiRequestInput): Promise<unknown> {

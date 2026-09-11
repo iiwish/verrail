@@ -37,6 +37,7 @@ const apiPrefixes: Record<string, string> = {
   "decision-queues.ts": "/api",
   "decisions.ts": "/api",
   "decision-training.ts": "/api",
+  "delivery-context.ts": "/api",
   "environments.ts": "/api",
   "execution-workspaces.ts": "/api",
   "file-resources.ts": "/api",
@@ -433,6 +434,20 @@ describe("openapi routes", () => {
     expect(response.additionalProperties).toBe(false);
     expect(Object.keys(response.properties)).toEqual(["schemaVersion", "workspaceId", "targetId", "targetRevisionId", "graphRevisionId", "connectionId", "bindingId", "policySha256", "auditEventId", "observation"]);
     expect(response.properties.observation.properties.kind.enum).toEqual(["verrail.fixed-ci-observation"]);
+  });
+
+  it("documents the separate verifier with identifiers only and idempotent result", () => {
+    const { spec } = loadSpecRoutes();
+    const operation = spec.paths["/api/workspaces/{workspaceId}/targets/{targetId}/github-fixed-ci-proofs"]?.post;
+    expect(operation["x-paperclip-authorization"]).toEqual({ actor: "board" });
+    const body = operation.requestBody.content["application/json"].schema;
+    expect(body.additionalProperties).toBe(false);
+    expect(Object.keys(body.properties)).toEqual(["runId", "runAttempt", "claimId", "workNodeId", "artifactRevisionId", "requirementId"]);
+    expect(operation.parameters).toContainEqual(expect.objectContaining({ name: "Idempotency-Key", in: "header", required: true }));
+    expect(Object.keys(operation.responses).sort()).toEqual(["200", "201", "400", "401", "403", "404", "409", "422", "429", "502", "503"]);
+    const response = operation.responses["201"].content["application/json"].schema;
+    expect(response.additionalProperties).toBe(false);
+    expect(response.properties.resourceType.enum).toEqual(["integration_run"]);
   });
 
   it("documents the 404 non-member gate on the Claude setup-token cancel route", () => {

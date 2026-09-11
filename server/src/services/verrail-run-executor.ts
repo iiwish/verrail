@@ -155,6 +155,10 @@ function buildNativeTaskMarkdown(candidate: NativeRunLeaseCandidate) {
     "Store each listed file directly beside the manifest, using a plain ASCII filename (letters, digits, dots, underscores, hyphens; start with a letter or digit).",
     "Allowed kinds: code_change, document, report. Maximum 10 files, 32 MiB per file, 64 MiB total; no links, nested paths, credentials, or secret configuration.",
     "The trusted executor hashes, uploads, and registers these files against this Run and WorkNode. Do not impersonate a human or call Board write APIs to register artifacts.",
+    'To request a trusted current-code snapshot, use {"schemaVersion":2,"artifacts":[{"type":"source_snapshot","title":"Fixed code","format":"git_bundle","scopeVersion":2}]}.',
+    'A v2 ordinary file entry is {"type":"file","title":"Report","kind":"report","path":"report.md"}. Do not provide source hashes or snapshot metadata.',
+    "The runner generates source-<ordinal>.bundle from tracked and nonignored current file bytes, excluding root .verrail and its descendants. No original Git history/configuration is exported. Input is capped at 256 MiB and each bundle at 32 MiB; source must remain stable during collection.",
+    "Snapshot export is opt-in and must not include secrets. Its synthetic root commit is not a tested CI commit, runtime build attestation, permission check, or independent proof. Ordinary code_change files do not prove source equivalence.",
   ].join("\n");
 }
 
@@ -206,6 +210,8 @@ function executionFacts(run: NativeHeartbeatRun, candidate: NativeRunLeaseCandid
     exitCode: run.exitCode,
     errorCode: run.errorCode,
     environmentManifest: run.contextSnapshot?.verrailEnvironmentManifest ?? null,
+    ...(run.contextSnapshot?.verrailNativeDispatchConfiguration
+      ? { dispatchConfiguration: run.contextSnapshot.verrailNativeDispatchConfiguration } : {}),
     outputReceipt: null,
     sourceObservation: validateNativeSourceObservation(run.nativeSourceObservation, {
       workspaceId: candidate.workspaceId, heartbeatRunId: run.id, agentId: candidate.compatibilityAgentId ?? "",

@@ -44,3 +44,32 @@ export const verrailChannelEvents = pgTable(
     ),
   }),
 );
+
+export const verrailChannelTargetReplies = pgTable(
+  "verrail_channel_target_replies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    draftId: uuid("draft_id").notNull(),
+    draftRevisionId: uuid("draft_revision_id").notNull(),
+    channelEventId: uuid("channel_event_id").notNull(),
+    targetId: uuid("target_id").notNull(),
+    targetRevisionId: uuid("target_revision_id").notNull(),
+    pluginId: uuid("plugin_id").notNull(),
+    confirmedByPrincipalId: text("confirmed_by_principal_id").notNull(),
+    configurationSha256: text("configuration_sha256").notNull(),
+    contextSha256: text("context_sha256").notNull(),
+    bodySha256: text("body_sha256").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    status: text("status").notNull(),
+    providerMessageId: text("provider_message_id"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  table => ({
+    draftUq: uniqueIndex("verrail_channel_target_replies_draft_uq").on(table.workspaceId, table.draftId),
+    targetIdx: index("verrail_channel_target_replies_target_idx").on(table.workspaceId, table.targetId),
+    statusCheck: check("verrail_channel_target_replies_status_check", sql`${table.status} in ('sending', 'succeeded', 'unknown')`),
+    receiptCheck: check("verrail_channel_target_replies_receipt_check", sql`(${table.status} = 'succeeded' and ${table.providerMessageId} is not null and ${table.completedAt} is not null) or (${table.status} <> 'succeeded' and ${table.providerMessageId} is null)`),
+  }),
+);

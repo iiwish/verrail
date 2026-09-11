@@ -1,12 +1,13 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { prepareCodexRuntimeConfig } from "./runtime-config.js";
 
 const cleanupPaths = new Set<string>();
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(
     [...cleanupPaths].map(async (filepath) => {
       await fs.rm(filepath, { recursive: true, force: true });
@@ -41,6 +42,17 @@ const BIFROST_PROVIDERS = {
 };
 
 describe("prepareCodexRuntimeConfig", () => {
+  it.each(["VERRAIL_DOMAIN_API_TOKEN", "verrail_github_ci_proof_token", "ACPX_AUTH_VERRAIL_DOMAIN_API_TOKEN", "acpx_auth_verrail_github_ci_proof_token"].flatMap((key) => ["input", "process"].map((source) => ({ key, source }))))("rejects $source $key before provider materialization", async ({ key, source }) => {
+    const original = 'model = "existing"\n';
+    const home = await makeCodexHome(original);
+    const env: Record<string, string> = { PAPERCLIP_CODEX_PROVIDERS: JSON.stringify({ providers: { fixture: { http_headers: { Authorization: `{env:${key}}` } } } }) };
+    if (source === "input") env[key] = "fixture-control-plane-secret";
+    else vi.stubEnv(key, "fixture-control-plane-secret");
+    await expect(prepareCodexRuntimeConfig({ env, codexHome: home })).rejects.toThrow("Control-plane credentials cannot be used in agent provider configuration");
+    expect(await readConfigToml(home)).toBe(original);
+    expect(await fs.readdir(home)).toEqual(["config.toml"]);
+  });
+
   it("is a no-op when PAPERCLIP_CODEX_PROVIDERS is unset", async () => {
     const home = await makeCodexHome("model = \"gpt-5.1-codex\"\n");
     const prepared = await prepareCodexRuntimeConfig({ env: { FOO: "bar" }, codexHome: home });

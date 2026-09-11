@@ -63,6 +63,21 @@ describe("native Run artifact collection", () => {
     await writeFile(path.join(output, "manifest.json"), " ".repeat(65_537));
     await expect(collect()).rejects.toThrow(/NATIVE_ARTIFACT_INVALID/);
   });
+  it.each([
+    { type: "file", title: "Forged ordinary file", kind: "code_change", path: "review.md", sourceSnapshot: {} },
+    { type: "source_snapshot", title: "Forged export", format: "git_bundle", scopeVersion: 2, contentHash: "a".repeat(64) },
+  ])("rejects caller-provided trusted snapshot fields", async (entry) => {
+    await writeFile(path.join(output, "review.md"), "ordinary bytes");
+    await writeFile(path.join(output, "manifest.json"), JSON.stringify({ schemaVersion: 2, artifacts: [entry] }));
+    await expect(collect()).rejects.toThrow("NATIVE_ARTIFACT_INVALID");
+  });
+  it("rejects collisions with generated snapshot filenames before upload", async () => {
+    await writeFile(path.join(output, "manifest.json"), JSON.stringify({ schemaVersion: 2, artifacts: [
+      { type: "source_snapshot", title: "Source", format: "git_bundle", scopeVersion: 2 },
+      { type: "file", title: "Collision", kind: "report", path: "source-0.bundle" },
+    ] }));
+    await expect(collect()).rejects.toThrow("NATIVE_ARTIFACT_INVALID");
+  });
   it("rejects storage metadata that does not match locally read artifact bytes", async () => {
     await writeFile(path.join(output, "review.md"), "actual bytes");
     await writeFile(path.join(output, "manifest.json"), manifest());

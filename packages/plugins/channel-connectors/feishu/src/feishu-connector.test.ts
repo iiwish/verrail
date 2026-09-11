@@ -76,6 +76,39 @@ function connector(fetch = vi.fn<typeof globalThis.fetch>()) {
 }
 
 describe("Feishu Channel Connector V1", () => {
+  it("reads an existing unedited application reply without sending another message", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 0, tenant_access_token: "token" })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 0, data: { items: [{
+        message_id: "om_reply", parent_id: "om_source", chat_id: "oc_chat", msg_type: "text", create_time: "1725440000000",
+        deleted: false, updated: false, sender: { id: "cli_test", id_type: "app_id", sender_type: "app" },
+        body: { content: JSON.stringify({ text: "Target created" }) },
+      }] } })));
+    const result = await connector(fetch).readReply({ contractVersion: 1, workspaceId, connectionId, connectorKey: "feishu", providerMessageId: "om_reply",
+      parentProviderMessageId: "om_source", externalConversationId: "oc_chat" });
+    expect(result).toEqual({ contractVersion: 1, providerMessageId: "om_reply", parentProviderMessageId: "om_source", externalConversationId: "oc_chat",
+      bodySha256: createHash("sha256").update("Target created").digest("hex"), createdAt: "2024-09-04T08:53:20.000Z" });
+    expect(fetch.mock.calls[1]![0]).toBe("https://open.feishu.cn/open-apis/im/v1/messages/om_reply");
+    expect(fetch.mock.calls[1]![1]?.method).toBe("GET");
+    expect(JSON.stringify(result)).not.toMatch(/Target created|token|cli_test/);
+  });
+
+  it.each(["sender", "edited", "deleted", "body", "duplicate", "identity", "parent", "conversation"])("refuses untrusted reply observations: %s", async change => {
+    const item = { message_id: "om_reply", parent_id: "om_source", chat_id: "oc_chat", msg_type: "text", create_time: "1725440000000",
+      deleted: change === "deleted", updated: change === "edited", sender: { id: change === "sender" ? "cli_other" : "cli_test", id_type: "app_id", sender_type: "app" },
+      body: { content: change === "body" ? "invalid" : JSON.stringify({ text: "Target created" }) } };
+    if (change === "identity") item.message_id = "om_other";
+    if (change === "parent") item.parent_id = "om_other";
+    if (change === "conversation") item.chat_id = "oc_other";
+    const fetch = vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 0, tenant_access_token: "token" })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 0, data: { items: change === "duplicate" ? [item, item] : [item] } })));
+    await expect(connector(fetch).readReply({ contractVersion: 1, workspaceId, connectionId, connectorKey: "feishu", providerMessageId: "om_reply",
+      parentProviderMessageId: "om_source", externalConversationId: "oc_chat" }))
+      .rejects.toThrow();
+    expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+  });
+
   it("answers an authenticated URL challenge", async () => {
     const rawBody = JSON.stringify({
       type: "url_verification",

@@ -3,25 +3,98 @@ index 243c9d13bcba520923b63adfddad75cf2d94362d..336a1699b80b9e99416f9da4346ca73e
 --- a/dist/live-checkpoint-ClPCSdrW.js
 +++ b/dist/live-checkpoint-ClPCSdrW.js
 @@ -1532,7 +1532,7 @@ const ZED_TAG_KEYS = /* @__PURE__ */ new Set([
- 	"RedactedThinking",
- 	"ToolUse"
- ]);
+-	"RedactedThinking",
+-	"ToolUse"
+-]);
 -const MAP_OBJECT_PATHS = /* @__PURE__ */ new Set(["request_token_usage", "messages.Agent.tool_results"]);
+-const OPAQUE_VALUE_PATHS = /* @__PURE__ */ new Set([
+-	"agent_capabilities",
+-	"messages.Agent.content.ToolUse.input",
++	"RedactedThinking",
++	"ToolUse"
++]);
 +const MAP_OBJECT_PATHS = /* @__PURE__ */ new Set(["request_token_usage", "messages.Agent.tool_results", "acpx.session_options.env"]);
- const OPAQUE_VALUE_PATHS = /* @__PURE__ */ new Set([
- 	"agent_capabilities",
- 	"messages.Agent.content.ToolUse.input",
++const OPAQUE_VALUE_PATHS = /* @__PURE__ */ new Set([
++	"agent_capabilities",
++	"messages.Agent.content.ToolUse.input",
 @@ -2557,7 +2557,7 @@ function readCommandLineChar(state) {
- 		escaping: false,
- 		hasPart: true
- 	};
+-		escaping: false,
+-		hasPart: true
+-	};
 -	if (state.ch === "\\" && state.quote !== "'") return {
+-		current: state.current,
+-		quote: state.quote,
+-		escaping: true,
++		escaping: false,
++		hasPart: true
++	};
 +	if (process.platform !== "win32" && state.ch === "\\" && state.quote !== "'") return {
- 		current: state.current,
- 		quote: state.quote,
- 		escaping: true,
-@@ -3959,7 +3959,24 @@ var AcpClient = class {
++		current: state.current,
++		quote: state.quote,
++		escaping: true,
+@@ -2913,6 +2913,15 @@ function promotePrefixedAuthEnvironment(env) {
+-	return protectedKeys;
+-}
+-function buildAgentEnvironment(authCredentials, sessionEnv) {
+-	const env = { ...process.env };
+-	const protectedAuthEnvKeys = promotePrefixedAuthEnvironment(env);
+-	if (authCredentials) for (const [methodId, credential] of Object.entries(authCredentials)) {
++	return protectedKeys;
++}
++function withoutControlPlaneCredentials(env) {
++	return Object.fromEntries(Object.entries(env).filter(([key]) => {
++		const upper = key.toUpperCase();
++		const normalized = upper.startsWith("ACPX_AUTH_")
++			? upper.slice("ACPX_AUTH_".length).replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "")
++			: upper;
++		return normalized !== "VERRAIL_DOMAIN_API_TOKEN" && normalized !== "VERRAIL_GITHUB_CI_PROOF_TOKEN";
++	}));
++}
++function buildAgentEnvironment(authCredentials, sessionEnv) {
++	const env = { ...process.env };
++	const protectedAuthEnvKeys = promotePrefixedAuthEnvironment(env);
++	if (authCredentials) for (const [methodId, credential] of Object.entries(authCredentials)) {
+@@ -2926,7 +2935,7 @@ function buildAgentEnvironment(authCredentials, sessionEnv) {
+-		if (typeof value !== "string" || protectedAuthEnvKeys.has(protectedEnvKey(key))) continue;
+-		assignSessionEnv(env, key, value);
+-	}
+-	return env;
+-}
+-function assignSessionEnv(env, key, value) {
+-	const normalizedKey = protectedEnvKey(key);
++		if (typeof value !== "string" || protectedAuthEnvKeys.has(protectedEnvKey(key))) continue;
++		assignSessionEnv(env, key, value);
++	}
++	return withoutControlPlaneCredentials(env);
++}
++function assignSessionEnv(env, key, value) {
++	const normalizedKey = protectedEnvKey(key);
+@@ -3127,9 +3136,8 @@ function toCommandLine(command, args) {
+-}
+-function toEnvObject(env) {
+-	if (!env || env.length === 0) return;
+-	const merged = { ...process.env };
+-	for (const entry of env) merged[entry.name] = entry.value;
+-	return merged;
+-}
+-function buildTerminalSpawnOptions(command, cwd, env, platform = process.platform) {
+-	const resolvedEnv = toEnvObject(env);
++}
++function toEnvObject(env) {
++	const merged = { ...process.env };
++	for (const entry of env ?? []) merged[entry.name] = entry.value;
++	return withoutControlPlaneCredentials(merged);
++}
++function buildTerminalSpawnOptions(command, cwd, env, platform = process.platform) {
++	const resolvedEnv = toEnvObject(env);
+@@ -3959,7 +3967,24 @@ var AcpClient = class {
 -		this.attachAgentLifecycleObservers(child);
+-		const startupStderr = [];
+-		child.stderr.on("data", (chunk) => {
+-			this.captureStartupStderr(startupStderr, chunk);
+-			if (!this.options.verbose) return;
+-			process.stderr.write(chunk);
+-		});
 +		this.attachAgentLifecycleObservers(child);
 +		if (this.options.onAgentSpawn) {
 +			try {
@@ -36,64 +109,88 @@ index 243c9d13bcba520923b63adfddad75cf2d94362d..336a1699b80b9e99416f9da4346ca73e
 +				throw error;
 +			}
 +		}
- 		const startupStderr = [];
- 		child.stderr.on("data", (chunk) => {
- 			this.captureStartupStderr(startupStderr, chunk);
++		const startupStderr = [];
++		child.stderr.on("data", (chunk) => {
++			this.captureStartupStderr(startupStderr, chunk);
 +			if (this.options.onAgentStderr) {
 +				this.options.onAgentStderr(chunk.toString());
 +				return;
 +			}
- 			if (!this.options.verbose) return;
- 			process.stderr.write(chunk);
- 		});
-@@ -3994,7 +4011,7 @@ var AcpClient = class {
- 			geminiAcp: isGeminiAcpCommand(spawnCommand, args),
- 			copilotAcp: isCopilotAcpCommand(spawnCommand, args),
- 			claudeAcp: isClaudeAcpCommand(spawnCommand, args),
++			if (!this.options.verbose) return;
++			process.stderr.write(chunk);
++		});
+@@ -3994,7 +4019,7 @@ var AcpClient = class {
+-			geminiAcp: isGeminiAcpCommand(spawnCommand, args),
+-			copilotAcp: isCopilotAcpCommand(spawnCommand, args),
+-			claudeAcp: isClaudeAcpCommand(spawnCommand, args),
 -			spawnOptions: buildAgentSpawnOptions(this.options.cwd, this.options.authCredentials, this.options.sessionOptions?.env)
+-		};
+-	}
+-	logAgentLaunch(plan) {
++			geminiAcp: isGeminiAcpCommand(spawnCommand, args),
++			copilotAcp: isCopilotAcpCommand(spawnCommand, args),
++			claudeAcp: isClaudeAcpCommand(spawnCommand, args),
 +			spawnOptions: buildAgentSpawnOptions(this.options.spawnCwd ?? this.options.cwd, this.options.authCredentials, this.options.sessionOptions?.env)
- 		};
- 	}
- 	logAgentLaunch(plan) {
++		};
++	}
++	logAgentLaunch(plan) {
 diff --git a/dist/runtime.d.ts b/dist/runtime.d.ts
 index ccdbe5b032521518022223733049b8b38793473b..3d4e04231e78efeecd8540735b08e1e43547ff2d 100644
 --- a/dist/runtime.d.ts
 +++ b/dist/runtime.d.ts
 @@ -266,6 +266,9 @@ type AcpRuntimeOptions = {
-   timeoutMs?: number;
-   probeAgent?: string;
-   verbose?: boolean;
+-  timeoutMs?: number;
+-  probeAgent?: string;
+-  verbose?: boolean;
+-  onPermissionRequest?: (req: AcpPermissionRequest, ctx: {
+-    signal: AbortSignal;
+-  }) => Promise<AcpPermissionDecision | undefined>;
++  timeoutMs?: number;
++  probeAgent?: string;
++  verbose?: boolean;
 +  onAgentStderr?: (chunk: string) => void;
 +  onAgentSpawn?: (meta: { pid: number; startedAt: string }) => Promise<void>;
 +  spawnCwd?: string;
-   onPermissionRequest?: (req: AcpPermissionRequest, ctx: {
-     signal: AbortSignal;
-   }) => Promise<AcpPermissionDecision | undefined>;
++  onPermissionRequest?: (req: AcpPermissionRequest, ctx: {
++    signal: AbortSignal;
++  }) => Promise<AcpPermissionDecision | undefined>;
 diff --git a/dist/runtime.js b/dist/runtime.js
 index 6c9cc999e50a11c399c68b3a0f1b7af4bc2317c0..33b5054b2906502d1d4b512bfa259bd2ba5a9f05 100644
 --- a/dist/runtime.js
 +++ b/dist/runtime.js
 @@ -744,7 +744,8 @@ var AcpRuntimeManager = class {
- 		this.deps = deps;
- 	}
- 	createClient(options) {
+-		this.deps = deps;
+-	}
+-	createClient(options) {
 -		return this.deps.clientFactory?.(options) ?? new AcpClient(options);
+-	}
+-	async readPendingPersistentClient(record, options) {
+-		const pendingClient = this.pendingPersistentClients.get(record.acpxRecordId);
++		this.deps = deps;
++	}
++	createClient(options) {
 +		const clientOptions = { ...options, onAgentStderr: this.options.onAgentStderr, onAgentSpawn: this.options.onAgentSpawn, spawnCwd: this.options.spawnCwd };
 +		return this.deps.clientFactory?.(clientOptions) ?? new AcpClient(clientOptions);
- 	}
- 	async readPendingPersistentClient(record, options) {
- 		const pendingClient = this.pendingPersistentClients.get(record.acpxRecordId);
++	}
++	async readPendingPersistentClient(record, options) {
++		const pendingClient = this.pendingPersistentClients.get(record.acpxRecordId);
 diff --git a/dist/session-options-jkYbBxGE.d.ts b/dist/session-options-jkYbBxGE.d.ts
 index 9d37f377fb6a0828e0d2bc5a48754f3aa71509a4..680bc080fc5d6ffd266ed1b27d3d5056add9d980 100644
 --- a/dist/session-options-jkYbBxGE.d.ts
 +++ b/dist/session-options-jkYbBxGE.d.ts
 @@ -84,6 +84,9 @@ type AcpClientOptions = {
-   terminal?: boolean;
-   suppressSdkConsoleErrors?: boolean;
-   verbose?: boolean;
+-  terminal?: boolean;
+-  suppressSdkConsoleErrors?: boolean;
+-  verbose?: boolean;
+-  sessionOptions?: {
+-    model?: string;
+-    allowedTools?: string[];
++  terminal?: boolean;
++  suppressSdkConsoleErrors?: boolean;
++  verbose?: boolean;
 +  onAgentStderr?: (chunk: string) => void;
 +  onAgentSpawn?: (meta: { pid: number; startedAt: string }) => Promise<void>;
 +  spawnCwd?: string;
-   sessionOptions?: {
-     model?: string;
-     allowedTools?: string[];
++  sessionOptions?: {
++    model?: string;
++    allowedTools?: string[];

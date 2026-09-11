@@ -1,11 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { preparePiRuntimeConfig } from "./runtime-config.js";
 
 const cleanupPaths = new Set<string>();
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(
     [...cleanupPaths].map(async (filepath) => {
       await fs.rm(filepath, { recursive: true, force: true });
@@ -22,6 +23,13 @@ async function readModelsJson(agentConfigDir: string): Promise<Record<string, un
 }
 
 describe("preparePiRuntimeConfig", () => {
+  it.each(["VERRAIL_DOMAIN_API_TOKEN", "verrail_github_ci_proof_token", "ACPX_AUTH_VERRAIL_DOMAIN_API_TOKEN", "acpx_auth_verrail_github_ci_proof_token"].flatMap((key) => ["input", "process"].map((source) => ({ key, source }))))("rejects $source $key before provider materialization", async ({ key, source }) => {
+    const env: Record<string, string> = { PAPERCLIP_PI_PROVIDERS: JSON.stringify({ fixture: { apiKey: `{env:${key}}` } }) };
+    if (source === "input") env[key] = "fixture-control-plane-secret";
+    else vi.stubEnv(key, "fixture-control-plane-secret");
+    await expect(preparePiRuntimeConfig({ env })).rejects.toThrow("Control-plane credentials cannot be used in agent provider configuration");
+  });
+
   it("is a no-op when PAPERCLIP_PI_PROVIDERS is unset", async () => {
     const prepared = await preparePiRuntimeConfig({ env: { FOO: "bar" } });
 

@@ -58,6 +58,9 @@ const plugin = definePlugin({
   async onChannelReply(input) {
     return connector().sendReply(input);
   },
+  async onChannelReplyRead(input) {
+    return connector().readReply(input);
+  },
 });
 
 export default plugin;

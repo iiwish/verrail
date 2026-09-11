@@ -112,6 +112,30 @@ Target 创建前必须展示结构化确认卡片，至少包含目标、Outcome
 
 临时失败保留原幂等键和已确认 Draft Version，允许安全重试。任何未知创建结果必须先查询命令 receipt，不能生成第二个 Target。
 
+### 创建成功回信
+
+创建命令与渠道通知是两个独立结果。飞书 Draft 完成转换及 ContextBinding 后，应用服务从同一 Workspace 的事件、来源消息、确认版本、创建命令回执和审计中读取发送依据，核对当前 Connector 配置与用户映射。调用者不能提交收件人、回复正文或送达结论。
+
+`verrail_channel_target_replies` 保存每个 Workspace/Draft 唯一的发送记录及版本、上下文、配置和正文指纹。服务先提交 `sending` 占用及审计，再调用既有 Connector。收到结构有效的 Provider 回复后记录 `succeeded`；异常或无法确认结果时记录 `unknown`。进程中断留下的 `sending` 与 `unknown` 都不自动重发，重复确认只读取已有记录。通知异常不撤销已创建的 Target，也不产生第二个 Target。发送前条件不成立时返回 `blocked`，没有发送占用；Web-only Draft 返回 `not_applicable`。
+
+回复仅包含 Target 链接和 TargetRevision 标识，不包含目标正文。链接源于服务端配置的基础 URL，不采信请求 Host。认证部署未配置基础 URL 时阻止通知；本地受信部署的回退链接仅适用于本机，不代表远端可访问。界面在通知结果未确认时提示警告，并继续打开已创建的 Target。
+
+确认接口在 `target` 之外返回 `channelReply: { status, receiptId }`。`GET /api/workspaces/:workspaceId/conversations/:conversationId/target-drafts/:draftId/channel-reply` 只读回持久状态，不发送消息、不返回 Provider 原始标识；没有匹配记录时返回 `blocked`。读取要求 Board 和 Workspace 访问权限，响应不缓存。
+
+原确认者可以通过 `POST /api/workspaces/:workspaceId/conversations/:conversationId/target-drafts/:draftId/channel-reply/reconcile` 提交唯一字段 `providerMessageId`，请求核实一条已经存在的飞书回信。该字段只是候选引用，不是送达结论。Host 核对当前 Workspace 成员权限、确认版本、来源事件、Connector 配置指纹及用户映射，再通过可选 `handleChannelReplyRead` 读取 Provider 消息。Feishu Connector 只接受本配置应用发送、未编辑且未删除的文本消息；只返回父消息、会话、正文 SHA-256 和 Provider 创建时间，不返回正文或凭证。
+
+Host 要求父消息、会话和正文摘要与原发送占用一致，Provider 时间位于发送开始前 5 秒至开始后 60 秒内，并在读取后复查上下文与配置。成功以条件更新写入 `succeeded` 和独立的 `channel.target_reply.reconciled` 审计，记录观察摘要、原状态和核实方式；授权与确认版本在写事务中再次校验。`sending` 未满 60 秒不启动核实；超过此时间可核实遗留占用。缺少读取能力、权限不足、引用不匹配、配置变化或无法确认时不标成功、不自动重发。旧插件没有该可选 hook 时保持关闭。并发核实有实例内限流，最终持久更新仍使用数据库条件检查。
+
+核实结果沿用 `{ status, receiptId }`，HTTP 响应不缓存，不输出 Provider 标识；非法输入返回 400，越权返回 403，已识别的状态/上下文冲突返回 409。不支持凭人工勾选标为已送达，不提供未知结果的强制补发。核实只恢复通知状态，不生成独立 CriterionProof。
+
+原 Conversation 的已转换草稿提供“渠道回信”入口，打开只读状态与核实对话框，不显示创建或确认目标动作。`unknown` 与 `sending` 状态允许原确认者提交候选飞书消息 ID；有效输入只包含 1 至 200 个字母、数字、下划线或连字符。打开或刷新只查询持久状态，只有显式提交才请求 Provider 核实。服务端决定发送是否仍在保护窗口及调用者是否有权核实。未匹配、权限不足、上下文冲突与服务不可用分别保留可见结果，不自动重试。关闭或切换草稿清空输入；后台旧状态响应不能覆盖核实成功结果。操作员始终可以打开已创建的目标，通知状态不影响目标创建事实。
+
+### 交付上下文读取
+
+`GET /api/workspaces/:workspaceId/delivery-context/channel` 接收 `channelEventId`、`draftRevisionId`、`createdTargetId`、`createdTargetRevisionId`；`GET /api/workspaces/:workspaceId/delivery-context/codex` 接收 `targetId`、`targetRevisionId`、`graphRevisionId`、`runId`、`runAttemptId`、`heartbeatRunId`，并可成对提供 `artifactRevisionId`、`fixedCiProofId` 核对已有固定 CI 与源产物关联。两者仅接收严格的 UUID 引用，在 Board 和 Workspace 访问校验后读取数据库及受控日志，不接收自报事实或通过结论，不登记 CriterionProof。
+
+响应分别保留 `database_context_only`、`execution_context_only` 及未验证项。渠道通知记录是应用送达状态，不是 Provider 真实性或独立回复证明；Codex 上下文也不等于有效权限、固定 CI、工件和运行构建的独立证明。Codex 日志检查有字节和等待上限，读取接口限制并发，所有响应禁止缓存。
+
 ## 7. 权限与身份
 
 - Provider 用户必须通过 Connector 身份映射成为 Workspace Human Principal，才能确认创建；

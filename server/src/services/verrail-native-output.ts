@@ -3,6 +3,9 @@ import { z } from "zod";
 import type { StorageService } from "../storage/types.js";
 import { captureNativeSource, unavailableNativeSource, validateNativeSourceObservation, type NativeSourceIdentity, type NativeSourceObservation } from "./verrail-native-source.js";
 import { NativeRunArtifactError, prepareNativeRunArtifacts } from "./verrail-run-artifacts.js";
+import { nativeSourceSnapshotSchema } from "./verrail-native-source-snapshot.js";
+import { nativeDispatchConfigurationSchema, validateNativeDispatchConfiguration } from "./verrail-native-dispatch.js";
+import { nativePermissionObservationSchema, validateNativePermissionObservation } from "./verrail-native-permission-observation.js";
 
 export const NATIVE_OUTPUT_CONTEXT_KEY = "verrailNativeOutputReceipt";
 export const NATIVE_OUTPUT_TIMEOUT_MS = 60_000;
@@ -21,14 +24,19 @@ const factsSchema = z.object({
   logStore: z.string().max(128).nullable(), logRef: z.string().max(4096).nullable(), logSha256: z.string().max(128).nullable(), logBytes: z.number().int().nonnegative().nullable(),
   usage: z.record(z.string().max(128), z.json()).nullable().refine((value) => JSON.stringify(value).length <= 16_384),
   exitCode: z.number().int().nullable(), errorCode: z.string().max(128).nullable(), environmentManifest: environmentSchema.nullable(),
+  dispatchConfiguration: nativeDispatchConfigurationSchema.optional(),
+  permissionObservation: nativePermissionObservationSchema.optional(),
 }).strict();
+const artifactSchema = z.object({ ordinal: z.number().int().min(0).max(9), path: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/).refine((p) => p !== "manifest.json"), title: z.string().trim().min(1).max(200), kind: z.enum(["code_change", "document", "report"]), bytes: z.number().int().min(1).max(32 * 1024 * 1024), contentHash: hash, contentRef: z.string().max(512) }).strict();
 const receiptSchema = z.object({
-  schemaVersion: z.literal(1), kind: z.literal("verrail.native-output-receipt"), phase: z.literal("after_adapter_return"),
+  schemaVersion: z.union([z.literal(1), z.literal(2)]), kind: z.literal("verrail.native-output-receipt"), phase: z.literal("after_adapter_return"),
   identity: identitySchema,
   beforeSource: z.custom<NativeSourceObservation>(), sourceBefore: z.custom<NativeSourceObservation>(), sourceAfter: z.custom<NativeSourceObservation>(),
   sourceStatus: z.enum(["stable", "unavailable"]), collectionStatus: z.enum(["collected", "no_manifest", "unsupported"]),
   readStartedAt: z.iso.datetime(), readFinishedAt: z.iso.datetime(), uploadStartedAt: z.iso.datetime(), uploadFinishedAt: z.iso.datetime(),
-  artifacts: z.array(z.object({ ordinal: z.number().int().min(0).max(9), path: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/).refine((p) => p !== "manifest.json"), title: z.string().trim().min(1).max(200), kind: z.enum(["code_change", "document", "report"]), bytes: z.number().int().min(1).max(32 * 1024 * 1024), contentHash: hash, contentRef: z.string().max(512) }).strict()).max(10),
+  artifacts: z.array(z.union([artifactSchema, artifactSchema.extend({ type: z.literal("file") }),
+    artifactSchema.extend({ type: z.literal("source_snapshot"), kind: z.literal("code_change"), sourceSnapshot: nativeSourceSnapshotSchema }),
+  ])).max(10),
   executionFacts: factsSchema.optional(),
   finalizedAt: z.iso.datetime().optional(),
   sha256: hash,
@@ -55,15 +63,27 @@ export function validateNativeOutputReceipt(raw: unknown, identity: NativeSource
   const sourceBefore = validateNativeSourceObservation(value.sourceBefore, identity, "after_adapter_return");
   const sourceAfter = validateNativeSourceObservation(value.sourceAfter, identity, "after_adapter_return");
   if (!beforeSource || !sourceBefore || !sourceAfter) return null;
+  if ([beforeSource, sourceBefore, sourceAfter].some((observation) => observation.schemaVersion !== value.schemaVersion)
+    || value.artifacts.some((artifact) => ("type" in artifact) !== (value.schemaVersion === 2))) return null;
   if (value.executionFacts && (value.executionFacts.heartbeatRunId !== identity.heartbeatRunId || value.executionFacts.agentId !== identity.agentId
     || (value.executionFacts.exitCode !== null && value.executionFacts.exitCode !== 0) || value.executionFacts.errorCode !== null)) return null;
   if (!!value.executionFacts !== !!value.finalizedAt || (value.finalizedAt && Date.parse(value.finalizedAt) < Date.parse(value.uploadFinishedAt))) return null;
   const environment = value.executionFacts?.environmentManifest;
+  const dispatch = value.executionFacts?.dispatchConfiguration;
+  if (dispatch && (!validateNativeDispatchConfiguration(dispatch, identity)
+    || Date.parse(dispatch.recordedAt) > Date.parse(value.finalizedAt!))) return null;
+  const permissions = value.executionFacts?.permissionObservation;
+  if (permissions && (!dispatch || !validateNativePermissionObservation(permissions, identity, dispatch.sha256)
+    || Date.parse(permissions.startedAt) < Date.parse(dispatch.recordedAt)
+    || Date.parse(permissions.finishedAt) > Date.parse(value.sourceBefore.observedAt))) return null;
   if (environment && Object.keys(identitySchema.shape).some((key) => environment[key as keyof NativeSourceIdentity] !== identity[key as keyof NativeSourceIdentity])) return null;
   const times = [beforeSource.observedAt, sourceBefore.observedAt, value.readStartedAt, value.readFinishedAt, sourceAfter.observedAt, value.uploadStartedAt, value.uploadFinishedAt].map(Date.parse);
   if (times.some((time, index) => index > 0 && time < times[index - 1]!)) return null;
   if (value.sourceStatus !== (stable(sourceBefore, sourceAfter) ? "stable" : "unavailable")) return null;
   if (sourceBefore.status === "captured" && sourceAfter.status === "captured" && !stable(sourceBefore, sourceAfter)) return null;
+  if (value.artifacts.some((artifact) => "sourceSnapshot" in artifact && (value.sourceStatus !== "stable"
+    || artifact.sourceSnapshot.sourceContentSha256 !== sourceAfter.manifest?.contentSha256
+    || artifact.path !== `source-${artifact.ordinal}.bundle`))) return null;
   if ((value.collectionStatus === "collected") !== (value.artifacts.length > 0)) return null;
   if (value.collectionStatus === "unsupported" && (sourceBefore.reasonCode !== "unsupported_execution" && sourceBefore.reasonCode !== "cwd_mismatch")) return null;
   if (value.artifacts.reduce((total, entry) => total + entry.bytes, 0) > 64 * 1024 * 1024
@@ -121,23 +141,25 @@ export async function captureNativeOutput(input: {
   await bounded(input.revalidate, "NATIVE_OUTPUT_BINDING_INVALID");
   const unsupported = beforeSource.reasonCode === "unsupported_execution" || beforeSource.reasonCode === "cwd_mismatch";
   const scan = () => unsupported
-    ? Promise.resolve(unavailableNativeSource(input.identity, beforeSource.reasonCode!, "after_adapter_return"))
-    : captureNativeSource({ cwd: input.cwd, identity: input.identity, phase: "after_adapter_return", limits: { timeoutMs: Math.max(0, Math.floor(deadline - performance.now())) } });
+    ? Promise.resolve(unavailableNativeSource(input.identity, beforeSource.reasonCode!, "after_adapter_return", beforeSource.scope.version))
+    : captureNativeSource({ cwd: input.cwd, identity: input.identity, phase: "after_adapter_return", scopeVersion: beforeSource.scope.version, limits: { timeoutMs: Math.max(0, Math.floor(deadline - performance.now())) } });
   const sourceBefore = await bounded(scan, "NATIVE_OUTPUT_SOURCE_INVALID");
   const emptyTime = new Date().toISOString();
-  const prepared = unsupported ? null : await bounded(() => prepareNativeRunArtifacts({ cwd: input.cwd, workspaceId: input.identity.workspaceId, runAttemptId: input.identity.attemptId, check }), "NATIVE_ARTIFACT_INVALID");
+  const prepared = unsupported ? null : await bounded(() => prepareNativeRunArtifacts({ cwd: input.cwd, workspaceId: input.identity.workspaceId, runAttemptId: input.identity.attemptId, check,
+    source: { identity: input.identity, observation: sourceBefore }, timeoutMs: Math.max(0, Math.floor(deadline - performance.now())) }), "NATIVE_ARTIFACT_INVALID");
   const sourceAfter = await bounded(scan, "NATIVE_OUTPUT_SOURCE_INVALID");
   if (sourceBefore.status === "captured" && sourceAfter.status === "captured" && !stable(sourceBefore, sourceAfter)) throw new NativeOutputFailure("NATIVE_OUTPUT_SOURCE_CHANGED");
+  if (prepared?.hasSourceSnapshot && !stable(sourceBefore, sourceAfter)) throw new NativeOutputFailure("NATIVE_OUTPUT_SOURCE_INVALID");
   await bounded(input.revalidate, "NATIVE_OUTPUT_BINDING_INVALID");
   const uploadStartedAt = new Date().toISOString();
   const artifacts = prepared ? await bounded(() => prepared.upload(input.storage), "NATIVE_OUTPUT_UPLOAD_FAILED") : [];
   await bounded(input.revalidate, "NATIVE_OUTPUT_BINDING_INVALID");
   check();
   const value: Omit<NativeOutputReceipt, "sha256"> = {
-    schemaVersion: 1, kind: "verrail.native-output-receipt", phase: "after_adapter_return", identity: identitySchema.parse(input.identity),
+    schemaVersion: beforeSource.schemaVersion, kind: "verrail.native-output-receipt", phase: "after_adapter_return", identity: identitySchema.parse(input.identity),
     beforeSource, sourceBefore, sourceAfter, sourceStatus: stable(sourceBefore, sourceAfter) ? "stable" : "unavailable",
     collectionStatus: prepared?.collectionStatus ?? "unsupported", readStartedAt: prepared?.readStartedAt ?? emptyTime,
-    readFinishedAt: prepared?.readFinishedAt ?? emptyTime, uploadStartedAt, uploadFinishedAt: new Date().toISOString(), artifacts,
+    readFinishedAt: prepared?.readFinishedAt ?? emptyTime, uploadStartedAt, uploadFinishedAt: new Date().toISOString(), artifacts: receiptSchema.shape.artifacts.parse(artifacts),
   };
   // Schema validation and sorted-key hashing preserve the digest through JSONB ordering.
   const normalized = receiptSchema.parse({ ...value, sha256: "0".repeat(64) });

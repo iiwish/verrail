@@ -1,5 +1,6 @@
 import type {
   Conversation,
+  ChannelTargetReplySummary,
   ConversationDetail,
   ConversationMessage,
   CreateConversationInput,
@@ -47,8 +48,17 @@ export const conversationsApi = {
     { sourceMessageId, initial, fieldSources: {} },
   ),
   confirmTargetDraft: (workspaceId: string, conversationId: string, draftId: string, revisionNumber: number) =>
-    api.post<{ draft: TargetCreationDraft; target: CreateTargetResponseV1 }>(
+    api.post<{ draft: TargetCreationDraft; target: CreateTargetResponseV1; channelReply?: ChannelTargetReplySummary }>(
       `${workspacePath(workspaceId)}/${encodeURIComponent(conversationId)}/target-drafts/${encodeURIComponent(draftId)}/confirm`,
       { expectedRevisionNumber: revisionNumber },
+    ),
+  getTargetDraftChannelReply: (workspaceId: string, conversationId: string, draftId: string) =>
+    api.get<ChannelTargetReplySummary>(
+      `${workspacePath(workspaceId)}/${encodeURIComponent(conversationId)}/target-drafts/${encodeURIComponent(draftId)}/channel-reply`,
+    ),
+  reconcileTargetDraftChannelReply: (workspaceId: string, conversationId: string, draftId: string, providerMessageId: string) =>
+    api.post<ChannelTargetReplySummary>(
+      `${workspacePath(workspaceId)}/${encodeURIComponent(conversationId)}/target-drafts/${encodeURIComponent(draftId)}/channel-reply/reconcile`,
+      { providerMessageId },
     ),
 };

@@ -27,6 +27,8 @@ import {
   type VerrailDomainApiClient,
 } from "../services/index.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
+import { channelTargetReplyService, reconcileChannelTargetReplySchema } from "../services/channel-target-reply.js";
+import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 
 const MAX_CONCURRENT_CHAT_RUNS = 3;
 const CHAT_TIMEOUT_MS = 120_000;
@@ -197,10 +199,14 @@ export function classifyConversationRuntimeOutcome(
 export function conversationRoutes(db: Db, opts: {
   deploymentMode: DeploymentMode;
   domainApiClient?: VerrailDomainApiClient | null;
+  pluginWorkerManager?: Pick<PluginWorkerManager, "call">;
+  publicBaseUrl?: string | null;
+  targetReplies?: Pick<ReturnType<typeof channelTargetReplyService>, "deliver" | "read"> & Partial<Pick<ReturnType<typeof channelTargetReplyService>, "reconcile">>;
 }) {
   const router = Router();
   const conversations = conversationService(db);
   const drafts = targetCreationDraftService(db);
+  const targetReplies = opts.targetReplies ?? channelTargetReplyService(db, { workerManager: opts.pluginWorkerManager, publicBaseUrl: opts.publicBaseUrl });
   const providerBindings = providerConversationBindingService(db);
   const domainApi = opts.domainApiClient === undefined
     ? createVerrailDomainApiClient()
@@ -371,6 +377,28 @@ export function conversationRoutes(db: Db, opts: {
     ));
   });
 
+  router.get("/workspaces/:workspaceId/conversations/:conversationId/target-drafts/:draftId/channel-reply", async (req, res) => {
+    assertBoard(req);
+    const workspaceId = req.params.workspaceId as string;
+    assertCompanyAccess(req, workspaceId);
+    res.set("Cache-Control", "no-store").json(await targetReplies.read({ workspaceId,
+      conversationId: req.params.conversationId as string, draftId: req.params.draftId as string, principalId: getActorInfo(req).actorId }));
+  });
+
+  router.post("/workspaces/:workspaceId/conversations/:conversationId/target-drafts/:draftId/channel-reply/reconcile", async (req, res) => {
+    assertBoard(req);
+    const workspaceId = req.params.workspaceId as string;
+    assertCompanyAccess(req, workspaceId);
+    const actor = getActorInfo(req);
+    if (actor.actorType !== "user") throw new HttpError(403, "A human Workspace member is required");
+    const parsed = reconcileChannelTargetReplySchema.safeParse(req.body);
+    if (!parsed.success) throw new HttpError(400, "Invalid reply reference");
+    if (!targetReplies.reconcile) throw new HttpError(503, "Reply reconciliation unavailable");
+    const result = await targetReplies.reconcile({ ...parsed.data, workspaceId, conversationId: req.params.conversationId as string,
+      draftId: req.params.draftId as string, principalId: actor.actorId });
+    res.set("Cache-Control", "no-store").status(result.status === "blocked" ? 409 : 200).json(result);
+  });
+
   router.post("/workspaces/:workspaceId/conversations/:conversationId/target-drafts/:draftId/confirm", async (req, res) => {
     assertBoard(req);
     const workspaceId = req.params.workspaceId as string;
@@ -427,9 +455,11 @@ export function conversationRoutes(db: Db, opts: {
       targetRevisionId: target.targetRevisionId,
       title: definition.title!,
     });
+    const channelReply = await targetReplies.deliver({ workspaceId, conversationId, draftId, principalId: actor.actorId });
     res.status(target.replayed ? 200 : 201).json({
       draft: await drafts.get(workspaceId, conversationId, draftId),
       target,
+      channelReply,
     });
   });
 

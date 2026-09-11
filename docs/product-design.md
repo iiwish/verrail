@@ -117,6 +117,8 @@ Target 中稳定的交付阶段和导航投影。默认模板为 Define、Execut
 
 TargetRevision 的版本化执行计划。GraphRevision 是不可变快照，包含节点、依赖、角色、输入、输出、完成定义、预算和证据要求。Graph 是高级检查和故障处理表面，普通用户优先看到 Stage、当前责任和下一步行动。
 
+Target 概览与 Work Graph 页展示版本化节点和依赖连线，区分 Agent 任务、用户任务、集成任务与治理门禁。用户可以缩放、平移、拖动查看布局，并检查节点责任、前置依赖和完成定义。画布布局操作不修改 GraphRevision、依赖关系或执行状态；没有图节点的 Target 显示空状态，不生成模拟执行事实。
+
 ### Criterion / Claim / Evidence / Verification
 
 AcceptanceCriterion 属于 TargetRevision，定义可判定要求和允许的证明方式。Submission 针对 Criterion 提出 Claim；Evidence 是来自 Run、CI、扫描器、Provider 或人工核验的不可变证明；VerificationResult 记录特定验证器对 Claim 和 Evidence 的 `passed`、`failed`、`inconclusive` 或有权 `waived` 结论。

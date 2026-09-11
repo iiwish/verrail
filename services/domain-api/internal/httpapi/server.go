@@ -44,6 +44,7 @@ type createGithubRepoBindingFunc func(*http.Request, target.AgentLifecycleComman
 
 type Server struct {
 	token                    string
+	fixedCIProof             *FixedCIProofConfiguration
 	create                   createFunc
 	createGraphRevision      createGraphRevisionFunc
 	activateGraphRevision    activateGraphRevisionFunc
@@ -76,9 +77,14 @@ type Server struct {
 }
 
 func New(token string, store *target.Store, logger *slog.Logger) http.Handler {
+	return newServer(token, store, logger, nil)
+}
+
+func newServer(token string, store *target.Store, logger *slog.Logger, proof *FixedCIProofConfiguration) http.Handler {
 	server := &Server{
-		token:  token,
-		logger: logger,
+		token:        token,
+		fixedCIProof: proof,
+		logger:       logger,
 		create: func(request *http.Request, command target.CreateCommand) (target.CreateResult, error) {
 			return store.Create(request.Context(), command)
 		},
@@ -219,6 +225,7 @@ func New(token string, store *target.Store, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/delivery-reviews", server.recordAdjudicationDeliveryReview)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/acceptances", server.acceptAdjudicationSubmission)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/integration-runs", server.recordConnectorIntegrationRun)
+	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/github-fixed-ci-proofs", server.recordFixedCIProof)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/human-work-results", server.recordConnectorHumanWorkResult)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/pull-request-actions", server.requestConnectorPullRequestAction)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/pull-request-actions/{actionRequestId}/approvals", server.approveConnectorAction)

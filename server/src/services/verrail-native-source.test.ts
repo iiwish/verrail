@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmod, link, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -32,6 +33,16 @@ describe("native pre-dispatch source observation", () => {
     expect(validateNativeSourceObservation(a, identity)).toEqual(a);
     expect(validateNativeSourceObservation({ ...a, identity: { ...identity, runId: "foreign" } }, identity)).toBeNull();
     expect(JSON.stringify(a)).not.toContain("export const");
+  });
+  it("retains the exact v1 content hash construction and rejects relabeled schemas", async () => {
+    const old = await capture({ cwd, identity, scopeVersion: 1 });
+    const records = [{ path: "source.ts", kind: "file", mode: "100644", bytes: 25,
+      sha256: createHash("sha256").update("export const source = 1;\n").digest("hex") }];
+    const oldScope = { version: 1, kind: "git_tracked_and_nonignored_untracked", excludedPaths: [".verrail/run-artifacts/**"],
+      ignoredFiles: "outside_coverage", symlinks: "relative_in_root_target_bytes_only", contentMode: "git_owner_execute_bit" };
+    expect(old.manifest?.contentSha256).toBe(createHash("sha256").update(JSON.stringify({ scope: oldScope, records })).digest("hex"));
+    expect(validateNativeSourceObservation(JSON.parse(JSON.stringify(old)), identity)).toEqual(old);
+    expect(validateNativeSourceObservation({ ...old, schemaVersion: 2 }, identity)).toBeNull();
   });
   it("keeps terminal captures phase-separated from dispatch observations", async () => {
     const terminal = await captureNativeSource({ cwd, identity, phase: "after_adapter_return" });
@@ -89,14 +100,43 @@ describe("native pre-dispatch source observation", () => {
     await mkdir(path.join(cwd, "cache"));
     await mkdir(path.join(cwd, ".verrail/run-artifacts/attempt"), { recursive: true });
     await mkdir(path.join(cwd, "nested"));
-    const a = await capture();
+    const a = await capture({ cwd, identity, scopeVersion: 1 });
     await writeFile(path.join(cwd, "cache/ignored"), "private ignored bytes");
     await writeFile(path.join(cwd, ".verrail/run-artifacts/attempt/output"), "output");
-    const b = await capture({ cwd: path.join(cwd, "nested"), identity });
+    const b = await capture({ cwd: path.join(cwd, "nested"), identity, scopeVersion: 1 });
     expect(a.manifest).toEqual(b.manifest);
     expect(b.scope.excludedPaths).toEqual([".verrail/run-artifacts/**"]);
     await writeFile(path.join(cwd, ".verrail/source-contract.json"), "{}\n");
-    expect((await capture()).manifest).not.toEqual(a.manifest);
+    expect((await capture({ cwd, identity, scopeVersion: 1 })).manifest).not.toEqual(a.manifest);
+  });
+  it("excludes delivery-record churn only in explicit v2 product source coverage", async () => {
+    const log = path.join(cwd, ".verrail/targets/closure/run.log");
+    await mkdir(path.dirname(log), { recursive: true });
+    await writeFile(log, "initial\n");
+    await git(["add", "."]);
+    const original = await capture();
+    expect(original).toMatchObject({ schemaVersion: 2, scope: { version: 2, excludedPaths: [".verrail/**"] } });
+    const current = await capture({ cwd, identity, beforeRecheck: async () => { await writeFile(log, "growing\n"); } });
+    expect(current.manifest).toEqual(original.manifest);
+    const historical = await capture({ cwd, identity, scopeVersion: 1, beforeRecheck: async () => { await writeFile(log, "growing again\n"); } });
+    expect(historical).toMatchObject({ schemaVersion: 1, status: "unavailable", reasonCode: "source_changed" });
+    await writeFile(path.join(cwd, ".verrail-other"), "still covered");
+    expect((await capture()).manifest?.contentSha256).not.toBe(original.manifest?.contentSha256);
+  });
+  it("never traverses an excluded root .verrail symlink in v2", async () => {
+    await symlink("/outside/snapshot-coverage", path.join(cwd, ".verrail"));
+    await git(["add", ".verrail"]);
+    expect(await capture()).toMatchObject({ schemaVersion: 2, status: "captured", manifest: { files: 1 } });
+    expect(await capture({ cwd, identity, scopeVersion: 1 })).toMatchObject({ schemaVersion: 1, status: "unavailable" });
+  });
+  it("excludes unsupported index entries only inside root .verrail", async () => {
+    const head = (await git(["rev-parse", "HEAD"])).stdout.trim();
+    await git(["update-index", "--add", "--cacheinfo", `160000,${head},.verrail/excluded-module`]);
+    expect(await capture()).toMatchObject({ status: "captured", manifest: { files: 1 } });
+    expect(await capture({ cwd, identity, scopeVersion: 1 })).toMatchObject({ status: "unavailable", reasonCode: "unsupported_index" });
+    await mkdir(path.join(cwd, "src/.verrail"), { recursive: true });
+    await writeFile(path.join(cwd, "src/.verrail/source"), "covered nested path");
+    expect((await capture()).manifest?.files).toBe(2);
   });
   it.each(["symlink", "hardlink", "directory", "unsafe"])("marks %s unavailable without reading source outside scope", async (kind) => {
     if (kind === "symlink") await symlink("/etc/passwd", path.join(cwd, "linked"));

@@ -52,6 +52,8 @@ import type {
   EnvSecretRefBinding,
   ChannelReplyRequestV1,
   ChannelReplyResultV1,
+  ChannelReplyReadRequestV1,
+  ChannelReplyReadResultV1,
   ChannelWebhookRequestV1,
   ChannelWebhookResultV1,
 } from "@paperclipai/shared";
@@ -1255,6 +1257,7 @@ export interface HostToWorkerMethods {
   handleChannelWebhook: [params: ChannelWebhookRequestV1, result: ChannelWebhookResultV1];
   /** Versioned enterprise-channel reply dispatch. */
   handleChannelReply: [params: ChannelReplyRequestV1, result: ChannelReplyResultV1];
+  handleChannelReplyRead: [params: ChannelReplyReadRequestV1, result: ChannelReplyReadResultV1];
   /** Scoped plugin API route dispatch. */
   handleApiRequest: [params: PluginApiRequestInput, result: PluginApiResponse];
   /** @see PLUGIN_SPEC.md §13.8 */
@@ -1384,6 +1387,7 @@ export const HOST_TO_WORKER_OPTIONAL_METHODS: readonly HostToWorkerMethodName[] 
   "handleWebhook",
   "handleChannelWebhook",
   "handleChannelReply",
+  "handleChannelReplyRead",
   "handleApiRequest",
   "getData",
   "performAction",

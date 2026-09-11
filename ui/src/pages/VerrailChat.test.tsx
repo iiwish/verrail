@@ -36,7 +36,8 @@ async function render() {
 describe("Verrail Chat channel drafts", () => {
   it("opens the original versioned draft and hides canceled or converted draft actions", async () => {
     const draft = { id: "channel-draft", workspaceId: "workspace-1", conversationId: "conversation-1", status: "collecting", activeRevisionNumber: 3, activeRevision: { definition: { title: "Channel outcome" } } };
-    mocks.listTargetDrafts.mockResolvedValue([draft, { ...draft, id: "done", status: "converted" }, { ...draft, id: "canceled", status: "canceled" }]);
+    const converted = { ...draft, id: "done", status: "converted", convertedTargetId: "target-1" };
+    mocks.listTargetDrafts.mockResolvedValue([draft, converted, { ...draft, id: "canceled", status: "canceled" }]);
     await render();
     expect(mocks.listTargetDrafts).toHaveBeenCalledWith("workspace-1", "conversation-1");
     const buttons = Array.from(container.querySelectorAll("button")).filter((button) => button.textContent?.includes("Continue draft"));
@@ -44,6 +45,10 @@ describe("Verrail Chat channel drafts", () => {
     expect(container.textContent).toContain("channel-draft");
     await act(async () => buttons[0]!.click());
     expect(mocks.openNewTarget).toHaveBeenCalledWith({ conversationId: "conversation-1", draft });
+    const reply = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Channel reply");
+    expect(reply).toBeTruthy();
+    await act(async () => reply!.click());
+    expect(mocks.openNewTarget).toHaveBeenCalledWith({ conversationId: "conversation-1", draft: converted });
   });
   it("surfaces load failure rather than silently hiding existing drafts", async () => {
     mocks.listTargetDrafts.mockRejectedValue(new Error("unavailable"));

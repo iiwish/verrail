@@ -44,6 +44,7 @@ import type {
 } from "@paperclipai/shared";
 import { useTranslation } from "@/i18n";
 import { CriterionProofEditor } from "@/components/targets/CriterionProofEditor";
+import { TargetWorkGraph } from "@/components/targets/TargetWorkGraph";
 
 const TARGET_TABS = [
   "overview",
@@ -609,6 +610,9 @@ export function TargetWorkbench() {
 
       {(isRevision || activeTab === "overview") ? (
         <div className="space-y-7">
+          {!isRevision ? <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.work")}>
+            {workspace ? <TargetWorkGraph items={workspace.work} graph={workspace.graph} /> : null}
+          </WorkspaceSectionState> : null}
           {!isRevision && workspace ? (
             <section aria-labelledby="target-commands-title" className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
@@ -914,19 +918,7 @@ export function TargetWorkbench() {
 
       {activeTab === "work" && !isRevision ? (
         <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.work")}>
-          {workspace?.work.length ? (
-            <ul className="border-y border-border">
-              {workspace.work.map((item) => (
-                <li key={item.id} className="flex flex-wrap items-center gap-3 border-b border-border py-4 last:border-b-0">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{item.nodeKey} · {item.title}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{item.kind} · {item.stage}</p>
-                  </div>
-                  <span className="text-xs text-muted-foreground">{item.status}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          {workspace ? <TargetWorkGraph items={workspace.work} graph={workspace.graph} /> : null}
         </WorkspaceSectionState>
       ) : null}
 

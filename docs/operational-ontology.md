@@ -142,6 +142,8 @@ Criterion 可以固定 `proofContract` v1，其中 `allOf` 的每项要求均为
 
 CriterionProof 是独立 VerificationResult 的不可变上下文绑定，固定 TargetRevision、GraphRevision、Criterion、requirement、完整合同 Hash，以及后置证明适用的 Submission 和 EffectReceipt。它与来源验证事务原子登记，不复制 CI VerificationResult，也不以人工补填 assertion 名称代替验证器的真实覆盖。后置证明可以在 Submission 后追加；其失败或缺失阻止最终 Outcome，但不混入候选原有的验收前验证选择器。新候选、图、目标版本或不匹配动作的证明不能复用。
 
+封闭复合证明的 Provider 为 `verrail`，表示操作员授信的独立本地 verifier，而非 GitHub 对飞书或 Codex 运行作出的认证。其 VerificationResult 同时引用本地验证的 `scan_result` 和独立读取的 GitHub `ci_result`，并保存签名观察与来源绑定。`feishu_target` 和 `codex_execution` 各自覆盖固定的完整前置断言组；只读上下文、版本字符串、调用方声明及普通 IntegrationRun 写入不产生该准入能力。该证明不代表 Human Acceptance 或后置外部动作完成。
+
 VerificationResult 绑定 Criterion、Claim、Evidence 集合和验证器版本，结果为 `passed`、`failed`、`inconclusive` 或 `waived`。`waived` 必须引用具备权限的人类例外决定及有效范围。Agent 自述只能作为低信任 Observation，不能冒充 CI、扫描器或人工核验结果。
 
 ### ArtifactContract、Artifact 与 ArtifactRevision

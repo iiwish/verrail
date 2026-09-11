@@ -766,6 +766,34 @@
     "collection": "目标集合（可选）",
     "noCollection": "未归类",
     "outcomeOwner": "结果负责人",
+    "graph": {
+      "summary": "{{count}} 个节点 · r{{revision}}",
+      "controls": "流程图视图控制",
+      "kind": "节点类型",
+      "owner": "责任主体",
+      "dependencies": "前置节点",
+      "none": "无",
+      "kinds": {
+        "agent_task": "Agent 任务",
+        "human_task": "用户任务",
+        "integration_task": "集成任务",
+        "decision_gate": "用户决策",
+        "review_gate": "人工评审",
+        "acceptance_gate": "人工验收",
+        "policy_gate": "策略门禁"
+      },
+      "states": {
+        "pending": "待处理",
+        "ready": "已就绪",
+        "running": "运行中",
+        "blocked": "已阻塞",
+        "completed": "已完成",
+        "canceled": "已取消"
+      },
+      "zoomIn": "放大",
+      "zoomOut": "缩小",
+      "fitView": "适配视图"
+    },
     "unassigned": "未分配",
     "risk": "风险",
     "updated": "更新时间",
@@ -911,6 +939,31 @@
       "resume": "继续草稿",
       "untitledDraft": "未命名目标草稿",
       "confirm": "确认创建目标",
+      "channelReplyPendingTitle": "目标已创建，渠道回信尚未确认",
+      "channelReplyPending": "目标已就绪，但飞书回信尚未确认。请勿为重试通知而再次创建目标。",
+      "reply": {
+        "title": "渠道回信",
+        "loading": "正在读取回信状态...",
+        "unavailable": "回信状态不可用",
+        "refresh": "刷新回信状态",
+        "messageId": "飞书消息 ID",
+        "verify": "核实已有回信",
+        "verifying": "正在核实...",
+        "openTarget": "打开目标",
+        "permission": "仅仍有工作区访问权限的原确认者可以核实此回信。",
+        "scopeDenied": "此回信属于其他工作区。",
+        "conflict": "无法核实此回信，请刷新状态并检查消息 ID。",
+        "failed": "核实失败，回信未被标为已确认。请稍后重试。",
+        "loadFailed": "无法读取回信状态，请刷新后重试。",
+        "unconfirmed": "回信仍未确认，未重新发送消息。",
+        "status": {
+          "succeeded": "回信已确认",
+          "unknown": "回信送达尚未确认",
+          "sending": "发送待完成或已中断",
+          "blocked": "无可核实的回信记录",
+          "not_applicable": "无需渠道回信"
+        }
+      },
       "creating": "正在创建...",
       "errors": {
         "loadDrafts": "无法加载目标草稿，请重试后继续。",

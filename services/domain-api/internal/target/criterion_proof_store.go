@@ -15,8 +15,36 @@ type validatedCriterionProof struct {
 	requirement        CriterionProofRequirement
 	contractHash       string
 	sourceIdentityHash string
+	fixedCIVerifier    *fixedCIProofAuthority
+	deliveryVerifier   *deliveryProofAuthority
 }
 
+func (store *Store) assertGenericIntegrationProofAdmission(ctx context.Context, command AgentLifecycleCommand[RecordIntegrationRunInput]) error {
+	_, hasCoverage := command.Input.ProviderReceipt["criterionProof"]
+	if command.Input.ProofContext != nil || hasCoverage {
+		return forbidden("CRITERION_PROOF_VERIFIER_REQUIRED", "Generic IntegrationRun ingestion cannot establish independent verifier authority")
+	}
+	// TargetRevision contracts are immutable. Check before command receipt replay,
+	// including requests that omit the explicit proof context entirely.
+	var criterionCount int
+	var hasContract bool
+	if err := store.pool.QueryRow(ctx, `select count(*), coalesce(bool_or(criterion ? 'proofContract'),false)
+		from verrail_target_revisions revision
+		cross join lateral jsonb_array_elements(revision.acceptance_criteria) criterion
+		where revision.id=$1 and revision.workspace_id=$2 and revision.target_id=$3
+		and criterion->>'id'=$4`, command.Input.TargetRevisionID, command.WorkspaceID, command.Input.TargetID, command.Input.CriterionKey).Scan(&criterionCount, &hasContract); err != nil {
+		return err
+	}
+	if criterionCount != 1 {
+		return validation("IntegrationRun criterion must belong to the specified TargetRevision")
+	}
+	if hasContract {
+		return forbidden("CRITERION_PROOF_VERIFIER_REQUIRED", "Generic IntegrationRun ingestion cannot establish independent verifier authority")
+	}
+	return nil
+}
+
+// This validates domain bindings only, not independent verifier authority.
 func validateIntegrationProof(ctx context.Context, tx pgx.Tx, command AgentLifecycleCommand[RecordIntegrationRunInput]) (*validatedCriterionProof, error) {
 	input := command.Input
 	var raw []byte

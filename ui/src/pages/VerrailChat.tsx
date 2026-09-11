@@ -346,7 +346,7 @@ export function VerrailChat() {
                 </Button>
               </div>
             ) : null}
-            {(draftsQuery.data ?? []).filter((draft) => ["collecting", "ready_for_confirmation", "converting"].includes(draft.status)).map((draft) => (
+            {(draftsQuery.data ?? []).filter((draft) => ["collecting", "ready_for_confirmation", "converting", "converted"].includes(draft.status)).map((draft) => (
               <div key={draft.id} className="mb-4 flex flex-wrap items-center gap-3 border-b border-border pb-3">
                 <div className="min-w-0 flex-1">
                   <p className="break-words text-sm font-medium">{draft.activeRevision.definition.title ?? t("targets.create.untitledDraft")}</p>
@@ -354,7 +354,7 @@ export function VerrailChat() {
                 </div>
                 <Button variant="outline" size="sm" onClick={() => openNewTarget({ conversationId: draft.conversationId, draft })}>
                   <Target className="h-4 w-4" />
-                  {t("targets.create.resume")}
+                  {t(draft.status === "converted" ? "targets.create.reply.title" : "targets.create.resume")}
                 </Button>
               </div>
             ))}

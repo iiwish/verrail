@@ -1,0 +1,2 @@
+ALTER TABLE "verrail_integration_runs" DROP CONSTRAINT "verrail_integration_runs_provider_check";--> statement-breakpoint
+ALTER TABLE "verrail_integration_runs" ADD CONSTRAINT "verrail_integration_runs_provider_check" CHECK ("verrail_integration_runs"."provider" in ('github', 'verrail'));

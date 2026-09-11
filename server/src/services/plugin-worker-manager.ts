@@ -21,6 +21,7 @@
 import { fork, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
+import path from "node:path";
 import { createInterface, type Interface as ReadlineInterface } from "node:readline";
 import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
 import {
@@ -2771,9 +2772,22 @@ export function createPluginWorkerHandle(
       TZ: process.env.TZ ?? "UTC",
     };
 
+    const observerEnabled = process.env.VERRAIL_PLUGIN_OBSERVER_ID === pluginId;
+    const observerExecutable = observerEnabled ? process.env.VERRAIL_PLUGIN_OBSERVER_EXECUTABLE : undefined;
+    const observerConfig = observerEnabled ? process.env.VERRAIL_PLUGIN_OBSERVER_CONFIG : undefined;
+    if (observerEnabled && (!observerExecutable || !observerConfig)) throw new Error("DELIVERY_RUNTIME_PLUGIN_CONFIG_INVALID");
+    if (observerExecutable || observerConfig) {
+      if (!observerExecutable || !observerConfig || !path.isAbsolute(observerExecutable) || !path.isAbsolute(observerConfig)) {
+        throw new Error("DELIVERY_RUNTIME_PLUGIN_CONFIG_INVALID");
+      }
+      for (const key of Object.keys(workerEnv)) if (/^(NODE_(?!ENV$)|LD_|DYLD_)/.test(key)) delete workerEnv[key];
+      workerEnv.VERRAIL_RUNTIME_OBSERVER_CONFIG = observerConfig;
+    }
+
     const child = fork(options.entrypointPath, [], {
       stdio: ["pipe", "pipe", "pipe", "ipc"],
-      execArgv: options.execArgv ?? [],
+      execArgv: observerExecutable ? [] : options.execArgv ?? [],
+      ...(observerExecutable ? { execPath: observerExecutable } : {}),
       env: workerEnv,
       // Don't let the child keep the parent alive
       detached: false,

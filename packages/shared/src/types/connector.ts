@@ -10,6 +10,7 @@ export const CONNECTOR_CONCLUSIONS = ["success", "failure", "neutral"] as const;
 export const CONNECTOR_ATTEMPT_STATUSES = ["succeeded", "failed", "neutral"] as const;
 
 export type ConnectorProvider = (typeof CONNECTOR_PROVIDERS)[number];
+export type IntegrationProvider = ConnectorProvider | "verrail";
 export type ConnectorActionType = (typeof CONNECTOR_ACTION_TYPES)[number];
 export type ConnectorActionStatus = (typeof CONNECTOR_ACTION_STATUSES)[number];
 export type ConnectorConclusion = (typeof CONNECTOR_CONCLUSIONS)[number];
@@ -28,7 +29,7 @@ export interface ConnectorPullRequestParamsV1 {
 }
 
 /**
- * Immutable integration run: one IntegrationTask result bound to the CI
+ * Immutable integration run: one IntegrationTask result bound to the verification
  * evidence it produced and the verification result it asserted (ontology
  * 111, 240; invariant 9). Neutral runs carry no verification result.
  */
@@ -41,7 +42,7 @@ export interface ConnectorIntegrationRunV1 {
   workNodeId: string | null;
   connectorVersion: string | null;
   connectionId: string | null;
-  provider: ConnectorProvider;
+  provider: IntegrationProvider;
   externalRef: string;
   commitRef: string | null;
   criterionKey: string | null;

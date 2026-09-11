@@ -99,6 +99,17 @@ export const channelReplyResultV1Schema = z.object({
   providerMessageId: z.string().min(1).max(500),
 }).strict();
 
+export const channelReplyReadRequestV1Schema = z.object({
+  contractVersion: z.literal(1), workspaceId: z.string().uuid(), connectionId: z.string().min(1).max(200),
+  connectorKey: safeKey, providerMessageId: z.string().regex(/^[A-Za-z0-9_-]{1,200}$/),
+  parentProviderMessageId: z.string().min(1).max(500), externalConversationId: z.string().min(1).max(500),
+}).strict();
+
+export const channelReplyReadResultV1Schema = z.object({
+  contractVersion: z.literal(1), providerMessageId: z.string().min(1).max(200), parentProviderMessageId: z.string().min(1).max(500),
+  externalConversationId: z.string().min(1).max(500), bodySha256: z.string().regex(/^[a-f0-9]{64}$/), createdAt: z.iso.datetime(),
+}).strict();
+
 export const channelIngressRequestV1Schema = z.object({
   contractVersion: z.literal(1),
   workspaceId: z.string().uuid(),

@@ -148,7 +148,7 @@ pending_approval -> approved -> executing -> executed
 
 ### 传输与审计
 
-认证请求只允许 `GET https://api.github.com` 下固定仓库的精确 Attempt、jobs、artifacts 和固定 source contents 端点；不跟随带凭证的重定向，不接受 caller URL 或 header。Artifact 下载使用独立无凭证 HTTPS transport、Operator 审核的精确主机白名单和手工重定向策略。分页、总超时、响应体、压缩包与解压流均受预算限制。ZIP 使用直接固定依赖 `yauzl 3.4.0`，只接受一个普通 `verrail-fixed-ci.json` 文件，不解压到磁盘；支持普通 ZIP 的 store/deflate 与 12/16-byte data descriptor，拒绝 ZIP64、archive comment、前置或尾随额外记录、路径穿越、目录、链接、加密、非法压缩或截断内容。该受限格式的真实 GitHub Artifact archive 兼容性仍需生产验证，合成 ZIP 测试不替代这项验证。
+认证请求只允许 `GET https://api.github.com` 下固定仓库的精确 Attempt、jobs、artifacts、固定 source contents，以及精确 SHA 的 Git commit 和非递归 root tree 端点；不跟随带凭证的重定向，不接受 caller URL 或 header。Git 对象端点仅供受验提交到源码快照的映射，不授予 Agent 通用仓库读取权限。Artifact 下载使用独立无凭证 HTTPS transport、Operator 审核的精确主机白名单和手工重定向策略。分页、总超时、响应体、压缩包与解压流均受预算限制。ZIP 使用直接固定依赖 `yauzl 3.4.0`，只接受一个普通 `verrail-fixed-ci.json` 文件，不解压到磁盘；支持普通 ZIP 的 store/deflate 与 12/16-byte data descriptor，拒绝 ZIP64、archive comment、前置或尾随额外记录、路径穿越、目录、链接、加密、非法压缩或截断内容。生产归档兼容性需要真实 Provider 验证，合成 ZIP 测试不替代这项验证。
 
 进程内并发和速率保护在 Secret 读取前执行：全进程最多 4 次并发采集，每个 Workspace/Target 键最多 1 次并发、每分钟最多 4 次启动，最多保留 256 个键；所有退出路径释放并发占用。该保护仅属于当前 Node 进程，不是跨副本租约、持久化恢复、全局配额或 exactly-once 保证；多副本部署须另设入口限流。进程重启不能恢复该内存计数。
 
@@ -158,4 +158,60 @@ pending_approval -> approved -> executing -> executed
 
 Observation 只验证 `ts_tests`、`ts_typecheck`、`ts_build` 与 `go_tests` 的固定 CI 事实和来源 Hash。它不是 CriterionProof，不证明 ArtifactRevision 与受验 Commit 等价，也不创建 IntegrationRun、Evidence、VerificationResult，或修改 Graph/Acceptance/Outcome。完整入库仍要求不可变验证器信任、当前来源与产物映射、版本绑定和完整 compound all-of 覆盖。
 
+通用 IntegrationRun 入口拒绝显式 proofContract 证明，包括持有内部 bearer 的 service Principal 和历史命令重放。`auditEventId`、Observation receipt 或调用方填写的 `criterionProof` 不是证明授权令牌。未声明 proofContract 的兼容集成记录保持原有行为，但不授予显式证明能力。显式固定 CI 证明使用下述单独准入路径，不能将 Observation 回执上传到通用入口进行升级。
+
 `live_feishu`、`live_codex`、`live_recovery`、`secret_non_persistence`、`human_governance`、`pr_effect` 明确列为不支持的义务。CI 成功不能替代真实 Channel、Agent、恢复演练、秘密不落盘、独立真人决定或真实 PR Effect，也不能据此宣布 G2.7 完成。
+
+## 8. 固定 CI 证明准入与源码映射
+
+`POST /api/workspaces/:workspaceId/targets/:targetId/github-fixed-ci-proofs` 要求 `Idempotency-Key`，只接受严格 JSON：
+
+```json
+{
+  "runId": "123",
+  "runAttempt": 2,
+  "claimId": "<existing Claim UUID>",
+  "workNodeId": "<IntegrationTask UUID>",
+  "artifactRevisionId": "<native source snapshot ArtifactRevision UUID>",
+  "requirementId": "<existing proof requirement ID>"
+}
+```
+
+请求只选择已有事实。Criterion 由 Claim 推导，版本、仓库和受验 SHA 由经过固定的配置与当前领域事实确定；调用方不能填写证明结论、断言覆盖、对象 Hash、verifier 身份或旧 Observation。身份、成员资格、显式用户白名单和进程限流与 Observation 采集共用同一边界。
+
+### 启用条件
+
+默认不启用证明能力。Operator 必须显式配置相互独立的 `VERRAIL_GITHUB_CI_PROOF_TOKEN` 与 `VERRAIL_GITHUB_CI_PROOF_TRUST`。两者均未配置时路径不可用；只配置一项、非法配置或与普通 `VERRAIL_DOMAIN_API_TOKEN` 相同的 token 均失败关闭。系统不生成 verifier 凭证或默认授信。配置由进程启动时固定，撤销或更换需要更新配置并重启相关进程。
+
+这两项配置只交给 Node 控制平面和 Go Domain API，不能放入 Agent 配置、项目环境文件或候选仓库。Agent、工作区服务和 ACPX terminal 子进程的最终环境删除普通领域 token 与 proof token，包括大小写变体和 ACPX 认证别名；Codex、Pi 和 OpenCode 的 Provider 环境占位符不能将它们展开为运行配置。ACPX 的会话环境在持久化前清理，最终子进程过滤由仓库固定的 ACPX patch 保证。运行级 Agent API key 和模型凭证保持各自既有权限。这是凭证继承与配置展开边界，不是 HostTrusted 同权限进程隔离，也不清理历史环境或运行文件。
+
+`VERRAIL_GITHUB_CI_PROOF_TRUST` 是单个严格 JSON 对象，不接受数组或通配符：
+
+| 字段 | 固定内容 |
+| --- | --- |
+| `schemaVersion` | `1` |
+| `workspaceId`, `targetId`, `targetRevisionId`, `graphRevisionId` | 精确领域版本 UUID |
+| `connectionId`, `bindingId` | 活动 GitHub 连接与仓库绑定 UUID |
+| `policySha256` | 已解析的完整 CI Policy 条目的 SHA-256，包括授权用户与预算 |
+| `repository`, `repositoryId`, `workflowId` | 精确仓库名称及 Provider 数字身份 |
+| `workflowExecutionSha` | 受验候选与工作流执行的同一个 40 位小写 Git SHA |
+| `workflowSha256`, `helperSha256` | 固定工作流和 helper 源文件 SHA-256 |
+| `maxAgeMs` | Provider 完成时间的有效期，正整数且不超过 7 天 |
+
+`policySha256` 使用既有严格 Policy parser 的字段顺序，对 `JSON.stringify(parsedEntry)` 计算 SHA-256；Go 将其作为精确固定摘要，不使用 Go JSON 序列化重新计算该字段。授信还固定工作流、helper、源码范围和代码拥有的 verifier 版本；配置不能自定义断言映射或授予真人决定权。
+
+### 验证与持久化
+
+读取秘密或访问 Provider 前，系统检查所选义务为 `pre_acceptance` 的 `independent_verification`，且非空断言集合完全包含于 `ts_tests`、`ts_typecheck`、`ts_build`、`go_tests`。复合自然语言义务、后置义务或不支持的断言直接拒绝，不降级、不拆写已接受的合同。
+
+源码产物必须由原生 `verrail-host-runner` 成功执行登记。系统沿 ArtifactRevision 的来源 Run/WorkNode、登记审计、Attempt/fencing 和权威 succeeded RunEvent，读取不可变事件中的已定稿 v2 output receipt，并校验精确 `source_snapshot` 项的 Hash、引用、顺序和身份。普通文件、人工补建产物、旧版回执、缺失来源和历史重标不能建立这条关联。
+
+服务在一次受限凭证会话中执行真实固定 CI reader，再读取该受验 Commit 的 Git root tree。隔离的 Git plumbing 重建完整 root tree 并验证其 SHA，拒绝截断、缺失或非法条目；只去除根目录名为 `.verrail` 的条目后重建产品源码 tree，要求其与可信快照的 `snapshotTree` 相等。Git 的递归 tree 身份绑定所有保留的子树与 blob；不需要下载仓库历史或 checkout。嵌套目录中的 `.verrail` 不排除。
+
+该映射证明 v2 产品源码范围内的 Git tree 身份，不证明完整 Commit 相等、运行时构建来源、有效权限、秘密扫描或同权限恶意进程隔离。未提交和未跟踪的快照内容只有进入受验候选 Commit 后才能匹配。源码、连接、秘密版本、Policy 与当前图在 Provider 读取后再次检查。
+
+内部 `POST /v1/workspaces/:workspaceId/github-fixed-ci-proofs` 只接受专用 proof bearer，不接受调用方 Principal header；普通领域 token 不能调用该入口，proof token 不能调用普通领域命令。Go 在同一事务中重新校验授信、当前版本、Claim、IntegrationTask 和精确来源关联，再处理命令重放。结论、内容 Hash、断言覆盖与 verifier 身份由服务构造，IntegrationRun、IntegrationAttempt、Evidence、VerificationResult、CriterionProof、审计与节点变化原子提交。相同 Provider Attempt 不得用新命令键改写来源或提升为不同证明。
+
+成功返回 `201`，相同事实重放返回 `200`，资源类型均为 `integration_run`。这条固定 v1 路径只接收 reader 完整验证成功的结果；Provider 失败、不可用或映射不符不产生证明，也不伪造 failed/neutral 结果。既有证明的有效期、版本变化和后续负向验证生命周期仍须按完整领域合同处理。发起用户的采集审计与 verifier service 的领域审计保持独立，均不等同于真人 Review、Acceptance 或 ActionApproval。
+
+采集审计的组件名为 `verrail/github-fixed-ci-reader/v1`；领域证明固定 service Principal `github-fixed-ci-verifier` 和版本 `github-fixed-ci-verifier.v1`。源码信任依赖原生 runner 的可信事件入口和不可变存储关联；映射不重新下载 Artifact 字节，也不能防御已被攻破的内部领域服务通道或宿主机。

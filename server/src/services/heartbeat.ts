@@ -87,6 +87,9 @@ export { scrubGitCredentialText };
 import { publishLiveEvent } from "./live-events.js";
 import { normalizeResponsibleUserDenialCode } from "./responsible-user-denial-run-outcomes.js";
 import { getRunLogStore, type RunLogHandle } from "./run-log-store.js";
+import { resolveRunUsageProvenance } from "./run-usage-provenance.js";
+import { loadNativeDispatchConfiguration, NATIVE_DISPATCH_CONTEXT_KEY, type NativeDispatchConfiguration } from "./verrail-native-dispatch.js";
+import { observeNativePermissions, NATIVE_PERMISSION_CONTEXT_KEY, type NativePermissionObservation } from "./verrail-native-permission-observation.js";
 import { getServerAdapter, listAdapterModelProfiles, runningProcesses } from "../adapters/index.js";
 import type {
   AdapterExecutionResult,
@@ -8370,6 +8373,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     sessionId: string | null;
     rawUsage: UsageTotals | null;
     usageBasis?: "per_run" | "session_cumulative" | null;
+    freshSession: boolean;
   }) {
     const { agentId, runId, sessionId, rawUsage, usageBasis } = input;
     // Adapters that declare per-run usage (e.g. the ACPX lane reports each
@@ -8380,6 +8384,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         normalizedUsage: rawUsage,
         previousRawUsage: null as UsageTotals | null,
         derivedFromSessionTotals: false,
+        usageSource: resolveRunUsageProvenance({ ...input, usageBasis, previousRawUsage: null, previousUsageBasis: null, hasPreviousRun: false,
+          freshSession: input.freshSession && Boolean(sessionId) }),
       };
     }
 
@@ -8389,6 +8395,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       normalizedUsage: deriveNormalizedUsageDelta(rawUsage, previousRawUsage),
       previousRawUsage,
       derivedFromSessionTotals: previousRawUsage !== null,
+      usageSource: resolveRunUsageProvenance({ ...input, usageBasis, previousRawUsage, hasPreviousRun: previousRun != null,
+        previousUsageBasis: parseObject(previousRun?.usageJson).usageBasis as "per_run" | "session_cumulative" | undefined }),
     };
   }
 
@@ -16213,6 +16221,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       let nativeOutputReceipt: NativeOutputReceipt | undefined;
       let nativeSourceAtDispatch: Awaited<ReturnType<typeof captureNativeSource>> | undefined;
       let nativeDispatchBinding: typeof nativeWorkspace = null;
+      let nativeDispatchConfiguration: NativeDispatchConfiguration | undefined;
+      let nativePermissionObservation: NativePermissionObservation | undefined;
       try {
         const adapterContext = { ...context };
         const runtimeMcpServers = await buildPaperclipRuntimeMcpServers({
@@ -16257,6 +16267,20 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           const rechecked = await resolveNativeRunWorkspace(db, bindingInput);
           if (!rechecked || rechecked.contentHash !== binding.contentHash) throw new Error("NATIVE_SOURCE_BINDING_CHANGED");
           nativeDispatchBinding = binding;
+          if (agent.adapterType === "codex_local") {
+            nativeDispatchConfiguration = await loadNativeDispatchConfiguration(db, identity, runtimeConfig);
+            context[NATIVE_DISPATCH_CONTEXT_KEY] = nativeDispatchConfiguration;
+            const permissionOrigin = process.env.VERRAIL_NATIVE_PERMISSION_PROBE_ORIGIN;
+            if (permissionOrigin) {
+              if (!authToken || !process.env.PAPERCLIP_API_URL
+                || new URL(process.env.PAPERCLIP_API_URL).origin !== new URL(permissionOrigin).origin) {
+                throw new Error("NATIVE_PERMISSION_OBSERVATION_UNAVAILABLE");
+              }
+              nativePermissionObservation = await observeNativePermissions({ identity,
+                dispatchSha256: nativeDispatchConfiguration.sha256, apiOrigin: permissionOrigin, authToken });
+              context[NATIVE_PERMISSION_CONTEXT_KEY] = nativePermissionObservation;
+            }
+          }
           nativeSourceAtDispatch = structuredClone(observation);
           context[NATIVE_SOURCE_CONTEXT_KEY] = observation;
           const persisted = await db.update(heartbeatRuns).set({ contextSnapshot: context, updatedAt: new Date() })
@@ -16310,6 +16334,12 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
               context: { verrailRunId: binding.runId, verrailRunAttemptId: binding.attemptId },
             });
             if (!checked || checked.contentHash !== binding.contentHash) throw new Error("NATIVE_OUTPUT_BINDING_CHANGED");
+            if (nativeDispatchConfiguration) {
+              const dispatch = await loadNativeDispatchConfiguration(db, nativeSourceAtDispatch!.identity, runtimeConfig);
+              if (dispatch.configurationSha256 !== nativeDispatchConfiguration.configurationSha256
+                || dispatch.agentVersionContentHash !== nativeDispatchConfiguration.agentVersionContentHash
+                || dispatch.deploymentRevisionContentHash !== nativeDispatchConfiguration.deploymentRevisionContentHash) throw new Error("NATIVE_DISPATCH_CONFIGURATION_CHANGED");
+            }
           };
           nativeOutputReceipt = await captureNativeOutput({ cwd: binding.cwd, identity: nativeSourceAtDispatch.identity,
             beforeSource: nativeSourceAtDispatch, storage: options.nativeOutputStorage, revalidate });
@@ -16460,6 +16490,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         sessionId: nextSessionState.displayId ?? nextSessionState.legacySessionId,
         rawUsage,
         usageBasis: adapterResult.usageBasis ?? null,
+        freshSession: runtimeForAdapter.sessionId == null && runtimeForAdapter.sessionDisplayId == null
+          && Object.keys(runtimeForAdapter.sessionParams ?? {}).length === 0,
       });
       const normalizedUsage = sessionUsageResolution.normalizedUsage;
       const runErrorMessage =
@@ -16511,11 +16543,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                 rawCachedInputTokens: rawUsage.cachedInputTokens,
                 rawOutputTokens: rawUsage.outputTokens,
               } : {}),
-              ...(sessionUsageResolution.derivedFromSessionTotals
-                ? { usageSource: "session_delta" }
-                : adapterResult.usageBasis === "per_run"
-                  ? { usageSource: "per_run" }
-                  : {}),
+              ...(adapterResult.usageBasis ? { usageBasis: adapterResult.usageBasis } : {}),
+              ...(sessionUsageResolution.usageSource ? { usageSource: sessionUsageResolution.usageSource } : {}),
               ...((nextSessionState.displayId ?? nextSessionState.legacySessionId)
                 ? { persistedSessionId: nextSessionState.displayId ?? nextSessionState.legacySessionId }
                 : {}),
@@ -16574,6 +16603,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           logSha256: logSummary?.sha256 ?? null, logBytes: logSummary?.bytes ?? null,
           usage: usageJson, exitCode: adapterResult.exitCode ?? null, errorCode: runErrorCode,
           environmentManifest: nativeDispatchBinding,
+          ...(nativeDispatchConfiguration ? { dispatchConfiguration: nativeDispatchConfiguration } : {}),
+          ...(nativePermissionObservation ? { permissionObservation: nativePermissionObservation } : {}),
         }, terminalFinishedAt.toISOString());
         terminalContext = { ...context, [NATIVE_OUTPUT_CONTEXT_KEY]: finalized };
       }

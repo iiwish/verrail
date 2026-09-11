@@ -85,6 +85,31 @@ export interface ChannelReplyResultV1 {
   providerMessageId: string;
 }
 
+export interface ChannelReplyReadRequestV1 {
+  contractVersion: 1;
+  workspaceId: string;
+  connectionId: string;
+  connectorKey: string;
+  providerMessageId: string;
+  parentProviderMessageId: string;
+  externalConversationId: string;
+}
+
+/** Provider-observed metadata for an unedited reply sent by the configured app. */
+export interface ChannelReplyReadResultV1 {
+  contractVersion: 1;
+  providerMessageId: string;
+  parentProviderMessageId: string;
+  externalConversationId: string;
+  bodySha256: string;
+  createdAt: string;
+}
+
+export interface ChannelTargetReplySummary {
+  status: "not_applicable" | "blocked" | "sending" | "succeeded" | "unknown";
+  receiptId: string | null;
+}
+
 export interface ChannelIngressRequestV1 {
   contractVersion: 1;
   workspaceId: string;

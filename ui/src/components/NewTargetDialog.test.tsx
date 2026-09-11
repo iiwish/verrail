@@ -13,9 +13,14 @@ const appendStructuredMessage = vi.hoisted(() => vi.fn());
 const createTargetDraft = vi.hoisted(() => vi.fn());
 const confirmTargetDraft = vi.hoisted(() => vi.fn());
 const updateTargetDraft = vi.hoisted(() => vi.fn());
+const getTargetDraftChannelReply = vi.hoisted(() => vi.fn());
+const reconcileTargetDraftChannelReply = vi.hoisted(() => vi.fn());
 const defaults = vi.hoisted(() => ({ collectionId: "collection-1", draft: undefined as TargetCreationDraft | undefined }));
+const dialogState = vi.hoisted(() => ({ open: true }));
 const closeNewTarget = vi.hoisted(() => vi.fn());
 const navigate = vi.hoisted(() => vi.fn());
+const pushToast = vi.hoisted(() => vi.fn());
+vi.mock("../context/ToastContext", () => ({ useToastActions: () => ({ pushToast }) }));
 
 vi.mock("../api/conversations", () => ({ conversationsApi: {
   create: createConversation,
@@ -23,6 +28,8 @@ vi.mock("../api/conversations", () => ({ conversationsApi: {
   createTargetDraft,
   confirmTargetDraft,
   updateTargetDraft,
+  getTargetDraftChannelReply,
+  reconcileTargetDraftChannelReply,
 } }));
 vi.mock("../api/collections", () => ({
   collectionsApi: { list: vi.fn().mockResolvedValue([{ id: "collection-1", name: "Control plane" }]) },
@@ -43,7 +50,7 @@ vi.mock("../context/CompanyContext", () => ({
 }));
 vi.mock("../context/DialogContext", () => ({
   useDialog: () => ({
-    newTargetOpen: true,
+    newTargetOpen: dialogState.open,
     newTargetDefaults: defaults,
     closeNewTarget,
   }),
@@ -108,13 +115,172 @@ describe("NewTargetDialog", () => {
     appendStructuredMessage.mockReset();
     createTargetDraft.mockReset();
     updateTargetDraft.mockReset();
+    getTargetDraftChannelReply.mockReset();
+    reconcileTargetDraftChannelReply.mockReset();
     defaults.draft = undefined;
+    dialogState.open = true;
     confirmTargetDraft.mockReset();
     closeNewTarget.mockReset();
     navigate.mockReset();
+    pushToast.mockReset();
   });
 
-  it.each([false, true])("resumes the original channel draft and fails closed on a stale revision (%s)", async (stale) => {
+  function convertedDraft(workspaceId = "workspace-1"): TargetCreationDraft {
+    return {
+      id: "converted-draft", workspaceId, conversationId: "feishu-conversation", status: "converted",
+      activeRevisionNumber: 2, activeRevisionId: "revision-2", sourceMessageId: "source-1",
+      convertedTargetId: "target-1", convertedTargetRevisionId: "target-revision-1",
+      initiatedByPrincipalType: "user", initiatedByPrincipalId: "user-1",
+      confirmedByPrincipalType: "user", confirmedByPrincipalId: "user-1",
+      confirmedAt: new Date(), conversionIdempotencyKey: "key-1", createdAt: new Date(), updatedAt: new Date(),
+      activeRevision: { id: "revision-2", workspaceId, draftId: "converted-draft", revisionNumber: 2,
+        createdByPrincipalType: "user", createdByPrincipalId: "user-1", createdAt: new Date(),
+        missingFields: [], fieldSources: {}, contentHash: "hash",
+        definition: { title: "Created outcome", summary: null, collectionId: null, outcomeOwner: null,
+          goal: "Completed", constraints: [], acceptanceCriteria: [], resourceRefs: [], riskLevel: "low", deadline: null, policySummary: null } },
+    };
+  }
+
+  async function renderRecovery() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    await act(async () => root.render(<QueryClientProvider client={queryClient}><NewTargetDialog /></QueryClientProvider>));
+    return queryClient;
+  }
+
+  const recoveryButton = () => Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Verify existing reply");
+
+  it.each(["unknown", "sending"])("explicitly reconciles a %s receipt without repeating Target creation", async (status) => {
+    defaults.draft = convertedDraft();
+    getTargetDraftChannelReply.mockResolvedValue({ status, receiptId: "receipt-1" });
+    let finish!: (value: unknown) => void;
+    reconcileTargetDraftChannelReply.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    await renderRecovery();
+    await waitFor(() => expect(recoveryButton()).toBeTruthy());
+    expect(recoveryButton()!.disabled).toBe(true);
+    expect(reconcileTargetDraftChannelReply).not.toHaveBeenCalled();
+    const input = container.querySelector('input[aria-label="Feishu message ID"]') as HTMLInputElement;
+    act(() => setValue(input, "https://example.com/message"));
+    expect(recoveryButton()!.disabled).toBe(true);
+    act(() => setValue(input, " om_reply-1 "));
+    await act(async () => recoveryButton()!.click());
+    await waitFor(() => expect(reconcileTargetDraftChannelReply).toHaveBeenCalledWith("workspace-1", "feishu-conversation", "converted-draft", "om_reply-1"));
+    expect(input.disabled).toBe(true);
+    expect(reconcileTargetDraftChannelReply).toHaveBeenCalledTimes(1);
+    await act(async () => finish({ status: "succeeded", receiptId: "receipt-1" }));
+    await waitFor(() => expect(container.textContent).toContain("Reply confirmed"));
+    expect(container.querySelector('input[aria-label="Feishu message ID"]')).toBeNull();
+    expect(confirmTargetDraft).not.toHaveBeenCalled();
+    expect(updateTargetDraft).not.toHaveBeenCalled();
+    expect(createTargetDraft).not.toHaveBeenCalled();
+    expect(container.querySelector("#new-target-title")).toBeNull();
+  });
+
+  it.each([403, 409, 503])("keeps reconciliation errors visible without retrying (%s)", async (status) => {
+    defaults.draft = convertedDraft();
+    getTargetDraftChannelReply.mockResolvedValue({ status: "unknown", receiptId: "receipt-1" });
+    reconcileTargetDraftChannelReply.mockRejectedValue(new ApiError("private diagnostic", status, {}));
+    await renderRecovery();
+    await waitFor(() => expect(recoveryButton()).toBeTruthy());
+    act(() => setValue(container.querySelector('input[aria-label="Feishu message ID"]') as HTMLInputElement, "om_reply"));
+    await act(async () => recoveryButton()!.click());
+    await waitFor(() => expect(container.querySelector('[role="alert"]')).not.toBeNull());
+    expect(container.textContent).not.toContain("private diagnostic");
+    expect(reconcileTargetDraftChannelReply).toHaveBeenCalledTimes(1);
+    expect(confirmTargetDraft).not.toHaveBeenCalled();
+  });
+
+  it.each(["succeeded", "blocked", "not_applicable"])("does not offer recovery for %s", async (status) => {
+    defaults.draft = convertedDraft();
+    getTargetDraftChannelReply.mockResolvedValue({ status, receiptId: null });
+    await renderRecovery();
+    await waitFor(() => expect(getTargetDraftChannelReply).toHaveBeenCalled());
+    await flush();
+    expect(recoveryButton()).toBeUndefined();
+    expect(container.querySelector("#new-target-title")).toBeNull();
+    expect(confirmTargetDraft).not.toHaveBeenCalled();
+  });
+
+  it("refuses a converted draft from another Workspace before any receipt request", async () => {
+    defaults.draft = convertedDraft("other-workspace");
+    await renderRecovery();
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(getTargetDraftChannelReply).not.toHaveBeenCalled();
+    expect(recoveryButton()).toBeUndefined();
+  });
+
+  it("shows receipt read failure with an explicit retry", async () => {
+    defaults.draft = convertedDraft();
+    getTargetDraftChannelReply.mockRejectedValueOnce(new Error("private read detail"))
+      .mockResolvedValue({ status: "succeeded", receiptId: "receipt-1" });
+    await renderRecovery();
+    await waitFor(() => expect(container.querySelector('button[aria-label="Refresh reply status"]')).not.toBeNull());
+    await waitFor(() => expect(container.querySelector('[role="alert"]')).not.toBeNull());
+    expect(container.textContent).not.toContain("private read detail");
+    await act(async () => (container.querySelector('button[aria-label="Refresh reply status"]') as HTMLButtonElement).click());
+    await waitFor(() => expect(container.textContent).toContain("Reply confirmed"));
+    expect(reconcileTargetDraftChannelReply).not.toHaveBeenCalled();
+  });
+
+  it("clears candidate IDs on close and ignores completion from a different draft", async () => {
+    defaults.draft = convertedDraft();
+    getTargetDraftChannelReply.mockResolvedValue({ status: "unknown", receiptId: "receipt-1" });
+    let finish!: (value: unknown) => void;
+    reconcileTargetDraftChannelReply.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const client = await renderRecovery();
+    const rerender = async () => {
+      await act(async () => root.render(<QueryClientProvider client={client}><NewTargetDialog /></QueryClientProvider>));
+    };
+    await waitFor(() => expect(recoveryButton()).toBeTruthy());
+    act(() => setValue(container.querySelector('input[aria-label="Feishu message ID"]') as HTMLInputElement, "om_old"));
+    await act(async () => recoveryButton()!.click());
+    dialogState.open = false;
+    await rerender();
+    defaults.draft = { ...convertedDraft(), id: "second-draft", activeRevisionId: "revision-3" };
+    dialogState.open = true;
+    await rerender();
+    await waitFor(() => expect(recoveryButton()).toBeTruthy());
+    expect((container.querySelector('input[aria-label="Feishu message ID"]') as HTMLInputElement).value).toBe("");
+    await act(async () => finish({ status: "succeeded", receiptId: "receipt-1" }));
+    await flush();
+    expect(container.textContent).not.toContain("Reply confirmed");
+    expect(reconcileTargetDraftChannelReply).toHaveBeenCalledTimes(1);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("preserves an unknown result without automatic reconciliation or confirmation retries", async () => {
+    defaults.draft = convertedDraft();
+    getTargetDraftChannelReply.mockResolvedValue({ status: "unknown", receiptId: "receipt-1" });
+    reconcileTargetDraftChannelReply.mockResolvedValue({ status: "unknown", receiptId: "receipt-1" });
+    await renderRecovery();
+    await waitFor(() => expect(recoveryButton()).toBeTruthy());
+    act(() => setValue(container.querySelector('input[aria-label="Feishu message ID"]') as HTMLInputElement, "om_unmatched"));
+    await act(async () => recoveryButton()!.click());
+    await waitFor(() => expect(container.textContent).toContain("No message was resent"));
+    expect(reconcileTargetDraftChannelReply).toHaveBeenCalledTimes(1);
+    expect(confirmTargetDraft).not.toHaveBeenCalled();
+  });
+
+  it("does not let an older status refresh overwrite successful reconciliation", async () => {
+    defaults.draft = convertedDraft();
+    getTargetDraftChannelReply.mockResolvedValueOnce({ status: "unknown", receiptId: "receipt-1" });
+    let finish!: (value: unknown) => void;
+    let finishRead!: (value: unknown) => void;
+    reconcileTargetDraftChannelReply.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    getTargetDraftChannelReply.mockImplementation(() => new Promise((resolve) => { finishRead = resolve; }));
+    const client = await renderRecovery();
+    await waitFor(() => expect(recoveryButton()).toBeTruthy());
+    act(() => setValue(container.querySelector('input[aria-label="Feishu message ID"]') as HTMLInputElement, "om_candidate"));
+    await act(async () => recoveryButton()!.click());
+    act(() => { void client.refetchQueries(); });
+    await waitFor(() => expect(getTargetDraftChannelReply).toHaveBeenCalledTimes(2));
+    await act(async () => finish({ status: "succeeded", receiptId: "receipt-1" }));
+    await act(async () => finishRead({ status: "unknown", receiptId: "receipt-1" }));
+    await waitFor(() => expect(container.textContent).toContain("Reply confirmed"));
+    expect(recoveryButton()).toBeUndefined();
+  });
+
+  it.each(["stale", "succeeded", "unknown", "sending", "blocked"])("resumes the original channel draft and handles confirmation (%s)", async (status) => {
+    const stale = status === "stale";
     defaults.draft = {
       id: "feishu-draft", workspaceId: "workspace-1", conversationId: "feishu-conversation",
       sourceMessageId: "feishu-message", initiatedByPrincipalType: "user", initiatedByPrincipalId: "user-1",
@@ -132,7 +298,7 @@ describe("NewTargetDialog", () => {
     const updated = { ...defaults.draft, activeRevisionNumber: 2, status: "ready_for_confirmation" };
     if (stale) updateTargetDraft.mockRejectedValue(new ApiError("Revision changed", 409, {}));
     else updateTargetDraft.mockResolvedValue(updated);
-    confirmTargetDraft.mockResolvedValue({ target: { workbenchHref: "/targets/target-1/overview" } });
+    confirmTargetDraft.mockResolvedValue({ target: { workbenchHref: "/targets/target-1/overview" }, channelReply: { status, receiptId: null } });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
     act(() => root.render(<QueryClientProvider client={queryClient}><NewTargetDialog /></QueryClientProvider>));
     await waitFor(() => expect((container.querySelector("#new-target-title") as HTMLInputElement).value).toBe("Feishu outcome"));
@@ -152,6 +318,10 @@ describe("NewTargetDialog", () => {
       await waitFor(() => expect(container.textContent).toContain("Confirm Target"));
       await act(async () => Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.trim() === "Confirm Target")!.click());
       await waitFor(() => expect(confirmTargetDraft).toHaveBeenCalledWith("workspace-1", "feishu-conversation", "feishu-draft", 2));
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith("/targets/target-1/overview"));
+      if (status === "succeeded") expect(pushToast).not.toHaveBeenCalled();
+      else expect(pushToast).toHaveBeenCalledWith(expect.objectContaining({ tone: "warn", body: expect.stringContaining("Do not create another Target") }));
+      expect(confirmTargetDraft).toHaveBeenCalledTimes(1);
     }
   });
 

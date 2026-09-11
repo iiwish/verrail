@@ -112,6 +112,8 @@ export type {
   ChannelMessageEventV1,
   ChannelReplyRequestV1,
   ChannelReplyResultV1,
+  ChannelReplyReadRequestV1,
+  ChannelReplyReadResultV1,
   ChannelIngressRequestV1,
   ChannelIngressResultV1,
 } from "@paperclipai/shared";

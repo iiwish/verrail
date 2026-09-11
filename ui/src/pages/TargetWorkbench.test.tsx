@@ -26,6 +26,13 @@ const navigate = vi.hoisted(() => vi.fn());
 const setBreadcrumbs = vi.hoisted(() => vi.fn());
 const route = vi.hoisted(() => ({ targetId: "target-1", tab: "overview", targetRevisionId: undefined as string | undefined }));
 
+// Canvas geometry is verified in-browser; jsdom has no layout observer.
+vi.stubGlobal("ResizeObserver", class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+});
+
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children, ...props }: { to: string; children: React.ReactNode }) => (
     <a href={to} {...props}>{children}</a>
@@ -640,8 +647,10 @@ describe("TargetWorkbench", () => {
     await renderWorkbench();
 
     expect(getWorkspace).toHaveBeenCalledWith("workspace-1", "target-1");
-    expect(container.textContent).toContain("release · Release Verrail");
-    expect(container.textContent).toContain("agent_task · execute");
+    expect(container.querySelector(".target-work-graph")).not.toBeNull();
+    expect(container.textContent).toContain("Agent task");
+    expect(container.textContent).toContain("Running");
+    expect(container.textContent).toContain("Execute");
     expect(container.querySelector('a[href="/VER/issues/VER-1"]')).toBeNull();
   });
 

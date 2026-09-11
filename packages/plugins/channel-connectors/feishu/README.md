@@ -33,3 +33,26 @@ The board-only plugin data bridge exposes `connection-health` with a required
 `companyId` scope. Its `sessions` contain only that Workspace's connection IDs,
 transport state, delivery counters, and latest unmapped sender ID. The registry
 Status page reports plugin readiness, not WebSocket connectivity.
+
+## Existing Reply Readback
+
+The optional `onChannelReplyRead` hook supports operator-requested reconciliation
+of an existing creation notification. It obtains a tenant token and calls
+[Get Message](https://open.feishu.cn/document/server-docs/im-v1/message/get)
+with a validated message ID. It never sends or edits a message. The bot must have
+access to the referenced conversation and the required Provider read permission;
+missing permission leaves the delivery outcome unresolved.
+
+Only one unedited, undeleted text message from the configured application is
+accepted. The result contains its parent message, conversation, body hash and
+creation timestamp, not the message text, token or application secret. Message
+response parsing is capped at 512 KiB. The existing host HTTP transport buffers
+the response before worker parsing; the hook does not claim a new transport-wide
+streaming limit or cancellation guarantee.
+
+The host separately matches those facts against the stored send reservation,
+checks the confirmer's current authority and exact configuration before and
+after reading, and records a conditional state update plus audit. Supplying a
+message ID is not a self-reported success assertion. Older plugins without this
+hook cannot reconcile unknown results, and reconciliation never authorizes a
+second send.

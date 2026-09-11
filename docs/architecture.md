@@ -137,11 +137,25 @@ Submission 固定活动 GraphRevision，Acceptance 按 Submission/Review 对追�
 
 Criterion 的可选 v1 proofContract 存于不可变 TargetRevision JSON。Go 通过版本检查和幂等命令创建修订，并由领域事务解除旧活动图关联；后续图创建/激活使用既有 Graph Engine 和 outbox。CriterionProof 作为追加式关联保存独立验证的完整合同与版本上下文，来源 IntegrationRun 和其 Evidence/VerificationResult 在同一事务绑定，保持 CI 结果身份不变。TypeScript 投影与 Go 门禁分别按验收前证明和最终 all-of 证明计算，后置结果不能污染前置验证最新值选择器。详见 [ADR-0009](adrs/0009-phased-criterion-proof.md)。
 
+通用 `RecordIntegrationRun` 不具备显式 proofContract 的证明准入权限。内部 bearer、service Principal、调用方填写的 assertion 列表和自洽 Provider receipt 都不能确立独立 verifier 身份或实际覆盖。该入口在历史命令重放之前拒绝显式证明，不追加事实或推进节点；未声明 proofContract 的兼容集成路径保持独立边界。固定 CI verifier 使用默认关闭的专用 bearer 与不可变启动授信，独立执行 Provider reader 和受验 Commit 到原生源码产物的映射，仅覆盖代码固定的四项前置 CI 断言。TypeScript 负责实际读取与用户授权，Go 使用独立 capability 入口在事务内重新校验精确版本和来源，再原子登记领域事实。固定 CI Observation 与其审计 ID 不能升级为授权。配置与 API 合同见 [GitHub Connector](github-connector.md)。
+
 HostTrusted 原生 Run 的文件产物由实际执行器 service Principal 通过成功事件登记：TypeScript Runner 验证不可变部署目录及有界输出 manifest，完成内容寻址 Storage 写入；Go Domain API 在当前 Attempt、租约、fencing 和游标校验后，将 ArtifactRevision、来源 Run/WorkNode、审计及执行终态原子提交。该通道不扩展人工 Review、ActionApproval 或 Acceptance 权限，详见 [ADR 0007](adrs/0007-native-run-artifact-ingress.md)。
 
-原生 HostTrusted Codex 在实际 Adapter 调用前重新校验 Run、Attempt、系统唤醒及部署目录绑定，并由服务端持久化 `NativeSourceObservation`；持久化失败不启动 Adapter。观察覆盖该工作树中 Git 跟踪文件和未被忽略的未跟踪文件，仅排除根目录下 `.verrail/run-artifacts/**`。普通文件记录实际字节哈希与 Git 内容模式（所有者执行位决定 `100644`/`100755`）；相对且不逃出仓库的符号链接只记录链接目标字节，不读取目标内容。完整状态摘要包含 HEAD、索引和删除项；独立内容摘要仅包含实际存在文件的路径、类型、内容模式和字节哈希，暂存或提交本身不改变该内容摘要。观察有文件数、字节数和时限约束，检测到变动或无法读取时明确为 `unavailable`，不返回部分成功。服务端通过可信系统唤醒关联读取已存观察，并随既有 fenced RunEvent 保存；历史运行不补造调用前观察。
+原生 HostTrusted Codex 在实际 Adapter 调用前重新校验 Run、Attempt、系统唤醒及部署目录绑定，并由服务端持久化 `NativeSourceObservation`；持久化失败不启动 Adapter。观察覆盖该工作树中 Git 跟踪文件和未被忽略的未跟踪文件。v2 源码范围排除根目录下 `.verrail` 及其所有内容，使交付记录和运行日志不参与产品源码摘要；v1 范围仅排除 `.verrail/run-artifacts/**`。调用前观察固定本次执行的版本，调用后两次观察使用同一版本；历史 v1 回执和哈希保持原样，不能按 v2 范围重算。普通文件记录实际字节哈希与 Git 内容模式（所有者执行位决定 `100644`/`100755`）；相对且不逃出仓库的符号链接只记录链接目标字节，不读取目标内容。完整状态摘要包含 HEAD、索引和删除项；独立内容摘要仅包含实际存在文件的路径、类型、内容模式和字节哈希，暂存或提交本身不改变该内容摘要。观察有文件数、字节数和时限约束，检测到变动或无法读取时明确为 `unavailable`，不返回部分成功。服务端通过可信系统唤醒关联读取已存观察，并随既有 fenced RunEvent 保存；历史运行不补造调用前观察。
+
+原生 Codex 在模型配置合并完成后、实际 Adapter 调用前核对最终 `model` 与 AgentVersion。`NativeDispatchConfiguration` 将选定的权限相关 Adapter 字段摘要、版本 Hash 和 Run 身份绑定到终态回执；DeploymentRevision 的可选 `runtimeConfig.permissionConfig` 只接受封闭字段集合，声明时要求所选字段完全匹配，缺少声明时明确标为 `compatibility_only`。产物采集前重新校验配置摘要。该清单不包含环境变量值，不认证凭证、CLI 环境默认值、实际 OS 权限或已加载的运行时二进制；`version_bound` 仅表示所选配置字段与版本一致。
 
 本地 HostTrusted Codex 的成功 Adapter 返回后，Runner 在 `workspace_finalize` 屏障前采集 `after_adapter_return` 输出回执：两次终端源码观察包围有界 manifest 和文件字节读取，随后仅上传内存中固定的字节。回执保留输出顺序、相对路径、实际大小、哈希和 Workspace 内容寻址引用；Storage 返回的大小、哈希及完整 key 必须与本地字节匹配。源码变化、无 manifest、源码不可用和不支持的执行模式保持独立语义。读取和上传时间分开记录；总采集期限为 60 秒，超时不表示底层上传已取消，迟到上传不形成产物事实。
+
+Board/Workspace 授权的只读 `GET /api/workspaces/:workspaceId/delivery-context/codex` 接收执行身份 UUID，并可成对接收 `artifactRevisionId`、`fixedCiProofId`。可选关联核对已入库固定 CI 的 CriterionProof、IntegrationRun/Attempt、Evidence、VerificationResult、命令回执、审计、当前合同和源产物，要求来源为同一 Run/Attempt/终态回执以及相同源码映射。日志读取前后复查关联摘要，缺项、错配或变化拒绝；响应只返回最小引用、白名单摘要与显式未验证项。`linked_existing_proof` 不重新读取 GitHub、不登记证明、不扩展固定 CI 四项断言；整体仍为 `execution_context_only`，实际权限及候选运行构建仍未验证。
+
+本机独立事实读取使用固定 Workspace 的 PostgreSQL 专用只读身份及 security-barrier 视图，固定版本的仓库外 CLI 只接收有界对象引用。普通检查配置不继承 Board、应用数据库管理员或证明写入能力。身份有效期为 24 小时，秘密配置不进入候选仓库或 Agent 环境。该通道信任数据库管理员及本机操作员，不声称隔离恶意同用户进程；读取结果也不等于独立验证通过。读取合同见 [ADR 0010](./adrs/0010-scoped-delivery-proof-reader.md)。
+
+封闭复合 verifier 的可选 `prove` 模式独立持有操作员配置的签名密钥，并组合 v2 只读事实、飞书 Provider 回读或 Codex 执行来源、固定 GitHub CI 与 launch-owned 运行时见证。它只覆盖代码固定的 `feishu_target`、`codex_execution` 完整断言组，不扩展 GitHub CI 的断言权限。Go 按不可变公开授信验证签名和来源，在同一事务内登记 Provider 为 `verrail` 的 IntegrationRun、`scan_result` 与关联 `ci_result`、VerificationResult 和 CriterionProof；普通 bearer、调用方 Principal 和普通 receipt 均不能进入该能力。Node 见证读取实际 V8 脚本，native 见证绑定冷启动的私有可执行文件副本；Harness 见证还绑定实际运行身份与终态。HostTrusted 限制、启动配置和重放边界见 [ADR 0011](./adrs/0011-closed-composite-delivery-proof.md)。
+
+v2 输出 manifest 可以显式请求 `source_snapshot`，由 Runner 从 v2 范围内固定的文件字节生成自包含 Git bundle。该产物不读取原仓库历史、refs 或 Git 配置，不执行源码 checkout；确定性根提交包含受覆盖的实际文件、执行位和符号链接目标字节，包括未提交和未跟踪内容。v2 输出回执保存导出器计算的内容摘要、快照 tree/commit、bundle Hash 与 Storage 引用。冻结源码输入上限为 256 MiB，单个 bundle 仍不超过 32 MiB，全部输出产物合计不超过 64 MiB；导出总时限为 30 秒，并受外层 60 秒采集期限约束。普通文件 manifest 和历史 v1 回执不获得源码等价属性；Agent 不能提供或覆盖导出器元数据。
+
+源码 bundle 是显式选择的数据导出，排除交付记录与忽略路径不等于秘密扫描或数据出境许可。快照根提交是独立的内容容器身份，不证明它等于 GitHub 受验 Commit、已加载的运行时构建或实际权限。固定 CI 映射读取精确受验 Commit 的非递归 root tree，通过隔离 Git plumbing 校验完整 tree 后排除根 `.verrail`，要求所得产品源码 tree 与权威 succeeded RunEvent 中已定稿快照的 tree 相等。这是 v2 产品源码范围的独立映射，不是完整 Commit 等价；`contentRef` 文本、来源 Run 非空或两个分别合法的 Hash 均不足以证明关联。
 
 Runner 在 Heartbeat 成功条件更新中原子保存回执、完成时间及已定稿的日志、用量、退出和部署环境事实。取消竞争、检测到租约失效、finalize 或持久化失败不能发布成功关联。该条件更新只对 Heartbeat 状态原子化，不是跨引擎租约授权事务；最后一次租约检查后失去租约可以留下未登记的本地观察，Go fenced 登记必须拒绝失效执行权。执行器只从可信系统唤醒关联读取已存回执，领域报告重试和进程重启重用相同事实、哈希、引用和时间，不重新读取工作目录；历史缺失保持缺失，无效回执不回退为文件重采集。ArtifactRevision 仍由 Go 的 fenced 成功事件原子登记。
 

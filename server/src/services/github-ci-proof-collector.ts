@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { z } from "zod";
 import type { Db } from "@paperclipai/db";
 import { collectGithubCiObservationSchema, type CollectGithubCiObservationInput, type GithubCiObservationReceipt } from "@paperclipai/shared";
 import { HttpError, badRequest, conflict, forbidden, tooManyRequests } from "../errors.js";
@@ -8,40 +7,11 @@ import { logActivity } from "./activity-log.js";
 import { createGitHubCiProofReader, type GitHubCiReadDependencies } from "./github-ci-proof-reader.js";
 import { createGitHubCiReadDependencies } from "./github-ci-proof-adapters.js";
 import { loadGitHubCiCollectionContext } from "./github-ci-proof-context.js";
+import type { GitHubCiCollectionContext } from "./github-ci-proof-context.js";
+import type { GithubCiObservation } from "@paperclipai/shared";
 
-const positive = (max: number) => z.number().int().positive().max(max);
-const sha256 = z.string().regex(/^[a-f0-9]{64}$/);
-const policySchema = z.object({
-  workspaceId: z.string().uuid(), targetId: z.string().uuid(), targetRevisionId: z.string().uuid(),
-  graphRevisionId: z.string().uuid(), connectionId: z.string().uuid(), bindingId: z.string().uuid(),
-  authorizedUserIds: z.array(z.string().min(1).max(256).refine(v => v.trim() === v)).min(1).max(32).refine(v => new Set(v).size === v.length),
-  policy: z.object({
-    repository: z.string().max(401).regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
-    repositoryId: positive(Number.MAX_SAFE_INTEGER), workflowId: positive(Number.MAX_SAFE_INTEGER),
-    workflow: z.object({ path: z.literal(".github/workflows/verrail-candidate-verify.yml"), sha: z.string().regex(/^[a-f0-9]{40}$/), sha256 }).strict(),
-    helper: z.object({ path: z.literal(".github/scripts/verrail-candidate-proof.mjs"), sha256 }).strict(),
-    requiredJobs: z.array(z.object({ name: z.enum(["candidate_verify", "candidate_report"]), steps: z.array(z.string().min(1).max(100)).min(1).max(100) }).strict()).length(2),
-    artifactDownloadHosts: z.array(z.string().max(253).regex(/^(?:[a-z][a-z0-9-]*\.)+[a-z]{2,}$/)).min(1).max(16).refine(v => new Set(v).size === v.length),
-    maxAgeMs: positive(7 * 24 * 60 * 60 * 1000), timeoutMs: positive(120_000), maxPages: positive(20),
-    maxResponseBytes: positive(2_000_000), maxArchiveBytes: positive(10_000_000), maxReportBytes: positive(1_000_000),
-  }).strict(),
-}).strict();
-
-export function parseGitHubCiPolicies(raw: string | undefined) {
-  try {
-    if (!raw || Buffer.byteLength(raw, "utf8") > 131072) throw new Error();
-    const entries = z.array(policySchema).min(1).max(64).parse(JSON.parse(raw));
-    if (new Set(entries.map(p => `${p.workspaceId}/${p.targetId}`)).size !== entries.length) throw new Error();
-    for (const entry of entries) {
-      // Reuse the reader's complete required-step and identity validation, without I/O.
-      createGitHubCiProofReader(entry.policy, {} as GitHubCiReadDependencies);
-      // Validate against the production adapter too, before any real secret lookup.
-      createGitHubCiReadDependencies({ repository: entry.policy.repository,
-        artifactDownloadHosts: entry.policy.artifactDownloadHosts, authorization: "Bearer policy-validation-placeholder" });
-    }
-    return entries;
-  } catch { throw new HttpError(503, "GitHub CI observation collection is disabled or misconfigured"); }
-}
+import { parseGitHubCiPolicies } from "./github-ci-proof-policy.js";
+export { parseGitHubCiPolicies } from "./github-ci-proof-policy.js";
 
 /** Process-local only: 4 in flight globally, 1/key, 4 starts/key/minute, 256 keys. */
 export function createGitHubCiCollectionGuard(now: () => number = Date.now) {
@@ -61,7 +31,7 @@ export function createGitHubCiCollectionGuard(now: () => number = Date.now) {
 const processGuard = createGitHubCiCollectionGuard();
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
-export function createGitHubCiObservationCollector(options: {
+export interface GitHubCiCollectionOptions {
   db: Db;
   policyConfig?: () => string | undefined;
   loadContext?: typeof loadGitHubCiCollectionContext;
@@ -70,7 +40,20 @@ export function createGitHubCiObservationCollector(options: {
   createReader?: typeof createGitHubCiProofReader;
   audit?: typeof logActivity;
   guard?: ReturnType<typeof createGitHubCiCollectionGuard>;
-}) {
+}
+
+type CollectionRequest = {
+  workspaceId: string; targetId: string; actor: GithubConnectorCredentialActor; input: CollectGithubCiObservationInput;
+};
+
+export interface GitHubCiVerificationContext {
+  entry: ReturnType<typeof parseGitHubCiPolicies>[number];
+  context: GitHubCiCollectionContext;
+  policySha256: string;
+}
+
+/** Internal composition only; no HTTP body can supply hooks or a verified observation. */
+export function createGitHubCiVerificationSession(options: GitHubCiCollectionOptions) {
   const config = options.policyConfig ?? (() => process.env.VERRAIL_GITHUB_CI_POLICIES);
   const context: typeof loadGitHubCiCollectionContext = async (db, workspaceId, targetId) => {
     try { return await (options.loadContext ?? loadGitHubCiCollectionContext)(db, workspaceId, targetId); }
@@ -79,9 +62,14 @@ export function createGitHubCiObservationCollector(options: {
       throw new HttpError(503, "GitHub CI collection context unavailable");
     }
   };
-  return { async collect(request: {
-    workspaceId: string; targetId: string; actor: GithubConnectorCredentialActor; input: CollectGithubCiObservationInput;
-  }): Promise<GithubCiObservationReceipt> {
+  return { async run<T>(request: CollectionRequest, hooks: {
+    preflight?: (context: GitHubCiVerificationContext) => Promise<void>;
+    consume: (context: GitHubCiVerificationContext & {
+      observation: GithubCiObservation;
+      dependencies: GitHubCiReadDependencies;
+      recheck: () => Promise<void>;
+    }) => Promise<T>;
+  }): Promise<T> {
     if (request.actor.actorType !== "user" || !request.actor.actorId?.trim()
       || !["session", "local_implicit", "board_key", "cloud_tenant"].includes(request.actor.actorSource ?? "")) throw forbidden("GitHub CI collection requires an authenticated initiating user");
     const parsed = collectGithubCiObservationSchema.safeParse(request.input);
@@ -106,30 +94,42 @@ export function createGitHubCiObservationCollector(options: {
         const next = await context(options.db, request.workspaceId, request.targetId);
         if (hash(initial) !== hash(next)) throw conflict("GitHub CI collection context changed");
       };
+      const verificationContext = { entry, context: initial, policySha256 };
+      await hooks.preflight?.(verificationContext);
       let credential;
       try { credential = await (options.resolveCredential ?? resolveGithubConnectorCredential)(options.db, request.workspaceId, request.actor); }
       catch { throw new HttpError(503, "GitHub CI credential unavailable"); }
       if (credential.connectionId !== initial.connectionId) throw conflict("GitHub CI collection connection changed");
       await recheck();
       let observation;
+      let dependencies;
       try {
-        const dependencies = (options.createReadDependencies ?? createGitHubCiReadDependencies)({ repository: initial.repository, authorization: credential.authorization, artifactDownloadHosts: entry.policy.artifactDownloadHosts });
+        dependencies = (options.createReadDependencies ?? createGitHubCiReadDependencies)({ repository: initial.repository, authorization: credential.authorization, artifactDownloadHosts: entry.policy.artifactDownloadHosts });
         observation = await (options.createReader ?? createGitHubCiProofReader)(entry.policy, dependencies).read({ ...parsed.data, candidateSha: entry.policy.workflow.sha });
       } catch { throw new HttpError(502, "GitHub CI observation could not be verified"); }
       await recheck();
-      const receipt = { schemaVersion: 1 as const, workspaceId: initial.workspaceId, targetId: initial.targetId,
-        targetRevisionId: initial.targetRevisionId, graphRevisionId: initial.graphRevisionId,
-        connectionId: initial.connectionId, bindingId: initial.bindingId, policySha256, observation };
+      return await hooks.consume({ ...verificationContext, observation, dependencies, recheck });
+    } finally { release(); }
+  } };
+}
+
+export function createGitHubCiObservationCollector(options: GitHubCiCollectionOptions) {
+  const session = createGitHubCiVerificationSession(options);
+  return { collect(request: CollectionRequest): Promise<GithubCiObservationReceipt> {
+    return session.run(request, { async consume({ context, policySha256, observation }) {
+      const receipt = { schemaVersion: 1 as const, workspaceId: context.workspaceId, targetId: context.targetId,
+        targetRevisionId: context.targetRevisionId, graphRevisionId: context.graphRevisionId,
+        connectionId: context.connectionId, bindingId: context.bindingId, policySha256, observation };
       let audit;
       try {
         audit = await (options.audit ?? logActivity)(options.db, { companyId: request.workspaceId,
           actorType: "user", actorId: request.actor.actorId, action: "github.ci_observation.collected",
           entityType: "target", entityId: request.targetId,
-          details: { ...receipt, actorSource: request.actor.actorSource, verifier: "verrail/github-fixed-ci-reader/v1", contextSha256: initial.contextSha256 },
+          details: { ...receipt, actorSource: request.actor.actorSource, verifier: "verrail/github-fixed-ci-reader/v1", contextSha256: context.contextSha256 },
         });
         if (!audit?.id) throw new Error();
       } catch { throw new HttpError(503, "GitHub CI observation audit unavailable"); }
       return { ...receipt, auditEventId: audit.id };
-    } finally { release(); }
+    } });
   } };
 }

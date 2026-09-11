@@ -3,11 +3,13 @@ import type {
   ChannelConnectionBindingV1,
   ChannelReplyRequestV1,
   ChannelReplyResultV1,
+  ChannelReplyReadRequestV1,
+  ChannelReplyReadResultV1,
   ChannelWebhookRequestV1,
   ChannelWebhookResultV1,
   EnvSecretRefBinding,
 } from "@paperclipai/shared";
-import { channelConnectionBindingV1Schema } from "@paperclipai/shared";
+import { channelConnectionBindingV1Schema, channelReplyReadRequestV1Schema, channelReplyReadResultV1Schema } from "@paperclipai/shared";
 import { FEISHU_CONNECTOR_KEY } from "./manifest.js";
 
 type SecretRef = string | EnvSecretRefBinding;
@@ -260,6 +262,46 @@ export function createFeishuConnector(dependencies: FeishuConnectorDependencies)
         return { kind: "challenge", contractVersion: 1, challenge: payload.challenge };
       }
       return parseMessage(payload, current.appId);
+    },
+
+    async readReply(raw: ChannelReplyReadRequestV1): Promise<ChannelReplyReadResultV1> {
+      const input = channelReplyReadRequestV1Schema.parse(raw);
+      if (input.connectorKey !== FEISHU_CONNECTOR_KEY) throw new Error("CHANNEL_REPLY_READ_INVALID");
+      const current = await connection(input.workspaceId, input.connectionId);
+      const appSecret = await dependencies.resolveSecret(current.appSecretRef, { companyId: input.workspaceId, configPath: `${current.configPath}.appSecretRef` });
+      const tokenBody = await providerJson(await dependencies.fetch("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal", {
+        method: "POST", headers: { "content-type": "application/json; charset=utf-8" }, body: JSON.stringify({ app_id: current.appId, app_secret: appSecret }),
+      }));
+      const token = requiredString(tokenBody.tenant_access_token, "tenant_access_token");
+      const response = await dependencies.fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${encodeURIComponent(input.providerMessageId)}`, {
+        method: "GET", headers: { authorization: `Bearer ${token}` },
+      });
+      if (!response.ok || !response.body) throw new Error("CHANNEL_REPLY_READ_UNAVAILABLE");
+      const reader = response.body.getReader(), chunks: Uint8Array[] = [];
+      let bytes = 0;
+      try {
+        while (true) {
+          const part = await reader.read();
+          if (part.done) break;
+          bytes += part.value.byteLength;
+          if (bytes > 512 * 1024) throw new Error("CHANNEL_REPLY_READ_UNAVAILABLE");
+          chunks.push(part.value);
+        }
+      } finally { await reader.cancel().catch(() => {}); }
+      const result = parseObject(Buffer.concat(chunks).toString("utf8"), "payload_invalid");
+      const items = nestedObject(result, "data")?.items;
+      if (result.code !== 0 || !Array.isArray(items) || items.length !== 1 || !items[0] || typeof items[0] !== "object") throw new Error("CHANNEL_REPLY_READ_UNAVAILABLE");
+      const item = items[0] as Record<string, unknown>, sender = nestedObject(item, "sender"), body = nestedObject(item, "body");
+      if (item.message_id !== input.providerMessageId || item.msg_type !== "text" || item.deleted !== false || item.updated !== false
+        || item.parent_id !== input.parentProviderMessageId || item.chat_id !== input.externalConversationId
+        || sender?.id !== current.appId || sender.id_type !== "app_id" || sender.sender_type !== "app"
+        || typeof item.create_time !== "string" || !/^\d{13}$/.test(item.create_time)
+        || typeof body?.content !== "string" || body.content.length > 200_000) throw new Error("CHANNEL_REPLY_READ_UNAVAILABLE");
+      const content = parseObject(body.content, "payload_invalid"), text = content.text;
+      if (Object.keys(content).length !== 1 || typeof text !== "string" || text.length < 1 || text.length > 100_000) throw new Error("CHANNEL_REPLY_READ_UNAVAILABLE");
+      return channelReplyReadResultV1Schema.parse({ contractVersion: 1, providerMessageId: item.message_id, parentProviderMessageId: item.parent_id,
+        externalConversationId: item.chat_id, createdAt: new Date(Number(item.create_time)).toISOString(),
+        bodySha256: createHash("sha256").update(text).digest("hex") });
     },
 
     async sendReply(input: ChannelReplyRequestV1): Promise<ChannelReplyResultV1> {

@@ -4,6 +4,7 @@ import { constants as fsConstants, promises as fs, type Dirent } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { sanitizeRemoteExecutionEnv } from "./remote-execution-env.js";
+import { isControlPlaneCredentialEnvKey, sanitizeControlPlaneEnv } from "./control-plane-env.js";
 import {
   buildLocalProcessSandboxSpawnTarget,
   type LocalProcessSandboxOptions,
@@ -133,7 +134,7 @@ export function isPaperclipRuntimeEnvKey(key: string): boolean {
 // Other PAPERCLIP_*-named config keys are allowed as long as Paperclip has
 // not assigned the same key for the run (runtime vars always win).
 export function isForbiddenConfigEnvKey(key: string): boolean {
-  return key === "PAPERCLIP_API_KEY";
+  return key === "PAPERCLIP_API_KEY" || isControlPlaneCredentialEnvKey(key);
 }
 const PAPERCLIP_SKILL_ROOT_RELATIVE_CANDIDATES = [
   "../../skills",
@@ -2343,7 +2344,7 @@ export function refreshPaperclipWorkspaceEnvForExecution(input: {
 }
 
 export function sanitizeInheritedPaperclipEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...baseEnv };
+  const env = sanitizeControlPlaneEnv(baseEnv);
   delete env.PAPERCLIPAI_CMD;
   for (const key of Object.keys(env)) {
     if (!key.startsWith("PAPERCLIP_")) continue;
@@ -3312,10 +3313,10 @@ export async function runChildProcess(
 ): Promise<RunProcessResult> {
   const onLogError = opts.onLogError ?? ((err, id, msg) => console.warn({ err, runId: id }, msg));
   return new Promise<RunProcessResult>((resolve, reject) => {
-    const rawMerged: NodeJS.ProcessEnv = {
+    const rawMerged = sanitizeControlPlaneEnv({
       ...sanitizeInheritedPaperclipEnv(process.env),
       ...opts.env,
-    };
+    });
 
     // Strip Claude Code nesting-guard env vars so spawned `claude` processes
     // don't refuse to start with "cannot be launched inside another session".
@@ -3338,11 +3339,11 @@ export async function runChildProcess(
     }
     void resolveSpawnTarget(command, args, opts.cwd, mergedEnv, {
       remoteExecution: opts.remoteExecution ?? null,
-      remoteEnv: opts.remoteExecution ? opts.env : null,
+      remoteEnv: opts.remoteExecution ? sanitizeControlPlaneEnv(opts.env) : null,
       localProcessSandbox: opts.localProcessSandbox ?? null,
     })
       .then((target) => {
-        const childEnv = { ...mergedEnv, ...target.env };
+        const childEnv = sanitizeControlPlaneEnv({ ...mergedEnv, ...target.env });
         for (const [key, value] of Object.entries(childEnv)) {
           if (value === undefined) delete childEnv[key];
         }

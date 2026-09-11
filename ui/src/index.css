@@ -1,5 +1,43 @@
 @import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
 @plugin "@tailwindcss/typography";
+
+/* Work Graph geometry and third-party canvas theme are owned by the token layer. */
+:root {
+  --target-graph-height: 400px;
+  --target-graph-node-width: 250px;
+  --target-graph-node-height: 124px;
+}
+.target-work-graph {
+  height: var(--target-graph-height);
+  border-block: 1px solid var(--border);
+  background: var(--muted);
+  --xy-background-color: var(--muted);
+  --xy-edge-stroke: var(--muted-foreground);
+  --xy-controls-button-background-color: var(--background);
+  --xy-controls-button-color: var(--foreground);
+  --xy-controls-button-border-color: var(--border);
+  --xy-controls-button-background-color-hover: var(--accent);
+  --xy-controls-button-color-hover: var(--foreground);
+  --xy-attribution-background-color: var(--background);
+}
+.target-work-graph .react-flow__attribution a { color: var(--muted-foreground); }
+.target-graph-node {
+  width: var(--target-graph-node-width);
+  height: var(--target-graph-node-height);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: calc(var(--spacing) * 3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
+}
+.target-graph-node[data-selected="true"] { outline: 2px solid var(--ring); }
+.target-graph-node[data-status="running"] { border-color: var(--primary); }
+.target-graph-node[data-status="blocked"] { border-color: var(--destructive); }
+.target-graph-node[data-status="completed"] { border-color: var(--success); }
 
 @font-face {
   font-family: "InterVariable";

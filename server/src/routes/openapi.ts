@@ -200,6 +200,8 @@ import {
   approveActionSchema,
   connectorIdempotencyKeySchema,
   collectGithubCiObservationSchema,
+  recordGithubFixedCiProofSchema,
+  githubFixedCiProofResultSchema,
   createAgentDefinitionSchema,
   createArtifactSchema,
   createClaimSchema,
@@ -891,6 +893,7 @@ const BOARD_ONLY_PREFIXES = [
 
 const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/workspaces/{workspaceId}/targets/{targetId}/github-ci-observations",
+  "POST /api/workspaces/{workspaceId}/targets/{targetId}/github-fixed-ci-proofs",
   "GET /api/workspaces/{workspaceId}/targets/{targetId}/run-outbox-failures",
   "POST /api/workspaces/{workspaceId}/runs/{runId}/outbox/retry",
   "GET /api/cloud/stacks",
@@ -3012,6 +3015,50 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
 });
 
+const channelReplyParams = z.object({ workspaceId: z.string().uuid(), conversationId: z.string().uuid(), draftId: z.string().uuid() });
+registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/target-drafts/{draftId}/channel-reply",
+  tags: ["conversations", "targets"],
+  summary: "Read the persisted channel creation-reply status",
+  description: "Board and Workspace access required. Read-only; does not send a message or admit a proof. Response is not cacheable.",
+  request: { params: channelReplyParams },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/target-drafts/{draftId}/channel-reply/reconcile",
+  tags: ["conversations", "targets"],
+  summary: "Reconcile an uncertain creation reply using its provider message reference",
+  description: "Human Workspace member required. Reads the existing provider message without resending it. Response is not cacheable.",
+  request: { params: channelReplyParams, body: jsonBody(z.object({ providerMessageId: z.string().regex(/^[A-Za-z0-9_-]{1,200}$/) }).strict()) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/delivery-context/channel",
+  tags: ["targets"],
+  summary: "Inspect version-bound channel Target source references",
+  description: "Board and Workspace access required. Inspection only, not proof admission. Response is not cacheable.",
+  request: { params: z.object({ workspaceId: z.string().uuid() }), query: z.object({
+    channelEventId: z.string().uuid(), draftRevisionId: z.string().uuid(), createdTargetId: z.string().uuid(), createdTargetRevisionId: z.string().uuid(),
+  }).strict() },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/delivery-context/codex",
+  tags: ["targets"],
+  summary: "Inspect version-bound Codex execution references",
+  description: "Board and Workspace access required. artifactRevisionId and fixedCiProofId must be supplied together or both omitted. Inspection only, not proof admission. Response is not cacheable; concurrent reads are bounded.",
+  request: { params: z.object({ workspaceId: z.string().uuid() }), query: z.object({
+    targetId: z.string().uuid(), targetRevisionId: z.string().uuid(), graphRevisionId: z.string().uuid(),
+    runId: z.string().uuid(), runAttemptId: z.string().uuid(), heartbeatRunId: z.string().uuid(),
+    artifactRevisionId: z.string().uuid().optional(), fixedCiProofId: z.string().uuid().optional(),
+  }).strict() },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 429: r.tooManyRequests },
+});
+
 // ─── Native Target domain read model ────────────────────────────────────────
 
 registry.registerPath({
@@ -3393,6 +3440,22 @@ const githubCiObservationReceiptSchema = z.object({
     receiptSha256: z.string().regex(/^[a-f0-9]{64}$/),
   }).strict(),
 }).strict();
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/targets/{targetId}/github-fixed-ci-proofs",
+  tags: ["connector"],
+  summary: "Verify fixed CI and native product-source identity before recording a CriterionProof",
+  description: "Disabled without a separate immutable verifier capability and exact operator policy. Requires an authenticated, policy-authorized user and active non-viewer Workspace membership, with the existing local-implicit membership exception. Executes the provider reader and native ArtifactRevision mapping in process; observations and audit IDs cannot be submitted. Only pre-acceptance independent requirements containing the supported fixed CI assertion IDs are admitted. Does not establish compound, live-runtime, human-governance or external-effect obligations. A replay revalidates the current context and independently collects the provider facts before Domain API replay.",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": connectorIdempotencyKeySchema }),
+    body: jsonBody(recordGithubFixedCiProofSchema),
+  },
+  responses: { 200: r.ok(githubFixedCiProofResultSchema), 201: r.ok(githubFixedCiProofResultSchema), 400: r.badRequest,
+    401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.badRequest,
+    429: r.tooManyRequests, 502: r.badGateway, 503: r.serviceUnavailable },
+});
 
 registry.registerPath({
   method: "post",

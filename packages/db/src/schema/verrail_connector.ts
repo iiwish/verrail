@@ -111,7 +111,7 @@ export const verrailIntegrationRuns = pgTable(
     ),
     providerCheck: check(
       "verrail_integration_runs_provider_check",
-      sql`${table.provider} = 'github'`,
+      sql`${table.provider} in ('github', 'verrail')`,
     ),
     conclusionCheck: check(
       "verrail_integration_runs_conclusion_check",

@@ -33,6 +33,12 @@ func connectorConclusionVerdict(conclusion string) (string, bool) {
 }
 
 func (store *Store) RecordIntegrationRun(ctx context.Context, command AgentLifecycleCommand[RecordIntegrationRunInput]) (AgentLifecycleResult, error) {
+	if command.Input.Provider != "github" {
+		return AgentLifecycleResult{}, forbidden("CRITERION_PROOF_VERIFIER_REQUIRED", "Local delivery proof requires the closed verifier")
+	}
+	if err := store.assertGenericIntegrationProofAdmission(ctx, command); err != nil {
+		return AgentLifecycleResult{}, err
+	}
 	meta := lifecycleMeta(command)
 	tx, replay, err := store.beginCandidateCommand(ctx, meta)
 	if err != nil {
@@ -42,6 +48,11 @@ func (store *Store) RecordIntegrationRun(ctx context.Context, command AgentLifec
 		return *replay, nil
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	return store.recordIntegrationRun(ctx, tx, command, nil)
+}
+
+func (store *Store) recordIntegrationRun(ctx context.Context, tx pgx.Tx, command AgentLifecycleCommand[RecordIntegrationRunInput], proof *validatedCriterionProof) (AgentLifecycleResult, error) {
+	meta := lifecycleMeta(command)
 	if err := assertAssuranceTarget(ctx, tx, command.WorkspaceID, command.Input.TargetID); err != nil {
 		return AgentLifecycleResult{}, err
 	}
@@ -51,10 +62,6 @@ func (store *Store) RecordIntegrationRun(ctx context.Context, command AgentLifec
 	}
 	if activeTargetRevisionID != command.Input.TargetRevisionID {
 		return AgentLifecycleResult{}, &Error{Status: 409, Code: "INTEGRATION_TARGET_REVISION_MISMATCH", Message: "IntegrationRun must bind the active TargetRevision"}
-	}
-	proof, err := validateIntegrationProof(ctx, tx, command)
-	if err != nil {
-		return AgentLifecycleResult{}, err
 	}
 	var claimTargetID, claimTargetRevisionID, criterionKey string
 	if err := tx.QueryRow(ctx, `select target_id,target_revision_id,criterion_key from verrail_claims where id=$1 and workspace_id=$2`, command.Input.ClaimID, command.WorkspaceID).Scan(&claimTargetID, &claimTargetRevisionID, &criterionKey); errors.Is(err, pgx.ErrNoRows) {
@@ -129,9 +136,24 @@ func (store *Store) RecordIntegrationRun(ctx context.Context, command AgentLifec
 	}
 	// CI evidence is written first so the run can bind it: kind ci_result,
 	// service producer, high trust (spec.md product contract item 1).
+	producerID, verifierVersion, evidenceKind := connectorProducerPrincipalID, connectorVerifierVersion, "ci_result"
+	if proof != nil && proof.fixedCIVerifier != nil {
+		producerID, verifierVersion = fixedCIProofPrincipalID, FixedCIProofVerifierVersion
+	}
+	if proof != nil && proof.deliveryVerifier != nil {
+		producerID, verifierVersion, evidenceKind = deliveryProofPrincipalID, DeliveryProofVerifierVersion, "scan_result"
+	}
 	evidenceID, _ := NewUUID()
-	if _, err := tx.Exec(ctx, `insert into verrail_evidence(id,workspace_id,target_id,claim_id,kind,producer_principal_type,producer_principal_id,object_hash,reference,trust_level,created_by_principal_type,created_by_principal_id) values($1,$2,$3,$4,'ci_result','service',$5,$6,$7,'high',$8,$9)`, evidenceID, command.WorkspaceID, command.Input.TargetID, command.Input.ClaimID, connectorProducerPrincipalID, command.Input.ObjectHash, command.Input.Reference, command.Principal.Type, command.Principal.ID); err != nil {
+	if _, err := tx.Exec(ctx, `insert into verrail_evidence(id,workspace_id,target_id,claim_id,kind,producer_principal_type,producer_principal_id,object_hash,reference,trust_level,created_by_principal_type,created_by_principal_id) values($1,$2,$3,$4,$10,'service',$5,$6,$7,'high',$8,$9)`, evidenceID, command.WorkspaceID, command.Input.TargetID, command.Input.ClaimID, producerID, command.Input.ObjectHash, command.Input.Reference, command.Principal.Type, command.Principal.ID, evidenceKind); err != nil {
 		return AgentLifecycleResult{}, fmt.Errorf("insert integration run Evidence: %w", err)
+	}
+	evidenceIDs := []string{evidenceID}
+	if proof != nil && proof.deliveryVerifier != nil {
+		ciID, _ := NewUUID()
+		if _, err := tx.Exec(ctx, `insert into verrail_evidence(id,workspace_id,target_id,claim_id,kind,producer_principal_type,producer_principal_id,object_hash,reference,trust_level,created_by_principal_type,created_by_principal_id) values($1,$2,$3,$4,'ci_result','service',$5,$6,$7,'high','service',$5)`, ciID, command.WorkspaceID, command.Input.TargetID, command.Input.ClaimID, deliveryProofPrincipalID, command.Input.ObjectHash, proof.deliveryVerifier.ciReference); err != nil {
+			return AgentLifecycleResult{}, err
+		}
+		evidenceIDs = append(evidenceIDs, ciID)
 	}
 	var verificationResultID *string
 	verdict, hasVerdict := connectorConclusionVerdict(command.Input.Conclusion)
@@ -141,7 +163,7 @@ func (store *Store) RecordIntegrationRun(ctx context.Context, command AgentLifec
 	if hasVerdict {
 		// Identical verification payloads deduplicate by result hash, mirroring
 		// the assurance path (unique (claim_id, result_hash)).
-		resultHash, err := verificationResultHash(command.Input.ClaimID, verdict, connectorVerifierVersion, []string{evidenceID}, nil)
+		resultHash, err := verificationResultHash(command.Input.ClaimID, verdict, verifierVersion, evidenceIDs, nil)
 		if err != nil {
 			return AgentLifecycleResult{}, err
 		}
@@ -152,7 +174,7 @@ func (store *Store) RecordIntegrationRun(ctx context.Context, command AgentLifec
 			verificationResultID = &existingResultID
 		case errors.Is(err, pgx.ErrNoRows):
 			resultID, _ := NewUUID()
-			if _, err := tx.Exec(ctx, `insert into verrail_verification_results(id,workspace_id,target_id,claim_id,verdict,verifier_version,evidence_ids,waiver_reference,result_hash,created_by_principal_type,created_by_principal_id) values($1,$2,$3,$4,$5,$6,$7::uuid[],null,$8,$9,$10)`, resultID, command.WorkspaceID, command.Input.TargetID, command.Input.ClaimID, verdict, connectorVerifierVersion, []string{evidenceID}, resultHash, command.Principal.Type, command.Principal.ID); err != nil {
+			if _, err := tx.Exec(ctx, `insert into verrail_verification_results(id,workspace_id,target_id,claim_id,verdict,verifier_version,evidence_ids,waiver_reference,result_hash,created_by_principal_type,created_by_principal_id) values($1,$2,$3,$4,$5,$6,$7::uuid[],null,$8,$9,$10)`, resultID, command.WorkspaceID, command.Input.TargetID, command.Input.ClaimID, verdict, verifierVersion, evidenceIDs, resultHash, command.Principal.Type, command.Principal.ID); err != nil {
 				return AgentLifecycleResult{}, fmt.Errorf("insert integration run VerificationResult: %w", err)
 			}
 			if nextStatus, ok := claimStatusForVerdict(verdict); ok {

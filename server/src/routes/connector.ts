@@ -7,11 +7,13 @@ import {
   executeActionSchema,
   recordHumanWorkResultSchema,
   recordIntegrationRunSchema,
+  recordGithubFixedCiProofSchema,
   requestPullRequestActionSchema,
   targetIdempotencyKeySchema,
 } from "@paperclipai/shared";
 import { HttpError } from "../errors.js";
 import { createGitHubCiObservationCollector } from "../services/github-ci-proof-collector.js";
+import { createGitHubFixedCiProofRecorder } from "../services/github-fixed-ci-proof-recorder.js";
 import { validate } from "../middleware/validate.js";
 import { createVerrailDomainApiClient, type VerrailDomainApiClient } from "../services/verrail-domain-api-client.js";
 import {
@@ -25,6 +27,7 @@ export function connectorRoutes(options: {
   db?: Db;
   domainApiClient?: VerrailDomainApiClient | null;
   collectGithubCiObservation?: ReturnType<typeof createGitHubCiObservationCollector>["collect"];
+  recordGithubFixedCiProof?: NonNullable<ReturnType<typeof createGitHubFixedCiProofRecorder>>["record"] | null;
   resolveGithubCredential?: (
     workspaceId: string,
     actor: GithubConnectorCredentialActor,
@@ -34,6 +37,9 @@ export function connectorRoutes(options: {
   const domainApi = options.domainApiClient === undefined ? createVerrailDomainApiClient() : options.domainApiClient;
   const collectGithubCiObservation = options.collectGithubCiObservation
     ?? (options.db ? createGitHubCiObservationCollector({ db: options.db }).collect : null);
+  const recordGithubFixedCiProof = options.recordGithubFixedCiProof === undefined
+    ? (options.db ? createGitHubFixedCiProofRecorder({ db: options.db })?.record : null)
+    : options.recordGithubFixedCiProof;
   const resolveGithubCredential = options.resolveGithubCredential
     ?? (options.db ? (workspaceId: string, actor: GithubConnectorCredentialActor) =>
       resolveGithubConnectorCredential(options.db!, workspaceId, actor) : null);
@@ -55,8 +61,7 @@ export function connectorRoutes(options: {
     return { workspaceId, principalType: actor.actorType, principalId: actor.actorId, idempotencyKey: targetIdempotencyKeySchema.parse(req.header("Idempotency-Key")) };
   }
 
-  router.post("/workspaces/:workspaceId/targets/:targetId/github-ci-observations", validate(collectGithubCiObservationSchema), async (req, res) => {
-    const workspaceId = req.params.workspaceId as string;
+  function collectionActor(req: Parameters<typeof getActorInfo>[0], workspaceId: string): GithubConnectorCredentialActor {
     assertAuthenticated(req);
     assertBoard(req);
     assertCompanyAccess(req, workspaceId);
@@ -70,16 +75,32 @@ export function connectorRoutes(options: {
         throw new HttpError(403, "Active non-viewer Workspace membership is required", { code: "GITHUB_CI_COLLECTION_FORBIDDEN" });
       }
     }
+    return { actorType: "user", actorId: userId, actorSource: source as "session" | "board_key" | "cloud_tenant" | "local_implicit" };
+  }
+
+  router.post("/workspaces/:workspaceId/targets/:targetId/github-ci-observations", validate(collectGithubCiObservationSchema), async (req, res) => {
+    const workspaceId = req.params.workspaceId as string;
+    const actor = collectionActor(req, workspaceId);
     if (!collectGithubCiObservation) {
       throw new HttpError(503, "GitHub CI collection is unavailable", { code: "GITHUB_CI_COLLECTION_UNAVAILABLE", retryable: false });
     }
     const result = await collectGithubCiObservation({
       workspaceId,
       targetId: req.params.targetId as string,
-      actor: { actorType: "user", actorId: userId, actorSource: source as "session" | "board_key" | "cloud_tenant" | "local_implicit" },
+      actor,
       input: req.body,
     });
     res.status(201).json(result);
+  });
+
+  router.post("/workspaces/:workspaceId/targets/:targetId/github-fixed-ci-proofs", validate(recordGithubFixedCiProofSchema), async (req, res) => {
+    const workspaceId = req.params.workspaceId as string;
+    const actor = collectionActor(req, workspaceId);
+    const idempotencyKey = targetIdempotencyKeySchema.parse(req.header("Idempotency-Key"));
+    if (!recordGithubFixedCiProof) throw new HttpError(503, "GitHub fixed CI proof recording is disabled", { retryable: false });
+    const result = await recordGithubFixedCiProof({ workspaceId, targetId: req.params.targetId as string,
+      actor, idempotencyKey, input: req.body });
+    res.status(result.replayed ? 200 : 201).json(result);
   });
 
   router.post("/workspaces/:workspaceId/integration-runs", validate(recordIntegrationRunSchema), async (req, res) => {

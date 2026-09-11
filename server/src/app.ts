@@ -114,6 +114,7 @@ import { setPluginEventBus } from "./services/activity-log.js";
 import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
+import { deliveryContextRoutes } from "./routes/delivery-context.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 import { createCachedViteHtmlRenderer } from "./vite-html-renderer.js";
@@ -547,7 +548,9 @@ export async function createApp(
   api.use(executionWorkspaceRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(goalRoutes(db));
   api.use(onboardingSeedRoutes(db));
-  api.use(conversationRoutes(db, { deploymentMode: opts.deploymentMode }));
+  api.use(conversationRoutes(db, { deploymentMode: opts.deploymentMode, pluginWorkerManager: workerManager,
+    publicBaseUrl: opts.authPublicBaseUrl ?? (opts.deploymentMode === "local_trusted" ? `http://127.0.0.1:${opts.serverPort}` : null) }));
+  api.use(deliveryContextRoutes(db));
   api.use(boardChatRoutes(db, { deploymentMode: opts.deploymentMode }));
   api.use(approvalRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(secretRoutes(db));

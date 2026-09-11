@@ -42,7 +42,7 @@ export {
   verrailTargetCreationDraftRevisions,
   type VerrailTargetDraftDefinitionRecord,
 } from "./verrail_conversations.js";
-export { verrailChannelEvents } from "./verrail_channel.js";
+export { verrailChannelEvents, verrailChannelTargetReplies } from "./verrail_channel.js";
 export {
   verrailWorkGraphs,
   verrailGraphRevisions,

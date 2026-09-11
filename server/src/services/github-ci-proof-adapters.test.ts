@@ -51,6 +51,7 @@ describe("GitHub CI bounded transports", () => {
     path, `${path}/jobs?page=1&per_page=100`, "/repos/acme/repo/actions/runs/12/artifacts?page=20&per_page=100",
     "/repos/acme/repo/actions/artifacts/34/zip", `/repos/acme/repo/contents/.github/workflows/verrail-candidate-verify.yml?ref=${"a".repeat(40)}`,
     `/repos/acme/repo/contents/.github/scripts/verrail-candidate-proof.mjs?ref=${"a".repeat(40)}`,
+    `/repos/acme/repo/git/commits/${"a".repeat(40)}`, `/repos/acme/repo/git/trees/${"b".repeat(40)}`,
   ])("permits only the reader endpoint family: %s", async endpoint => {
     const fetch = vi.fn().mockResolvedValue(new Response("{}"));
     await createGitHubCiReadDependencies({ ...options, fetch }).get(endpoint, init()); expect(fetch).toHaveBeenCalledOnce();
@@ -62,6 +63,9 @@ describe("GitHub CI bounded transports", () => {
     `${path}/jobs?page=21&per_page=100`, `${path}/jobs?page=1&per_page=100&page=2`, "/repos/acme/repo/issues",
     "/repos/acme/repo/actions/runs/0/attempts/1", "/repos/acme/repo/actions/runs/9007199254740992/attempts/1",
     `/repos/acme/repo/contents/.env?ref=${"a".repeat(40)}`,
+    "/repos/acme/repo/git/commits/main", `/repos/acme/repo/git/commits/${"A".repeat(40)}`,
+    `/repos/acme/repo/git/trees/${"a".repeat(40)}?recursive=1`, `/repos/acme/repo/git/trees/${"a".repeat(40)}?page=1`,
+    `/repos/acme/other/git/commits/${"a".repeat(40)}`, `/repos/acme/repo/git/blobs/${"a".repeat(40)}`,
   ])("rejects auth path escapes before fetch: %s", async endpoint => {
     const fetch = vi.fn(); await expect(createGitHubCiReadDependencies({ ...options, fetch }).get(endpoint, init())).rejects.toThrow("GitHub CI transport failed");
     expect(fetch).not.toHaveBeenCalled();

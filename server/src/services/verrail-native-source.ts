@@ -8,7 +8,7 @@ import { z } from "zod";
 
 const exec = promisify(execFile);
 export const NATIVE_SOURCE_CONTEXT_KEY = "verrailNativeSourceObservation";
-const scope = {
+const scopeV1 = {
   version: 1 as const,
   kind: "git_tracked_and_nonignored_untracked" as const,
   excludedPaths: [".verrail/run-artifacts/**"] as [".verrail/run-artifacts/**"],
@@ -16,6 +16,8 @@ const scope = {
   symlinks: "relative_in_root_target_bytes_only" as const,
   contentMode: "git_owner_execute_bit" as const,
 };
+const scopeV2 = { ...scopeV1, version: 2 as const, excludedPaths: [".verrail/**"] as [".verrail/**"] };
+export type NativeSourceScopeVersion = 1 | 2;
 const limitations = ["not_runtime_build_attestation", "not_effective_permission_snapshot", "not_artifact_tree_equivalence", "not_adversarial_isolation"] as const;
 export const NATIVE_SOURCE_LIMITS = Object.freeze({ files: 20_000, totalBytes: 512 * 1024 * 1024, fileBytes: 32 * 1024 * 1024, timeoutMs: 15_000, gitOutputBytes: 8 * 1024 * 1024 });
 type CaptureLimits = Record<keyof typeof NATIVE_SOURCE_LIMITS, number>;
@@ -26,20 +28,23 @@ const identitySchema = z.object({ workspaceId: id, heartbeatRunId: id, agentId: 
 export type NativeSourceIdentity = z.infer<typeof identitySchema>;
 export type NativeSourcePhase = "before_dispatch" | "after_adapter_return";
 const observationSchema = z.object({
-  schemaVersion: z.literal(1), kind: z.literal("verrail.native-source-observation"), phase: z.enum(["before_dispatch", "after_adapter_return"]),
+  schemaVersion: z.union([z.literal(1), z.literal(2)]), kind: z.literal("verrail.native-source-observation"), phase: z.enum(["before_dispatch", "after_adapter_return"]),
   status: z.enum(["captured", "unavailable"]), observedAt: z.iso.datetime(), identity: identitySchema,
-  scope: z.object({ version: z.literal(1), kind: z.literal(scope.kind), excludedPaths: z.tuple([z.literal(".verrail/run-artifacts/**")]), ignoredFiles: z.literal("outside_coverage"), symlinks: z.literal(scope.symlinks), contentMode: z.literal(scope.contentMode) }).strict(),
+  scope: z.discriminatedUnion("version", [
+    z.object({ version: z.literal(1), kind: z.literal(scopeV1.kind), excludedPaths: z.tuple([z.literal(".verrail/run-artifacts/**")]), ignoredFiles: z.literal("outside_coverage"), symlinks: z.literal(scopeV1.symlinks), contentMode: z.literal(scopeV1.contentMode) }).strict(),
+    z.object({ version: z.literal(2), kind: z.literal(scopeV2.kind), excludedPaths: z.tuple([z.literal(".verrail/**")]), ignoredFiles: z.literal("outside_coverage"), symlinks: z.literal(scopeV2.symlinks), contentMode: z.literal(scopeV2.contentMode) }).strict(),
+  ]),
   limitations: z.tuple(limitations.map((item) => z.literal(item)) as [z.ZodLiteral<typeof limitations[0]>, z.ZodLiteral<typeof limitations[1]>, z.ZodLiteral<typeof limitations[2]>, z.ZodLiteral<typeof limitations[3]>]),
   reasonCode: reasonSchema.optional(),
   repository: z.object({ root: z.string().min(1).max(4096), headCommit: z.string().regex(/^[a-f0-9]{40}$/), headTree: z.string().regex(/^[a-f0-9]{40}$/), objectFormat: z.literal("sha1") }).strict().optional(),
   manifest: z.object({ sha256: z.string().regex(/^[a-f0-9]{64}$/), contentSha256: z.string().regex(/^[a-f0-9]{64}$/), files: z.number().int().min(0).max(NATIVE_SOURCE_LIMITS.files), deletedFiles: z.number().int().min(0).max(NATIVE_SOURCE_LIMITS.files), bytes: z.number().int().min(0).max(NATIVE_SOURCE_LIMITS.totalBytes) }).strict().optional(),
-}).strict().refine((value) => value.status === "captured"
+}).strict().refine((value) => value.schemaVersion === value.scope.version).refine((value) => value.status === "captured"
   ? !!value.repository && !!value.manifest && !value.reasonCode
   : !!value.reasonCode && !value.repository && !value.manifest);
 export type NativeSourceObservation = z.infer<typeof observationSchema>;
 
-export function unavailableNativeSource(identity: NativeSourceIdentity, reasonCode: Reason, phase: NativeSourcePhase = "before_dispatch"): NativeSourceObservation {
-  return { schemaVersion: 1, kind: "verrail.native-source-observation", phase, status: "unavailable", observedAt: new Date().toISOString(), identity: identitySchema.parse(identity), scope: { ...scope, excludedPaths: [...scope.excludedPaths] }, limitations: [...limitations], reasonCode };
+export function unavailableNativeSource(identity: NativeSourceIdentity, reasonCode: Reason, phase: NativeSourcePhase = "before_dispatch", scopeVersion: NativeSourceScopeVersion = 2): NativeSourceObservation {
+  return { schemaVersion: scopeVersion, kind: "verrail.native-source-observation", phase, status: "unavailable", observedAt: new Date().toISOString(), identity: identitySchema.parse(identity), scope: structuredClone(scopeVersion === 1 ? scopeV1 : scopeV2), limitations: [...limitations], reasonCode };
 }
 
 // This validates structure and correlation, not authorship. Call only after the
@@ -63,14 +68,40 @@ function sameFile(a: BigIntStats, b: BigIntStats) {
   return a.dev === b.dev && a.ino === b.ino && a.mode === b.mode && a.nlink === b.nlink && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
 }
 
-export async function captureNativeSource(input: {
+interface CaptureInput {
   cwd: string; identity: NativeSourceIdentity;
   phase?: NativeSourcePhase;
+  scopeVersion?: NativeSourceScopeVersion;
   limits?: Partial<CaptureLimits>;
   /** Test-only interleaving; production never supplies this callback. */
   beforeRecheck?: () => Promise<void>;
-}): Promise<NativeSourceObservation> {
-  const base = unavailableNativeSource(input.identity, "read_failed", input.phase);
+}
+export interface NativeSourceFile {
+  path: string;
+  kind: "file" | "symlink";
+  mode: "100644" | "100755" | "120000";
+  body: Buffer;
+}
+
+export function captureNativeSource(input: CaptureInput): Promise<NativeSourceObservation> {
+  return observeNativeSource(input);
+}
+
+// Only the trusted exporter receives bytes. Observations and failed reads never do.
+export async function freezeNativeSource(input: Omit<CaptureInput, "scopeVersion">) {
+  const files: NativeSourceFile[] = [];
+  const observation = await observeNativeSource({ ...input, scopeVersion: 2, limits: {
+    ...input.limits, totalBytes: Math.min(input.limits?.totalBytes ?? Infinity, 256 * 1024 * 1024),
+  } }, files);
+  return { observation, files: observation.status === "captured" ? files : [] };
+}
+
+async function observeNativeSource(input: CaptureInput, frozenFiles?: NativeSourceFile[]): Promise<NativeSourceObservation> {
+  const scope = input.scopeVersion === 1 ? scopeV1 : scopeV2;
+  const excluded = (name: string) => scope.version === 1
+    ? name.startsWith(".verrail/run-artifacts/")
+    : name === ".verrail" || name.startsWith(".verrail/");
+  const base = unavailableNativeSource(input.identity, "read_failed", input.phase, scope.version);
   const limits: CaptureLimits = { ...NATIVE_SOURCE_LIMITS };
   for (const key of Object.keys(limits) as Array<keyof typeof limits>) {
     const value = input.limits?.[key];
@@ -113,14 +144,16 @@ export async function captureNativeSource(input: {
       const others = await git(root, ["ls-files", "--others", "--exclude-standard", "-z", "--full-name"]);
       const files = new Map<string, { indexedMode: string | null; indexedBlob: string | null }>();
       const add = (name: string, indexedMode: string | null, indexedBlob: string | null) => {
+        if (scope.version === 2 && excluded(name)) return;
         safeRelative(name);
-        if (name.startsWith(".verrail/run-artifacts/")) return;
+        if (excluded(name)) return;
         if (files.has(name)) fail("unsupported_index");
         files.set(name, { indexedMode, indexedBlob });
         if (files.size > limits.files) fail("limit_exceeded");
       };
       for (const record of tracked.split("\0").filter(Boolean)) {
         const match = /^(\d{6}) ([a-f0-9]{40}) ([0-3])\t([\s\S]+)$/.exec(record);
+        if (match && scope.version === 2 && excluded(match[4]!)) continue;
         if (!match || match[3] !== "0" || !["100644", "100755", "120000"].includes(match[1]!)) fail("unsupported_index");
         add(match[4]!, match[1]!, match[2]!);
       }
@@ -180,6 +213,7 @@ export async function captureNativeSource(input: {
         const content = { path: name, kind: "symlink", mode: "120000", bytes: target.length, sha256: createHash("sha256").update(target).digest("hex") };
         records.push({ ...content, ...indexed });
         contentRecords.push(content);
+        frozenFiles?.push({ path: name, kind: "symlink", mode: "120000", body: target });
         fileStats.set(absolute, before);
         continue;
       }
@@ -188,6 +222,7 @@ export async function captureNativeSource(input: {
         if (!sameFile(before, await handle.stat({ bigint: true }))) fail("source_changed");
         if (!await parents(name)) fail("source_changed");
         const hash = createHash("sha256");
+        const body = frozenFiles ? Buffer.alloc(Number(before.size)) : undefined;
         const buffer = Buffer.alloc(Math.min(Number(before.size) + 1, 64 * 1024));
         let offset = 0;
         while (true) {
@@ -197,12 +232,14 @@ export async function captureNativeSource(input: {
           offset += bytesRead;
           if (offset > Number(before.size)) fail("source_changed");
           hash.update(buffer.subarray(0, bytesRead));
+          if (body) buffer.copy(body, offset - bytesRead, 0, bytesRead);
         }
         if (offset !== Number(before.size) || !sameFile(before, await handle.stat({ bigint: true })) || !sameFile(before, await lstat(absolute, { bigint: true }))) fail("source_changed");
         bytes += offset;
         const content = { path: name, kind: "file", mode: (before.mode & 0o100n) !== 0n ? "100755" : "100644", bytes: offset, sha256: hash.digest("hex") };
         records.push({ ...content, ...indexed });
         contentRecords.push(content);
+        if (body) frozenFiles!.push({ path: name, kind: "file", mode: (before.mode & 0o100n) !== 0n ? "100755" : "100644", body });
         fileStats.set(absolute, before);
       } finally { await handle.close(); }
     }

@@ -23,6 +23,7 @@ function permittedPath(path: string, base: string) {
   if (artifacts) return safeId(artifacts[1]!) && Number(artifacts[2]) <= 20;
   const zip = /^\/actions\/artifacts\/([1-9][0-9]*)\/zip$/.exec(suffix);
   if (zip) return safeId(zip[1]!);
+  if (/^\/git\/(?:commits|trees)\/[a-f0-9]{40}$/.test(suffix)) return true;
   return /^\/contents\/\.github\/(?:workflows\/verrail-candidate-verify\.yml|scripts\/verrail-candidate-proof\.mjs)\?ref=[a-f0-9]{40}$/.test(suffix);
 }
 

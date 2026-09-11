@@ -766,6 +766,34 @@
     "collection": "Collection (optional)",
     "noCollection": "Not classified",
     "outcomeOwner": "Outcome owner",
+    "graph": {
+      "summary": "{{count}} nodes · r{{revision}}",
+      "controls": "Graph controls",
+      "kind": "Node type",
+      "owner": "Responsible principal",
+      "dependencies": "Dependencies",
+      "none": "None",
+      "kinds": {
+        "agent_task": "Agent task",
+        "human_task": "User task",
+        "integration_task": "Integration task",
+        "decision_gate": "User decision",
+        "review_gate": "Human review",
+        "acceptance_gate": "Human acceptance",
+        "policy_gate": "Policy gate"
+      },
+      "states": {
+        "pending": "Pending",
+        "ready": "Ready",
+        "running": "Running",
+        "blocked": "Blocked",
+        "completed": "Completed",
+        "canceled": "Canceled"
+      },
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "fitView": "Fit view"
+    },
     "unassigned": "Unassigned",
     "risk": "Risk",
     "updated": "Updated",
@@ -911,6 +939,31 @@
       "resume": "Continue draft",
       "untitledDraft": "Untitled Target draft",
       "confirm": "Confirm Target",
+      "channelReplyPendingTitle": "Target created; channel reply unconfirmed",
+      "channelReplyPending": "The Target is ready, but its Feishu reply is not confirmed. Do not create another Target to retry the notification.",
+      "reply": {
+        "title": "Channel reply",
+        "loading": "Loading reply status...",
+        "unavailable": "Reply status unavailable",
+        "refresh": "Refresh reply status",
+        "messageId": "Feishu message ID",
+        "verify": "Verify existing reply",
+        "verifying": "Verifying...",
+        "openTarget": "Open Target",
+        "permission": "Only the original confirmer with active Workspace access can verify this reply.",
+        "scopeDenied": "This reply belongs to another Workspace.",
+        "conflict": "The reply could not be verified. Refresh its status and check the message ID.",
+        "failed": "Verification failed. The reply has not been marked confirmed. Try again later.",
+        "loadFailed": "Reply status could not be loaded. Refresh to try again.",
+        "unconfirmed": "The reply is still unconfirmed. No message was resent.",
+        "status": {
+          "succeeded": "Reply confirmed",
+          "unknown": "Reply delivery unconfirmed",
+          "sending": "Send pending or interrupted",
+          "blocked": "No verifiable reply record",
+          "not_applicable": "No channel reply required"
+        }
+      },
       "creating": "Creating...",
       "errors": {
         "loadDrafts": "Target drafts could not be loaded. Retry to continue.",

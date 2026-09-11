@@ -11,8 +11,10 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { captureNativeOutput, finalizeNativeOutputReceipt } from "./verrail-native-output.js";
-import { NATIVE_SOURCE_CONTEXT_KEY, unavailableNativeSource } from "./verrail-native-source.js";
+import { captureNativeSource, NATIVE_SOURCE_CONTEXT_KEY, unavailableNativeSource } from "./verrail-native-source.js";
 
 function candidate(overrides: Partial<NativeRunLeaseCandidate> = {}): NativeRunLeaseCandidate {
   return {
@@ -168,20 +170,30 @@ describe("verrail native run executor", () => {
     expect(test.reports.at(-1)).toMatchObject({ eventType: "failed", payload: { errorCode: "NATIVE_OUTPUT_RECEIPT_INVALID" } });
     expect(JSON.stringify(test.reports)).not.toContain("private contents");
   });
-  it("replays byte-identical full success commands after lost response, workspace deletion and executor restart", async () => {
+  it.each([{ version: 1 as const, snapshot: false }, { version: 2 as const, snapshot: false }, { version: 2 as const, snapshot: true }])("replays byte-identical full success commands after lost response, workspace deletion and executor restart: %j", async ({ version, snapshot }) => {
     const cwd = await mkdtemp(path.join(os.tmpdir(), "native-replay-"));
     const lease = candidate({ workspaceId: "86679997-3f3a-4477-a2fa-d4da812140ae", compatibilityAgentWorkspaceId: "86679997-3f3a-4477-a2fa-d4da812140ae", runAttemptId: "1e82be4a-a466-4c28-bee6-eb9609b68401", leaseStatus: "active", attemptStatus: "running", lastEventCursor: 2 });
     const identity = { workspaceId: lease.workspaceId, heartbeatRunId: "heartbeat-1", agentId: "agent-1", runId: lease.runId, attemptId: lease.runAttemptId, deploymentRevisionId: lease.deploymentRevisionId, agentVersionId: lease.agentVersionId };
     try {
+      if (snapshot) {
+        const exec = promisify(execFile);
+        await exec("git", ["init", "-q"], { cwd });
+        await writeFile(path.join(cwd, "source.txt"), "fixed candidate source");
+        await exec("git", ["add", "."], { cwd });
+        await exec("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture"], { cwd });
+      }
       const output = path.join(cwd, ".verrail/run-artifacts", lease.runAttemptId);
       await mkdir(output, { recursive: true });
       await writeFile(path.join(output, "report.txt"), "frozen bytes");
       await writeFile(path.join(output, "manifest.json"), JSON.stringify({ schemaVersion: 1, artifacts: [{ path: "report.txt", title: "Report", kind: "report" }] }));
+      if (snapshot) await writeFile(path.join(output, "manifest.json"), JSON.stringify({ schemaVersion: 2, artifacts: [{ type: "source_snapshot", title: "Fixed source", format: "git_bundle", scopeVersion: 2 }] }));
       const receipt = finalizeNativeOutputReceipt(await captureNativeOutput({ cwd, identity,
-        beforeSource: unavailableNativeSource(identity, "not_git"), revalidate: async () => {},
+        beforeSource: snapshot ? await captureNativeSource({ cwd, identity }) : unavailableNativeSource(identity, "not_git", "before_dispatch", version), revalidate: async () => {},
         storage: { putFile: async (input) => { const sha256 = createHash("sha256").update(input.body).digest("hex"); return { sha256, byteSize: input.body.length, objectKey: `${identity.workspaceId}/verrail/run-artifacts/sha256/${sha256}` } as any; } },
       }), { heartbeatRunId: identity.heartbeatRunId, heartbeatStatus: "succeeded", agentId: identity.agentId,
         logStore: "local_file", logRef: "actual.log", logSha256: "a".repeat(64), logBytes: 123, usage: { inputTokens: 42, costUsd: 0.02 }, exitCode: 0, errorCode: null, environmentManifest: null });
+      expect(receipt.schemaVersion).toBe(version);
+      if (snapshot) expect(receipt.artifacts[0]).toHaveProperty("sourceSnapshot");
       const heartbeat = heartbeatRun({ status: "succeeded", nativeOutputReceipt: receipt });
       const test = harness({ lease, heartbeat });
       test.domainApi.reportRunEvent.mockRejectedValueOnce(new Error("ambiguous response"));

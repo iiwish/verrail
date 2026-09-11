@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 import {
   companyMemberships,
   verrailChannelEvents,
@@ -197,6 +198,8 @@ export function channelConnectorHostService(db: Db) {
             channelConnector: input.connectorKey,
             providerEventId: input.event.providerEventId,
             providerMessageId: input.event.replyContext.providerMessageId,
+            ...(process.env.VERRAIL_RUNTIME_SESSION_ID
+              ? { runtimeSessionId: z.string().uuid().parse(process.env.VERRAIL_RUNTIME_SESSION_ID) } : {}),
           },
         });
         await tx.update(verrailConversations).set({

@@ -30,6 +30,10 @@ func (store *Store) beginCandidateCommand(ctx context.Context, meta agentCommand
 }
 
 func (store *Store) beginLifecycleCommand(ctx context.Context, meta agentCommandMeta, candidate bool) (pgx.Tx, *AgentLifecycleResult, error) {
+	return store.beginLifecycleCommandWithAdmission(ctx, meta, candidate, nil)
+}
+
+func (store *Store) beginLifecycleCommandWithAdmission(ctx context.Context, meta agentCommandMeta, candidate bool, admit func(pgx.Tx) error) (pgx.Tx, *AgentLifecycleResult, error) {
 	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return nil, nil, err
@@ -38,6 +42,12 @@ func (store *Store) beginLifecycleCommand(ctx context.Context, meta agentCommand
 	if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock(hashtextextended($1, 0))`, lockKey); err != nil {
 		_ = tx.Rollback(ctx)
 		return nil, nil, err
+	}
+	if admit != nil {
+		if err := admit(tx); err != nil {
+			_ = tx.Rollback(ctx)
+			return nil, nil, err
+		}
 	}
 	var existingHash string
 	var response []byte
