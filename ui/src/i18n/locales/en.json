@@ -894,6 +894,24 @@
         "acceptCompletion": "The outcome owner records acceptance of the approved immutable submission."
       }
     },
+    "primaryTabs": { "overview": "Workbench", "delivery": "Delivery", "timeline": "Activity" },
+    "activityKinds": { "graphReconciled": "Work graph reconciled", "runFailed": "Run failed", "runEnded": "Run ended", "runCanceled": "Cancellation acknowledged", "cancelRequested": "Cancellation requested", "runStarted": "Run started", "heartbeat": "Run heartbeat received", "runClaimed": "Run claimed by executor", "attemptCreated": "Execution attempt created", "leaseExpired": "Execution lease expired", "deliveryRetry": "Event delivery retry requested", "expiredEvent": "Event rejected after lease expiry" },
+    "attentionKinds": {
+      "draft_graph": "Work graph awaiting activation", "blocked_node": "Work is blocked", "failed_run": "A run needs recovery",
+      "verification_failed": "Verification failed", "verification_inconclusive": "Verification is inconclusive", "missing_evidence": "Evidence is missing",
+      "awaiting_review": "Candidate awaiting review", "awaiting_acceptance": "Candidate awaiting acceptance", "action_approval_required": "External action awaiting approval",
+      "action_execution_required": "Approved external action awaiting execution", "unknown_effect": "External outcome needs reconciliation", "invalidated_decision": "A decision is no longer valid"
+    },
+    "delivery": {
+      "version": "Delivery version", "working": "Working artifacts", "candidate": "Candidate {{number}}",
+      "immutable": "Immutable candidate. Review and acceptance apply only to this version.",
+      "unsubmitted": "Working artifacts have not been bound to a submission.",
+      "missingBindings": "Some bound artifact revisions or verification results are unavailable. This candidate cannot be fully inspected.",
+      "nextActions": "Next actions", "commandDetails": "Include blocked and completed", "noActions": "No action available in this view.",
+      "targetDetails": "Goal and constraints", "allRuns": "All runs ({{count}})", "hideRuns": "Hide runs",
+      "auditDetails": "Audit details", "source": "Open source", "nodeRuns": "Runs", "nodeArtifacts": "Artifacts", "openDelivery": "Inspect delivery",
+      "systemEvents": "Routine checks and repeated heartbeats ({{count}})", "preview": "Preview", "previewFailed": "Preview unavailable. Download the artifact to inspect it."
+    },
     "timelineEvents": {
       "target_created": "Target created",
       "target_revision_created": "Target revision recorded",

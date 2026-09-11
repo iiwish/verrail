@@ -603,7 +603,8 @@ describe("TargetWorkbench", () => {
     expect(container.textContent).toContain("Owner");
     expect(container.textContent).toContain("Release a governed version");
     expect(container.textContent).toContain("Work Graph");
-    expect(container.textContent).toContain("Acceptance");
+    expect(container.textContent).toContain("Delivery");
+    expect(Array.from(container.querySelectorAll('#target-section-select option')).map((option) => option.textContent)).toEqual(["Workbench", "Delivery", "Activity"]);
     expect(container.querySelector('a[href="/VER/issues/VER-1"]')).toBeNull();
     expect(container.textContent).not.toContain("Accepted");
     expect(setBreadcrumbs).toHaveBeenLastCalledWith([
@@ -695,6 +696,7 @@ describe("TargetWorkbench", () => {
     get.mockResolvedValue({ ...model, definition: { ...model.definition, acceptanceCriteria: criteria } });
     createGraphRevision.mockResolvedValue({ graphRevisionId: "new-graph" });
     await renderWorkbench();
+    await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
     const completion = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Delivery task completion"]');
     await act(async () => {
       Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")!.set!.call(completion, "Produce the governed candidate");
@@ -729,6 +731,7 @@ describe("TargetWorkbench", () => {
 
     await renderWorkbench();
 
+    await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
     const deploymentSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Delivery deployment revision"]');
     expect(deploymentSelect?.value).toBe("deployment-revision-1");
     const completion = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Delivery task completion"]');
@@ -775,6 +778,7 @@ describe("TargetWorkbench", () => {
 
   it("blocks blank or overlong delivery conditions without issuing a graph command", async () => {
     await renderWorkbench();
+    await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
     const completion = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Delivery task completion"]')!;
     const button = Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.includes("Create revision"))!;
     expect(button.disabled).toBe(false);
@@ -790,6 +794,7 @@ describe("TargetWorkbench", () => {
   });
 
   it("issues review, acceptance, approval, and execution as separate bound human commands", async () => {
+    route.tab = "delivery";
     const adjudication = adjudicationFacts();
     const action = actionFact();
     getWorkspace.mockResolvedValue({
@@ -812,7 +817,7 @@ describe("TargetWorkbench", () => {
 
     expect(container.querySelector(`[title="${SUBMISSION_HASH_A}"]`)).not.toBeNull();
     expect(container.querySelector(`[title="${REVIEW_HASH_A}"]`)).not.toBeNull();
-    expect(container.querySelector(`[title="${ACTION_PARAMS_HASH}"]`)).not.toBeNull();
+    expect(container.querySelector(`[title="${ACTION_PARAMS_HASH}"]`)).toBeNull();
 
     const clickCommand = async (label: string) => {
       const button = Array.from(container.querySelectorAll("button"))
@@ -835,6 +840,9 @@ describe("TargetWorkbench", () => {
       reviewId: REVIEW_ID_A,
     }, expect.any(String));
 
+    route.tab = "overview";
+    await renderWorkbench();
+    expect(container.querySelector(`[title="${ACTION_PARAMS_HASH}"]`)).not.toBeNull();
     await clickCommand("Approve");
     expect(approveAction).toHaveBeenCalledWith("workspace-1", ACTION_ID, expect.objectContaining({
       approverPrincipalId: "owner-1",
@@ -846,6 +854,7 @@ describe("TargetWorkbench", () => {
   });
 
   it("shows a rejected command code and retries the identical command intent", async () => {
+    route.tab = "delivery";
     const { ApiError } = await import("../api/client");
     getWorkspace.mockResolvedValue({
       ...targetWorkspace(),
@@ -915,7 +924,8 @@ describe("TargetWorkbench", () => {
     expect(createRunAttempt).not.toHaveBeenCalled();
   });
 
-  it("does not poll the full workspace outside the Runs tab", async () => {
+  it("does not poll the full workspace on the Delivery tab", async () => {
+    route.tab = "delivery";
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     await renderWorkbench();
     const initialReads = getWorkspace.mock.calls.length;
@@ -1021,7 +1031,7 @@ describe("TargetWorkbench", () => {
     expect(container.textContent).toContain("Revision 1");
     expect(container.textContent).toContain("Revision 2");
     expect(container.textContent).toContain(CONTENT_HASH_A.slice(0, 12));
-    expect(container.textContent).not.toContain(CONTENT_HASH_A);
+    expect(container.textContent).toContain(`verrail://objects/${CONTENT_HASH_A}`);
     expect(container.querySelector(`[title="${CONTENT_HASH_A}"]`)).not.toBeNull();
     expect(container.querySelector(`[title="${CONTENT_HASH_B}"]`)).not.toBeNull();
     expect(container.textContent).toContain("Run run-1");
@@ -1081,8 +1091,7 @@ describe("TargetWorkbench", () => {
     expect(container.textContent).toContain(SUBMISSION_HASH_A.slice(0, 12));
     expect(container.textContent).not.toContain(SUBMISSION_HASH_A);
     expect(container.querySelector(`[title="${SUBMISSION_HASH_A}"]`)).not.toBeNull();
-    expect(container.textContent.indexOf(SUBMISSION_HASH_A.slice(0, 12)))
-      .toBeLessThan(container.textContent.indexOf(SUBMISSION_HASH_B.slice(0, 12)));
+    expect(container.textContent).not.toContain(SUBMISSION_HASH_B.slice(0, 12));
     expect(container.textContent).toContain("agent-1");
     expect(container.textContent).toContain("e07fc1f90ae7");
     expect(container.textContent).toContain("staging · all checks green");
@@ -1102,13 +1111,15 @@ describe("TargetWorkbench", () => {
     getWorkspace.mockResolvedValue({ ...targetWorkspace(), ...adjudicationFacts() });
 
     await renderWorkbench();
+    const version = Array.from(container.querySelectorAll("select")).find((select) => Array.from(select.options).some((option) => option.value === SUBMISSION_ID_B))!;
+    await act(async () => { version.value = SUBMISSION_ID_B; version.dispatchEvent(new Event("change", { bubbles: true })); });
 
     expect(container.textContent).toContain("Superseded by a newer submission");
-    expect(container.textContent).toContain("Accepted");
+    expect(container.textContent).not.toContain("Evidence chain is complete");
     expect(container.textContent).toContain(`Submission ${SUBMISSION_HASH_B.slice(0, 12)}`);
     expect(container.querySelector(`[title="${SUBMISSION_HASH_B}"]`)).not.toBeNull();
-    expect(container.textContent).toContain(`Review ${REVIEW_ID_A.slice(0, 12)}`);
-    expect(container.querySelector(`[title="${REVIEW_ID_A}"]`)).not.toBeNull();
+    expect(container.textContent).toContain(`Review ${REVIEW_ID_B.slice(0, 12)}`);
+    expect(container.querySelector(`[title="${REVIEW_ID_B}"]`)).not.toBeNull();
     expect(container.textContent).toContain("Outcome owner");
     expect(container.textContent).toContain("owner-1");
     expect(container.textContent).not.toContain(ACCEPTANCE_HASH_B);
@@ -1117,10 +1128,30 @@ describe("TargetWorkbench", () => {
   it("keeps honest empty states for the adjudication tabs without server facts", async () => {
     route.tab = "submission";
     await renderWorkbench();
-    expect(container.textContent).toContain("No immutable submission exists for this target.");
+    expect(container.textContent).toContain("Working artifacts have not been bound to a submission.");
 
     route.tab = "acceptance";
     await renderWorkbench();
-    expect(container.textContent).toContain("No version-bound acceptance has been recorded.");
+    expect(container.textContent).toContain("Working artifacts have not been bound to a submission.");
+  });
+
+  it("binds candidate artifacts and evidence without mixing current or historical decisions", async () => {
+    route.tab = "delivery";
+    getWorkspace.mockResolvedValue({ ...targetWorkspace(), ...assuranceFacts(), ...adjudicationFacts() });
+    await renderWorkbench();
+    expect(container.textContent).toContain("Revision 1");
+    expect(container.textContent).not.toContain("Revision 2");
+    expect(container.textContent).toContain("Verifier verifier.v1");
+    expect(container.textContent).not.toContain("Supported");
+    const version = Array.from(container.querySelectorAll("select")).find((select) => Array.from(select.options).some((option) => option.value === SUBMISSION_ID_B))!;
+    await act(async () => { version.value = SUBMISSION_ID_B; version.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(container.textContent).not.toContain("Revision 1");
+    expect(container.textContent).toContain("Revision 2");
+    expect(container.textContent).not.toContain("Verifier verifier.v1");
+    expect(container.textContent).not.toContain("Evidence chain is complete");
+    await act(async () => { version.value = ""; version.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(container.textContent).toContain("Revision 1");
+    expect(container.textContent).toContain("Revision 2");
+    expect(container.textContent).not.toContain("Superseded by a newer submission");
   });
 });

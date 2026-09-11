@@ -45,19 +45,9 @@ import type {
 import { useTranslation } from "@/i18n";
 import { CriterionProofEditor } from "@/components/targets/CriterionProofEditor";
 import { TargetWorkGraph } from "@/components/targets/TargetWorkGraph";
-
-const TARGET_TABS = [
-  "overview",
-  "work",
-  "runs",
-  "artifacts",
-  "evidence",
-  "acceptance",
-  "stages",
-  "submission",
-  "timeline",
-] as const;
-type TargetTab = (typeof TARGET_TABS)[number];
+import { TARGET_TABS, targetTab, deliveryFacts } from "@/components/targets/workbench-model";
+import { TargetActivity } from "@/components/targets/TargetActivity";
+import { ArtifactPreview } from "@/components/targets/ArtifactPreview";
 
 type WorkbenchCommandRequest =
   | { id: "create_graph_revision"; deploymentRevisionId: string; completionDefinition: string }
@@ -72,10 +62,6 @@ type WorkbenchCommandEnvelope = {
   request: WorkbenchCommandRequest;
   idempotencyKey: string;
 };
-
-function isTargetTab(value: string | undefined): value is TargetTab {
-  return TARGET_TABS.includes(value as TargetTab);
-}
 
 function EmptyTab({ message }: { message: string }) {
   return <p className="border-y border-border py-10 text-sm text-muted-foreground">{message}</p>;
@@ -138,6 +124,15 @@ function truncateFact(value: string) {
   return value.length > 12 ? `${value.slice(0, 12)}…` : value;
 }
 
+function webReference(value: string): string | undefined {
+  try {
+    const url = new URL(value);
+    return (url.protocol === "https:" || url.protocol === "http:") && !url.username && !url.password ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function commandFailureDetail(error: unknown): string | null {
   if (!(error instanceof ApiError)) return null;
   const code = (error.body as { code?: string } | null)?.code;
@@ -185,7 +180,7 @@ function EvidenceList({ items }: { items: AssuranceEvidenceV1[] }) {
           <ToneBadge tone="neutral">{t(`targets.assurance.evidenceKinds.${item.kind}`)}</ToneBadge>
           <ToneBadge tone="neutral">{t(`targets.assurance.trustLevels.${item.trustLevel}`)}</ToneBadge>
           <span>{item.producer.principalId}</span>
-          <span className="min-w-0 truncate font-mono" title={item.reference}>{truncateFact(item.reference)}</span>
+          {webReference(item.reference) ? <a href={webReference(item.reference)} target="_blank" rel="noreferrer" className="min-w-0 break-all font-mono underline">{item.reference}</a> : <span className="min-w-0 truncate font-mono" title={item.reference}>{truncateFact(item.reference)}</span>}
           <span className="font-mono" title={item.objectHash}>{truncateFact(item.objectHash)}</span>
         </li>
       ))}
@@ -249,7 +244,11 @@ export function TargetWorkbench() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const { t } = useTranslation();
   const { userId: accountUserId, settled: accountIdentitySettled } = useAccountIdentity();
-  const activeTab: TargetTab = isTargetTab(tab) ? tab : "overview";
+  const activeTab = targetTab(tab);
+  const [runsExpanded, setRunsExpanded] = useState(false);
+  const showRuns = activeTab === "overview" && (tab === "runs" || runsExpanded);
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
+  const [showCommandDetails, setShowCommandDetails] = useState(false);
   const isRevision = Boolean(targetRevisionId);
   const [graphDeploymentRevisionId, setGraphDeploymentRevisionId] = useState("");
   const [graphCompletionDefinition, setGraphCompletionDefinition] = useState<string | null>(null);
@@ -277,7 +276,7 @@ export function TargetWorkbench() {
       : ["targets", "workspace", "disabled"],
     queryFn: () => targetsApi.getWorkspace(selectedCompanyId!, targetId!),
     enabled: Boolean(selectedCompanyId && targetId && !isRevision),
-    refetchInterval: activeTab === "runs" && !isRevision ? 5_000 : false,
+    refetchInterval: activeTab === "overview" && !isRevision && (showRuns || (query.data?.runSummary.active ?? 0) > 0) ? 5_000 : false,
   });
 
   const agentLifecycleQuery = useQuery({
@@ -425,7 +424,7 @@ export function TargetWorkbench() {
   const outboxFailures = useQuery({
     queryKey: ["targets", selectedCompanyId, targetId, "run-outbox-failures"],
     queryFn: () => targetsApi.runOutboxFailures(selectedCompanyId!, targetId!),
-    enabled: Boolean(selectedCompanyId && targetId && activeTab === "runs" && !isRevision),
+    enabled: Boolean(selectedCompanyId && targetId && showRuns && !isRevision),
     refetchInterval: 10_000,
   });
   const retryOutbox = useMutation({
@@ -459,6 +458,13 @@ export function TargetWorkbench() {
   useEffect(() => {
     setGraphCompletionDefinition(null);
     setGraphDeploymentRevisionId("");
+    setSelectedSubmissionId(null);
+    setRunsExpanded(false);
+    setReviewComments("");
+    setReviewVerdict("approved");
+    setLastCommand(null);
+    setSuccessfulCommand(null);
+    commandMutation.reset();
   }, [selectedCompanyId, targetId]);
 
   useEffect(() => {
@@ -482,14 +488,11 @@ export function TargetWorkbench() {
   const target = query.data;
   if (!target) return null;
   const workspace = workspaceQuery.data;
-  const unboundEvidence = workspace ? workspace.evidence.filter((item) => item.claimId === null) : [];
+  const delivery = workspace ? deliveryFacts(workspace, selectedSubmissionId ?? workspace.submissions[0]?.id ?? null) : null;
+  const unboundEvidence = delivery?.evidence.filter((item) => item.claimId === null) ?? [];
   const runCommandError = retryOutbox.error ?? retryRun.error ?? cancelRun.error;
   const runCommandFailureDetail = commandFailureDetail(runCommandError);
   const targetCommandFailureDetail = commandFailureDetail(commandMutation.error);
-  const latestSubmission = workspace?.submissions[0] ?? null;
-  const latestReview = latestSubmission
-    ? workspace?.reviews.find((review) => review.submissionId === latestSubmission.id) ?? null
-    : null;
 
   const invokeProjectedCommand = (command: TargetAvailableCommandV1) => {
     if (!workspace || command.state !== "available" || !command.resourceId) return;
@@ -536,88 +539,25 @@ export function TargetWorkbench() {
     }
   };
 
-  const tabItems = TARGET_TABS.map((value) => ({ value, label: t(`targets.tabs.${value}`) }));
+  const tabItems = TARGET_TABS.map((value) => ({ value, label: t(`targets.primaryTabs.${value}`) }));
+  const visibleCommands = workspace?.availableCommands.filter((command) => {
+    const deliveryCommand = ["record_review", "accept_submission", "create_submission"].includes(command.id);
+    if ((activeTab === "delivery") !== deliveryCommand) return false;
+    if (deliveryCommand) {
+      if (!delivery?.submission) return false;
+      if (command.id === "record_review" && command.resourceId !== delivery.submission.id) return false;
+      if (command.id === "accept_submission" && !delivery.reviews.some((review) => review.id === command.resourceId)) return false;
+    }
+    if (command.id === "create_graph_revision" && workspace.graph && !showCommandDetails) return false;
+    return showCommandDetails || (command.state === "available" && command.id !== "reconcile_action");
+  }) ?? [];
 
-  return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      {isRevision ? (
-        <Link to={`/targets/${target.targetId}/overview`} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" />
-          {t("targets.backToActive")}
-        </Link>
-      ) : null}
-
-      <header className="space-y-3 border-b border-border pb-5">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span>{t(`targets.statuses.${target.status}`)}</span>
-          <span>·</span>
-          <span>{target.currentStage?.label ?? t("targets.unknownStage")}</span>
-          <span>·</span>
-          <span>
-            {isRevision
-              ? t("targets.immutableRevision")
-              : t("targets.nativeRevision")}
-          </span>
-        </div>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <h2 className="text-xl font-semibold">{target.title}</h2>
-          {!isRevision ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => createConversation.mutate()}
-              disabled={createConversation.isPending}
-            >
-              <MessageSquare className="h-4 w-4" />
-              {createConversation.isPending ? t("targets.conversationCreating") : t("targets.discuss")}
-            </Button>
-          ) : null}
-        </div>
-        {createConversation.isError ? (
-          <p className="text-sm text-destructive">{t("targets.conversationFailed")}</p>
-        ) : null}
-        {target.summary ? <p className="max-w-3xl text-sm text-muted-foreground">{target.summary}</p> : null}
-      </header>
-
-      {!isRevision ? (
-        <Tabs
-          value={activeTab}
-          onValueChange={(value) => navigate(`/targets/${target.targetId}/${value}`)}
-        >
-          <div className="xl:hidden">
-            <label className="text-xs font-medium text-muted-foreground" htmlFor="target-section-select">
-              {t("targets.section")}
-            </label>
-            <select
-              id="target-section-select"
-              className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              value={activeTab}
-              onChange={(event) => navigate(`/targets/${target.targetId}/${event.target.value}`)}
-            >
-              {tabItems.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-            </select>
-          </div>
-          <div className="hidden xl:block">
-            <PageTabBar
-              items={tabItems}
-              value={activeTab}
-              onValueChange={(value) => navigate(`/targets/${target.targetId}/${value}`)}
-              align="start"
-            />
-          </div>
-        </Tabs>
-      ) : null}
-
-      {(isRevision || activeTab === "overview") ? (
-        <div className="space-y-7">
-          {!isRevision ? <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.work")}>
-            {workspace ? <TargetWorkGraph items={workspace.work} graph={workspace.graph} /> : null}
-          </WorkspaceSectionState> : null}
-          {!isRevision && workspace ? (
+  const commandPanel = (!isRevision && workspace ? (
             <section aria-labelledby="target-commands-title" className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
-                <h3 id="target-commands-title" className="text-sm font-semibold">{t("targets.commands.title")}</h3>
+                <h3 id="target-commands-title" className="text-sm font-semibold">{t("targets.delivery.nextActions")}</h3>
                 <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={showCommandDetails} onChange={(event) => setShowCommandDetails(event.target.checked)} />{t("targets.delivery.commandDetails")}</label>
                   <Button type="button" size="icon" variant="ghost" onClick={() => void refreshWorkspace()} aria-label={t("targets.commands.refresh")} title={t("targets.commands.refresh")}>
                     <RefreshCw className={cn("h-4 w-4", workspaceQuery.isFetching && "animate-spin")} />
                   </Button>
@@ -627,7 +567,9 @@ export function TargetWorkbench() {
                 </div>
               </div>
               <ol className="divide-y divide-border border-b border-border">
-                {workspace.availableCommands.map((command) => {
+                {visibleCommands.map((command) => {
+                  const boundReview = command.id === "accept_submission" ? workspace.reviews.find((item) => item.id === command.resourceId) : null;
+                  const boundSubmission = boundReview ? workspace.submissions.find((item) => item.id === boundReview.submissionId) : null;
                   const action = command.resourceId
                     ? workspace.actionRequests.find((item) => item.id === command.resourceId) ?? null
                     : null;
@@ -665,11 +607,11 @@ export function TargetWorkbench() {
                               <CommandBinding value={command.resourceId} label={t("targets.commands.resource")} />
                               {action ? <CommandBinding value={action.paramsHash} label={t("targets.commands.paramsHash")} /> : null}
                               {action?.approvals.latest ? <CommandBinding value={action.approvals.latest.id} label={t("targets.commands.approval")} /> : null}
-                              {command.id === "accept_submission" && latestSubmission ? (
-                                <CommandBinding value={latestSubmission.submissionHash} label={t("targets.commands.submissionHash")} />
+                              {boundSubmission ? (
+                                <CommandBinding value={boundSubmission.submissionHash} label={t("targets.commands.submissionHash")} />
                               ) : null}
-                              {command.id === "accept_submission" && latestReview ? (
-                                <CommandBinding value={latestReview.reviewHash} label={t("targets.commands.reviewHash")} />
+                              {boundReview ? (
+                                <CommandBinding value={boundReview.reviewHash} label={t("targets.commands.reviewHash")} />
                               ) : null}
                             </div>
                           ) : null}
@@ -767,6 +709,7 @@ export function TargetWorkbench() {
                   );
                 })}
               </ol>
+              {visibleCommands.length === 0 ? <p className="text-sm text-muted-foreground">{t("targets.delivery.noActions")}</p> : null}
               {commandMutation.isPending ? (
                 <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
                   <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -792,9 +735,137 @@ export function TargetWorkbench() {
                 </div>
               ) : null}
             </section>
-          ) : null}
+          ) : null);
 
-          <dl className="grid grid-cols-1 border-y border-border sm:grid-cols-2 lg:grid-cols-4">
+  return (
+    <div className="mx-auto max-w-6xl space-y-6">
+      {isRevision ? (
+        <Link to={`/targets/${target.targetId}/overview`} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" />
+          {t("targets.backToActive")}
+        </Link>
+      ) : null}
+
+      <header className="space-y-3 border-b border-border pb-5">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span>{t(`targets.statuses.${target.status}`)}</span>
+          <span>·</span>
+          <span>{target.currentStage?.label ?? t("targets.unknownStage")}</span>
+          <span>·</span>
+          <span>
+            {isRevision
+              ? t("targets.immutableRevision")
+              : t("targets.nativeRevision")}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h2 className="text-xl font-semibold">{target.title}</h2>
+          {!isRevision ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => createConversation.mutate()}
+              disabled={createConversation.isPending}
+            >
+              <MessageSquare className="h-4 w-4" />
+              {createConversation.isPending ? t("targets.conversationCreating") : t("targets.discuss")}
+            </Button>
+          ) : null}
+        </div>
+        {createConversation.isError ? (
+          <p className="text-sm text-destructive">{t("targets.conversationFailed")}</p>
+        ) : null}
+        {target.summary ? <p className="max-w-3xl text-sm text-muted-foreground">{target.summary}</p> : null}
+        <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
+          <span>{t("targets.outcomeOwner")}: {target.outcomeOwner?.displayName ?? target.outcomeOwner?.principalId ?? t("targets.unassigned")}</span>
+          <span>{t("targets.risk")}: {t(`targets.risks.${target.risk.level}`)}</span>
+        </div>
+      </header>
+
+      {!isRevision ? (
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => navigate(`/targets/${target.targetId}/${value}`)}
+        >
+          <div className="sm:hidden">
+            <label className="text-xs font-medium text-muted-foreground" htmlFor="target-section-select">
+              {t("targets.section")}
+            </label>
+            <select
+              id="target-section-select"
+              className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={activeTab}
+              onChange={(event) => navigate(`/targets/${target.targetId}/${event.target.value}`)}
+            >
+              {tabItems.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            </select>
+          </div>
+          <div className="hidden sm:block">
+            <PageTabBar
+              items={tabItems}
+              value={activeTab}
+              onValueChange={(value) => navigate(`/targets/${target.targetId}/${value}`)}
+              align="start"
+            />
+          </div>
+        </Tabs>
+      ) : null}
+
+      {activeTab === "delivery" && !isRevision && workspace ? (
+        <section className="space-y-3 border-b border-border pb-4">
+          <label className="flex flex-wrap items-center gap-3 text-sm font-medium">
+            {t("targets.delivery.version")}
+            <select className="h-9 min-w-0 max-w-full rounded-md border border-input bg-background px-3 text-sm" value={delivery?.submission?.id ?? ""} disabled={commandMutation.isPending} onChange={(event) => {
+              setSelectedSubmissionId(event.target.value);
+              setReviewComments("");
+              setReviewVerdict("approved");
+              setLastCommand(null);
+              setSuccessfulCommand(null);
+              commandMutation.reset();
+            }}>
+              <option value="">{t("targets.delivery.working")}</option>
+              {workspace.submissions.map((submission, index) => <option key={submission.id} value={submission.id}>{t("targets.delivery.candidate", { number: workspace.submissions.length - index })} · {formatDateTime(submission.createdAt)}</option>)}
+            </select>
+          </label>
+          <p className="text-xs text-muted-foreground">{t(delivery?.submission ? "targets.delivery.immutable" : "targets.delivery.unsubmitted")}</p>
+          {delivery?.submission ? <Link to={`/targets/${target.targetId}/revisions/${delivery.submission.targetRevisionId}`} className="text-xs underline">{t("targets.acceptanceCriteria")} · {t("targets.immutableRevision")}</Link> : null}
+          {delivery && (delivery.missingArtifactIds.length > 0 || delivery.missingResultIds.length > 0) ? <p role="alert" className="text-sm text-destructive">{t("targets.delivery.missingBindings")}</p> : null}
+        </section>
+      ) : null}
+
+      {(isRevision || activeTab === "overview" || activeTab === "delivery") ? (
+        <div className="space-y-7">
+          {!isRevision && activeTab === "overview" && workspace?.attention.length ? <details className="border-b border-border pb-3">
+            <summary className="cursor-pointer text-sm font-medium">{t("targets.attention")} · {workspace.attention.length}</summary>
+            <ul className="mt-3 divide-y divide-border">{workspace.attention.map((item) => <li key={item.id} className="py-2 text-sm">
+              <Link to={`/targets/${target.targetId}/${item.runId ? "runs" : item.resourceType && item.resourceType !== "target" && item.resourceType !== "action_request" ? "delivery" : "overview"}`} className="hover:underline">{t(`targets.attentionKinds.${item.kind}`)}</Link>
+              {item.detail ? <p className="mt-1 break-words text-xs text-muted-foreground">{item.detail}</p> : null}
+            </li>)}</ul>
+          </details> : null}
+          {!isRevision && activeTab === "overview" ? <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.work")}>
+            {workspace ? <TargetWorkGraph items={workspace.work} graph={workspace.graph} inspector={(node) => {
+              const runs = workspace.runs.filter((run) => run.workNodeId === node.id && run.graphRevisionId === node.graphRevisionId);
+              const integrations = workspace.integrationRuns.filter((run) => run.workNodeId === node.id && run.graphRevisionId === node.graphRevisionId);
+              const humanResults = workspace.humanWorkResults.filter((result) => result.workNodeId === node.id && result.graphRevisionId === node.graphRevisionId);
+              const artifacts = workspace.artifacts.filter((artifact) => artifact.revisions.some((revision) => revision.sourceWorkNodeId === node.id || runs.some((run) => run.id === revision.sourceRunId)));
+              return <div className="space-y-3 border-t border-border pt-3">
+                {runs.length ? <ul className="space-y-2">{runs.map((run) => <li key={run.id} className="flex flex-wrap items-center gap-3 text-xs">
+                  <span className="font-mono">{run.id.slice(0, 8)}</span><span>{t(`targets.execution.statuses.${run.status}`)}</span>
+                  <Button size="sm" variant="ghost" onClick={() => setRunsExpanded(true)}><Play className="h-4 w-4" />{t("targets.delivery.nodeRuns")}</Button>
+                </li>)}</ul> : null}
+                {integrations.map((run) => <p key={run.id} className="text-xs">{run.provider} · {t(`targets.assurance.verdicts.${run.conclusion === "success" ? "passed" : run.conclusion === "failure" ? "failed" : "inconclusive"}`)} · {formatDateTime(run.createdAt)}</p>)}
+                {humanResults.map((result) => <p key={result.id} className="text-xs">{result.submittedBy.principalId} · {formatDateTime(result.createdAt)}</p>)}
+                {!runs.length && !integrations.length && !humanResults.length ? <p className="text-xs text-muted-foreground">{t("targets.emptyTabs.runs")}</p> : null}
+                {artifacts.length ? <ul className="space-y-1 text-sm">{artifacts.map((artifact) => <li key={artifact.id}>{artifact.title}</li>)}</ul> : null}
+                <Link to={`/targets/${target.targetId}/delivery`} className="text-xs underline">{t("targets.delivery.openDelivery")}</Link>
+              </div>;
+            }} /> : null}
+          </WorkspaceSectionState> : null}
+          {activeTab === "overview" ? commandPanel : null}
+
+          {activeTab === "overview" || isRevision ? <details className="border-y border-border py-3">
+          <summary className="cursor-pointer text-sm font-medium">{t("targets.delivery.targetDetails")}</summary>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
             <div className="py-4 sm:pr-5">
               <dt className="text-xs text-muted-foreground">{t("targets.collection")}</dt>
               <dd className="mt-1 text-sm font-medium">
@@ -820,8 +891,11 @@ export function TargetWorkbench() {
               <dd className="mt-1 text-sm font-medium">{formatDateTime(target.updatedAt)}</dd>
             </div>
           </dl>
+          <p className="whitespace-pre-wrap text-sm">{target.definition.goal}</p>
+          {target.definition.constraints.length ? <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted-foreground">{target.definition.constraints.map((constraint) => <li key={constraint}>{constraint}</li>)}</ul> : null}
+          </details> : null}
 
-          {target.definition ? (
+          {target.definition && (isRevision || (activeTab === "delivery" && !delivery?.submission)) ? (
             <section aria-labelledby="target-definition-title" className="space-y-5 border-y border-border py-5">
               <div>
                 <h3 id="target-definition-title" className="text-sm font-semibold">{t("targets.goal")}</h3>
@@ -842,7 +916,7 @@ export function TargetWorkbench() {
                     <li key={criterion.id} className="border-l border-border pl-3 text-sm">
                       <div className="flex items-center justify-between gap-2">
                         <p className="font-medium">{index + 1}. {criterion.title}</p>
-                        {!isRevision ? <CriterionProofEditor criterion={criterion} targetRevisionId={target.activeTargetRevisionId} disabled={!accountIdentitySettled} onSave={async (proofContract, expectedTargetRevisionId, idempotencyKey) => {
+                        {!isRevision && !delivery?.submission ? <CriterionProofEditor criterion={criterion} targetRevisionId={target.activeTargetRevisionId} disabled={!accountIdentitySettled} onSave={async (proofContract, expectedTargetRevisionId, idempotencyKey) => {
                           await targetsApi.reviseProof(selectedCompanyId!, target.targetId, { expectedTargetRevisionId, criteria: [{ criterionId: criterion.id, proofContract }] }, idempotencyKey);
                           await refreshWorkspace();
                         }} /> : null}
@@ -850,7 +924,7 @@ export function TargetWorkbench() {
                       {criterion.description ? <p className="mt-1 text-muted-foreground">{criterion.description}</p> : null}
                       <ul className="mt-2 space-y-2">
                         {(criterion.proofContract?.allOf ?? [{ id: "legacy", kind: "independent_verification" as const, phase: "pre_acceptance" as const, assertions: [] }]).map((requirement) => {
-                          const proof = workspace?.criterionProofs?.find((item) => item.criterionId === criterion.id && item.requirementId === requirement.id);
+                          const proof = !delivery?.submission ? workspace?.criterionProofs?.find((item) => item.criterionId === criterion.id && item.requirementId === requirement.id) : undefined;
                           return <li key={requirement.id} className="space-y-1">
                             <p className="text-xs text-muted-foreground">{t(`targets.criterionProof.phases.${requirement.phase}`)} · {t(`targets.criterionProof.kinds.${requirement.kind}`)} · {t(`targets.criterionProof.states.${proof?.state ?? "required"}`)}</p>
                             {requirement.kind === "independent_verification" ? requirement.assertions.map((assertion) => <p key={assertion} className="text-sm">{assertion}</p>) : null}
@@ -875,7 +949,7 @@ export function TargetWorkbench() {
             </section>
           ) : null}
 
-          <section aria-labelledby="target-proof-title">
+          {isRevision ? <section aria-labelledby="target-proof-title">
             <h3 id="target-proof-title" className="mb-3 text-sm font-semibold">{t("targets.proof")}</h3>
             <div className="grid grid-cols-2 border-y border-border sm:grid-cols-4">
               <div className="py-4"><p className="text-2xl font-semibold">{target.artifactSummary.count}</p><p className="text-xs text-muted-foreground">{t("targets.tabs.artifacts")}</p></div>
@@ -883,16 +957,18 @@ export function TargetWorkbench() {
               <div className="border-t border-border py-4 sm:border-l sm:border-t-0 sm:p-4"><p className="text-2xl font-semibold">{target.runSummary.active}</p><p className="text-xs text-muted-foreground">{t("targets.activeRuns")}</p></div>
               <div className="border-l border-t border-border p-4 sm:border-t-0"><p className="text-2xl font-semibold">{target.attentionSummary.total}</p><p className="text-xs text-muted-foreground">{t("targets.attention")}</p></div>
             </div>
-          </section>
+          </section> : null}
 
-          <div className="flex items-start gap-3 text-xs text-muted-foreground">
+          {isRevision ? <div className="flex items-start gap-3 text-xs text-muted-foreground">
             <ShieldCheck className="h-4 w-4 shrink-0" />
             <p>{t("targets.readOnlyNotice")}</p>
-          </div>
+          </div> : null}
         </div>
       ) : null}
 
-      {activeTab === "stages" && !isRevision ? (
+      {activeTab === "overview" && !isRevision ? (
+        <details open={tab === "stages"} className="border-b border-border pb-3">
+        <summary className="cursor-pointer text-sm font-medium">{t("targets.tabs.stages")}</summary>
         <WorkspaceSectionState
           loading={workspaceQuery.isLoading}
           error={workspaceQuery.isError}
@@ -914,19 +990,14 @@ export function TargetWorkbench() {
             </ol>
           ) : null}
         </WorkspaceSectionState>
+        </details>
       ) : null}
 
-      {activeTab === "work" && !isRevision ? (
-        <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.work")}>
-          {workspace ? <TargetWorkGraph items={workspace.work} graph={workspace.graph} /> : null}
-        </WorkspaceSectionState>
-      ) : null}
-
-      {activeTab === "submission" && !isRevision ? (
+      {activeTab === "delivery" && !isRevision && delivery?.submission ? (
         <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.submission")}>
           {workspace?.submissions.length ? (
             <ul className="border-y border-border">
-              {workspace.submissions.map((submission) => {
+              {workspace.submissions.filter((item) => item.id === delivery.submission?.id).map((submission) => {
                 const submissionReviews = workspace.reviews.filter((review) => review.submissionId === submission.id);
                 const submissionAcceptance = workspace.acceptances.find((acceptance) => acceptance.submissionId === submission.id);
                 return (
@@ -962,11 +1033,12 @@ export function TargetWorkbench() {
         </WorkspaceSectionState>
       ) : null}
 
-      {activeTab === "artifacts" && !isRevision ? (
+      {activeTab === "delivery" && !isRevision ? (
+        <section className="space-y-3"><h3 className="text-sm font-semibold">{t("targets.tabs.artifacts")}</h3>
         <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.artifacts")}>
-          {workspace?.artifacts.length ? (
+          {delivery?.artifacts.length ? (
             <ul className="border-y border-border">
-              {workspace.artifacts.map((artifact) => (
+              {delivery.artifacts.map((artifact) => (
                 <li key={artifact.id} className="space-y-4 border-b border-border py-4 last:border-b-0">
                   <div className="flex flex-wrap items-center gap-3">
                     <ToneBadge tone="neutral">{t(`targets.assurance.artifactKinds.${artifact.kind}`)}</ToneBadge>
@@ -983,13 +1055,16 @@ export function TargetWorkbench() {
                         <li key={revision.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-xs text-muted-foreground">
                           <span className="font-medium">{t("targets.assurance.revision", { number: revision.revisionNumber })}</span>
                           <span className="font-mono" title={revision.contentHash}>{truncateFact(revision.contentHash)}</span>
-                          <span className="min-w-0 truncate font-mono" title={revision.contentRef}>{truncateFact(revision.contentRef)}</span>
+                          {webReference(revision.contentRef) ? <a href={webReference(revision.contentRef)} target="_blank" rel="noreferrer" className="min-w-0 break-all font-mono underline">{revision.contentRef}</a> : <span className="min-w-0 break-all font-mono">{revision.contentRef}</span>}
                           {revision.contentRef === `storage:${selectedCompanyId}/verrail/run-artifacts/sha256/${revision.contentHash}` ? (
+                            <>
                             <Button asChild variant="ghost" size="icon" title={t("targets.assurance.downloadArtifact")}>
                               <a href={`/api/workspaces/${selectedCompanyId}/artifact-revisions/${revision.id}/content`} aria-label={t("targets.assurance.downloadArtifact")}>
                                 <Download className="size-4" />
                               </a>
                             </Button>
+                            <ArtifactPreview key={revision.id} workspaceId={selectedCompanyId!} revisionId={revision.id} />
+                            </>
                           ) : null}
                           {revision.sourceRunId ? (
                             <span className="font-mono" title={revision.sourceRunId}>
@@ -1005,17 +1080,19 @@ export function TargetWorkbench() {
             </ul>
           ) : null}
         </WorkspaceSectionState>
+        </section>
       ) : null}
 
-      {activeTab === "evidence" && !isRevision ? (
+      {activeTab === "delivery" && !isRevision ? (
+        <section className="space-y-3"><h3 className="text-sm font-semibold">{t("targets.tabs.evidence")}</h3>
         <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.evidence")}>
-          {workspace && (workspace.claims.length > 0 || workspace.evidence.length > 0) ? (
+          {workspace && delivery && (delivery.submission ? delivery.results.length > 0 || delivery.evidence.length > 0 : workspace.claims.length > 0 || workspace.evidence.length > 0) ? (
             <div className="space-y-6">
               {workspace.claims.length ? (
                 <ul className="border-y border-border">
-                  {workspace.claims.map((claim) => {
-                    const claimResults = workspace.verificationResults.filter((result) => result.claimId === claim.id);
-                    const claimEvidence = workspace.evidence.filter((item) => item.claimId === claim.id);
+                  {workspace.claims.filter((claim) => !delivery?.submission || delivery.results.some((result) => result.claimId === claim.id)).map((claim) => {
+                    const claimResults = delivery?.results.filter((result) => result.claimId === claim.id) ?? [];
+                    const claimEvidence = delivery?.evidence.filter((item) => item.claimId === claim.id) ?? [];
                     return (
                       <li key={claim.id} className="space-y-4 border-b border-border py-4 last:border-b-0">
                         <div className="flex flex-wrap items-center gap-3">
@@ -1023,9 +1100,9 @@ export function TargetWorkbench() {
                             <p className="text-sm font-medium">{claim.title}</p>
                             <p className="mt-1 font-mono text-xs text-muted-foreground">{claim.criterionKey}</p>
                           </div>
-                          <ToneBadge tone={CLAIM_STATUS_TONES[claim.status]}>
+                          {!delivery?.submission ? <ToneBadge tone={CLAIM_STATUS_TONES[claim.status]}>
                             {t(`targets.assurance.claimStatuses.${claim.status}`)}
-                          </ToneBadge>
+                          </ToneBadge> : null}
                         </div>
                         {claimResults.length ? (
                           <ul className="space-y-2">
@@ -1062,13 +1139,17 @@ export function TargetWorkbench() {
             </div>
           ) : null}
         </WorkspaceSectionState>
+        </section>
       ) : null}
 
-      {activeTab === "acceptance" && !isRevision ? (
+      {activeTab === "delivery" ? commandPanel : null}
+
+      {activeTab === "delivery" && !isRevision && delivery?.submission ? (
+        <section className="space-y-3"><h3 className="text-sm font-semibold">{t("targets.tabs.acceptance")}</h3>
         <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.acceptance")}>
-          {workspace?.acceptances.length ? (
+          {workspace && delivery.acceptances.length ? (
             <ul className="border-y border-border">
-              {workspace.acceptances.map((acceptance) => {
+              {delivery.acceptances.map((acceptance) => {
                 const acceptedSubmission = workspace.submissions.find((submission) => submission.id === acceptance.submissionId);
                 const submissionRef = acceptedSubmission?.submissionHash ?? acceptance.submissionId;
                 return (
@@ -1097,9 +1178,11 @@ export function TargetWorkbench() {
             </ul>
           ) : null}
         </WorkspaceSectionState>
+        </section>
       ) : null}
 
-      {activeTab === "runs" && !isRevision ? (
+      {activeTab === "overview" && !isRevision ? <Button variant="outline" size="sm" onClick={() => { if (tab === "runs") navigate(`/targets/${target.targetId}/overview`); setRunsExpanded(!showRuns); }}><Play className="h-4 w-4" />{t(showRuns ? "targets.delivery.hideRuns" : "targets.delivery.allRuns", { count: workspace?.runs.length ?? 0 })}</Button> : null}
+      {showRuns && !isRevision ? (
         <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.runs")}>
           {outboxFailures.isError ? (
             <div role="alert" className="flex items-center gap-3 border-b border-border py-3 text-sm text-destructive">
@@ -1193,17 +1276,7 @@ export function TargetWorkbench() {
       {activeTab === "timeline" && !isRevision ? (
         <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.timeline")}>
           {workspace?.timeline.length ? (
-            <ol className="border-y border-border">
-              {workspace.timeline.map((event) => (
-                <li key={event.id} className="flex flex-wrap items-start justify-between gap-3 border-b border-border py-4 last:border-b-0">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">{t(`targets.timelineEvents.${event.type}`)}</p>
-                    {event.detail ? <p className="mt-1 truncate text-xs text-muted-foreground">{event.detail}</p> : null}
-                  </div>
-                  <time className="text-xs text-muted-foreground">{formatDateTime(event.occurredAt)}</time>
-                </li>
-              ))}
-            </ol>
+            <TargetActivity events={workspace.timeline} targetId={target.targetId} />
           ) : null}
         </WorkspaceSectionState>
       ) : null}

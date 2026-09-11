@@ -70,7 +70,7 @@ Collections 是 Targets 下的轻量管理表面，使用 `/collections` 创建�
 | --- | --- | --- |
 | Target 列表 | `/targets` | Workspace 内 Target、筛选、Attention、状态和可选归类 |
 | Target Workbench | `/targets/:targetId` | 默认跳转 Overview |
-| Target Tab | `/targets/:targetId/:tab` | `overview`、`work`、`runs`、`artifacts`、`evidence`、`acceptance`、`stages`、`submission`、`timeline` |
+| Target Tab | `/targets/:targetId/:tab` | 主视图为 `overview`（工作台）、`delivery`（交付）、`timeline`（动态）；`work`、`runs`、`stages` 兼容映射到工作台，后两者展开对应内容；`artifacts`、`evidence`、`acceptance`、`submission` 兼容映射到交付 |
 | TargetRevision Snapshot | `/targets/:targetId/revisions/:targetRevisionId` | 不可变责任合同、适用 Graph、Criterion、Submission 和历史；非活动 Revision 默认只读 |
 | Work Detail | `/targets/:targetId/work/:workNodeId` | Task/Gate 输入、责任、结果、Evidence 和历史 |
 | Submission Detail | `/targets/:targetId/submissions/:submissionId` | 固定 TargetRevision、ArtifactRevision、VerificationResult、Review 和 Acceptance |

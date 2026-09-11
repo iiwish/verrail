@@ -894,6 +894,24 @@
         "acceptCompletion": "由结果负责人验收已通过评审的不可变提交。"
       }
     },
+    "primaryTabs": { "overview": "工作台", "delivery": "交付", "timeline": "动态" },
+    "activityKinds": { "graphReconciled": "工作图状态已核对", "runFailed": "运行失败", "runEnded": "运行已结束", "runCanceled": "取消已确认", "cancelRequested": "已请求取消运行", "runStarted": "运行已开始", "heartbeat": "已收到运行心跳", "runClaimed": "执行器已领取运行", "attemptCreated": "执行尝试已创建", "leaseExpired": "执行租约已过期", "deliveryRetry": "已请求重试事件投递", "expiredEvent": "事件因租约过期被拒绝" },
+    "attentionKinds": {
+      "draft_graph": "工作图等待激活", "blocked_node": "工作节点被阻塞", "failed_run": "运行需要恢复",
+      "verification_failed": "验证未通过", "verification_inconclusive": "验证结论不确定", "missing_evidence": "缺少证明材料",
+      "awaiting_review": "候选版本等待评审", "awaiting_acceptance": "候选版本等待验收", "action_approval_required": "外部动作等待批准",
+      "action_execution_required": "已批准的外部动作等待执行", "unknown_effect": "外部结果需要核对", "invalidated_decision": "已有决定不再有效"
+    },
+    "delivery": {
+      "version": "交付版本", "working": "工作中产物", "candidate": "候选版本 {{number}}",
+      "immutable": "不可变候选版本。评审与验收仅绑定此版本。",
+      "unsubmitted": "工作中产物尚未绑定为提交版本。",
+      "missingBindings": "部分绑定的产物版本或验证结果不可用，无法完整检查此候选版本。",
+      "nextActions": "待处理操作", "commandDetails": "显示阻塞及已完成项", "noActions": "当前视图暂无可执行操作。",
+      "targetDetails": "目标与约束", "allRuns": "全部运行（{{count}}）", "hideRuns": "收起运行",
+      "auditDetails": "审计详情", "source": "查看来源", "nodeRuns": "运行", "nodeArtifacts": "产物", "openDelivery": "检查交付",
+      "systemEvents": "例行核对与重复心跳记录（{{count}}）", "preview": "预览", "previewFailed": "预览不可用，请下载产物查看。"
+    },
     "timelineEvents": {
       "target_created": "目标已创建",
       "target_revision_created": "目标修订版本已记录",

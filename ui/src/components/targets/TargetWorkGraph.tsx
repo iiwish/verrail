@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { ReactFlow, Handle, Position, Controls, MarkerType, type Node, type NodeProps } from "@xyflow/react";
 import { Bot, UserRound, ShieldCheck, Workflow, X } from "lucide-react";
 import type { TargetWorkItemV1, TargetGraphSummaryV1 } from "@paperclipai/shared";
@@ -41,7 +41,7 @@ export function graphLayout(items: TargetWorkItemV1[]) {
   });
 }
 
-export function TargetWorkGraph({ items, graph }: { items: TargetWorkItemV1[]; graph: TargetGraphSummaryV1 | null }) {
+export function TargetWorkGraph({ items, graph, inspector }: { items: TargetWorkItemV1[]; graph: TargetGraphSummaryV1 | null; inspector?: (item: TargetWorkItemV1) => ReactNode }) {
   const { t } = useTranslation();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const onSelectionChange = useCallback(({ nodes: selection }: { nodes: WorkNode[] }) => {
@@ -68,6 +68,7 @@ export function TargetWorkGraph({ items, graph }: { items: TargetWorkItemV1[]; g
         <div><dt className="text-xs text-muted-foreground">{t("targets.graph.dependencies")}</dt><dd className="break-words">{selected.dependencyNodeKeys.map((key) => items.find((item) => item.nodeKey === key)?.title ?? key).join(", ") || t("targets.graph.none")}</dd></div>
       </dl>
       {selected.completionDefinition ? <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{selected.completionDefinition}</p> : null}
+      {inspector?.(selected)}
     </div> : null}
   </section>;
 }

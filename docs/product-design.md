@@ -198,13 +198,19 @@ AgentTask 产生 Run/RunAttempt，IntegrationTask 产生 IntegrationRun/Integrat
 - `Chat`：群聊、私聊与 Web Conversation 的持久会话、目标草拟和面向领域对象的自然语言协作入口；
 - `Targets`：Workspace 内 Target 列表、筛选、状态和可选 Collection 归类；
 - `Collections`：Targets 下的轻量管理表面，用于创建分组和按分组查看 Target；
-- `Target Workbench`：Overview、Work Graph、Runs、Artifacts、Evidence、Acceptance、Stages、Submission、Timeline；
+- `Target Workbench`：工作台、交付、动态三个主视图；
 - `Agents`：AgentDefinition、Version、Evaluation、Deployment 和质量趋势；
 - `Infrastructure`：RuntimePool、Runner、Sandbox、Connector、Secret 和 Storage；
 - `Governance`：Policy、Role、Approval、Audit 和数据策略；
 - `Settings`：Workspace、成员、计费、集成与实验能力。
 
 Target Workbench 是标志性界面。它必须让用户不离开 Target 就能回答：目标是什么、谁在负责、卡在哪里、产物是什么、证据是否充分、当前需要我做什么。
+
+工作台展示目标摘要、责任人、风险、工作依赖图和领域服务允许的待处理操作。目标与约束、阶段进度按需展开；节点检查器关联对应运行及产物，全部运行作为工作台内的展开视图保留重试、取消与投递恢复能力。工作图只改变本地布局，不改变 Graph Engine 的依赖或激活裁决。
+
+交付以版本选择器区分工作中产物与不可变候选 Submission。候选视图仅显示该 Submission 绑定的 ArtifactRevision、VerificationResult、关联 Evidence、Review 和 Acceptance，不使用最新 Claim 状态替代历史验证结论；缺失绑定明确报错，验收标准链接到对应 TargetRevision。文本产物支持限量纯文本预览和下载。评审、候选验收与外部动作批准保持独立，候选 Acceptance 不等同于 Target Outcome 已完成。
+
+动态按时间倒序呈现用户可理解的事件，原始审计详情按需展开。确认无节点激活或 Gate 状态变更的核对事件集中折叠但完整保留；载荷完全相同的历史核对与同一运行的重复心跳保留最新一条，其余进入例行记录。无法识别的审计事件和失败事件保持可见。讨论入口继续使用 Target 绑定的持久 Conversation。旧页签深链映射到相应主视图，`runs` 与 `stages` 链接展开对应内容。
 
 Home、Chat 与 Targets 分工明确：Home 回答“什么需要我”，Chat 回答“我要让系统做什么”，Targets 回答“哪些可验收目标正在交付”。Chat 是创建目标的主入口，但不取代 Target Workbench；进入绑定 Target、Artifact 或 Review 的长工作流时，界面保持对应工作对象可见，并把 TargetCreationDraft、Agent Run、建议、Diff、Evidence 和决定渲染为可检查对象，而不是普通聊天气泡。
 
