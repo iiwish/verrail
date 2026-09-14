@@ -84,6 +84,8 @@ jobs:
 
       - name: ts_tests
         id: ts_tests
+        env:
+          VERRAIL_TEST_CODEX_GO_BRIDGE: '1'
         run: pnpm test:run
 
       - name: ts_build
@@ -136,7 +138,9 @@ jobs:
             const seedDb = createDb(database.connectionString);
             try { await seedDb.insert(companies).values({ name: 'Candidate isolated integration', issuePrefix: 'CI' }); }
             finally { await seedDb.$client.end(); }
-            child = spawn('go', ['test', '-json', '-count=1', '-mod=readonly', ...testPackages], {
+            // This helper runs through its real TypeScript-owned receipt fixture in ts_tests.
+            // All standalone Go tests, including Temporal recovery, retain the zero-skip gate.
+            child = spawn('go', ['test', '-json', '-count=1', '-mod=readonly', '-skip', '^TestFixedCIProofBridgeRecord$', ...testPackages], {
               cwd, timeout: 1200000, detached: true,
               env: { ...process.env, VERRAIL_TEST_DATABASE_URL: database.connectionString, VERRAIL_TEST_TEMPORAL_ADDRESS: address },
               stdio: ['ignore', 'pipe', 'inherit'],

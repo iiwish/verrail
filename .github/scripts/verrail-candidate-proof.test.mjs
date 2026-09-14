@@ -93,6 +93,9 @@ test("workflow is bounded, SHA-pinned, pre-PR candidate-only and least privilege
   for (const command of ["pnpm install --frozen-lockfile", "pnpm -r typecheck", "pnpm test:run", "pnpm build", "startEmbeddedPostgresTestDatabase", "VERRAIL_TEST_DATABASE_URL: database.connectionString", "VERRAIL_TEST_TEMPORAL_ADDRESS: address", "createGoTestValidator(testPackages)"]) assert.ok(workflow.includes(command), command);
   assert.match(workflow, /node-version: '24\.20\.0'/);
   assert.match(workflow, /go-version: '1\.26\.0'/);
+  assert.match(workflow, /id: ts_tests\n\s+env:\n\s+VERRAIL_TEST_CODEX_GO_BRIDGE: '1'\n\s+run: pnpm test:run/);
+  assert.match(workflow, /'-skip', '\^TestFixedCIProofBridgeRecord\$'/);
+  assert.equal([...workflow.matchAll(/'-skip'/g)].length, 1);
   assert.match(workflow, /needs: candidate_verify/);
   assert.match(workflow, /VERIFY_RESULT: \$\{\{ needs\.candidate_verify\.result \}\}/);
   assert.match(workflow, /STEPS_JSON: \$\{\{ toJSON\(steps\) \}\}/);
