@@ -7,6 +7,7 @@ import { VerrailChat } from "./VerrailChat";
 
 const mocks = vi.hoisted(() => ({ listTargetDrafts: vi.fn(), openNewTarget: vi.fn(), setBreadcrumbs: vi.fn(), get: vi.fn(), confirmTargetProposal: vi.fn() }));
 vi.mock("../api/conversations", () => ({ conversationsApi: {
+  runtime: vi.fn().mockResolvedValue({ mode: "local_compatibility" }),
   get: mocks.get.mockResolvedValue({ title: "Feishu chat", status: "active", messages: [], contextBindings: [] }),
   confirmTargetProposal: mocks.confirmTargetProposal,
   listTargetDrafts: mocks.listTargetDrafts,

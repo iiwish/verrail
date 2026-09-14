@@ -15,6 +15,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./server": "./src/server/index.ts",
+    "./http-client": "./src/server/http-client.ts",
     "./ui": "./src/ui/index.ts",
     "./cli": "./src/cli/index.ts"
   },
@@ -28,6 +29,10 @@
       "./server": {
         "types": "./dist/server/index.d.ts",
         "import": "./dist/server/index.js"
+      },
+      "./http-client": {
+        "types": "./dist/server/http-client.d.ts",
+        "import": "./dist/server/http-client.js"
       },
       "./ui": {
         "types": "./dist/ui/index.d.ts",

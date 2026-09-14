@@ -1,11 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import { applyDirectorInstructionsSchema, directorInstructionsSnapshotSchema, isWorkspaceDirector } from "@paperclipai/shared";
-import { buildDirectorInstructions, directorPromptHash, resolveDirectorRole, WORKSPACE_DIRECTOR_INSTRUCTIONS } from "../services/director-instructions.js";
+import { buildDirectorInstructions, directorPromptHash, resolveDirectorRole, resolveDirectorChatRuntime, WORKSPACE_DIRECTOR_INSTRUCTIONS } from "../services/director-instructions.js";
+
+afterEach(() => vi.unstubAllEnvs());
 
 const input = { agentName: "Director", adapterConfig: {}, runtime: "codex" as const, available: true, toolsAvailable: true };
 const snapshot = { schemaVersion: 1, revision: 1, rolePrompt: "Use Chinese and focus on product tradeoffs.", appliedAt: "2026-09-11T08:00:00.000Z", appliedByUserId: "operator-1" };
 
 describe("Director instruction contract (deterministic, not a model evaluation)", () => {
+  it("selects OpenCode explicitly and rejects unknown runtime configuration", () => {
+    vi.stubEnv("VERRAIL_CHAT_RUNTIME", "opencode");
+    expect(resolveDirectorChatRuntime()).toBe("opencode");
+    expect(buildDirectorInstructions({ ...input, runtime: "opencode" }).mode).toBe("execution_gateway");
+    vi.stubEnv("VERRAIL_CHAT_RUNTIME", "unknown-runtime");
+    expect(() => resolveDirectorChatRuntime()).toThrow();
+  });
   it("uses exactly one default for provisioning, preview and chat composition", () => {
     const view = buildDirectorInstructions(input);
     expect(view.rolePrompt).toBe(WORKSPACE_DIRECTOR_INSTRUCTIONS);

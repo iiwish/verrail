@@ -8,8 +8,10 @@ import { unprocessable } from "../errors.js";
 
 export const DIRECTOR_POLICY_VERSION = "director-chat.v1";
 
-export function resolveDirectorChatRuntime(): "codex" | "claude" {
-  return process.env.VERRAIL_CHAT_RUNTIME?.trim().toLowerCase() === "claude" ? "claude" : "codex";
+export function resolveDirectorChatRuntime(): "codex" | "claude" | "opencode" {
+  const runtime = process.env.VERRAIL_CHAT_RUNTIME?.trim().toLowerCase() || "codex";
+  if (!["codex", "claude", "opencode"].includes(runtime)) throw unprocessable("Unsupported Director runtime");
+  return runtime as "codex" | "claude" | "opencode";
 }
 
 export const WORKSPACE_DIRECTOR_INSTRUCTIONS = `# Director
@@ -83,7 +85,7 @@ export function resolveDirectorRole(adapterConfig: unknown) {
 export function buildDirectorInstructions(input: {
   agentName: string;
   adapterConfig: unknown;
-  runtime: "codex" | "claude";
+  runtime: "codex" | "claude" | "opencode";
   available: boolean;
   toolsAvailable: boolean;
   candidatePrompt?: string;
@@ -98,7 +100,7 @@ export function buildDirectorInstructions(input: {
     "# Actual runtime capabilities (not customizable)", toolRules,
   ].join("\n\n");
   return {
-    schemaVersion: 1, mode: "local_compatibility", runtime: input.runtime,
+    schemaVersion: 1, mode: input.runtime === "opencode" ? "execution_gateway" : "local_compatibility", runtime: input.runtime,
     available: input.available, ...active, rolePrompt,
     defaultPrompt: WORKSPACE_DIRECTOR_INSTRUCTIONS,
     roleHash: directorPromptHash(rolePrompt), policyVersion: DIRECTOR_POLICY_VERSION,

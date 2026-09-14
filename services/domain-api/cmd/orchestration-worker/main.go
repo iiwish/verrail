@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -70,6 +72,22 @@ func main() {
 		os.Exit(1)
 	}
 	defer temporalWorker.Stop()
+	if address := os.Getenv("VERRAIL_WORKER_HEALTH_LISTEN"); address != "" {
+		health := &http.Server{Addr: address, ReadHeaderTimeout: 3 * time.Second, Handler: workerHealthHandler(func(ctx context.Context) error {
+			if err := pool.Ping(ctx); err != nil {
+				return err
+			}
+			_, err := temporalClient.CheckHealth(ctx, &client.CheckHealthRequest{})
+			return err
+		})}
+		defer health.Close()
+		go func() {
+			if err := health.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				logger.Error("serve orchestration health check")
+				os.Exit(1)
+			}
+		}()
+	}
 
 	dispatcher := orchestration.NewDispatcher(
 		orchestration.NewPostgresOutboxStore(pool),
@@ -87,6 +105,20 @@ func main() {
 		"taskQueue", config.TaskQueue,
 	)
 	runDispatcher(stop, dispatcher, config.PollInterval, logger)
+}
+
+func workerHealthHandler(check func(context.Context) error) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", func(response http.ResponseWriter, request *http.Request) {
+		ctx, cancel := context.WithTimeout(request.Context(), 3*time.Second)
+		defer cancel()
+		if check(ctx) != nil {
+			http.Error(response, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		response.WriteHeader(http.StatusNoContent)
+	})
+	return mux
 }
 
 func runDispatcher(ctx context.Context, dispatcher *orchestration.Dispatcher, pollInterval time.Duration, logger *slog.Logger) {

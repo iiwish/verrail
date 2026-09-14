@@ -74,6 +74,7 @@ export const verrailConversationMessages = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
+    idConversationWorkspaceUq: unique("verrail_messages_id_conversation_workspace_uq").on(table.id, table.conversationId, table.workspaceId),
     idWorkspaceUq: unique("verrail_conversation_messages_id_workspace_uq").on(
       table.id,
       table.workspaceId,

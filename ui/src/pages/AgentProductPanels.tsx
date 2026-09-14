@@ -24,7 +24,7 @@ function useDirectorRuntime(agent: Agent) {
   const version = definition?.versions.find((item) => item.id === primary?.activeRevision?.agentVersionId);
   return { ...draft, isPending: lifecycle.isPending || (isWorkspaceDirector(agent.metadata) && draft.isPending), isError: lifecycle.isError || draft.isError,
     refetch: async () => { await lifecycle.refetch(); return draft.refetch(); },
-    data: lifecycle.data ? { runtime: version?.runtime, model: version?.model, available: Boolean(draft.data?.available && primary?.status === "active" && version) } : undefined };
+    data: lifecycle.data ? { runtime: version?.runtime, model: version?.model, available: Boolean(draft.data?.available && primary?.status === "active" && version && (draft.data.mode === "execution_gateway" ? version.runtime === "opencode" : ["codex", "claude"].includes(version.runtime))) } : undefined };
 }
 
 function LoadError({ retry }: { retry: () => void }) {
@@ -49,14 +49,14 @@ export function AgentProductOverview({ agent, runs, runsLoading, runsError }: {
         <h3 className="text-sm font-semibold">{t("agentProduct.runtime")}</h3>
         <dl className="flex flex-wrap items-start gap-x-8 gap-y-3 text-sm">
           <div className="flex items-center gap-2"><dt className="text-xs text-muted-foreground">{t("agentProduct.status")}</dt><dd><AgentStatusBadge status={agent.status} /></dd></div>
-          <div className="flex min-w-0 flex-wrap items-center gap-2"><dt className="text-xs text-muted-foreground">{t("agentProduct.runtime")}</dt><dd className="break-words">{runtime.isError ? t("agentProduct.workUnavailable") : runtime.isPending ? t("common.loading") : !runtime.data?.runtime ? t("agentActivation.notActive") : director ? `${runtime.data.runtime === "codex" ? "Codex" : "Claude"} · ${t("directorBehavior.compatibility")}` : getAdapterLabel(runtime.data.runtime)}</dd></div>
+          <div className="flex min-w-0 flex-wrap items-center gap-2"><dt className="text-xs text-muted-foreground">{t("agentProduct.runtime")}</dt><dd className="break-words">{runtime.isError ? t("agentProduct.workUnavailable") : runtime.isPending ? t("common.loading") : !runtime.data?.runtime ? t("agentActivation.notActive") : director ? `${runtime.data.runtime === "opencode" ? "OpenCode" : runtime.data.runtime === "codex" ? "Codex" : "Claude"} · ${t(runtime.data.runtime === "opencode" ? "directorBehavior.gateway" : "directorBehavior.compatibility")}` : getAdapterLabel(runtime.data.runtime)}</dd></div>
           {runtime.data?.model && <div className="space-y-1"><dt className="text-xs text-muted-foreground">{t("agentProduct.model")}</dt><dd className="break-all font-mono text-xs">{runtime.data.model}</dd></div>}
           {director ? <div className="flex items-center gap-2"><dt className="text-xs text-muted-foreground">{t("agentProduct.chatAvailability")}</dt><dd>{runtime.isPending ? t("common.loading") : runtime.isError ? t("agentProduct.workUnavailable") : t(runtime.data?.available ? "agentProduct.available" : "agentProduct.unavailable")}</dd></div> : <>
             <div className="flex justify-between gap-3"><dt className="text-muted-foreground">{t("agentProduct.currentWork")}</dt><dd className="font-mono">{runsError ? t("agentProduct.workUnavailable") : runsLoading ? t("common.loading") : activeRuns.length}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-muted-foreground">{t("agentProduct.monthlySpend")}</dt><dd className="font-mono">{formatCents(agent.spentMonthlyCents)}</dd></div>
           </>}
         </dl>
-        {director && runtime.data && <p className="text-xs leading-relaxed text-muted-foreground">{t(runtime.data.runtime === "codex" ? "agentProduct.directorBoundary" : "agentProduct.textOnlyBoundary")}</p>}
+        {director && runtime.data && <p className="text-xs leading-relaxed text-muted-foreground">{t(["codex", "opencode"].includes(runtime.data.runtime ?? "") ? "agentProduct.directorBoundary" : "agentProduct.textOnlyBoundary")}</p>}
         {runtime.isError && director && <LoadError retry={() => void runtime.refetch()} />}
         {(agent.errorReason || agent.pauseReason) && <p className="break-words text-sm text-destructive" role="status">{agent.errorReason || agent.pauseReason}</p>}
       </section>
@@ -122,10 +122,10 @@ export function DirectorCapabilities({ agent, skills = false }: { agent: Agent; 
   if (runtime.isPending) return <p role="status" className="text-sm text-muted-foreground">{t("common.loading")}</p>;
   if (runtime.isError || !runtime.data) return <LoadError retry={() => void runtime.refetch()} />;
   const available = runtime.data.available;
-  const tools = available && runtime.data.runtime === "codex";
+  const tools = available && ["codex", "opencode"].includes(runtime.data.runtime ?? "");
   return (
     <section className="max-w-4xl space-y-5" data-testid="director-capabilities">
-      <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-sm font-semibold">{t(skills ? "agentProduct.configuredSkills" : "agentProduct.availableCapabilities")}</h3><span className="text-xs text-muted-foreground">{runtime.data.runtime ? `${runtime.data.runtime === "codex" ? "Codex" : "Claude"} · ${t("directorBehavior.compatibility")}` : t("agentActivation.notActive")}</span></div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-sm font-semibold">{t(skills ? "agentProduct.configuredSkills" : "agentProduct.availableCapabilities")}</h3><span className="text-xs text-muted-foreground">{runtime.data.runtime ? `${runtime.data.runtime === "opencode" ? "OpenCode" : runtime.data.runtime === "codex" ? "Codex" : "Claude"} · ${t(runtime.data.runtime === "opencode" ? "directorBehavior.gateway" : "directorBehavior.compatibility")}` : t("agentActivation.notActive")}</span></div>
       {skills ? <>
         <p className="text-sm leading-relaxed text-muted-foreground">{t("agentProduct.directorSkillsBoundary")}</p>
         {snapshot.isPending ? <p role="status" className="text-sm text-muted-foreground">{t("common.loading")}</p> : snapshot.isError ? <LoadError retry={() => void snapshot.refetch()} /> : <div className="divide-y divide-border">

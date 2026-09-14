@@ -593,7 +593,7 @@ export async function startServer(): Promise<StartedServer> {
   const requestedListenPort = config.port;
   const listenPort = await detectPort(requestedListenPort);
   if (config.authBaseUrlMode === "explicit" && config.authPublicBaseUrl) {
-    config.authPublicBaseUrl = rewriteLoopbackUrlPort(config.authPublicBaseUrl, listenPort);
+    config.authPublicBaseUrl = rewriteLoopbackUrlPort(config.authPublicBaseUrl, listenPort, requestedListenPort);
   }
   
   let authReady = config.deploymentMode === "local_trusted";

@@ -1,0 +1,229 @@
+name: verrail-test
+
+x-common: &common
+  platform: linux/amd64
+  init: true
+  user: "1000:1000"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  cpus: 1
+  mem_limit: 1g
+  tmpfs: ["/tmp:rw,nosuid,nodev,size=256m,mode=1777"]
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: "5"}
+
+x-postgres: &postgres
+  type: bind
+  source: /opt/maco-ops/secrets/verrail/test/runtime/postgres.env
+  target: /run/secrets/postgres.env
+  read_only: true
+  bind: {create_host_path: false}
+
+x-migration-postgres: &migration-postgres
+  <<: *postgres
+  source: /opt/maco-ops/secrets/verrail/test/migration/postgres-migration.env
+
+x-domain-token: &domain-token
+  type: bind
+  source: /opt/maco-ops/secrets/verrail/test/domain-token
+  target: /run/secrets/domain-token
+  read_only: true
+  bind: {create_host_path: false}
+
+x-gateway-token: &gateway-token
+  type: bind
+  source: /opt/maco-ops/secrets/verrail/test/gateway-token
+  target: /run/secrets/gateway-token
+  read_only: true
+  bind: {create_host_path: false}
+
+services:
+  migrate:
+    <<: *common
+    image: ${VERRAIL_CONTROL_IMAGE:?Supply a verified immutable control-plane image}
+    command: [node, --import, ./server/node_modules/tsx/dist/loader.mjs, /app/server/maco-migrate.mjs]
+    restart: "no"
+    environment:
+      VERRAIL_POSTGRES_ENV_FILE: /run/secrets/postgres.env
+    volumes: [*migration-postgres]
+    networks: [1panel-network]
+
+  temporal-migrate:
+    <<: *common
+    image: ${VERRAIL_TEMPORAL_IMAGE:?Supply a verified immutable Temporal image}
+    command: [migrate]
+    restart: "no"
+    environment:
+      VERRAIL_POSTGRES_ENV_FILE: /run/secrets/postgres.env
+    volumes: [*migration-postgres]
+    networks: [1panel-network]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+
+  temporal:
+    <<: *common
+    image: ${VERRAIL_TEMPORAL_IMAGE:?Supply a verified immutable Temporal image}
+    restart: unless-stopped
+    cpus: 2
+    mem_limit: 2g
+    environment:
+      VERRAIL_POSTGRES_ENV_FILE: /run/secrets/postgres.env
+    volumes: [*postgres]
+    networks: [runtime, 1panel-network]
+    depends_on:
+      temporal-migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, temporal, operator, cluster, health, --address, "127.0.0.1:7233", --command-timeout, 3s]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  temporal-namespace:
+    <<: *common
+    image: ${VERRAIL_TEMPORAL_IMAGE:?Supply a verified immutable Temporal image}
+    command: [namespace]
+    restart: "no"
+    networks: [runtime]
+    depends_on:
+      temporal: {condition: service_healthy}
+
+  domain-api:
+    <<: *common
+    image: ${VERRAIL_DOMAIN_IMAGE:?Supply a verified immutable domain image}
+    restart: unless-stopped
+    environment:
+      VERRAIL_POSTGRES_ENV_FILE: /run/secrets/postgres.env
+      VERRAIL_PGX_POOL_MAX: "2"
+      VERRAIL_DOMAIN_API_TOKEN_FILE: /run/secrets/domain-token
+      VERRAIL_DOMAIN_API_LISTEN: 0.0.0.0:3211
+    volumes: [*postgres, *domain-token]
+    networks: [runtime, 1panel-network]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3211/health', timeout=3).close()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  orchestration-worker:
+    <<: *common
+    image: ${VERRAIL_DOMAIN_IMAGE:?Supply a verified immutable domain image}
+    command: [orchestration-worker]
+    restart: unless-stopped
+    environment:
+      VERRAIL_POSTGRES_ENV_FILE: /run/secrets/postgres.env
+      VERRAIL_PGX_POOL_MAX: "2"
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: verrail-test
+      VERRAIL_WORKER_HEALTH_LISTEN: 127.0.0.1:3212
+    volumes: [*postgres]
+    networks: [runtime, 1panel-network]
+    depends_on:
+      temporal-namespace: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3212/health', timeout=4).close()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  execution-gateway:
+    <<: *common
+    image: ${VERRAIL_GATEWAY_IMAGE:?Supply a verified immutable execution gateway image}
+    restart: unless-stopped
+    cpus: 2
+    mem_limit: 2g
+    stop_grace_period: 45s
+    tmpfs: ["/tmp:rw,nosuid,nodev,size=512m,mode=1777"]
+    environment:
+      VERRAIL_GATEWAY_TOKEN_FILE: /run/secrets/gateway-token
+      VERRAIL_GATEWAY_PROVIDERS_FILE: /run/secrets/providers.json
+      VERRAIL_CONTROL_PLANE_URL: http://control-plane:3100
+    volumes:
+      - *gateway-token
+      - type: bind
+        source: /opt/maco-ops/secrets/verrail/test/providers.json
+        target: /run/secrets/providers.json
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: /opt/maco-apps/verrail/test/data/gateway
+        target: /var/lib/verrail-gateway
+        bind: {create_host_path: false}
+    networks: [runtime]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:4096/health',{signal:AbortSignal.timeout(3000)}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  control-plane:
+    <<: *common
+    image: ${VERRAIL_CONTROL_IMAGE:?Supply a verified immutable control-plane image}
+    restart: unless-stopped
+    cpus: 2
+    mem_limit: 2g
+    stop_grace_period: 45s
+    environment:
+      VERRAIL_POSTGRES_ENV_FILE: /run/secrets/postgres.env
+      DATABASE_POOL_MAX: "6"
+      BETTER_AUTH_SECRET_FILE: /run/secrets/auth-key
+      PAPERCLIP_INSTANCE_ID: verrail-test
+      PAPERCLIP_AUTH_BASE_URL_MODE: explicit
+      PAPERCLIP_AUTH_PUBLIC_BASE_URL: ${VERRAIL_PUBLIC_URL:?Supply the private HTTPS or loopback URL}
+      PAPERCLIP_ALLOWED_HOSTNAMES: ${VERRAIL_ALLOWED_HOSTNAMES:?Supply the private URL hostname},control-plane
+      PAPERCLIP_AUTH_DISABLE_SIGN_UP: "true"
+      PAPERCLIP_TELEMETRY_DISABLED: "1"
+      PAPERCLIP_DB_BACKUP_ENABLED: "false"
+      HEARTBEAT_SCHEDULER_ENABLED: "false"
+      VERRAIL_DOMAIN_API_AUTOSTART: "false"
+      VERRAIL_DOMAIN_API_URL: http://domain-api:3211
+      VERRAIL_DOMAIN_API_TOKEN_FILE: /run/secrets/domain-token
+      VERRAIL_EXECUTION_GATEWAY_URL: http://execution-gateway:4096
+      VERRAIL_GATEWAY_TOKEN_FILE: /run/secrets/gateway-token
+      VERRAIL_DIRECTOR_SIGNING_KEY_FILE: /run/secrets/director-key
+      VERRAIL_CHAT_RUNTIME: opencode
+      VERRAIL_CHAT_MODEL: ${VERRAIL_CHAT_MODEL:?Supply an explicit provider/model}
+    volumes:
+      - *postgres
+      - *domain-token
+      - *gateway-token
+      - type: bind
+        source: /opt/maco-ops/secrets/verrail/test/auth-key
+        target: /run/secrets/auth-key
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: /opt/maco-ops/secrets/verrail/test/director-key
+        target: /run/secrets/director-key
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: /opt/maco-apps/verrail/test/data/control-plane
+        target: /var/lib/verrail
+        bind: {create_host_path: false}
+    ports:
+      - target: 3100
+        published: "${VERRAIL_PRIVATE_PORT:-3271}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    networks: [runtime, 1panel-network]
+    depends_on:
+      domain-api: {condition: service_healthy}
+      execution-gateway: {condition: service_healthy}
+      temporal-namespace: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3100/api/health',{signal:AbortSignal.timeout(3000)}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+networks:
+  runtime: {}
+  1panel-network:
+    external: true
+    name: 1panel-network

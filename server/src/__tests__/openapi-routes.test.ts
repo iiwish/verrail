@@ -30,6 +30,7 @@ const apiPrefixes: Record<string, string> = {
   "collections.ts": "/api",
   "connector.ts": "/api",
   "conversations.ts": "/api",
+  "conversation-invocations.ts": "/api",
   "company-skills.ts": "/api",
   "company-skill-policy.ts": "/api",
   "costs.ts": "/api",
@@ -176,6 +177,26 @@ function loadSpecRoutes() {
 }
 
 describe("openapi routes", () => {
+  it("documents durable conversation invocation authority, replay and cancellation", () => {
+    const spec = buildOpenApiSpec();
+    const base = "/api/workspaces/{workspaceId}/conversations/{conversationId}/invocations";
+    const start = spec.paths[base].post;
+    expect(start["x-paperclip-authorization"]).toEqual({ actor: "board" });
+    expect(start.security).not.toContainEqual({ AgentBearerAuth: [] });
+    expect(start.requestBody.content["application/json"].schema).toMatchObject({
+      additionalProperties: false, required: ["body", "idempotencyKey"],
+    });
+    expect(start.responses["200"]).toBeDefined();
+    expect(start.responses["202"]).toBeDefined();
+    const view = start.responses["202"].content["application/json"].schema.properties.invocation;
+    expect(view.additionalProperties).toBe(false);
+    for (const field of ["input", "requestHash", "directorToken"]) expect(view.properties[field]).toBeUndefined();
+    expect(spec.paths[`${base}/{invocationId}/cancel`].post.responses["202"]).toBeDefined();
+    const stream = spec.paths[`${base}/{invocationId}/events`].get;
+    expect(stream.responses["200"].content["text/event-stream"]).toBeDefined();
+    expect(stream.parameters).toContainEqual(expect.objectContaining({ name: "Last-Event-ID", in: "header" }));
+  });
+
   it("documents Director invocation authentication separately from board access", () => {
     const spec = buildOpenApiSpec();
     expect(spec.components.securitySchemes.DirectorInvocationToken).toMatchObject({
@@ -183,7 +204,7 @@ describe("openapi routes", () => {
     });
     expect(spec.paths["/api/director/mcp"].post.security).toEqual([{ DirectorInvocationToken: [] }]);
     expect(spec.paths["/api/director/mcp"].post["x-paperclip-authorization"]).toEqual({
-      actor: "director_invocation", deploymentMode: "local_trusted",
+      actor: "director_invocation", deploymentModes: ["local_trusted", "authenticated"],
     });
   });
 

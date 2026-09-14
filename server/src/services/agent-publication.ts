@@ -44,9 +44,12 @@ export async function readAgentPublication(db: Db, workspaceId: string, agentId:
       .map((key) => [key, config[key]]),
   );
   const prompt = director ? resolveDirectorRole(config).rolePrompt : files[bundle!.entryFile];
+  const runtime = director ? resolveDirectorChatRuntime() : agent.adapterType;
+  const model = (director && process.env.VERRAIL_CHAT_MODEL?.trim()) || (typeof config.model === "string" && config.model.trim() ? config.model.trim() : "unconfigured");
+  if (runtime === "opencode" && !/^[^/\s]+\/\S+$/.test(model)) throw new HttpError(422, "Configure an explicit provider/model for OpenCode before publishing");
   const snapshot = publishAgentVersionSchema.parse({
-    runtime: director ? resolveDirectorChatRuntime() : agent.adapterType,
-    model: (director && process.env.VERRAIL_CHAT_MODEL?.trim()) || (typeof config.model === "string" && config.model.trim() ? config.model.trim() : "unconfigured"),
+    runtime,
+    model,
     prompt,
     skills: skills.map((entry) => entry.key), tools: [], outputSchema: {}, capabilityCeiling: [],
     supplyChain: {

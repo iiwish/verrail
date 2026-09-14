@@ -86,8 +86,8 @@ export function DirectorInstructionsTab({ agentId, companyId, onDirtyChange }: {
         <div className="flex min-w-0 flex-col gap-1">
           <h3 className="text-base font-semibold">{t("directorBehavior.identity")}</h3>
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span>{t("directorBehavior.compatibility")}</span>
-            <span>{active.runtime === "codex" ? "Codex" : "Claude"}</span>
+            <span>{t(active.mode === "execution_gateway" ? "directorBehavior.gateway" : "directorBehavior.compatibility")}</span>
+            <span>{active.runtime === "opencode" ? "OpenCode" : active.runtime === "codex" ? "Codex" : "Claude"}</span>
             <span>{active.revision === 0 ? t("directorBehavior.builtin") : t("directorBehavior.revision", { revision: active.revision })}</span>
             {dirty && <span className="text-foreground">{t("directorBehavior.draft")}</span>}
           </div>

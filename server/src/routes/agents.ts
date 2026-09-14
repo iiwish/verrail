@@ -3789,9 +3789,9 @@ export function agentRoutes(
     const runtime = resolveDirectorChatRuntime();
     return buildDirectorInstructions({
       agentName: agent.name, adapterConfig: agent.adapterConfig, runtime,
-      available: (options.deploymentMode ?? "local_trusted") === "local_trusted"
+      available: (runtime === "opencode" ? Boolean(process.env.VERRAIL_EXECUTION_GATEWAY_URL && process.env.VERRAIL_GATEWAY_TOKEN_FILE && process.env.VERRAIL_DIRECTOR_SIGNING_KEY_FILE) : (options.deploymentMode ?? "local_trusted") === "local_trusted")
         && !["paused", "pending_approval", "terminated"].includes(agent.status) && !agent.pausedAt,
-      toolsAvailable: runtime === "codex",
+      toolsAvailable: runtime === "codex" || runtime === "opencode",
       candidatePrompt,
     });
   }

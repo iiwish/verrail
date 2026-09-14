@@ -1793,6 +1793,13 @@
       "when": 1789219425109,
       "tag": "0257_aberrant_skullbuster",
       "breakpoints": true
+    },
+    {
+      "idx": 258,
+      "version": "7",
+      "when": 1789381900972,
+      "tag": "0258_wealthy_patriot",
+      "breakpoints": true
     }
   ]
 }

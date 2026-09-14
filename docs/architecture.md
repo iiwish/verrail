@@ -115,7 +115,11 @@ Conversation 的目标上下文合同区分持久的单一当前目标、多个�
 
 系统能力以逐项注册的领域工具接入会话，每项明确参数、身份、作用域、确认策略及结果回执。操作可覆盖当前目标之外的授权对象，但不能借用创建会话者的权限，不能通过任意 API 代理或通用 Shell 绕过命令门禁。完整系统操作入口是产品覆盖合同，不代表兼容运行时已经暴露全部系统能力。Compatibility API 持久化 `currentTargetId` 和 `contextVersion`，专用上下文变更表同时保存幂等回执和审计；`POST /api/workspaces/:workspaceId/conversations/:conversationId/context` 校验成员、目标归属和预期版本。Director 的 `get_conversation_context` 与 `switch_current_target` 只读取或改变当前会话的上下文。用户消息和回复记录请求快照，创建确认捕获上下文版本，回执重放不重新聚焦。目标侧相关会话按 ContextBinding 查询，沿用当前 Workspace Board 的全控制访问边界；下述受限运行时不暴露任意系统操作。
 
-当前 TypeScript Compatibility API 提供会话列表、创建、读取、重命名、置顶、归档、恢复和本地流式回复，并为每个 Workspace 幂等供给一个展示名为 `Director` 的兼容默认 Agent；内部 `ceo` role 仅用于存量授权兼容，不构成产品 CEO 或组织图语义。消息与上下文绑定持久化到 PostgreSQL，兼容回复记录实际默认 Agent ID 与本地运行来源。仅 `local_trusted` 部署可调用本地 CLI 兼容运行时：Codex 使用临时会话、只读 Sandbox、空工作目录和受限环境，禁用 Shell、浏览器、应用及计算机等通用工具，仅配置工作区范围的 Director MCP。Claude 使用无工具 CLI，并明确告知查询限制。`VERRAIL_CHAT_RUNTIME` 和 `VERRAIL_CHAT_MODEL` 提供发布时的 Director 运行配置来源；实际回复使用已启用 AgentVersion 的固定值，环境变量修改需要重新发布并启用。认证部署在配置受治理的模型执行路径前保持关闭。兼容运行时不继承数据库、Paperclip 或云厂商凭证；后续长时执行、重试、预算和审计通过版本化 Agent Runtime Adapter 与 Run/Temporal 编排。
+当前 TypeScript Compatibility API 提供会话列表、创建、读取、重命名、置顶、归档、恢复和本地流式回复，并为每个 Workspace 幂等供给一个展示名为 `Director` 的兼容默认 Agent；内部 `ceo` role 仅用于存量授权兼容，不构成产品 CEO 或组织图语义。消息与上下文绑定持久化到 PostgreSQL，兼容回复记录实际默认 Agent ID 与本地运行来源。仅 `local_trusted` 部署可调用本地 CLI 兼容运行时：Codex 使用临时会话、只读 Sandbox、空工作目录和受限环境，禁用 Shell、浏览器、应用及计算机等通用工具，仅配置工作区范围的 Director MCP。Claude 使用无工具 CLI，并明确告知查询限制。`VERRAIL_CHAT_RUNTIME` 和 `VERRAIL_CHAT_MODEL` 提供发布时的 Director 运行配置来源；实际回复使用已启用 AgentVersion 的固定值，环境变量修改需要重新发布并启用。兼容运行时不继承数据库、Paperclip 或云厂商凭证；Target 长时执行、重试、预算和审计通过版本化 Agent Runtime Adapter 与 Run/Temporal 编排。
+
+独立会话执行路径以 `VERRAIL_EXECUTION_GATEWAY_URL`、`VERRAIL_GATEWAY_TOKEN_FILE` 和 `VERRAIL_DIRECTOR_SIGNING_KEY_FILE` 显式启用，缺少或非法配置不回退到本地 CLI。`/api/workspaces/:workspaceId/conversations/:conversationId/invocations` 创建绑定已启用 OpenCode Director 版本的持久调用，专用读取、事件回放与取消端点分离传输连接和执行生命周期。Controller 使用数据库租约恢复调用，并在远程提交前持久化调度意图；结果未知且网关无记录时报告失败，不自动重复执行。浏览器通过能力端点选择执行路径，用持久调用快照和 SSE 恢复输出，显式取消等待清理确认。发送前在会话存储中保存请求摘要和幂等键，响应丢失时复用该键；不在该存储中保存消息正文。OpenCode 发布要求 `VERRAIL_CHAT_RUNTIME=opencode` 和明确的 provider/model，角色、模型及运行时由已启用版本消费。真实认证会话与网关往返、Target 执行及完整容器部署验收仍是部署适配门禁。
+
+执行网关不持有应用数据库凭据。每次调用使用独立 OpenCode 进程、HOME/XDG、临时 HTTP 密码和短期 Director 令牌；进程目录不是授权边界。Director 回调验证签名、到期时间、持久调用状态和当前成员权限，并以持久审计限制每次调用最多 20 次工具授权。令牌只选择已保存的调用身份，不能指定其他 Workspace、用户、源消息或版本。工具提案仍由人类确认，不能执行审批或验收。详见 [ADR 0015](adrs/0015-isolated-conversation-execution.md)。
 
 Director MCP 每次调用使用最多 120 秒有效的随机能力令牌，绑定发起人、Workspace、Conversation、来源 Message 和 Director 身份，响应结束即撤销。工具仅允许分页查询目标、读取目标详情、创建待确认草稿和提出目标变更；每次重新校验成员与 Director 状态，禁止模型提交人工确认或启动执行。目标名称、摘要与描述的修改形成独立 TargetRevision；逻辑取消采用保留历史的 `canceled` 状态，不提供物理删除。修改及取消只支持没有激活工作图、Run 或 ActionRequest 的未终结目标。用户在提案中检查字段差异并点击确认后，Go `target.manage.v1` 命令校验成员、预期版本和幂等键，在事务内写入修订、命令回执及审计。取消后的目标不能创建或激活工作图。归档与恢复支持任何执行状态，独立校验 `archiveVersion`，仅更新归档元数据及审计，不改变 TargetRevision 或执行事实；列表按 `archiveState` 筛选，待处理视图包含已归档目标。具备执行历史的定义及执行状态变更必须使用独立的 Graph Engine 生命周期合同，不通过聊天绕过。
 
@@ -256,6 +260,8 @@ Verrail Cloud Plane
 ### Open-source self-hosted
 
 单机或小团队使用 Domain API、PostgreSQL、对象存储、Temporal 开发/自托管服务和一个或多个 Worker/Runner。`pnpm dev:verrail` 是当前完整本地集成入口，以一个共享 PostgreSQL 和 Task Queue 启动 TypeScript 兼容边界、Go Domain API、Temporal 开发服务与 Go Worker；聚焦组件开发仍可分别启动。即使组件同机，也使用不同身份和协议边界。生产级自托管 Temporal 的支持等级必须明确，不能把开发服务器包装成高可用承诺。
+
+maco 私有测试环境的候选部署声明位于 `deploy/maco.json` 与 `docker/maco/compose.yaml`。所有服务与迁移作业运行于 Docker，仅复用注册的 `pg-main`。应用业务表、Temporal 主存储与 visibility 存储位于同一项目数据库的独立 schema；迁移角色拥有 DDL，运行角色只有业务 DML 与迁移历史读取权。应用迁移先准备 schema 和默认授权，Temporal 迁移完成后启动服务并创建 namespace，Worker 随后启动。执行网关不持有数据库凭证、不加入共享数据库网络。该配置仍需完整镜像、认证闭环、连接总量、恢复与平台门禁验收，不代表已经部署或具备高可用保障。
 
 ### Managed Cloud
 

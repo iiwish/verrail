@@ -2713,3 +2713,5 @@ export * from "./validators/channel.js";
 export * from "./types/criterion-proof.js";
 export * from "./validators/criterion-proof.js";
 export * from "./validators/director.js";
+export * from "./conversation-invocation.js";
+export * from "./execution-gateway.js";

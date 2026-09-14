@@ -48,6 +48,15 @@ export function createDirectorToolSessions(now = Date.now) {
     async handle(token: string, body: unknown) {
       const session = sessions.get(token);
       if (!session || session.expires <= now()) { sessions.delete(token); throw forbidden("Director session expired"); }
+      return handleDirectorMcpRequest(body, async (name, args) => {
+        if (++session.calls > 20) throw new Error("Director tool budget exhausted");
+        return session.call(name, args);
+      });
+    },
+  };
+}
+
+export async function handleDirectorMcpRequest(body: unknown, call: (name: string, args: unknown) => Promise<unknown>, hideInternalErrors = false) {
       const request = z.object({ jsonrpc: z.literal("2.0"), id: z.union([z.string(), z.number()]).optional(), method: z.string(), params: z.unknown().optional() }).strict().parse(body);
       if (request.method === "notifications/initialized") return null;
       const respond = (result: unknown) => ({ jsonrpc: "2.0", id: request.id ?? null, result });
@@ -55,20 +64,17 @@ export function createDirectorToolSessions(now = Date.now) {
       if (request.method === "tools/list") return respond({ tools: Object.entries(schemas).map(([name, schema]) => ({ name, description: descriptions[name as keyof typeof schemas], inputSchema: z.toJSONSchema(schema), annotations: { readOnlyHint: name.startsWith("get_") || name.startsWith("list_"), destructiveHint: false, openWorldHint: false } })) });
       if (request.method !== "tools/call") return { jsonrpc: "2.0", id: request.id ?? null, error: { code: -32601, message: "Method not found" } };
       try {
-        if (++session.calls > 20) throw new Error("Director tool budget exhausted");
         const input = z.object({ name: z.enum(Object.keys(schemas) as [keyof typeof schemas, ...Array<keyof typeof schemas>]), arguments: z.unknown().optional(), _meta: z.record(z.string(), z.unknown()).optional() }).strict().parse(request.params);
         const args = schemas[input.name].parse(input.arguments ?? {});
-        const result = await session.call(input.name, args);
+        const result = await call(input.name, args);
         return respond({ content: [{ type: "text", text: JSON.stringify(result) }] });
       } catch (error) {
-        const message = error instanceof z.ZodError ? `Invalid tool arguments: ${error.issues.map((issue) => `${issue.path.join(".")}: ${issue.code}`).join(", ")}` : error instanceof Error ? error.message : "Tool failed";
+        const message = error instanceof z.ZodError ? `Invalid tool arguments: ${error.issues.map((issue) => `${issue.path.join(".")}: ${issue.code}`).join(", ")}` : !hideInternalErrors && error instanceof Error ? error.message : "Tool unavailable or request rejected";
         return respond({ isError: true, content: [{ type: "text", text: message }] });
       }
-    },
-  };
 }
 
-export async function assertDirectorMember(db: Db, workspaceId: string, principalId: string, write = false) {
+export async function assertDirectorMember(db: Pick<Db, "select">, workspaceId: string, principalId: string, write = false) {
   const [membership] = await db.select({ membershipRole: companyMemberships.membershipRole }).from(companyMemberships).innerJoin(companies, and(eq(companies.id, companyMemberships.companyId), eq(companies.status, "active"))).where(and(eq(companyMemberships.companyId, workspaceId), eq(companyMemberships.principalType, "user"), eq(companyMemberships.principalId, principalId), eq(companyMemberships.status, "active")));
   if (!membership || (write && membership.membershipRole === "viewer")) throw forbidden("Workspace membership does not permit this operation");
 }

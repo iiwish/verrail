@@ -18,8 +18,8 @@ export type DirectorInstructionsSnapshot = z.infer<typeof directorInstructionsSn
 export type ApplyDirectorInstructionsInput = z.infer<typeof applyDirectorInstructionsSchema>;
 export interface DirectorInstructionsView {
   schemaVersion: 1;
-  mode: "local_compatibility";
-  runtime: "codex" | "claude";
+  mode: "local_compatibility" | "execution_gateway";
+  runtime: "codex" | "claude" | "opencode";
   available: boolean;
   revision: number;
   configHash: string;

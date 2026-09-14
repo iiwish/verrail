@@ -37,7 +37,7 @@ import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import { resolveConversationRuntimeCommand } from "../services/conversation-runtime-command.js";
 import { assertDirectorMember, createDirectorToolSessions, directorMcpRuntimeArgs, directorToolExecutor } from "../services/director-tools.js";
 import { conversationContextService } from "../services/conversation-context.js";
-import { buildDirectorInstructions, resolveDirectorChatRuntime } from "../services/director-instructions.js";
+import { buildDirectorInstructions } from "../services/director-instructions.js";
 
 const MAX_CONCURRENT_CHAT_RUNS = 3;
 const CHAT_TIMEOUT_MS = 120_000;
@@ -157,10 +157,6 @@ export function createConversationRuntimeCleanupBarrier(options: {
   };
 }
 
-function resolveLocalChatRuntime(): LocalChatRuntime {
-  return resolveDirectorChatRuntime();
-}
-
 export function buildConversationRuntimeEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { CI: "1", NO_COLOR: "1" };
   for (const key of CHAT_RUNTIME_ENV_KEYS) {
@@ -217,6 +213,7 @@ export function conversationRoutes(db: Db, opts: {
   domainApiClient?: VerrailDomainApiClient | null;
   pluginWorkerManager?: Pick<PluginWorkerManager, "call">;
   publicBaseUrl?: string | null;
+  invocationMcp?: (token: string, body: unknown) => Promise<unknown>;
   targetReplies?: Pick<ReturnType<typeof channelTargetReplyService>, "deliver" | "read"> & Partial<Pick<ReturnType<typeof channelTargetReplyService>, "reconcile">>;
 }) {
   const router = Router();
@@ -231,9 +228,21 @@ export function conversationRoutes(db: Db, opts: {
   const runLimiter = createConversationRunLimiter(MAX_CONCURRENT_CHAT_RUNS);
   const directorSessions = createDirectorToolSessions();
 
+  router.get("/workspaces/:workspaceId/conversation-runtime", async (req, res) => {
+    assertBoard(req);
+    const workspaceId = z.string().uuid().parse(req.params.workspaceId);
+    assertCompanyAccess(req, workspaceId);
+    const actor = getActorInfo(req);
+    if (opts.invocationMcp || opts.deploymentMode !== "local_trusted") await assertDirectorMember(db, workspaceId, actor.actorId);
+    res.json({ mode: opts.invocationMcp ? "execution_gateway" : opts.deploymentMode === "local_trusted" ? "local_compatibility" : "unavailable" });
+  });
+
   router.post("/director/mcp", async (req, res) => {
-    if (opts.deploymentMode !== "local_trusted") throw notFound("Not found");
-    const result = await directorSessions.handle(req.get("X-Verrail-Chat-Token") ?? "", req.body);
+    const token = req.get("X-Verrail-Chat-Token") ?? "";
+    if (opts.deploymentMode !== "local_trusted" && !opts.invocationMcp) throw notFound("Not found");
+    const result = opts.invocationMcp && token.includes(".")
+      ? await opts.invocationMcp(token, req.body)
+      : opts.deploymentMode === "local_trusted" ? await directorSessions.handle(token, req.body) : (() => { throw notFound("Not found"); })();
     if (result === null) res.sendStatus(202);
     else res.json(result);
   });

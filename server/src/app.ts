@@ -60,6 +60,8 @@ import { goalRoutes } from "./routes/goals.js";
 import { onboardingSeedRoutes } from "./routes/onboarding-seed.js";
 import { boardChatRoutes } from "./routes/board-chat.js";
 import { conversationRoutes } from "./routes/conversations.js";
+import { conversationInvocationRoutes } from "./routes/conversation-invocations.js";
+import { configureConversationGateway } from "./services/conversation-gateway.js";
 import { approvalRoutes } from "./routes/approvals.js";
 import { secretRoutes } from "./routes/secrets.js";
 import { toolAccessRoutes } from "./routes/tool-access.js";
@@ -548,7 +550,9 @@ export async function createApp(
   api.use(executionWorkspaceRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(goalRoutes(db));
   api.use(onboardingSeedRoutes(db));
-  api.use(conversationRoutes(db, { deploymentMode: opts.deploymentMode, pluginWorkerManager: workerManager,
+  const conversationGateway = await configureConversationGateway(db, () => { logger.warn("Conversation invocation reconciliation failed; retrying persisted state"); });
+  if (conversationGateway) api.use(conversationInvocationRoutes(db, conversationGateway.controller));
+  api.use(conversationRoutes(db, { deploymentMode: opts.deploymentMode, pluginWorkerManager: workerManager, invocationMcp: conversationGateway?.handleMcp,
     publicBaseUrl: opts.authPublicBaseUrl ?? (opts.deploymentMode === "local_trusted" ? `http://127.0.0.1:${opts.serverPort}` : null) }));
   api.use(deliveryContextRoutes(db));
   api.use(boardChatRoutes(db, { deploymentMode: opts.deploymentMode }));
@@ -964,6 +968,7 @@ export async function createApp(
     if (appServicesShutdown) return appServicesShutdown;
     appServicesShutdown = (async () => {
       disableFeedbackExportFlushes();
+      await conversationGateway?.controller.close();
       if (importTransferSweepTimer) {
         clearInterval(importTransferSweepTimer);
         importTransferSweepTimer = null;
@@ -983,6 +988,7 @@ export async function createApp(
     return appServicesShutdown;
   };
   app.locals.paperclipShutdown = shutdownAppServices;
+  conversationGateway?.controller.start();
 
   // The `exit` event is synchronous. It cannot await the teardown, so it runs
   // the best-effort cleanup and drops the returned promise. The orderly signal

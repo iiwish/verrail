@@ -1,0 +1,25 @@
+# syntax=docker/dockerfile:1
+ARG NODE_IMAGE
+FROM ${NODE_IMAGE} AS build
+WORKDIR /app
+RUN corepack enable
+COPY . .
+RUN --mount=type=cache,id=verrail-pnpm-linux-amd64,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+RUN node scripts/build-execution-gateway.mjs
+
+FROM ${NODE_IMAGE}
+ARG OPENCODE_VERSION
+RUN test -n "$OPENCODE_VERSION" \
+    && node -e 'if (!/^\d+\.\d+\.\d+$/.test(process.argv[1])) process.exit(1)' "$OPENCODE_VERSION" \
+    && npm install --global "opencode-ai@${OPENCODE_VERSION}" \
+    && apt-get update && apt-get install -y --no-install-recommends ca-certificates git util-linux \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /app/dist/execution-gateway/gateway.cjs /app/gateway.cjs
+COPY docker/maco/gateway-entrypoint.sh /usr/local/lib/verrail/gateway-entrypoint.sh
+RUN mkdir -p /var/lib/verrail-gateway && chown 1000:1000 /var/lib/verrail-gateway && chmod 700 /var/lib/verrail-gateway
+ENV HOME=/home/node VERRAIL_GATEWAY_ROOT=/var/lib/verrail-gateway OPENCODE_VERSION=${OPENCODE_VERSION}
+USER 1000:1000
+WORKDIR /home/node
+EXPOSE 4096
+ENTRYPOINT ["sh", "/usr/local/lib/verrail/gateway-entrypoint.sh"]

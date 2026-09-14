@@ -153,6 +153,7 @@ export const verrailDeploymentRevisions = pgTable(
   },
   (table) => ({
     idWorkspaceUq: unique("verrail_deployment_revisions_id_workspace_uq").on(table.id, table.workspaceId),
+    idVersionWorkspaceUq: unique("verrail_deploy_revisions_id_version_workspace_uq").on(table.id, table.agentVersionId, table.workspaceId),
     deploymentRevisionUq: uniqueIndex("verrail_deployment_revisions_deployment_number_uq").on(table.deploymentId, table.revisionNumber),
     deploymentWorkspaceFk: foreignKey({
       columns: [table.deploymentId, table.workspaceId],

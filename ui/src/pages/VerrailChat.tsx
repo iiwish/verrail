@@ -16,6 +16,8 @@ import { cn } from "../lib/utils";
 import { ConversationTargetContext, ConversationContextChange, FocusCreatedTarget } from "../components/ConversationTargetContext";
 import { ConversationTargetsPanel } from "../components/ConversationTargetsPanel";
 import { useTranslation } from "@/i18n";
+import { invocationQueryKey, useConversationInvocation } from "../hooks/useConversationInvocation";
+import { startDurableConversationInvocation } from "../api/conversation-invocation-request";
 
 const CHAT_MARKDOWN_CLASS =
   "max-w-full overflow-visible [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto";
@@ -103,11 +105,11 @@ export function VerrailChat() {
   const [createdConversationId, setCreatedConversationId] = useState<string | null>(null);
   const conversationId = routeConversationId ?? createdConversationId;
   const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
-  const [streamingText, setStreamingText] = useState("");
+  const [localSending, setSending] = useState(false);
+  const [localStreamingText, setStreamingText] = useState("");
   const [streamingAssistantName, setStreamingAssistantName] = useState("");
   const [optimisticMessage, setOptimisticMessage] = useState<string | null>(null);
-  const [errorText, setErrorText] = useState("");
+  const [localErrorText, setErrorText] = useState("");
   const [lastSubmitted, setLastSubmitted] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<ChatComposerHandle>(null);
@@ -115,15 +117,28 @@ export function VerrailChat() {
   const requestSequenceRef = useRef(0);
   const internalNavigationIdRef = useRef<string | null>(null);
   const previousRouteConversationIdRef = useRef(routeConversationId);
+  const previousWorkspaceRef = useRef(selectedCompanyId);
+  const runtimeQuery = useQuery({
+    queryKey: ["conversation-runtime", selectedCompanyId],
+    queryFn: () => conversationsApi.runtime(selectedCompanyId!),
+    enabled: Boolean(selectedCompanyId),
+  });
+  const gatewayMode = runtimeQuery.data?.mode === "execution_gateway";
+  const invocation = useConversationInvocation(selectedCompanyId, conversationId, gatewayMode);
+  const sending = localSending || Boolean(invocation.active);
+  const streamingText = gatewayMode ? invocation.active?.output ?? localStreamingText : localStreamingText;
+  const errorText = localErrorText || (runtimeQuery.error || invocation.error || runtimeQuery.data?.mode === "unavailable" || (gatewayMode && invocation.latest?.status === "failed") ? t("chat.unavailable") : gatewayMode && invocation.latest?.status === "canceled" ? t("chat.stopped") : "");
 
   useEffect(() => {
     setBreadcrumbs([{ label: t("nav.chat") }]);
   }, [setBreadcrumbs, t]);
 
   useEffect(() => {
-    if (previousRouteConversationIdRef.current === routeConversationId) return;
+    const workspaceChanged = previousWorkspaceRef.current !== selectedCompanyId;
+    previousWorkspaceRef.current = selectedCompanyId;
+    if (!workspaceChanged && previousRouteConversationIdRef.current === routeConversationId) return;
     previousRouteConversationIdRef.current = routeConversationId;
-    if (routeConversationId && internalNavigationIdRef.current === routeConversationId) {
+    if (!workspaceChanged && routeConversationId && internalNavigationIdRef.current === routeConversationId) {
       internalNavigationIdRef.current = null;
       setCreatedConversationId(null);
       return;
@@ -137,7 +152,7 @@ export function VerrailChat() {
     setStreamingAssistantName("");
     setOptimisticMessage(null);
     setErrorText("");
-  }, [routeConversationId]);
+  }, [routeConversationId, selectedCompanyId]);
 
   useEffect(() => () => abortControllerRef.current?.abort(), []);
 
@@ -168,7 +183,7 @@ export function VerrailChat() {
 
   const sendMessage = useCallback(async (body: string) => {
     const trimmed = body.trim();
-    if (!trimmed || !selectedCompanyId || sending) return;
+    if (!trimmed || !selectedCompanyId || sending || runtimeQuery.isPending || runtimeQuery.isError || invocation.loading || runtimeQuery.data?.mode === "unavailable") return;
     if (conversationQuery.data?.status === "archived") return;
 
     const requestSequence = requestSequenceRef.current + 1;
@@ -196,6 +211,12 @@ export function VerrailChat() {
         navigate(`/chat/${created.id}`, { replace: true });
       }
 
+      if (gatewayMode) {
+        const result = await startDurableConversationInvocation(selectedCompanyId, targetConversationId, trimmed);
+        await queryClient.cancelQueries({ queryKey: invocationQueryKey(selectedCompanyId, targetConversationId) });
+        queryClient.setQueryData(invocationQueryKey(selectedCompanyId, targetConversationId), [result.invocation]);
+        return;
+      }
       controller = new AbortController();
       abortControllerRef.current = controller;
       const response = await fetch(
@@ -292,10 +313,15 @@ export function VerrailChat() {
     queryClient,
     selectedCompanyId,
     sending,
+    gatewayMode,
+    runtimeQuery.isPending,
+    runtimeQuery.isError,
+    runtimeQuery.data?.mode,
+    invocation.loading,
     t,
   ]);
 
-  const stopStreaming = () => abortControllerRef.current?.abort();
+  const stopStreaming = () => gatewayMode ? invocation.cancel.mutate() : abortControllerRef.current?.abort();
   const restoreDraft = () => {
     setInput(lastSubmitted);
     setErrorText("");
@@ -304,7 +330,7 @@ export function VerrailChat() {
 
   const conversation = conversationQuery.data;
   const isArchived = conversation?.status === "archived";
-  const hasMessages = Boolean(conversation?.messages.length || optimisticMessage || streamingText);
+  const hasMessages = Boolean(conversation?.messages.length || optimisticMessage || streamingText || sending);
   const showOptimisticMessage = Boolean(
     optimisticMessage
       && !conversation?.messages.some(
@@ -425,6 +451,7 @@ export function VerrailChat() {
                       ) : (
                         <p className="text-muted-foreground">{t("chat.thinking")}</p>
                       )}
+                      {invocation.active?.status === "cancel_requested" ? <p role="status" className="mt-2 text-xs text-muted-foreground">{t("chat.stopping")}</p> : null}
                     </div>
                   </article>
                 ) : null}
@@ -458,7 +485,7 @@ export function VerrailChat() {
               onChange={setInput}
               onSubmit={() => void sendMessage(input)}
               placeholder={t("chat.placeholder")}
-              disabled={!selectedCompanyId}
+              disabled={!selectedCompanyId || runtimeQuery.isPending || runtimeQuery.isError || runtimeQuery.data?.mode === "unavailable" || invocation.loading}
               submitting={sending}
               submitKey="enter"
               autoFocus
@@ -469,6 +496,7 @@ export function VerrailChat() {
                   variant="ghost"
                   size="icon-sm"
                   onClick={stopStreaming}
+                  disabled={gatewayMode && (!invocation.active || invocation.active.status === "cancel_requested" || invocation.cancel.isPending)}
                   aria-label={t("chat.stop")}
                   title={t("chat.stop")}
                 >

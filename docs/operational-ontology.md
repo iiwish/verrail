@@ -328,3 +328,11 @@ TargetRevision + ArtifactRevisions + VerificationResults
 | `agent` / `agent_config_revision` | AgentDefinition 草稿历史，不等于已发布 AgentVersion |
 
 兼容映射必须版本化、可观测、可回滚，并明确终止条件。Verrail 新功能不得继续扩大 CEO、组织图、单指派 Issue 或通用 Board Approval 语义。任何一次迁移都不能同时改变存储、API、权限和 UI 语义而缺少独立验证。
+
+## ConversationInvocation
+
+ConversationInvocation 表示一次由人类 Workspace 成员发起的会话执行，不是 Target Run，也不拥有 Graph 激活、验收或审批权限。它绑定 Conversation、源用户消息、发起人、AgentVersion 与 DeploymentRevision；源消息和固定版本必须属于同一个 Workspace。
+
+调用状态为 `queued`、`running`、`cancel_requested`、`succeeded`、`failed`、`canceled`。同一个 Conversation 至多有一次非终态调用；幂等键在 Workspace 与发起人范围内唯一，重复请求必须匹配原请求摘要。终态必须记录结束时间。
+
+调用事件持久化并使用单调 cursor，供断线重连回放。浏览器连接不拥有调用生命周期，断线不等于取消。取消请求与已确认停止是不同状态。Controller lease 与 fencing token 拒绝过期控制者的回传；恢复流程不得在执行结果未知时自动重放可能产生作用的调用。

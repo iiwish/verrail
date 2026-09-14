@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1
+ARG GO_IMAGE
+ARG RUNTIME_IMAGE
+FROM ${GO_IMAGE} AS build
+WORKDIR /src
+COPY services/domain-api/go.mod services/domain-api/go.sum ./
+RUN go mod download
+COPY services/domain-api/ ./
+RUN CGO_ENABLED=0 go build -mod=readonly -trimpath -o /out/domain-api ./cmd/domain-api \
+    && CGO_ENABLED=0 go build -mod=readonly -trimpath -o /out/orchestration-worker ./cmd/orchestration-worker
+
+FROM ${RUNTIME_IMAGE}
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates python3 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /out/ /usr/local/bin/
+COPY docker/maco/runtime_env.py /usr/local/lib/verrail/runtime_env.py
+ENV VERRAIL_REQUIRE_POSTGRES=true
+USER 1000:1000
+ENTRYPOINT ["python3", "/usr/local/lib/verrail/runtime_env.py"]
+CMD ["domain-api"]

@@ -10,6 +10,7 @@ import type {
   UpdateConversationInput,
   SwitchConversationContextInput,
   SwitchConversationContextResult,
+  ConversationInvocationView,
 } from "@paperclipai/shared";
 import { api } from "./client";
 
@@ -18,6 +19,10 @@ function workspacePath(workspaceId: string) {
 }
 
 export const conversationsApi = {
+  runtime: (workspaceId: string) => api.get<{ mode: "execution_gateway" | "local_compatibility" | "unavailable" }>(`/workspaces/${encodeURIComponent(workspaceId)}/conversation-runtime`),
+  invocations: (workspaceId: string, conversationId: string) => api.get<ConversationInvocationView[]>(`${workspacePath(workspaceId)}/${encodeURIComponent(conversationId)}/invocations`),
+  startInvocation: (workspaceId: string, conversationId: string, body: string, idempotencyKey: string) => api.post<{ invocation: ConversationInvocationView; replayed: boolean }>(`${workspacePath(workspaceId)}/${encodeURIComponent(conversationId)}/invocations`, { body, idempotencyKey }),
+  cancelInvocation: (workspaceId: string, conversationId: string, id: string) => api.post<ConversationInvocationView>(`${workspacePath(workspaceId)}/${encodeURIComponent(conversationId)}/invocations/${encodeURIComponent(id)}/cancel`, {}),
   list: (workspaceId: string, options: { status?: "active" | "archived"; q?: string; targetId?: string; agentId?: string } = {}) => {
     const search = new URLSearchParams();
     if (options.status) search.set("status", options.status);

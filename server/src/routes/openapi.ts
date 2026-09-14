@@ -233,6 +233,8 @@ import {
   updateAgentDefinitionSchema,
   // Workspace conversations
   conversationListQuerySchema,
+  startConversationInvocationSchema,
+  CONVERSATION_INVOCATION_STATUSES,
   createConversationSchema,
   updateConversationSchema,
   switchConversationContextSchema,
@@ -895,6 +897,12 @@ const BOARD_ONLY_PREFIXES = [
 ];
 
 const BOARD_ONLY_OPERATIONS = new Set([
+  "GET /api/workspaces/{workspaceId}/conversation-runtime",
+  "GET /api/workspaces/{workspaceId}/conversations/{conversationId}/invocations",
+  "POST /api/workspaces/{workspaceId}/conversations/{conversationId}/invocations",
+  "GET /api/workspaces/{workspaceId}/conversations/{conversationId}/invocations/{invocationId}",
+  "GET /api/workspaces/{workspaceId}/conversations/{conversationId}/invocations/{invocationId}/events",
+  "POST /api/workspaces/{workspaceId}/conversations/{conversationId}/invocations/{invocationId}/cancel",
   "POST /api/workspaces/{workspaceId}/targets/{targetId}/github-ci-observations",
   "POST /api/workspaces/{workspaceId}/targets/{targetId}/github-fixed-ci-proofs",
   "GET /api/workspaces/{workspaceId}/targets/{targetId}/run-outbox-failures",
@@ -1153,7 +1161,7 @@ function applyDocumentFixups(document: any): any {
       type: "apiKey",
       in: "header",
       name: "X-Verrail-Chat-Token",
-      description: "Short-lived invocation-scoped Director token; local_trusted mode only.",
+      description: "Short-lived invocation-scoped Director token. Authenticated mode requires the configured execution gateway and a signed token bound to an active invocation and member.",
     },
     [BOARD_SESSION_AUTH_SCHEME]: {
       type: "apiKey",
@@ -1201,7 +1209,7 @@ function applyDocumentFixups(document: any): any {
       const key = operationKey(method, path);
       if (key === "POST /api/director/mcp") {
         operation.security = [{ DirectorInvocationToken: [] }];
-        operation["x-paperclip-authorization"] = { actor: "director_invocation", deploymentMode: "local_trusted" };
+        operation["x-paperclip-authorization"] = { actor: "director_invocation", deploymentModes: ["local_trusted", "authenticated"] };
       }
       if (authLevel !== "public") {
         const responses = (operation.responses ??= {}) as Record<string, unknown>;
@@ -2906,11 +2914,65 @@ registry.registerPath({
 
 // ─── Workspace conversations ────────────────────────────────────────────────
 
+const invocationParams = z.object({ workspaceId: z.string().uuid(), conversationId: z.string().uuid() });
+const invocationIdParams = invocationParams.extend({ invocationId: z.string().uuid() });
+const invocationViewSchema = z.object({
+  id: z.string().uuid(), workspaceId: z.string().uuid(), conversationId: z.string().uuid(),
+  sourceMessageId: z.string().uuid(), principalId: z.string(), agentVersionId: z.string().uuid(),
+  deploymentRevisionId: z.string().uuid(), status: z.enum(CONVERSATION_INVOCATION_STATUSES),
+  lastEventCursor: z.number().int().nonnegative(), output: z.string(), errorCode: z.string().nullable(),
+  createdAt: z.string().datetime(), startedAt: z.string().datetime().nullable(), finishedAt: z.string().datetime().nullable(),
+}).strict();
+const invocationStartResponse = z.object({ invocation: invocationViewSchema, replayed: z.boolean() }).strict();
+const invocationErrors = { 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict };
+
+registry.registerPath({
+  method: "get", path: "/api/workspaces/{workspaceId}/conversation-runtime", tags: ["conversations"],
+  summary: "Read the workspace conversation execution capability",
+  request: { params: z.object({ workspaceId: z.string().uuid() }) },
+  responses: { 200: r.ok(z.object({ mode: z.enum(["execution_gateway", "local_compatibility", "unavailable"]) }).strict()), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+registry.registerPath({
+  method: "post", path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/invocations", tags: ["conversations"],
+  summary: "Start or replay a member's version-pinned conversation invocation",
+  description: "Requires the configured execution gateway, an active OpenCode Director version and writable membership. The idempotency key belongs in the JSON body and is scoped to the initiating principal and conversation. Runtime credentials and authority cannot be supplied by the caller.",
+  request: { params: invocationParams, body: jsonBody(startConversationInvocationSchema) },
+  responses: { 200: { ...r.ok(invocationStartResponse), description: "Existing invocation replayed" }, 202: { ...r.ok(invocationStartResponse), description: "Invocation accepted" }, ...invocationErrors },
+});
+registry.registerPath({
+  method: "get", path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/invocations", tags: ["conversations"],
+  summary: "List persisted conversation invocations visible to a workspace member",
+  request: { params: invocationParams }, responses: { 200: r.ok(z.array(invocationViewSchema)), ...invocationErrors },
+});
+registry.registerPath({
+  method: "get", path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/invocations/{invocationId}", tags: ["conversations"],
+  summary: "Read persisted invocation output and terminal status",
+  request: { params: invocationIdParams }, responses: { 200: r.ok(invocationViewSchema), ...invocationErrors },
+});
+registry.registerPath({
+  method: "post", path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/invocations/{invocationId}/cancel", tags: ["conversations"],
+  summary: "Request cancellation as the invocation's initiating member",
+  description: "A cancellation request is not proof of process cleanup. Poll the invocation or follow its event stream for the terminal state. Repeated requests return the current state.",
+  request: { params: invocationIdParams, body: jsonBody(z.object({}).strict()) },
+  responses: { 202: { ...r.ok(invocationViewSchema), description: "Cancellation request acknowledged" }, ...invocationErrors },
+});
+registry.registerPath({
+  method: "get", path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/invocations/{invocationId}/events", tags: ["conversations"],
+  summary: "Replay and stream durable invocation events",
+  description: "Last-Event-ID takes precedence over the after query cursor. SSE event ids are persisted cursors; event types are start, chunk, cancel_requested, done and error. Disconnect or revoked membership ends delivery without canceling execution.",
+  request: {
+    params: invocationIdParams,
+    query: z.object({ after: z.coerce.number().int().min(0).max(2147483647).optional() }),
+    headers: z.object({ "Last-Event-ID": z.string().optional() }),
+  },
+  responses: { 200: { description: "Durable event stream", content: { "text/event-stream": { schema: z.string() } } }, ...invocationErrors },
+});
+
 registry.registerPath({
   method: "post",
   path: "/api/director/mcp",
   tags: ["conversations"],
-  summary: "Handle invocation-scoped Director MCP requests in local trusted mode",
+  summary: "Handle invocation-scoped Director MCP requests",
   request: { body: jsonBody(z.record(z.string(), z.unknown())) },
   responses: { 200: r.ok(), 202: { description: "Notification accepted" }, 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
