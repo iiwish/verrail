@@ -81,6 +81,11 @@ function unmountRoot(root: ReturnType<typeof createRoot>) {
 }
 
 describe("CloudAccessGate", () => {
+  it("opens the agent roster by default and preserves the lifecycle workspace", () => {
+    expect(appSource).toContain('<Route path="agents" element={<Agents />} />');
+    expect(appSource).toContain('<Route path="agents/lifecycle" element={<VerrailAgents />} />');
+    expect(appSource).not.toContain('<Route path="agents" element={<VerrailAgents />} />');
+  });
   let container: HTMLDivElement;
 
   beforeEach(() => {
@@ -264,6 +269,12 @@ describe("Decisions routes", () => {
 });
 
 describe("Verrail navigation routes", () => {
+  it("loads the target workbench on demand behind a loading boundary", () => {
+    expect(appSource).toContain('import("./pages/TargetWorkbench")');
+    expect(appSource).not.toContain('import { TargetWorkbench } from "./pages/TargetWorkbench"');
+    expect(appSource).toContain('<Suspense fallback={<VerrailLoading />}><LazyTargetWorkbench /></Suspense>');
+  });
+
   it("registers every reserved route before the plugin wildcard and keeps them behind the workspace gate", () => {
     const gateIndex = appSource.indexOf('<Route element={<VerrailNavigationGate />}>');
     const pluginWildcardIndex = appSource.indexOf('<Route path=":pluginRoutePath/*" element={<PluginPage />} />');
@@ -293,7 +304,7 @@ describe("Verrail navigation routes", () => {
     expect(appSource).toContain('path="governance/approvals"');
     expect(appSource).toContain('path="governance/audit"');
     expect(appSource).toContain('path="governance/costs"');
-    expect(appSource).toContain('<Route path="agents" element={<Navigate to="/agents/definitions" replace />} />');
+    expect(appSource).toContain('<Route path="agents" element={<Agents />} />');
     expect(appSource).toContain('<Route path="agents/definitions" element={<Agents />} />');
     expect(appSource).toContain('<Route path="agents/deployments" element={<AgentDeployments />} />');
     expect(appSource).not.toContain("VerrailOperationsIndex");

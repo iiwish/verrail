@@ -1,4 +1,15 @@
 export { agentAdapterTypeSchema, optionalAgentAdapterTypeSchema } from "./adapter-type.js";
+export {
+  DIRECTOR_INSTRUCTIONS_CONFIG_KEY,
+  directorRolePromptSchema,
+  previewDirectorInstructionsSchema,
+  applyDirectorInstructionsSchema,
+  directorInstructionsSnapshotSchema,
+  isWorkspaceDirector,
+  type DirectorInstructionsSnapshot,
+  type ApplyDirectorInstructionsInput,
+  type DirectorInstructionsView,
+} from "./director-instructions.js";
 export { type Collection, type CreateCollectionInput } from "./types/collection.js";
 export { createCollectionSchema } from "./validators/collection.js";
 export {
@@ -91,6 +102,7 @@ export {
   TARGET_CREATION_DRAFT_STATUSES,
   type Conversation,
   type ConversationDetail,
+  type SwitchConversationContextResult,
   type ConversationMessage,
   type ConversationMessageRole,
   type ConversationStatus,
@@ -110,6 +122,8 @@ export {
   conversationListQuerySchema,
   createConversationSchema,
   updateConversationSchema,
+  switchConversationContextSchema,
+  type SwitchConversationContextInput,
   sendConversationMessageSchema,
   targetCreationDraftStatusSchema,
   targetDraftResourceRefSchema,
@@ -2698,3 +2712,4 @@ export * from "./types/channel.js";
 export * from "./validators/channel.js";
 export * from "./types/criterion-proof.js";
 export * from "./validators/criterion-proof.js";
+export * from "./validators/director.js";

@@ -65,6 +65,28 @@ async function createApp(domainApi: any, actorOverride?: Record<string, unknown>
 }
 
 describe("native Target routes", () => {
+  it("searches Target titles and scopes cursors to the search term", async () => {
+    targetService.list.mockResolvedValue([model(), { ...model(), targetId: "00000000-0000-4000-8000-000000000099", title: "Another Target" }]);
+    const app = await createApp(domainApi);
+    const base = `/api/workspaces/${WORKSPACE_ID}/targets`;
+    expect((await request(app).get(base + "?q=another")).body.items).toHaveLength(1);
+    expect((await request(app).get(base + "?q=missing-title")).body.items).toHaveLength(0);
+    const first = await request(app).get(base + "?limit=1");
+    expect((await request(app).get(base + `?q=another&cursor=${encodeURIComponent(first.body.nextCursor)}`)).status).toBe(400);
+  });
+  it("excludes archived Targets by default, supports archived/all, and keeps their direct reads", async () => {
+    const archived = { ...model(), targetId: "00000000-0000-4000-8000-000000000099", archivedAt: "2026-09-11T06:00:00.000Z", archiveVersion: 1 };
+    targetService.list.mockResolvedValue([model(), archived]);
+    targetService.getByTargetId.mockResolvedValue(archived);
+    const app = await createApp(null);
+    const base = `/api/workspaces/${WORKSPACE_ID}/targets`;
+    expect((await request(app).get(base)).body.items.map((row: TargetReadModelV1) => row.targetId)).toEqual([TARGET_ID]);
+    expect((await request(app).get(base + "?archiveState=archived")).body.items.map((row: TargetReadModelV1) => row.targetId)).toEqual([archived.targetId]);
+    expect((await request(app).get(base + "?archiveState=all")).body.items).toHaveLength(2);
+    expect((await request(app).get(base + "/" + archived.targetId)).body.archivedAt).toBe(archived.archivedAt);
+    const first = await request(app).get(base + "?archiveState=all&limit=1");
+    expect((await request(app).get(base + `?archiveState=archived&cursor=${encodeURIComponent(first.body.nextCursor)}`)).status).toBe(400);
+  });
   const domainApi = {
     reviseTargetProof: vi.fn(),
     createTarget: vi.fn(),

@@ -55,6 +55,7 @@ Codex 等 Harness 负责高质量执行单个编码任务；Verrail 负责跨任
 7. **执行面可替换**：HostTrusted、CubeSandbox、容器或未来 Kubernetes 只实现 Runtime Backend，不拥有业务事实。
 8. **Go 采用目标内核加绞杀迁移**：Go 是 Verrail 新领域与编排内核的目标语言，但不以逐行翻译或一次性重写 Paperclip 全部能力作为路线。
 9. **会话不自动升级为目标**：Conversation 承载长期讨论与多个意图；显式创建目标的请求只启动 TargetCreationDraft，完整草稿经人类确认后才成为 Target。
+10. **会话是系统操作入口**：用户可以通过会话发起有权执行的系统能力，不受当前目标限制。会话有零或一个可切换的当前目标并可关联多个目标；Director 可响应明确意图切换上下文。上下文不授予权限，领域操作、人工批准和验收仍由各自命令与门禁裁决。
 10. **Collection 是可选归类**：Target 直接属于 Workspace；Collection 只聚合相关 Target 和视图，不是创建前置、权限边界或可变策略真相源。
 
 ## 4. 基座策略

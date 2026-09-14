@@ -2,16 +2,71 @@ package target
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type agentCommandMeta struct {
 	WorkspaceID, CommandType, IdempotencyKey, RequestHash string
 	Principal                                             Principal
+}
+
+// Registered workspaces are resolved once; historical revisions retain their pinned path.
+func resolveDeploymentWorkspace(ctx context.Context, tx pgx.Tx, workspaceID string, config map[string]any) (map[string]any, error) {
+	value, ok := config["projectWorkspaceId"]
+	if !ok {
+		return config, nil
+	}
+	id, ok := value.(string)
+	if !ok || !uuidPattern.MatchString(id) {
+		return nil, validation("projectWorkspaceId must be a UUID")
+	}
+	var cwd, sourceType *string
+	if err := tx.QueryRow(ctx, `select cwd,source_type from project_workspaces where id=$1 and company_id=$2`, id, workspaceID).Scan(&cwd, &sourceType); errors.Is(err, pgx.ErrNoRows) {
+		return nil, NotFound()
+	} else if err != nil {
+		return nil, err
+	}
+	if cwd == nil || !filepath.IsAbs(*cwd) || strings.ContainsRune(*cwd, 0) || (sourceType != nil && *sourceType != "local_path") {
+		return nil, validation("Deployment requires a registered local workspace with an absolute path")
+	}
+	resolved := make(map[string]any, len(config)+1)
+	for key, item := range config {
+		resolved[key] = item
+	}
+	resolved["cwd"] = *cwd
+	return resolved, nil
+}
+
+func activationRuntimeConfig(ctx context.Context, tx pgx.Tx, workspaceID, versionID string, fallback map[string]any) (map[string]any, error) {
+	var mode string
+	var savedCwd *string
+	if err := tx.QueryRow(ctx, `select coalesce(v.supply_chain->>'mode',''),a.adapter_config->>'cwd' from verrail_agent_versions v join verrail_agent_definitions d on d.id=v.agent_definition_id and d.workspace_id=v.workspace_id left join agents a on a.id=d.compatibility_agent_id and a.company_id=d.workspace_id where v.id=$1 and v.workspace_id=$2`, versionID, workspaceID).Scan(&mode, &savedCwd); err != nil {
+		return nil, err
+	}
+	if mode == "director_chat" {
+		return map[string]any{}, nil
+	}
+	result := make(map[string]any)
+	for key, value := range fallback {
+		result[key] = value
+	}
+	if savedCwd != nil && strings.TrimSpace(*savedCwd) != "" {
+		result["cwd"] = strings.TrimSpace(*savedCwd)
+		delete(result, "projectWorkspaceId")
+	}
+	cwd, ok := result["cwd"].(string)
+	if !ok || !filepath.IsAbs(cwd) || strings.ContainsRune(cwd, 0) {
+		return nil, &Error{Status: 409, Code: "AGENT_ENVIRONMENT_REQUIRED", Message: "Configure a local working directory in agent runtime settings before activation"}
+	}
+	return result, nil
 }
 
 func lifecycleMeta[T any](command AgentLifecycleCommand[T]) agentCommandMeta {
@@ -137,12 +192,25 @@ func (store *Store) CreateAgentDefinition(ctx context.Context, command AgentLife
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	if command.Input.CompatibilityAgentID != nil {
+		if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock(hashtextextended($1, 0))`, command.WorkspaceID+"\nagent-definition\n"+*command.Input.CompatibilityAgentID); err != nil {
+			return AgentLifecycleResult{}, err
+		}
 		var exists bool
 		if err := tx.QueryRow(ctx, `select exists(select 1 from agents where id=$1 and company_id=$2)`, *command.Input.CompatibilityAgentID, command.WorkspaceID).Scan(&exists); err != nil || !exists {
 			if err != nil {
 				return AgentLifecycleResult{}, err
 			}
 			return AgentLifecycleResult{}, NotFound()
+		}
+		var existingID string
+		if err := tx.QueryRow(ctx, `select id from verrail_agent_definitions where workspace_id=$1 and compatibility_agent_id=$2 order by created_at limit 1`, command.WorkspaceID, *command.Input.CompatibilityAgentID).Scan(&existingID); err == nil {
+			result := AgentLifecycleResult{SchemaVersion: SchemaVersion, ResourceType: "agent_definition", ResourceID: existingID}
+			if err := finishAgentCommand(ctx, tx, meta, result, "agent_definition.reused"); err != nil {
+				return result, err
+			}
+			return result, nil
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return AgentLifecycleResult{}, err
 		}
 	}
 	id, _ := NewUUID()
@@ -302,7 +370,8 @@ func assertPassingEvaluation(ctx context.Context, tx pgx.Tx, workspaceID, versio
 	return nil
 }
 
-func (store *Store) CreateDeployment(ctx context.Context, command AgentLifecycleCommand[CreateDeploymentInput]) (AgentLifecycleResult, error) {
+func (store *Store) CreateDeployment(ctx context.Context, command AgentLifecycleCommand[CreateDeploymentInput]) (out AgentLifecycleResult, outErr error) {
+	defer func() { outErr = activationWriteError(outErr) }()
 	meta := lifecycleMeta(command)
 	tx, replay, err := store.beginAgentCommand(ctx, meta)
 	if err != nil {
@@ -321,10 +390,27 @@ func (store *Store) CreateDeployment(ctx context.Context, command AgentLifecycle
 	if definitionID != command.Input.AgentDefinitionID {
 		return AgentLifecycleResult{}, validation("AgentVersion does not belong to AgentDefinition")
 	}
+	if _, err := tx.Exec(ctx, `select id from verrail_agent_definitions where id=$1 and workspace_id=$2 for update`, definitionID, command.WorkspaceID); err != nil {
+		return AgentLifecycleResult{}, err
+	}
+	var hasDeployment bool
+	if err := tx.QueryRow(ctx, `select exists(select 1 from verrail_deployments where agent_definition_id=$1 and workspace_id=$2 and is_primary)`, definitionID, command.WorkspaceID).Scan(&hasDeployment); err != nil {
+		return AgentLifecycleResult{}, err
+	}
+	if hasDeployment {
+		return AgentLifecycleResult{}, &Error{Status: 409, Code: "AGENT_DEPLOYMENT_EXISTS", Message: "Select the existing deployment and activate a version instead of creating another deployment"}
+	}
+	if err := assertActivatableAgentVersion(ctx, tx, command.WorkspaceID, command.Input.AgentVersionID); err != nil {
+		return AgentLifecycleResult{}, err
+	}
 	if err := assertPassingEvaluation(ctx, tx, command.WorkspaceID, command.Input.AgentVersionID, command.Input.EvaluationRunID); err != nil {
 		return AgentLifecycleResult{}, err
 	}
 	if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock(hashtextextended($1, 0))`, command.WorkspaceID+"\ndefault-deployment"); err != nil {
+		return AgentLifecycleResult{}, err
+	}
+	// Historical identities remain available to existing Run references, never to activation.
+	if _, err := tx.Exec(ctx, `update verrail_deployments set status='retired',is_default=false,name=case when name=$3 then name || ' [' || id::text || ']' else name end,updated_at=now() where agent_definition_id=$1 and workspace_id=$2 and not is_primary`, definitionID, command.WorkspaceID, command.Input.Name); err != nil {
 		return AgentLifecycleResult{}, err
 	}
 	var hasDefault bool
@@ -339,9 +425,17 @@ func (store *Store) CreateDeployment(ctx context.Context, command AgentLifecycle
 	}
 	deploymentID, _ := NewUUID()
 	revisionID, _ := NewUUID()
-	config, _ := json.Marshal(command.Input.RuntimeConfig)
-	digest := command.RequestHash
-	if _, err := tx.Exec(ctx, `insert into verrail_deployments(id,workspace_id,agent_definition_id,name,status,is_default,created_by_principal_type,created_by_principal_id) values($1,$2,$3,$4,'active',$5,'user',$6)`, deploymentID, command.WorkspaceID, command.Input.AgentDefinitionID, command.Input.Name, isDefault, command.Principal.ID); err != nil {
+	resolvedConfig, err := resolveDeploymentWorkspace(ctx, tx, command.WorkspaceID, command.Input.RuntimeConfig)
+	if err != nil {
+		return AgentLifecycleResult{}, err
+	}
+	resolvedConfig, err = activationRuntimeConfig(ctx, tx, command.WorkspaceID, command.Input.AgentVersionID, resolvedConfig)
+	if err != nil {
+		return AgentLifecycleResult{}, err
+	}
+	config, _ := json.Marshal(resolvedConfig)
+	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(command.RequestHash+"\n"+string(config))))
+	if _, err := tx.Exec(ctx, `insert into verrail_deployments(id,workspace_id,agent_definition_id,name,status,is_default,is_primary,created_by_principal_type,created_by_principal_id) values($1,$2,$3,$4,'active',$5,true,'user',$6)`, deploymentID, command.WorkspaceID, command.Input.AgentDefinitionID, command.Input.Name, isDefault, command.Principal.ID); err != nil {
 		return AgentLifecycleResult{}, err
 	}
 	if _, err := tx.Exec(ctx, `insert into verrail_deployment_revisions(id,workspace_id,deployment_id,revision_number,agent_version_id,evaluation_run_id,state,runtime_config,content_hash,created_by_principal_type,created_by_principal_id) values($1,$2,$3,1,$4,$5,'active',$6::jsonb,$7,'user',$8)`, revisionID, command.WorkspaceID, deploymentID, command.Input.AgentVersionID, command.Input.EvaluationRunID, config, digest, command.Principal.ID); err != nil {
@@ -369,7 +463,27 @@ func deploymentRevisionGate(action, status string) error {
 	return &Error{Status: 409, Code: "DEPLOYMENT_RETIRED", Message: "Retired Deployment cannot accept action " + action}
 }
 
-func (store *Store) ReviseDeployment(ctx context.Context, command AgentLifecycleCommand[ReviseDeploymentInput]) (AgentLifecycleResult, error) {
+func assertActivatableAgentVersion(ctx context.Context, tx pgx.Tx, workspaceID, versionID string) error {
+	var source, mode, model, runtime string
+	if err := tx.QueryRow(ctx, `select coalesce(supply_chain->>'source',''), coalesce(supply_chain->>'mode',''), model,runtime from verrail_agent_versions where id=$1 and workspace_id=$2`, versionID, workspaceID).Scan(&source, &mode, &model, &runtime); err != nil {
+		return NotFound()
+	}
+	if source != "saved_agent_configuration.v2" || strings.TrimSpace(model) == "" || model == "unconfigured" || model == "runtime_default" || (mode != "director_chat" && mode != "compatibility_executor") || (mode == "director_chat" && runtime != "codex" && runtime != "claude") {
+		return &Error{Status: 409, Code: "AGENT_VERSION_REPUBLISH_REQUIRED", Message: "Publish a version with pinned runtime settings before activation"}
+	}
+	return nil
+}
+
+func activationWriteError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && (pgErr.Code == "40001" || pgErr.Code == "40P01") {
+		return &Error{Status: 409, Code: "AGENT_REVISION_CONFLICT", Message: "The effective revision changed concurrently; reload before updating"}
+	}
+	return err
+}
+
+func (store *Store) ReviseDeployment(ctx context.Context, command AgentLifecycleCommand[ReviseDeploymentInput]) (out AgentLifecycleResult, outErr error) {
+	defer func() { outErr = activationWriteError(outErr) }()
 	meta := lifecycleMeta(command)
 	tx, replay, err := store.beginAgentCommand(ctx, meta)
 	if err != nil {
@@ -380,10 +494,29 @@ func (store *Store) ReviseDeployment(ctx context.Context, command AgentLifecycle
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var definitionID, status string
-	if err := tx.QueryRow(ctx, `select agent_definition_id,status from verrail_deployments where id=$1 and workspace_id=$2 for update`, command.ResourceID, command.WorkspaceID).Scan(&definitionID, &status); errors.Is(err, pgx.ErrNoRows) {
+	if err := tx.QueryRow(ctx, `select agent_definition_id,status from verrail_deployments where id=$1 and workspace_id=$2`, command.ResourceID, command.WorkspaceID).Scan(&definitionID, &status); errors.Is(err, pgx.ErrNoRows) {
 		return AgentLifecycleResult{}, NotFound()
 	} else if err != nil {
 		return AgentLifecycleResult{}, err
+	}
+	if _, err := tx.Exec(ctx, `select id from verrail_agent_definitions where id=$1 and workspace_id=$2 for update`, definitionID, command.WorkspaceID); err != nil {
+		return AgentLifecycleResult{}, err
+	}
+	if err := tx.QueryRow(ctx, `select status from verrail_deployments where id=$1 for update`, command.ResourceID).Scan(&status); err != nil {
+		return AgentLifecycleResult{}, err
+	}
+	if err := deploymentRevisionGate(command.Input.Action, status); err != nil {
+		return AgentLifecycleResult{}, err
+	}
+	var primaryID string
+	if err := tx.QueryRow(ctx, `select coalesce((select id::text from verrail_deployments where agent_definition_id=$1 and workspace_id=$2 and is_primary),'none')`, definitionID, command.WorkspaceID).Scan(&primaryID); err != nil {
+		return AgentLifecycleResult{}, err
+	}
+	if command.Input.Action == "activate" && (primaryID != command.Input.ExpectedPrimaryDeploymentID || primaryID != command.ResourceID) {
+		return AgentLifecycleResult{}, &Error{Status: 409, Code: "AGENT_BINDING_CONFLICT", Message: "The primary deployment changed; reload before activating"}
+	}
+	if primaryID != "none" && command.Input.Action != "activate" && (command.Input.Action == "upgrade" || command.Input.Action == "rollback" || command.Input.Action == "resume") {
+		return AgentLifecycleResult{}, &Error{Status: 409, Code: "AGENT_ACTIVATION_REQUIRED", Message: "Use version activation with an observed revision to update or resume this agent"}
 	}
 	if err := deploymentRevisionGate(command.Input.Action, status); err != nil {
 		return AgentLifecycleResult{}, err
@@ -407,11 +540,14 @@ func (store *Store) ReviseDeployment(ctx context.Context, command AgentLifecycle
 		}
 		return result, nil
 	}
-	var versionID, evaluationID, currentState string
+	var versionID, evaluationID, currentState, currentRevisionID string
 	var configBytes []byte
 	var nextNumber int
-	if err := tx.QueryRow(ctx, `select agent_version_id,evaluation_run_id,state,runtime_config,revision_number+1 from verrail_deployment_revisions where deployment_id=$1 order by revision_number desc limit 1`, command.ResourceID).Scan(&versionID, &evaluationID, &currentState, &configBytes, &nextNumber); err != nil {
+	if err := tx.QueryRow(ctx, `select agent_version_id,evaluation_run_id,state,runtime_config,revision_number+1,id from verrail_deployment_revisions where deployment_id=$1 order by revision_number desc limit 1`, command.ResourceID).Scan(&versionID, &evaluationID, &currentState, &configBytes, &nextNumber, &currentRevisionID); err != nil {
 		return AgentLifecycleResult{}, err
+	}
+	if command.Input.ExpectedDeploymentRevisionID != nil && *command.Input.ExpectedDeploymentRevisionID != currentRevisionID {
+		return AgentLifecycleResult{}, &Error{Status: 409, Code: "AGENT_REVISION_CONFLICT", Message: "The effective revision changed; reload before updating"}
 	}
 	newState := "active"
 	eventType := "deployment." + command.Input.Action
@@ -430,7 +566,7 @@ func (store *Store) ReviseDeployment(ctx context.Context, command AgentLifecycle
 	case "retire":
 		newState = "retired"
 		status = "retired"
-	case "upgrade":
+	case "upgrade", "activate":
 		versionID = *command.Input.AgentVersionID
 		evaluationID = *command.Input.EvaluationRunID
 		var candidateDefinition string
@@ -440,11 +576,13 @@ func (store *Store) ReviseDeployment(ctx context.Context, command AgentLifecycle
 		if candidateDefinition != definitionID {
 			return AgentLifecycleResult{}, validation("AgentVersion does not belong to Deployment definition")
 		}
+		if command.Input.Action == "activate" {
+			if err := assertActivatableAgentVersion(ctx, tx, command.WorkspaceID, versionID); err != nil {
+				return AgentLifecycleResult{}, err
+			}
+		}
 		if err := assertPassingEvaluation(ctx, tx, command.WorkspaceID, versionID, evaluationID); err != nil {
 			return AgentLifecycleResult{}, err
-		}
-		if command.Input.RuntimeConfig != nil {
-			configBytes, _ = json.Marshal(command.Input.RuntimeConfig)
 		}
 		status = "active"
 	case "rollback":
@@ -458,11 +596,32 @@ func (store *Store) ReviseDeployment(ctx context.Context, command AgentLifecycle
 		}
 		status = "active"
 	}
-	if command.Input.RuntimeConfig != nil && command.Input.Action != "upgrade" {
-		configBytes, _ = json.Marshal(command.Input.RuntimeConfig)
+	if command.Input.Action == "activate" {
+		if _, err := tx.Exec(ctx, `update verrail_deployments set is_primary=true where id=$1 and workspace_id=$2`, command.ResourceID, command.WorkspaceID); err != nil {
+			return AgentLifecycleResult{}, err
+		}
+	}
+	if command.Input.RuntimeConfig != nil {
+		resolvedConfig, err := resolveDeploymentWorkspace(ctx, tx, command.WorkspaceID, command.Input.RuntimeConfig)
+		if err != nil {
+			return AgentLifecycleResult{}, err
+		}
+		configBytes, _ = json.Marshal(resolvedConfig)
+	}
+	if command.Input.Action == "activate" {
+		var previousConfig map[string]any
+		if err := json.Unmarshal(configBytes, &previousConfig); err != nil {
+			return AgentLifecycleResult{}, err
+		}
+		config, err := activationRuntimeConfig(ctx, tx, command.WorkspaceID, versionID, previousConfig)
+		if err != nil {
+			return AgentLifecycleResult{}, err
+		}
+		configBytes, _ = json.Marshal(config)
 	}
 	revisionID, _ := NewUUID()
-	if _, err := tx.Exec(ctx, `insert into verrail_deployment_revisions(id,workspace_id,deployment_id,revision_number,agent_version_id,evaluation_run_id,state,runtime_config,content_hash,created_by_principal_type,created_by_principal_id) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,'user',$10)`, revisionID, command.WorkspaceID, command.ResourceID, nextNumber, versionID, evaluationID, newState, configBytes, command.RequestHash, command.Principal.ID); err != nil {
+	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(command.RequestHash+"\n"+string(configBytes))))
+	if _, err := tx.Exec(ctx, `insert into verrail_deployment_revisions(id,workspace_id,deployment_id,revision_number,agent_version_id,evaluation_run_id,state,runtime_config,content_hash,created_by_principal_type,created_by_principal_id) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,'user',$10)`, revisionID, command.WorkspaceID, command.ResourceID, nextNumber, versionID, evaluationID, newState, configBytes, digest, command.Principal.ID); err != nil {
 		return AgentLifecycleResult{}, err
 	}
 	if _, err := tx.Exec(ctx, `update verrail_deployments set status=$1,updated_at=now() where id=$2`, status, command.ResourceID); err != nil {

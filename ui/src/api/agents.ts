@@ -26,6 +26,8 @@ import type {
   AgentConfigRevision,
   ClearAgentErrorResponse,
   AgentApiKeyScope,
+  DirectorInstructionsView,
+  ApplyDirectorInstructionsInput,
 } from "@paperclipai/shared";
 import type {
   AdapterModelProfileDefinition,
@@ -155,6 +157,12 @@ export const agentsApi = {
     api.patch<AgentDetail>(agentPath(id, companyId, "/permissions"), data),
   instructionsBundle: (id: string, companyId?: string) =>
     api.get<AgentInstructionsBundle>(agentPath(id, companyId, "/instructions-bundle")),
+  directorInstructions: (id: string, companyId?: string) =>
+    api.get<DirectorInstructionsView>(agentPath(id, companyId, "/director-instructions")),
+  previewDirectorInstructions: (id: string, rolePrompt: string, companyId?: string) =>
+    api.post<DirectorInstructionsView>(agentPath(id, companyId, "/director-instructions/preview"), { rolePrompt }),
+  applyDirectorInstructions: (id: string, data: ApplyDirectorInstructionsInput, companyId?: string) =>
+    api.put<DirectorInstructionsView>(agentPath(id, companyId, "/director-instructions"), data),
   updateInstructionsBundle: (
     id: string,
     data: {

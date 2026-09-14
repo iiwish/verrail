@@ -37,6 +37,7 @@ export {
   verrailConversations,
   verrailConversationMessages,
   verrailConversationContextBindings,
+  verrailConversationContextChanges,
   verrailProviderConversationBindings,
   verrailTargetCreationDrafts,
   verrailTargetCreationDraftRevisions,

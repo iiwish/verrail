@@ -218,6 +218,40 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(container.querySelector(APPS_TOGGLE_SELECTOR)?.getAttribute("aria-checked")).toBe("true");
   });
 
+  const compatibilitySettings = [
+    ["enableCases", "Toggle cases experimental setting"],
+    ["enableSimplifiedEnglishInteractions", "Toggle simplified english interactions experimental setting"],
+    ["enableSmokeLab", "Toggle smoke lab experimental setting"],
+    ["enableIssuePlanDecompositions", "Toggle task plan decomposition panel experimental setting"],
+  ] as const;
+
+  it.each(compatibilitySettings)("omits inactive compatibility setting %s without changing saved settings", async (_key, label) => {
+    await renderPage();
+    expect(container.querySelector(`button[aria-label="${label}"]`)).toBeNull();
+    expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
+  });
+
+  it.each(compatibilitySettings)("keeps active compatibility setting %s switchable off", async (key, label) => {
+    currentExperimentalSettings[key] = true;
+    await renderPage();
+    const toggle = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    await act(() => toggle?.click());
+    await flushReact();
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({ [key]: false });
+    expect(container.querySelector(`button[aria-label="${label}"]`)).toBeNull();
+  });
+
+  it("restores the compatibility control when disabling fails", async () => {
+    currentExperimentalSettings.enableCases = true;
+    mockInstanceSettingsApi.updateExperimental.mockRejectedValueOnce(new Error("Update denied"));
+    await renderPage();
+    await act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Toggle cases experimental setting"]')?.click());
+    await flushReact();
+    expect(container.querySelector('button[aria-label="Toggle cases experimental setting"]')?.getAttribute("aria-checked")).toBe("true");
+    expect(container.textContent).toContain("Update denied");
+  });
+
   it("does not render the Conference Room Chat experimental setting for now", async () => {
     await renderPage();
 
@@ -766,6 +800,21 @@ describe("InstanceExperimentalSettings — cloud-managed keys", () => {
     expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
       enableSummaries: true,
     });
+  });
+
+  it("keeps inactive managed compatibility settings visible and locked", async () => {
+    await renderPage({
+      ...defaultExperimentalSettings(),
+      managedKeys: {
+        enableCases: { managed: true, managedBy: "paperclip-cloud" },
+      },
+    });
+    const toggle = container.querySelector<HTMLButtonElement>('button[aria-label="Toggle cases experimental setting"]');
+    expect(toggle?.getAttribute("aria-checked")).toBe("false");
+    expect(toggle?.disabled).toBe(true);
+    expect(container.textContent).toContain(MANAGED_BADGE_TEXT);
+    await act(() => toggle?.click());
+    expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
   });
 
   it("locks Status Cards when managed Summaries is disabled", async () => {

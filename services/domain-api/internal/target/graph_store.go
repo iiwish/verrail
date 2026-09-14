@@ -48,8 +48,8 @@ func (store *Store) CreateGraphRevision(ctx context.Context, command CreateGraph
 	if err := assertCreateScope(ctx, tx, CreateCommand{WorkspaceID: command.WorkspaceID, Principal: command.Principal}); err != nil {
 		return CreateGraphRevisionResult{}, err
 	}
-	var activeTargetRevisionID, workGraphID string
-	err = tx.QueryRow(ctx, `select target.active_target_revision_id, graph.id from verrail_targets target join verrail_work_graphs graph on graph.target_id=target.id and graph.workspace_id=target.workspace_id where target.workspace_id=$1 and target.id=$2 for update`, command.WorkspaceID, command.TargetID).Scan(&activeTargetRevisionID, &workGraphID)
+	var activeTargetRevisionID, workGraphID, targetStatus string
+	err = tx.QueryRow(ctx, `select target.active_target_revision_id, graph.id, target.status from verrail_targets target join verrail_work_graphs graph on graph.target_id=target.id and graph.workspace_id=target.workspace_id where target.workspace_id=$1 and target.id=$2 for update`, command.WorkspaceID, command.TargetID).Scan(&activeTargetRevisionID, &workGraphID, &targetStatus)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return CreateGraphRevisionResult{}, NotFound()
 	}
@@ -58,6 +58,9 @@ func (store *Store) CreateGraphRevision(ctx context.Context, command CreateGraph
 	}
 	if activeTargetRevisionID != command.Input.ExpectedTargetRevisionID {
 		return CreateGraphRevisionResult{}, &Error{Status: 409, Code: "TARGET_REVISION_CONFLICT", Message: "Target active revision changed"}
+	}
+	if targetStatus == "canceled" {
+		return CreateGraphRevisionResult{}, &Error{Status: 409, Code: "TARGET_CANCELED", Message: "Canceled Targets cannot create execution graphs"}
 	}
 	var revisionNumber int
 	if err := tx.QueryRow(ctx, `select coalesce(max(revision_number),0)+1 from verrail_graph_revisions where work_graph_id=$1`, workGraphID).Scan(&revisionNumber); err != nil {
@@ -81,7 +84,7 @@ func (store *Store) CreateGraphRevision(ctx context.Context, command CreateGraph
 		}
 		if node.Kind == "agent_task" {
 			var validDeploymentRevision bool
-			err := tx.QueryRow(ctx, `select exists(select 1 from verrail_deployment_revisions revision join verrail_deployments deployment on deployment.id=revision.deployment_id and deployment.workspace_id=revision.workspace_id where revision.id=$1 and revision.workspace_id=$2 and revision.state='active' and deployment.status='active' and not exists(select 1 from verrail_deployment_revisions newer where newer.deployment_id=revision.deployment_id and newer.revision_number>revision.revision_number))`, node.ResponsiblePrincipal.PrincipalID, command.WorkspaceID).Scan(&validDeploymentRevision)
+			err := tx.QueryRow(ctx, `select exists(select 1 from verrail_deployment_revisions revision join verrail_deployments deployment on deployment.id=revision.deployment_id and deployment.workspace_id=revision.workspace_id where revision.id=$1 and revision.workspace_id=$2 and revision.state='active' and deployment.status='active' and deployment.is_primary and not exists(select 1 from verrail_deployment_revisions newer where newer.deployment_id=revision.deployment_id and newer.revision_number>revision.revision_number))`, node.ResponsiblePrincipal.PrincipalID, command.WorkspaceID).Scan(&validDeploymentRevision)
 			if err != nil {
 				return CreateGraphRevisionResult{}, err
 			}
@@ -143,15 +146,18 @@ func (store *Store) ActivateGraphRevision(ctx context.Context, command ActivateG
 	if err := assertCreateScope(ctx, tx, CreateCommand{WorkspaceID: command.WorkspaceID, Principal: command.Principal}); err != nil {
 		return ActivateGraphRevisionResult{}, err
 	}
-	var workGraphID, targetRevisionID, status string
+	var workGraphID, targetRevisionID, status, targetStatus string
 	var revisionNumber int
 	var activatedAt *time.Time
-	err = tx.QueryRow(ctx, `select revision.work_graph_id,revision.target_revision_id,revision.revision_number,revision.status,revision.activated_at from verrail_graph_revisions revision join verrail_targets target on target.id=revision.target_id and target.workspace_id=revision.workspace_id and target.active_target_revision_id=revision.target_revision_id where revision.workspace_id=$1 and revision.target_id=$2 and revision.id=$3 for update of revision`, command.WorkspaceID, command.TargetID, command.GraphRevisionID).Scan(&workGraphID, &targetRevisionID, &revisionNumber, &status, &activatedAt)
+	err = tx.QueryRow(ctx, `select revision.work_graph_id,revision.target_revision_id,revision.revision_number,revision.status,revision.activated_at,target.status from verrail_graph_revisions revision join verrail_targets target on target.id=revision.target_id and target.workspace_id=revision.workspace_id and target.active_target_revision_id=revision.target_revision_id where revision.workspace_id=$1 and revision.target_id=$2 and revision.id=$3 for update of target,revision`, command.WorkspaceID, command.TargetID, command.GraphRevisionID).Scan(&workGraphID, &targetRevisionID, &revisionNumber, &status, &activatedAt, &targetStatus)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ActivateGraphRevisionResult{}, NotFound()
 	}
 	if err != nil {
 		return ActivateGraphRevisionResult{}, err
+	}
+	if targetStatus == "canceled" {
+		return ActivateGraphRevisionResult{}, &Error{Status: 409, Code: "TARGET_CANCELED", Message: "Canceled Targets cannot activate execution graphs"}
 	}
 	if status == "active" && activatedAt != nil {
 		result := ActivateGraphRevisionResult{CreateGraphRevisionResult: CreateGraphRevisionResult{SchemaVersion: SchemaVersion, TargetID: command.TargetID, TargetRevisionID: targetRevisionID, WorkGraphID: workGraphID, GraphRevisionID: command.GraphRevisionID, RevisionNumber: revisionNumber}, ActivatedAt: activatedAt.UTC().Format(time.RFC3339Nano)}
@@ -481,7 +487,7 @@ func (store *Store) CreateRun(ctx context.Context, command CreateRunCommand) (Cr
 		return CreateRunResult{}, &Error{Status: 409, Code: "RUN_ACTOR_DEPLOYMENT_MISMATCH", Message: "Run actor must match the WorkNode DeploymentRevision"}
 	}
 	var resolvedVersionID string
-	err = tx.QueryRow(ctx, `select revision.agent_version_id from verrail_deployment_revisions revision join verrail_deployments deployment on deployment.id=revision.deployment_id and deployment.workspace_id=revision.workspace_id where revision.id=$1 and revision.workspace_id=$2 and revision.state='active' and deployment.status='active' and not exists(select 1 from verrail_deployment_revisions newer where newer.deployment_id=revision.deployment_id and newer.revision_number>revision.revision_number)`, *responsibleID, command.WorkspaceID).Scan(&resolvedVersionID)
+	err = tx.QueryRow(ctx, `select revision.agent_version_id from verrail_deployment_revisions revision join verrail_deployments deployment on deployment.id=revision.deployment_id and deployment.workspace_id=revision.workspace_id where revision.id=$1 and revision.workspace_id=$2 and revision.state='active' and deployment.status='active' and deployment.is_primary and not exists(select 1 from verrail_deployment_revisions newer where newer.deployment_id=revision.deployment_id and newer.revision_number>revision.revision_number)`, *responsibleID, command.WorkspaceID).Scan(&resolvedVersionID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return CreateRunResult{}, &Error{Status: 409, Code: "DEPLOYMENT_REVISION_NOT_ACTIVE", Message: "Run DeploymentRevision is no longer active"}
 	}

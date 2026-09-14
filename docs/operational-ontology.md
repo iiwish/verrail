@@ -70,6 +70,16 @@ Conversation 未显式绑定 Agent 时解析 Workspace 默认 Agent Deployment�
 
 TargetCreationDraft 是 Conversation 中由明确创建目标意图启动的结构化草稿，固定发起 Principal、来源 Message、字段来源和 Draft Version。Agent 可以通过多轮消息更新 Draft 建议，但只有具备权限的人类确认完整版本后，幂等 CreateTarget 命令才创建 Target 与首个 TargetRevision。普通消息不创建 Draft；Draft 也不拥有 Target 状态。详细状态与确认合同见 [`conversation-target-creation.md`](./conversation-target-creation.md)。
 
+Conversation 的当前目标是零或一个 Workspace 内 Target 引用，与多个 ContextBinding 关联关系分离。当前目标不授予权限，不改变 Target 所有权，也不固定未来领域操作的 TargetRevision。历史 TargetRevision 绑定表示来源或引用事实，不能被当作目标的实时版本。
+
+Target 关联与解除关联命令共享会话上下文版本、幂等收据和写入锁。关联不改变焦点；解除当前目标同时清空焦点。解除操作不删除来源 Draft、TargetRevision 或消息快照，不取消目标执行。迟到提案保留原请求归属，不能重新建立已被较新上下文操作移除的关联。目标侧来源会话标记读取已转换 Draft 的来源事实，不能由客户端标签声明，也不是访问授权。
+
+上下文切换命令记录预期上下文版本、前后 Target 引用、发起 Principal、来源 Message 或界面操作及幂等键，原子更新当前目标和单调递增的上下文版本并写入审计。清除也是版本化切换；重复回执不再次执行，过期版本不覆盖其他人的选择。目标必须存在于同一 Workspace 且发起人有权访问。切换由 Human 或受限 Agent 工具发起，不赋予 Agent 人工决定权限。
+
+每条请求消息固定发送时的当前目标与上下文版本；Invocation 及领域提案固定本次实际解析的对象和所需领域版本。切换不修改已固定的请求、提案、Run 或历史。ContextBinding 的引用关系、Conversation 的当前目标与请求的对象快照分别回答“讨论涉及什么”“之后默认讨论什么”和“这一操作实际作用于什么”。
+
+Conversation 是系统操作入口而非授权主体。每次调用以当次发起人的有效权限、Deployment 能力、Grant、ResourceScope 和 Policy 共同裁决；共享会话不共享人类授权，关联关系不能扩展可见性。低风险上下文切换可直接执行，领域变更及独立审批仍遵守各自命令合同。
+
 ### Principal 与 RoleBinding
 
 Principal 是 Human、Group、ServiceAccount、Agent Deployment 或 Runner Identity。RoleBinding 把 Principal 绑定到 Workspace 或明确 ResourceScope 下的角色。身份、工作责任和授权分别计算。
@@ -79,6 +89,8 @@ Principal 是 Human、Group、ServiceAccount、Agent Deployment 或 Runner Ident
 Workspace 内的轻量可选 Target 分组，用于聚合、筛选和保存视图。Collection 不拥有 Target，不承载成员、资源、权限或策略，也不是 Target 创建前置。
 
 ### Target 与 TargetRevision
+
+Target 的 `archivedAt` 与执行状态正交；`archiveVersion` 是归档元数据的并发控制版本。任何状态的 Target 都可以归档或恢复，命令校验预期归档版本并产生幂等回执和审计，不创建 TargetRevision，不改变工作图、Run、Evidence 或 Acceptance。归档默认隐藏常规列表条目，但详情与待处理事项仍可访问；恢复不启动执行。
 
 Target 是 Workspace 内可被验收结果的稳定身份，可以不关联任何 Collection。TargetRevision 是不可变的责任合同，固定 Goal、Constraints、AcceptanceCriteria、RiskLevel、Deadline、OutcomeOwner、ResourceRefs 和适用策略摘要。目标、约束、验收条件、资源或责任边界变化必须创建新 Revision。
 
@@ -100,6 +112,8 @@ Stage 是面向人的稳定交付阶段和导航投影。StageTemplate 定义顺
 ### WorkGraph 与 GraphRevision
 
 WorkGraph 是 Target 的计划容器。GraphRevision 是不可变节点与边快照，必须绑定一个 TargetRevision，并记录输入、角色解析、预算、策略注入和来源提案。重规划创建新 Revision，不原地修改已激活版本。
+
+工作台的关系图版本选择器区分当前生效、草稿和历史版本。TargetWorkspace 的 graphVersions 提供同 Workspace、Target 的版本标识、序号、状态、目标版本、创建时间和各版本节点投影；节点状态是该版本的当前事实，不是创建时状态快照。切换查看版本不改变活动图。运行列表保留并展示 Run 原始 GraphRevision 绑定；停止运行不删除图版本，后续重规划生成新版本。
 
 ### WorkNode
 
@@ -129,6 +143,8 @@ AgentSession 是 Agent 的逻辑上下文边界，不等于 Channel Thread、Tem
 ### AgentDefinition、AgentVersion 与 Deployment
 
 AgentDefinition 是可编辑设计容器。AgentVersion 是不可变发布快照，固定 Runtime、模型、Prompt、Skill、工具、输出 Schema、Capability 上限和供应链信息。Deployment 是生产调用身份，固定一个 AgentVersion 和版本化运行配置。WorkNode 指派最终绑定到 Deployment Revision，而不是可变 Agent 草稿。
+
+当前单服务器产品中，一个 AgentDefinition 最多拥有一个主 Deployment（`isPrimary`）。更新与回滚追加该入口的 DeploymentRevision，不创建平行运行身份。历史非主 Deployment 仅保留追溯，不接受新图绑定或新 Run。Director 回复固定并记录 AgentVersion 与 DeploymentRevision；草稿保存不形成运行状态变化。启用需要版本绑定验证和人工命令，暂停阻止新请求，进行中的请求保持固定版本。
 
 ### EvaluationRun 与 ImprovementProposal
 

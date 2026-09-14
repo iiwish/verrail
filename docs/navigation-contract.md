@@ -54,6 +54,10 @@ Home 支持 Collection、Role、Stage、Status 和 Owner 筛选。没有真实�
 
 Chat 是紧随 Home 的一级工作入口。`/chat` 展示新会话入口和最近会话，`/chat/:conversationId` 展示持久线程。上下文侧栏提供 New chat、Search、Pinned、Recent 和 Archived；基础管理包含创建、自动命名、重命名、置顶、搜索、归档和恢复，不以硬删除作为默认操作。
 
+最近会话按最后一条消息时间降序排列，没有消息时使用创建时间；显示时间与排序依据一致，同时间按稳定 ID 排序。重命名、归档恢复或上下文选择不单独提升最近排名。置顶会话独立展示。会话标题与当前目标选择器共用一行，不提供重复的页头 New Target 按钮；会话意图与草稿操作保留创建能力。
+
+会话头部显示零或一个“当前目标”，支持打开、搜索选择、切换和清除；不把当前目标呈现为访问范围。多个关联目标使用折叠入口，目标侧提供有权查看的相关会话。普通新会话不要求选目标，从目标工作台新建会话聚焦该目标；普通查询其他目标不更改持续上下文。Director 可响应明确意图切换当前目标，界面展示切换结果与恢复上一上下文的操作，不弹出领域审批卡片。无当前目标的会话仍可发起系统操作；具体对象、权限与确认规则由相应命令决定。
+
 Conversation 属于当前 Workspace。一个 Provider 群聊或私聊映射为一个持久 Conversation；Web Chat 创建独立 Conversation。Conversation 可以显式绑定 Target、可选 Collection、Stage 或 ArtifactRevision。对话回复中的 TargetCreationDraft、Target、Run、ActionRequest、Approval、Artifact、Evidence、Review 和 Acceptance 必须作为可跳转、可检查的对象呈现。聊天记录不构成 Target、Target 完成、Evidence、外部 Effect 批准或 Acceptance。
 
 普通消息不会出现目标草稿。只有用户明确要求创建目标时，系统才显示 TargetCreationDraft，通过后续多轮消息补齐缺失信息，并在授权人确认完整版本后创建 Target。具体合同见 [`conversation-target-creation.md`](./conversation-target-creation.md)。
@@ -70,7 +74,7 @@ Collections 是 Targets 下的轻量管理表面，使用 `/collections` 创建�
 | --- | --- | --- |
 | Target 列表 | `/targets` | Workspace 内 Target、筛选、Attention、状态和可选归类 |
 | Target Workbench | `/targets/:targetId` | 默认跳转 Overview |
-| Target Tab | `/targets/:targetId/:tab` | 主视图为 `overview`（工作台）、`delivery`（交付）、`timeline`（动态）；`work`、`runs`、`stages` 兼容映射到工作台，后两者展开对应内容；`artifacts`、`evidence`、`acceptance`、`submission` 兼容映射到交付 |
+| Target Tab | `/targets/:targetId/:tab` | 主视图为 `overview`（工作台）、`delivery`（交付）、`timeline`（动态）；`work`、`runs`、`stages` 兼容映射到工作台，`runs` 展开全部运行；`artifacts`、`evidence`、`acceptance`、`submission` 兼容映射到交付 |
 | TargetRevision Snapshot | `/targets/:targetId/revisions/:targetRevisionId` | 不可变责任合同、适用 Graph、Criterion、Submission 和历史；非活动 Revision 默认只读 |
 | Work Detail | `/targets/:targetId/work/:workNodeId` | Task/Gate 输入、责任、结果、Evidence 和历史 |
 | Submission Detail | `/targets/:targetId/submissions/:submissionId` | 固定 TargetRevision、ArtifactRevision、VerificationResult、Review 和 Acceptance |
@@ -87,14 +91,14 @@ Target Workbench 始终显示 Target 标题、状态、Outcome Owner、当前 St
 
 | 表面 | 二级路由 |
 | --- | --- |
-| Agents | `/agents/definitions`、`/agents/evaluations`、`/agents/deployments` |
+| Agents | `/agents/definitions` 与智能体对象列表；对象详情通过 `/agents/:agentId/versions` 管理版本与部署 |
 | Infrastructure | `/infrastructure/secrets`、`/infrastructure/environments`、`/infrastructure/adapters`、`/infrastructure/plugins` |
 | Governance | `/governance/attention`、`/governance/approvals`、`/governance/audit`、`/governance/costs` |
 | Settings | `/settings/general`、`/settings/members`、`/settings/access`、`/settings/integrations`、`/settings/billing`、`/settings/experimental` |
 
 Infrastructure 与 Governance 使用和 Settings 一致的上下文二级侧栏。一级入口直接进入第一个可操作页面，不使用只包含链接的聚合列表。二级侧栏只发布具备真实读取、操作、空状态和错误状态的能力；Runner、Runtime Pool、Connector、Storage、Policy 和数据策略在对应能力可用前不显示占位入口。
 
-Agents 使用对象列表型上下文二级侧栏。侧栏主体是当前 Principal 可见的 Agent 列表，提供创建、快速切换、运行状态和选中态；All Agents 是集合入口，Deployments 是运行投影视图，不与 Agent 对象列表竞争主体位置。Definitions 的配置与版本能力归入具体 Agent 工作区；Evaluations 只有在真实评测合同和页面可用后显示。`All`、`Active`、`Paused`、`Error` 和 `Built-in` 是集合页筛选，不定义二级领域栏目。
+Agents 使用对象列表型上下文二级侧栏。侧栏主体是当前 Principal 可见的 Agent 列表，提供创建、快速切换、运行状态和选中态；All Agents 是集合入口，版本与部署归入具体 Agent 的详情标签页，不作为重复的二级菜单。智能体顶部提供已保存配置的版本发布操作。独立 Evaluations 入口只有在真实评测合同和页面可用后显示；人工录入验证结果不代表运行评测。`All`、`Active`、`Paused`、`Error` 和 `Built-in` 是集合页筛选，不定义二级领域栏目。旧 `/agents/deployments` 和 `/agents/lifecycle` 保留兼容访问。
 
 Infrastructure 的当前页面复用既有 Environment、Secret、Adapter 和 Plugin 能力，Governance 的当前页面复用 Attention、Approval、Activity 和 Cost 能力。Canonical Route 负责稳定导航身份，兼容路由继续保留原有深链、API 和写入所有权。Settings 只承担 Workspace 与实例配置，不重复展示已经归属 Infrastructure 的 Environment、Secret、Adapter 和 Plugin 管理入口。
 

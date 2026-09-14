@@ -52,6 +52,8 @@ function filterFingerprint(query: TargetListQuery) {
   return createHash("sha256").update(JSON.stringify({
     readModelPolicyVersion: TARGET_READ_MODEL_POLICY_VERSION,
     collectionId: query.collectionId ?? null,
+    q: query.q ?? null,
+    archiveState: query.archiveState,
     status: query.status ?? null,
     ownerId: query.ownerId ?? null,
     attention: query.attention ?? null,
@@ -93,6 +95,9 @@ function sortTargets(left: TargetReadModelV1, right: TargetReadModelV1) {
 
 function applyFilters(items: TargetReadModelV1[], query: TargetListQuery) {
   return items.filter((item) => {
+    if (query.q && !`${item.title}\n${item.summary ?? ""}`.toLocaleLowerCase().includes(query.q.toLocaleLowerCase())) return false;
+    if (query.archiveState === "unarchived" && item.archivedAt) return false;
+    if (query.archiveState === "archived" && !item.archivedAt) return false;
     if (query.collectionId && item.collection?.id !== query.collectionId) return false;
     if (query.status && item.status !== query.status) return false;
     if (query.ownerId && item.outcomeOwner?.principalId !== query.ownerId) return false;
@@ -464,7 +469,7 @@ export function targetRoutes(
     }, {
       principalType: actor.actorType,
       principalId: actor.actorId,
-    }, { trustedContext: true });
+    }, { trustedContext: true, initialTargetId: model.targetId });
     await logActivity(db, {
       companyId: workspaceId,
       actorType: actor.actorType,

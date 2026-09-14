@@ -5,6 +5,11 @@ node_modules/
 dist/
 ui/storybook-static/
 .env
+.env.*
+!.env.example
+!.env.*.example
+!.env.sample
+!.env.template
 *.tsbuildinfo
 drizzle/meta/
 .vite/
@@ -76,3 +81,14 @@ tests/storybook-visual/playwright-report/
 
 # OpenCode orchestration session data
 .omo/
+
+# Local native-run output staging (uploaded artifacts are content-addressed).
+/.verrail/run-artifacts/
+
+# Local raw delivery output; keep specs, receipts, manifests, verification
+# summaries, reviews, screenshots and timelines versioned. Archive referenced
+# raw evidence before sharing; use git add -f for deliberately retained logs.
+/.verrail/targets/**/*.log
+/.verrail/targets/**/runs/**/*.tar.gz
+/.verrail/targets/**/runs/**/*.tgz
+/.verrail/targets/**/runs/**/*.zip

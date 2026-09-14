@@ -601,7 +601,8 @@ describe("TargetWorkbench", () => {
     await renderWorkbench();
     expect(container.textContent).toContain("Release Verrail");
     expect(container.textContent).toContain("Owner");
-    expect(container.textContent).toContain("Release a governed version");
+    await act(async () => (Array.from(container.querySelectorAll("header button")).find((item) => item.textContent === "Goal and constraints") as HTMLButtonElement).click());
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Release a governed version");
     expect(container.textContent).toContain("Work Graph");
     expect(container.textContent).toContain("Delivery");
     expect(Array.from(container.querySelectorAll('#target-section-select option')).map((option) => option.textContent)).toEqual(["Workbench", "Delivery", "Activity"]);
@@ -655,6 +656,20 @@ describe("TargetWorkbench", () => {
     expect(container.querySelector('a[href="/VER/issues/VER-1"]')).toBeNull();
   });
 
+  it("uses the graph for progress and keeps goal details free of repeated header metadata", async () => {
+    route.tab = "stages";
+    await renderWorkbench();
+    expect(container.querySelector(".target-work-graph")).not.toBeNull();
+    expect(Array.from(container.querySelectorAll("summary")).some((item) => item.textContent === "Stages")).toBe(false);
+    const trigger = Array.from(container.querySelectorAll("header button")).find((item) => item.textContent === "Goal and constraints") as HTMLButtonElement;
+    await act(async () => trigger.click());
+    const details = document.querySelector('[role="dialog"]');
+    expect(details?.textContent).toContain("Release a governed version.");
+    expect(details?.textContent).not.toContain("Outcome owner");
+    expect(details?.textContent).not.toContain("Risk");
+    expect(container.querySelector("header")?.textContent).toContain("Owner");
+  });
+
   it("opens a server-validated Target-bound conversation", async () => {
     await renderWorkbench();
     const button = Array.from(container.querySelectorAll("button"))
@@ -666,6 +681,120 @@ describe("TargetWorkbench", () => {
 
     expect(createConversation).toHaveBeenCalledWith("workspace-1", "target-1");
     expect(navigate).toHaveBeenCalledWith("/chat/conversation-1");
+  });
+
+  it("puts the graph before detailed attention and inspects only the bound command", async () => {
+    const workspace = targetWorkspace();
+    getWorkspace.mockResolvedValue({
+      ...workspace,
+      outcome: { ...workspace.outcome, state: "blocked" },
+      actionRequests: [actionFact()],
+      attention: [{ id: "attention-action", kind: "action_execution_required", severity: "warning", resourceType: "action_request", resourceId: ACTION_ID, workNodeId: null, runId: null, detail: "create_pull_request" }],
+      availableCommands: workspace.availableCommands.map((command) => command.id === "execute_action" ? { ...command, resourceId: ACTION_ID, reason: "An approved ActionRequest and current Acceptance are required." } : command),
+    });
+    await renderWorkbench();
+    const actions = container.querySelector('section[aria-labelledby="target-commands-title"]')!;
+    const graph = container.querySelector(".target-work-graph")!;
+    expect(graph.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(actions.textContent).toContain("current acceptance");
+    expect(actions.textContent).not.toContain("No action available in this view");
+    const inspect = actions.querySelector<HTMLButtonElement>('button[aria-label^="Inspect ·"]')!;
+    await act(async () => inspect.click());
+    expect(container.querySelector('[data-command-id="execute_action"]')?.textContent).toContain("current acceptance");
+    expect(container.querySelector('[data-command-id="create_graph_revision"]')).toBeNull();
+    expect(container.querySelector('[data-command-id="execute_action"]')?.textContent).toContain("Inspect delivery");
+    expect(executeAction).not.toHaveBeenCalled();
+  });
+
+  it("does not show an executing external action as waiting for another write", async () => {
+    getWorkspace.mockResolvedValue({
+      ...targetWorkspace(),
+      actionRequests: [{ ...actionFact(), status: "executing" }],
+      attention: [{ id: "attention-action", kind: "action_execution_required", severity: "warning", resourceType: "action_request", resourceId: ACTION_ID, workNodeId: null, runId: null, detail: null }],
+    });
+    await renderWorkbench();
+    expect(container.textContent).toContain("External action is executing");
+    expect(container.textContent).toContain("do not issue the write again");
+    expect(executeAction).not.toHaveBeenCalled();
+  });
+
+  it("inspects a named deployment beside the graph and opens only the chosen run", async () => {
+    const workspace = targetWorkspace();
+    getWorkspace.mockResolvedValue({ ...workspace, work: [{ ...workspace.work[0], responsiblePrincipal: { principalType: "agent", principalId: "deployment-revision-1" } }], runs: runFixtures() });
+    await renderWorkbench();
+    const select = container.querySelector<HTMLSelectElement>('select[aria-label="Inspect a node"]')!;
+    await act(async () => { select.value = "node-1"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    const inspector = container.querySelector(".target-graph-inspector")!;
+    expect(inspector.textContent).toContain("Production");
+    expect(inspector.querySelector("dl")?.textContent).not.toContain("deployment-revision-1");
+    const run = Array.from(inspector.querySelectorAll("button")).find((button) => button.textContent?.includes("View run"))!;
+    await act(async () => run.click());
+    const runSection = container.querySelector('section[aria-label="View run"]')!;
+    expect(runSection.textContent).toContain("adapter crashed");
+    expect(runSection.textContent).not.toContain("agent-2");
+    expect(container.querySelector(".target-graph-inspector")).toBeNull();
+    expect(createRunAttempt).not.toHaveBeenCalled();
+  });
+
+  it("explains active execution without an empty command catalog", async () => {
+    getWorkspace.mockResolvedValue({ ...targetWorkspace(), runs: [runFixtures()[1]] });
+    await renderWorkbench();
+    const actions = container.querySelector('section[aria-labelledby="target-commands-title"]')!;
+    expect(actions.textContent).toContain("Execution is in progress");
+    expect(actions.querySelectorAll("[data-command-id]")).toHaveLength(0);
+  });
+
+  it("withholds commands when a refresh fails instead of treating cached facts as current", async () => {
+    const workspace = targetWorkspace();
+    getWorkspace.mockResolvedValueOnce({ ...workspace, availableCommands: [{ id: "create_run", state: "available", reason: null, resourceId: "node-1" }] }).mockRejectedValue(new Error("offline"));
+    await renderWorkbench();
+    expect(container.querySelector('[data-command-id="create_run"] button')).not.toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Refresh authoritative facts"]')!.click());
+    await flushReact();
+    expect(container.textContent).toContain("These facts may be outdated");
+    expect(container.querySelector('[data-command-id="create_run"] button')).toBeNull();
+    expect(createRun).not.toHaveBeenCalled();
+  });
+
+  it("closes the node inspector with Escape and returns keyboard focus to the selector", async () => {
+    await renderWorkbench();
+    const select = container.querySelector<HTMLSelectElement>('select[aria-label="Inspect a node"]')!;
+    await act(async () => { select.value = "node-1"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(container.querySelector(".target-graph-inspector")).not.toBeNull();
+    await act(async () => select.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(container.querySelector(".target-graph-inspector")).toBeNull();
+    expect(document.activeElement).toBe(select);
+  });
+
+  it("inspects historical graph versions without offering current run actions", async () => {
+    const workspace = targetWorkspace();
+    getWorkspace.mockResolvedValue({ ...workspace, graphVersions: [
+      { id: workspace.graph!.activeGraphRevisionId!, revisionNumber: 2, status: "active", targetRevisionId: workspace.targetRevisionId, createdAt: workspace.generatedAt, work: workspace.work },
+      { id: "old-graph", revisionNumber: 1, status: "superseded", targetRevisionId: workspace.targetRevisionId, createdAt: workspace.generatedAt, work: [{ ...workspace.work[0], id: "old-node", graphRevisionId: "old-graph", title: "Historical work" }] },
+    ] });
+    await renderWorkbench();
+    expect(container.querySelector(".target-node-grid")).toBeNull();
+    const versions = container.querySelector<HTMLSelectElement>('select[aria-label="Graph version"]')!;
+    await act(async () => { versions.value = "old-graph"; versions.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(container.textContent).toContain("Read-only version");
+    const nodes = container.querySelector<HTMLSelectElement>('select[aria-label="Inspect a node"]')!;
+    await act(async () => { nodes.value = "old-node"; nodes.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(container.querySelector(".target-graph-inspector")?.textContent).toContain("Historical work");
+    expect(container.querySelector(".target-graph-inspector")?.textContent).not.toContain("View run");
+    expect(createRun).not.toHaveBeenCalled();
+  });
+
+  it("keeps version and node inspection available in the expanded graph", async () => {
+    await renderWorkbench();
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Full screen"]')!.click());
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.querySelector(".target-work-graph")).not.toBeNull();
+    const selector = dialog.querySelector<HTMLSelectElement>('select[aria-label="Inspect a node"]')!;
+    await act(async () => { selector.value = "node-1"; selector.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(dialog.querySelector(".target-graph-inspector")).not.toBeNull();
+    await act(async () => dialog.querySelector<HTMLButtonElement>('button[aria-label="Exit full screen"]')!.click());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector(".target-graph-inspector")).not.toBeNull();
   });
 
   it("keeps candidate-only commands visible without offering board impersonation", async () => {

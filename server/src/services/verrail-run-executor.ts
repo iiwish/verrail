@@ -16,6 +16,7 @@ import {
 } from "@paperclipai/db";
 import type { ReportRunEventResponseV1, RunArtifactInputV1 } from "@paperclipai/shared";
 import { nativeRunArtifactDirectory } from "./verrail-run-artifacts.js";
+import { publicationHash } from "./agent-publication.js";
 import { NATIVE_OUTPUT_CONTEXT_KEY, validateNativeOutputReceipt, type NativeOutputReceipt } from "./verrail-native-output.js";
 import type { VerrailDomainApiClient } from "./verrail-domain-api-client.js";
 import { NATIVE_SOURCE_CONTEXT_KEY, validateNativeSourceObservation, type NativeSourceObservation } from "./verrail-native-source.js";
@@ -49,6 +50,7 @@ export interface NativeRunLeaseCandidate {
   agentRuntime: string;
   agentModel: string;
   agentPrompt: string;
+  agentSupplyChain?: Record<string, unknown>;
   compatibilityAgentId: string | null;
   compatibilityAgentWorkspaceId: string | null;
   compatibilityAgentAdapterType: string | null;
@@ -182,6 +184,10 @@ function validateCandidate(candidate: NativeRunLeaseCandidate, executorPrincipal
   if (!candidate.compatibilityAgentId || candidate.compatibilityAgentWorkspaceId !== candidate.workspaceId) {
     return "AgentDefinition has no same-workspace compatibility executor.";
   }
+  if (candidate.agentSupplyChain?.source === "saved_agent_configuration.v2") {
+    return candidate.agentSupplyChain.mode === "compatibility_executor" && candidate.agentSupplyChain.agentId === candidate.compatibilityAgentId
+      ? null : "Published execution version identity is invalid.";
+  }
   if (candidate.compatibilityAgentAdapterType !== candidate.agentRuntime) {
     return "Versioned runtime does not match the compatibility executor adapter.";
   }
@@ -191,7 +197,14 @@ function validateCandidate(candidate: NativeRunLeaseCandidate, executorPrincipal
   if (candidate.agentModel !== configuredModel) {
     return "Versioned model does not match the compatibility executor model.";
   }
-  if (candidate.agentPrompt.trim() !== (candidate.compatibilityAgentCapabilities ?? "").trim()) {
+  const snapshot = candidate.agentSupplyChain;
+  if (snapshot?.source === "saved_agent_configuration.v1") {
+    if (snapshot.mode !== "compatibility_executor" || snapshot.agentId !== candidate.compatibilityAgentId
+      || snapshot.executionConfigHash !== publicationHash(candidate.compatibilityAgentAdapterConfig ?? {})
+      || snapshot.capabilitiesHash !== publicationHash(candidate.compatibilityAgentCapabilities ?? "")) {
+      return "Saved configuration differs from the published version. Publish and validate the saved configuration before execution.";
+    }
+  } else if (candidate.agentPrompt.trim() !== (candidate.compatibilityAgentCapabilities ?? "").trim()) {
     return "Versioned prompt does not match the compatibility executor capabilities prompt.";
   }
   return null;
@@ -250,6 +263,7 @@ export function createDrizzleVerrailRunExecutorStore(db: Db): VerrailRunExecutor
           agentRuntime: verrailAgentVersions.runtime,
           agentModel: verrailAgentVersions.model,
           agentPrompt: verrailAgentVersions.prompt,
+          agentSupplyChain: verrailAgentVersions.supplyChain,
           compatibilityAgentId: verrailAgentDefinitions.compatibilityAgentId,
           compatibilityAgentWorkspaceId: agents.companyId,
           compatibilityAgentAdapterType: agents.adapterType,

@@ -79,6 +79,14 @@ function formatActivationTimestamp(iso: string): string {
 // PAP-11233: keep Conference Room code intact, but hide the user-facing opt-in for now.
 const SHOW_CONFERENCE_ROOM_EXPERIMENTAL_SETTING = false;
 
+// Keep active compatibility features controllable without offering new opt-ins.
+const COMPATIBILITY_ONLY_SETTINGS = new Set<InstanceFeatureKey>([
+  "enableCases",
+  "enableSimplifiedEnglishInteractions",
+  "enableSmokeLab",
+  "enableIssuePlanDecompositions",
+]);
+
 function ManagedByCloudBadge() {
   return (
     <Badge variant="outline" className="text-muted-foreground">
@@ -113,6 +121,7 @@ function ExperimentalToggleCard({
   const { hidden: hiddenSettings } = useHiddenSettings();
   const isManaged = managed?.managed === true;
   if (hiddenSettings.has(experimentalSettingKey(settingKey))) return null;
+  if (COMPATIBILITY_ONLY_SETTINGS.has(settingKey) && !checked && !isManaged) return null;
   return (
     <Card className="block p-5">
       <div className="flex items-start justify-between gap-4">

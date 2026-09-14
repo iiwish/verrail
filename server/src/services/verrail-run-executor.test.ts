@@ -15,6 +15,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { captureNativeOutput, finalizeNativeOutputReceipt } from "./verrail-native-output.js";
 import { captureNativeSource, NATIVE_SOURCE_CONTEXT_KEY, unavailableNativeSource } from "./verrail-native-source.js";
+import { publicationHash } from "./agent-publication.js";
 
 function candidate(overrides: Partial<NativeRunLeaseCandidate> = {}): NativeRunLeaseCandidate {
   return {
@@ -138,6 +139,31 @@ function harness(input: { lease?: NativeRunLeaseCandidate; heartbeat?: NativeHea
 }
 
 describe("verrail native run executor", () => {
+  it("dispatches v2 using its pinned identity despite draft edits, but rejects Director execution", async () => {
+    const lease = candidate({ agentPrompt: "Pinned behavior", agentSupplyChain: { source: "saved_agent_configuration.v2", mode: "compatibility_executor", agentId: "agent-1" }, compatibilityAgentAdapterConfig: { model: "unpublished-model", promptTemplate: "unpublished" } });
+    const pinned = harness({ lease });
+    await pinned.runner.tick();
+    expect(pinned.heartbeatExecutor.invoke).toHaveBeenCalledOnce();
+    const director = harness({ lease: { ...lease, agentSupplyChain: { ...lease.agentSupplyChain, mode: "director_chat" } } });
+    await director.runner.tick();
+    expect(director.heartbeatExecutor.invoke).not.toHaveBeenCalled();
+  });
+  it("accepts saved instruction snapshots only while runtime configuration matches", async () => {
+    const lease = candidate({ agentPrompt: "Actual saved behavior", agentSupplyChain: {
+      source: "saved_agent_configuration.v1", mode: "compatibility_executor", agentId: "agent-1",
+      executionConfigHash: publicationHash({ model: "gpt-5.6-sol" }), capabilitiesHash: publicationHash("Pinned delivery prompt."),
+    } });
+    const valid = harness({ lease });
+    await valid.runner.tick();
+    expect(valid.heartbeatExecutor.invoke).toHaveBeenCalledOnce();
+    const drifted = harness({ lease: { ...lease, compatibilityAgentAdapterConfig: { model: "gpt-5.6-sol", promptTemplate: "unpublished" } } });
+    await drifted.runner.tick();
+    expect(drifted.heartbeatExecutor.invoke).not.toHaveBeenCalled();
+    expect(drifted.reports.at(-1)?.payload?.errorCode).toBe("NATIVE_EXECUTION_IDENTITY_INVALID");
+    const director = harness({ lease: { ...lease, agentSupplyChain: { ...lease.agentSupplyChain, mode: "director_chat" } } });
+    await director.runner.tick();
+    expect(director.heartbeatExecutor.invoke).not.toHaveBeenCalled();
+  });
   it.each(["succeeded", "failed"])("projects only independently correlated persisted source into %s facts", async (status) => {
     const source = unavailableNativeSource({ workspaceId: "workspace-1", heartbeatRunId: "heartbeat-1", agentId: "agent-1", runId: "run-1", attemptId: "attempt-1", deploymentRevisionId: "deployment-revision-1", agentVersionId: "version-1" }, "not_git");
     const test = harness({ heartbeat: heartbeatRun({ status, nativeSourceObservation: source }) });

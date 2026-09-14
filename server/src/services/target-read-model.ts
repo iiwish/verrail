@@ -1176,6 +1176,8 @@ export function targetReadModelService(db: Db) {
       title: row.revision.title,
       summary: row.revision.summary,
       status: projection.status,
+      archivedAt: asIso(row.target.archivedAt),
+      archiveVersion: row.target.archiveVersion,
       outcome: projection.outcome,
       outcomeOwner: {
         principalType: row.revision.outcomeOwnerPrincipalType as "user" | "agent",
@@ -1318,6 +1320,17 @@ export function targetReadModelService(db: Db) {
         targetRevisionId: model.activeTargetRevisionId,
         workspaceId: model.workspaceId,
         generatedAt: new Date().toISOString(),
+        graphVersions: facts.graphRevisions
+          .filter((revision) => revision.targetId === model.targetId && revision.workspaceId === model.workspaceId)
+          .sort((a, b) => b.revisionNumber - a.revisionNumber)
+          .map((revision) => ({
+            id: revision.id,
+            revisionNumber: revision.revisionNumber,
+            status: revision.status,
+            targetRevisionId: revision.targetRevisionId,
+            createdAt: revision.createdAt.toISOString(),
+            work: facts.nodes.filter((node) => node.graphRevisionId === revision.id).map(mapWorkNode),
+          })),
         graph: graph ? {
           workGraphId: graph.id,
           activeGraphRevisionId: graph.activeGraphRevisionId,

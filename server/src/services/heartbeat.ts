@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { materializeVersionInstructions, readManagedAgentVersion, readPinnedExecutionVersion, versionedAdapterConfig } from "./agent-effective-version.js";
 import path from "node:path";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
@@ -14166,6 +14167,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
 
     activeRunExecutions.add(run.id);
     let runScratch: HeartbeatRunScratch | null = null;
+    let versionInstructionsRoot: string | null = null;
 
     try {
     const agent = await getAgent(run.agentId);
@@ -14184,8 +14186,29 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       return;
     }
 
-    const runtime = await ensureRuntimeState(agent);
     const context = parseObject(run.contextSnapshot);
+    const nativeWorkspace = await resolveNativeRunWorkspace(db, {
+      heartbeatRunId: run.id, workspaceId: agent.companyId, agentId: agent.id, context,
+    });
+    const managedVersion = nativeWorkspace ? null : await readManagedAgentVersion(db, agent.companyId, agent.id);
+    const executionVersion = nativeWorkspace ? await readPinnedExecutionVersion(db, agent.companyId, nativeWorkspace.agentVersionId) : managedVersion?.version;
+    if (executionVersion?.supplyChain?.source === "saved_agent_configuration.v2") {
+      const version = executionVersion;
+      // Provider sessions must not retain system instructions from another version or draft.
+      context.forceFreshSession = true;
+      const pinnedConfig = versionedAdapterConfig(parseObject(agent.adapterConfig), version, agent.id);
+      const instructions = await materializeVersionInstructions(version);
+      versionInstructionsRoot = instructions.root;
+      agent.adapterConfig = { ...pinnedConfig, ...instructions.config };
+      agent.adapterType = version.runtime;
+      agent.capabilities = version.prompt;
+      if (managedVersion) {
+        agent.adapterConfig = { ...agent.adapterConfig, cwd: managedVersion.revision.runtimeConfig.cwd };
+        context.verrailEffectiveVersion = { agentVersionId: managedVersion.version.id, deploymentRevisionId: managedVersion.revision.id, contentHash: managedVersion.version.contentHash };
+        await db.update(heartbeatRuns).set({ contextSnapshot: context, updatedAt: new Date() }).where(eq(heartbeatRuns.id, run.id));
+      }
+    }
+    const runtime = await ensureRuntimeState(agent);
     delete context[NATIVE_SOURCE_CONTEXT_KEY];
     delete context[NATIVE_OUTPUT_CONTEXT_KEY];
     const taskKey = deriveTaskKeyWithHeartbeatFallback(context, null);
@@ -14364,9 +14387,6 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
             executionPolicy: issueContext.executionPolicy,
           }
         : null,
-    });
-    const nativeWorkspace = await resolveNativeRunWorkspace(db, {
-      heartbeatRunId: run.id, workspaceId: agent.companyId, agentId: agent.id, context,
     });
     const config: Record<string, unknown> = { ...parseObject(agent.adapterConfig), ...(nativeWorkspace ? {cwd: nativeWorkspace.cwd} : {}) };
     if (nativeWorkspace) context.verrailEnvironmentManifest = nativeWorkspace;
@@ -14769,7 +14789,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     } else {
       delete context.paperclipModelProfile;
     }
-    const mergedConfig = mergeModelProfileAdapterConfig({
+    const mergedConfig = executionVersion?.supplyChain?.source === "saved_agent_configuration.v2" ? workspaceManagedConfig : mergeModelProfileAdapterConfig({
       baseConfig: workspaceManagedConfig,
       modelProfile: modelProfileApplication,
       issueAdapterConfig: issueAssigneeOverrides?.adapterConfig ?? null,
@@ -14820,16 +14840,23 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     } else {
       delete context.paperclipSecrets;
     }
-    const effectiveResolvedConfig = applyRunScopedMentionedSkillKeys(
+    const effectiveResolvedConfig = executionVersion?.supplyChain?.source === "saved_agent_configuration.v2" ? resolvedConfig : applyRunScopedMentionedSkillKeys(
       resolvedConfig,
       runScopedMentionedSkillKeys,
     );
     const runtimeSkillPreference = readPaperclipSkillSyncPreference(effectiveResolvedConfig);
     const runtimeSkillEntries = await companySkills.listRuntimeSkillEntries(agent.companyId, {
       versionSelections: skillVersionSelectionMap(runtimeSkillPreference.desiredSkillEntries, {
-        versionPinsEnabled: resolvedInstanceSettings.experimental.enableBetaSkills === true,
+        versionPinsEnabled: executionVersion?.supplyChain?.source === "saved_agent_configuration.v2" || resolvedInstanceSettings.experimental.enableBetaSkills === true,
       }),
     });
+    if (executionVersion?.supplyChain?.source === "saved_agent_configuration.v2") {
+      for (const skill of runtimeSkillPreference.desiredSkillEntries) {
+        if (!skill.versionId || !runtimeSkillEntries.some((entry) => entry.key === skill.key && entry.versionId === skill.versionId && entry.sourceStatus === "available")) {
+          throw new Error("PINNED_SKILL_UNAVAILABLE: published skill version cannot be materialized");
+        }
+      }
+    }
     let runtimeConfig: Record<string, unknown> = {
       ...effectiveResolvedConfig,
       paperclipRuntimeSkills: runtimeSkillEntries,
@@ -17136,6 +17163,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
               });
             }
           }
+          if (versionInstructionsRoot) await fs.rm(versionInstructionsRoot, { recursive: true, force: true }).catch(() => undefined);
           activeRunExecutions.delete(run.id);
           await startNextQueuedRunForAgent(run.agentId);
         }

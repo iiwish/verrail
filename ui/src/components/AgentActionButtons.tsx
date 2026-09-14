@@ -36,6 +36,7 @@ import { agentRouteRef } from "../lib/utils";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { useDialogActions } from "../context/DialogContext";
 import { useToastActions } from "../context/ToastContext";
+import { useTranslation } from "@/i18n";
 import {
   buildDuplicateAgentPayload,
   duplicateAgentName,
@@ -60,7 +61,7 @@ export function RunButton({
   size?: "sm" | "default";
 }) {
   return (
-    <Button variant="outline" size={size} onClick={onClick} disabled={disabled}>
+    <Button variant="outline" size={size} onClick={onClick} disabled={disabled} aria-label={label} title={label}>
       <Play className="h-3.5 w-3.5 sm:mr-1" />
       <span className="hidden sm:inline">{label}</span>
     </Button>
@@ -80,19 +81,20 @@ export function PauseResumeButton({
   disabled?: boolean;
   size?: "sm" | "default";
 }) {
+  const { t } = useTranslation();
   if (isPaused) {
     return (
-      <Button variant="outline" size={size} onClick={onResume} disabled={disabled}>
+      <Button variant="outline" size={size} onClick={onResume} disabled={disabled} aria-label={t("agentProduct.resume")} title={t("agentProduct.resume")}>
         <Play className="h-3.5 w-3.5 sm:mr-1" />
-        <span className="hidden sm:inline">Resume</span>
+        <span className="hidden sm:inline">{t("agentProduct.resume")}</span>
       </Button>
     );
   }
 
   return (
-    <Button variant="outline" size={size} onClick={onPause} disabled={disabled}>
+    <Button variant="outline" size={size} onClick={onPause} disabled={disabled} aria-label={t("agentProduct.pause")} title={t("agentProduct.pause")}>
       <Pause className="h-3.5 w-3.5 sm:mr-1" />
-      <span className="hidden sm:inline">Pause</span>
+      <span className="hidden sm:inline">{t("agentProduct.pause")}</span>
     </Button>
   );
 }
@@ -106,6 +108,7 @@ export function ClearErrorButton({
   disabled?: boolean;
   size?: "sm" | "default";
 }) {
+  const { t } = useTranslation();
   return (
     <Button
       variant="outline"
@@ -113,10 +116,11 @@ export function ClearErrorButton({
       onClick={onClick}
       disabled={disabled}
       className="border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive dark:border-destructive/50"
-      aria-label="Clear error and return agent to idle"
+      aria-label={t("agentProduct.clearErrorLabel")}
+      title={t("agentProduct.clearErrorLabel")}
     >
       <CheckCircle2 className="h-3.5 w-3.5 sm:mr-1" />
-      <span className="hidden sm:inline">Clear error</span>
+      <span className="hidden sm:inline">{t("agentProduct.clearError")}</span>
     </Button>
   );
 }
@@ -171,6 +175,9 @@ export function AgentActionButtons({
   onTerminateSuccess,
   pauseConfirm,
   hideTerminate = false,
+  hideWorkActions = false,
+  hideSessionActions = false,
+  maintenanceInMenu = false,
   children,
   className,
 }: {
@@ -195,6 +202,10 @@ export function AgentActionButtons({
   pauseConfirm?: { title: string; description: ReactNode };
   /** Hide the Terminate action (e.g. built-in agents are undeletable). */
   hideTerminate?: boolean;
+  hideWorkActions?: boolean;
+  hideSessionActions?: boolean;
+  /** Keep routine maintenance in overflow on detail pages. */
+  maintenanceInMenu?: boolean;
   /**
    * Optional inline error reporter. When provided it is used instead of a toast
    * for action failures (preserves the detail page's inline error banner). When
@@ -207,6 +218,7 @@ export function AgentActionButtons({
   children?: React.ReactNode;
   className?: string;
 }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { openNewIssue } = useDialogActions();
@@ -254,6 +266,7 @@ export function AgentActionButtons({
     queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(canonicalAgentRef) });
     queryClient.invalidateQueries({ queryKey: queryKeys.agents.runtimeState(agent.id) });
     queryClient.invalidateQueries({ queryKey: queryKeys.agents.taskSessions(agent.id) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.agents.directorInstructions(agent.id, resolvedCompanyId ?? undefined) });
     if (resolvedCompanyId) {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(resolvedCompanyId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.liveRuns(resolvedCompanyId) });
@@ -351,12 +364,13 @@ export function AgentActionButtons({
 
   return (
     <div className={className ?? "flex items-center gap-1 sm:gap-2 shrink-0"}>
-      <Button
+      {!hideWorkActions && <><Button
         variant="outline"
         size={size}
         onClick={() => openNewIssue({ assigneeAgentId: agent.id })}
         disabled={assignAndRunDisabled}
         title={workActionsDisabled ? workActionsDisabledReason : undefined}
+        aria-label={assignLabel}
       >
         <Plus className="h-3.5 w-3.5 sm:mr-1" />
         <span className="hidden sm:inline">{assignLabel}</span>
@@ -369,8 +383,8 @@ export function AgentActionButtons({
         disabled={assignAndRunDisabled}
         label={runLabel}
         size={size}
-      />
-      {isError ? (
+      /></>}
+      {!maintenanceInMenu && (isError ? (
         <ClearErrorButton
           onClick={() => agentAction.mutate("clear_error")}
           disabled={clearErrorDisabled}
@@ -384,7 +398,7 @@ export function AgentActionButtons({
           disabled={pauseResumeDisabled}
           size={size}
         />
-      )}
+      ))}
       {pauseConfirm && (
         <AlertDialog open={pauseConfirmOpen} onOpenChange={setPauseConfirmOpen}>
           <AlertDialogContent>
@@ -395,9 +409,9 @@ export function AgentActionButtons({
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
               <AlertDialogAction onClick={() => agentAction.mutate("pause")}>
-                Pause anyway
+                {t("agentProduct.pause")}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -411,12 +425,26 @@ export function AgentActionButtons({
       {children}
       <Popover open={moreOpen} onOpenChange={setMoreOpen}>
         <PopoverTrigger asChild>
-          <Button variant="ghost" size="icon-xs" aria-label={`Open actions for ${agent.name}`}>
+          <Button variant="ghost" size="icon-xs" aria-label={t("agentProduct.actionsFor", { name: agent.name })} title={t("agentProduct.actionsFor", { name: agent.name })}>
             <MoreHorizontal className="h-4 w-4" />
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-44 p-1" align="end">
-          <button
+          {maintenanceInMenu && <button
+            className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 disabled:opacity-50"
+            disabled={isError ? clearErrorDisabled : pauseResumeDisabled}
+            onClick={() => {
+              setMoreOpen(false);
+              if (isError) agentAction.mutate("clear_error");
+              else if (isPaused) agentAction.mutate("resume");
+              else if (pauseConfirm) setPauseConfirmOpen(true);
+              else agentAction.mutate("pause");
+            }}
+          >
+            {isError ? <CheckCircle2 className="size-3" /> : isPaused ? <Play className="size-3" /> : <Pause className="size-3" />}
+            {t(isError ? "agentProduct.clearError" : isPaused ? "agentProduct.resume" : "agentProduct.pause")}
+          </button>}
+          {!hideSessionActions && <button
             className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
             disabled={duplicateAgent.isPending}
             onClick={handleDuplicateAgent}
@@ -426,8 +454,8 @@ export function AgentActionButtons({
             ) : (
               <Copy className="h-3 w-3" />
             )}
-            Duplicate Agent
-          </button>
+            {t("agentProduct.duplicate")}
+          </button>}
           <button
             className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
             onClick={() => {
@@ -438,9 +466,9 @@ export function AgentActionButtons({
             }}
           >
             <Copy className="h-3 w-3" />
-            Copy Agent ID
+            {t("agentProduct.copyId")}
           </button>
-          <button
+          {!hideSessionActions && <button
             className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
             onClick={() => {
               resetTaskSession.mutate();
@@ -448,8 +476,8 @@ export function AgentActionButtons({
             }}
           >
             <RotateCcw className="h-3 w-3" />
-            Reset Sessions
-          </button>
+            {t("agentProduct.resetSessions")}
+          </button>}
           {!hideTerminate && (
             <button
               className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-destructive"
@@ -460,7 +488,7 @@ export function AgentActionButtons({
               }}
             >
               <Trash2 className="h-3 w-3" />
-              Terminate
+              {t("agentProduct.terminate")}
             </button>
           )}
         </PopoverContent>

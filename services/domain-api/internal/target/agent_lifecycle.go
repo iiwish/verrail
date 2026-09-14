@@ -95,11 +95,13 @@ type CreateDeploymentInput struct {
 }
 
 type ReviseDeploymentInput struct {
-	Action                     string         `json:"action"`
-	AgentVersionID             *string        `json:"agentVersionId,omitempty"`
-	EvaluationRunID            *string        `json:"evaluationRunId,omitempty"`
-	SourceDeploymentRevisionID *string        `json:"sourceDeploymentRevisionId,omitempty"`
-	RuntimeConfig              map[string]any `json:"runtimeConfig,omitempty"`
+	ExpectedDeploymentRevisionID *string        `json:"expectedDeploymentRevisionId,omitempty"`
+	ExpectedPrimaryDeploymentID  string         `json:"expectedPrimaryDeploymentId,omitempty"`
+	Action                       string         `json:"action"`
+	AgentVersionID               *string        `json:"agentVersionId,omitempty"`
+	EvaluationRunID              *string        `json:"evaluationRunId,omitempty"`
+	SourceDeploymentRevisionID   *string        `json:"sourceDeploymentRevisionId,omitempty"`
+	RuntimeConfig                map[string]any `json:"runtimeConfig,omitempty"`
 }
 
 type AgentLifecycleCommand[T any] struct {
@@ -290,12 +292,18 @@ func ValidateCreateDeploymentInput(input *CreateDeploymentInput) error {
 }
 
 func ValidateReviseDeploymentInput(input *ReviseDeploymentInput) error {
-	valid := input.Action == "pause" || input.Action == "resume" || input.Action == "upgrade" || input.Action == "rollback" || input.Action == "retire" || input.Action == "set_default"
+	valid := input.Action == "activate" || input.Action == "pause" || input.Action == "resume" || input.Action == "upgrade" || input.Action == "rollback" || input.Action == "retire" || input.Action == "set_default"
 	if !valid {
 		return validation("Deployment action is invalid")
 	}
-	if input.Action == "upgrade" && (input.AgentVersionID == nil || input.EvaluationRunID == nil) {
+	if (input.Action == "upgrade" || input.Action == "activate") && (input.AgentVersionID == nil || input.EvaluationRunID == nil) {
 		return validation("Upgrade requires agentVersionId and evaluationRunId")
+	}
+	if input.ExpectedDeploymentRevisionID != nil && !uuidPattern.MatchString(*input.ExpectedDeploymentRevisionID) {
+		return validation("expectedDeploymentRevisionId must be a UUID")
+	}
+	if input.Action == "activate" && (input.ExpectedDeploymentRevisionID == nil || (input.ExpectedPrimaryDeploymentID != "none" && !uuidPattern.MatchString(input.ExpectedPrimaryDeploymentID))) {
+		return validation("Activation requires observed deployment revision and primary binding")
 	}
 	if input.Action == "rollback" && input.SourceDeploymentRevisionID == nil {
 		return validation("Rollback requires sourceDeploymentRevisionId")

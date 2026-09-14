@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -97,11 +97,11 @@ const exec = promisify(execFile);
   }, 30_000);
   afterAll(async () => { await fixture?.cleanup(); }, 30_000);
 
-  async function run(native = true, adapterType = "codex_local") {
+  async function run(native = true, adapterType = "codex_local", pinned = false) {
     const companyId = randomUUID();
     const agentId = randomUUID();
     await db.insert(companies).values({ id: companyId, name: "Native source fixture", issuePrefix: `NS${companyId.slice(0, 6)}`, defaultResponsibleUserId: "fixture-user" });
-    await db.insert(agents).values({ id: agentId, companyId, name: "Source observer", role: "engineer", status: "idle", adapterType, adapterConfig: { cwd, model: "test-model" }, runtimeConfig: { heartbeat: { enabled: true, wakeOnDemand: true } } });
+    await db.insert(agents).values({ id: agentId, companyId, name: "Source observer", role: "engineer", status: "idle", adapterType, adapterConfig: { cwd, model: pinned ? "unpublished-model" : "test-model" }, runtimeConfig: { heartbeat: { enabled: true, wakeOnDemand: true } } });
     const runId = randomUUID();
     const attemptId = randomUUID();
     if (native) {
@@ -123,7 +123,7 @@ const exec = promisify(execFile);
       await db.insert(verrailGraphRevisions).values({ ...created, id: graphRevisionId, targetId, targetRevisionId, workGraphId: graphId, revisionNumber: 1, contentHash: "b".repeat(64) });
       await db.insert(verrailWorkNodes).values({ id: nodeId, workspaceId, targetId, graphRevisionId, nodeKey: "fixture", kind: "agent_task", title: "Fixture", stageKey: "execute", completionDefinition: "Fixture" });
       await db.insert(verrailAgentDefinitions).values({ ...created, id: definitionId, compatibilityAgentId: agentId, name: "Fixture" });
-      await db.insert(verrailAgentVersions).values({ ...created, id: versionId, agentDefinitionId: definitionId, versionNumber: 1, runtime: "codex_local", model: "test-model", prompt: "Fixture", contentHash: "c".repeat(64) });
+      await db.insert(verrailAgentVersions).values({ ...created, id: versionId, agentDefinitionId: definitionId, versionNumber: 1, runtime: "codex_local", model: "test-model", prompt: "Fixture", contentHash: "c".repeat(64), supplyChain: pinned ? { source: "saved_agent_configuration.v2", mode: "compatibility_executor", agentId, entryFile: "AGENTS.md", instructionFiles: { "AGENTS.md": "Immutable fixture instructions" }, skillReferences: [], behaviorSettings: { temperature: 0.2 } } : {} });
       await db.insert(verrailEvaluationRuns).values({ ...created, id: evaluationId, candidateAgentVersionId: versionId, status: "passed", safetyStatus: "passed" });
       await db.insert(verrailDeployments).values({ ...created, id: deploymentId, agentDefinitionId: definitionId, name: "Fixture" });
       await db.insert(verrailDeploymentRevisions).values({ ...created, id: deploymentRevisionId, deploymentId, revisionNumber: 1, agentVersionId: versionId, evaluationRunId: evaluationId, state: "active", runtimeConfig: { cwd }, contentHash: "d".repeat(64) });
@@ -142,6 +142,23 @@ const exec = promisify(execFile);
     await drainHeartbeatRunsToQuiescence(db, heartbeat);
     return await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, result!.id)).then((rows) => rows[0]!);
   }
+
+  it("consumes v2 instructions and model through the production heartbeat without changing drafts", async () => {
+    let instructionsPath = "";
+    mocks.execute.mockImplementation(async (ctx) => {
+      expect(ctx.config.model).toBe("test-model");
+      expect(ctx.config.temperature).toBe(0.2);
+      instructionsPath = ctx.config.instructionsFilePath;
+      expect(await readFile(instructionsPath, "utf8")).toBe("Immutable fixture instructions");
+      expect((await db.select().from(agents).where(eq(agents.id, ctx.agent.id)))[0].adapterConfig.model).toBe("unpublished-model");
+      return { exitCode: 0, signal: null, timedOut: false, summary: "isolated adapter fixture" };
+    });
+    const result = await run(true, "codex_local", true);
+    expect(mocks.execute).toHaveBeenCalledOnce();
+    expect(result.status).toBe("succeeded");
+    expect(result.contextSnapshot?.verrailEnvironmentManifest).not.toHaveProperty("executionVersion");
+    await expect(readFile(instructionsPath)).rejects.toMatchObject({ code: "ENOENT" });
+  }, 30_000);
 
   it("persists server source before real adapter dispatch and never passes reserved data to model/meta", async () => {
     let persistedAtDispatch: unknown;

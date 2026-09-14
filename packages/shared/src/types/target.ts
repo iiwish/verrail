@@ -126,6 +126,8 @@ export interface TargetReadModelV1 {
   title: string;
   summary: string | null;
   status: TargetStatus;
+  archivedAt?: string | null;
+  archiveVersion?: number;
   outcome: TargetOutcomeV1;
   outcomeOwner: {
     principalType: "user" | "agent";
@@ -304,6 +306,14 @@ export interface TargetWorkspaceV1 {
   workspaceId: string;
   generatedAt: string;
   graph: TargetGraphSummaryV1 | null;
+  graphVersions?: Array<{
+    id: string;
+    revisionNumber: number;
+    status: string;
+    targetRevisionId: string;
+    createdAt: string;
+    work: TargetWorkItemV1[];
+  }>;
   outcome: TargetOutcomeV1;
   availableCommands: TargetAvailableCommandV1[];
   stages: TargetStageProgressV1[];

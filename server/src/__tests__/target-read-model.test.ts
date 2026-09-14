@@ -127,6 +127,7 @@ describePostgres("native TargetReadModel", () => {
     });
     const workspace = await service.workspace(model!);
     expect(workspace.graph).toMatchObject({ status: "active", revisionNumber: 1 });
+    expect(workspace.graphVersions).toEqual([expect.objectContaining({ id: seeded.graphRevisionId, revisionNumber: 1, work: [expect.objectContaining({ nodeKey: "implement" })] })]);
     expect(workspace.work).toEqual([expect.objectContaining({ nodeKey: "implement", kind: "agent_task" })]);
     expect(workspace.runs).toEqual([expect.objectContaining({ kind: "agent_run", status: "queued" })]);
     expect(workspace.stages.find((stage) => stage.key === "execute")?.state).toBe("current");
@@ -147,6 +148,9 @@ describePostgres("native TargetReadModel", () => {
     const workspace = await service.workspace(model!);
     expect(workspace.outcome.controls.find((control) => control.key === "graph_complete")?.state).toBe("required");
     expect(workspace.outcome.state).not.toBe("blocked");
+    expect(workspace.graphVersions?.map((revision) => revision.id)).toEqual([replacementId, seeded.graphRevisionId]);
+    expect(workspace.graphVersions?.[1].work[0].graphRevisionId).toBe(seeded.graphRevisionId);
+    expect(workspace.runs[0].graphRevisionId).toBe(seeded.graphRevisionId);
     expect(workspace.runs).toEqual([expect.objectContaining({ status: "failed" })]);
     expect(workspace.availableCommands.find((command) => command.id === "create_run"))
       .toMatchObject({ state: "available", reason: null, resourceId: replacementNodeId });

@@ -4,16 +4,35 @@
 
 /* Work Graph geometry and third-party canvas theme are owned by the token layer. */
 :root {
-  --target-graph-height: 400px;
+  --target-graph-height: 420px;
   --target-graph-node-width: 250px;
   --target-graph-node-height: 124px;
+  --target-inspector-width: 320px;
+}
+.target-graph-container { container-type: inline-size; }
+.target-graph-dialog[data-slot="dialog-content"] { inset: 0; width: 100%; height: 100dvh; max-width: none; translate: none; transform: none; border: 0; border-radius: 0; display: block; overflow: auto; --target-graph-height: calc(100dvh - 180px); }
+.target-support-details > summary { list-style: none; }
+.target-support-details > summary::-webkit-details-marker { display: none; }
+.target-support-details[open] .target-support-chevron { transform: rotate(180deg); }
+.target-work-surface { position: relative; display: grid; gap: calc(var(--spacing) * 4); grid-template-columns: minmax(0, 1fr); }
+.target-work-surface[data-inspecting="true"] { grid-template-columns: minmax(0, 1fr) var(--target-inspector-width); }
+.target-graph-inspector {
+  min-width: 0;
+  height: var(--target-graph-height);
+  overflow-y: auto;
+  padding: calc(var(--spacing) * 4);
+  background: var(--muted);
+  border-radius: var(--radius-lg);
+}
+@container (max-width: 640px) {
+  .target-work-surface[data-inspecting="true"] { grid-template-columns: minmax(0, 1fr); }
+  .target-graph-inspector { position: absolute; inset-block: 0; right: 0; width: min(100%, var(--target-inspector-width)); z-index: 5; box-shadow: var(--shadow-lg); }
 }
 .target-work-graph {
   height: var(--target-graph-height);
-  border-block: 1px solid var(--border);
-  background: var(--muted);
-  --xy-background-color: var(--muted);
-  --xy-edge-stroke: var(--muted-foreground);
+  background: var(--background);
+  --xy-background-color: var(--background);
+  --xy-edge-stroke: var(--border);
   --xy-controls-button-background-color: var(--background);
   --xy-controls-button-color: var(--foreground);
   --xy-controls-button-border-color: var(--border);
@@ -29,19 +48,20 @@
   flex-direction: column;
   justify-content: space-between;
   padding: calc(var(--spacing) * 3);
-  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--background);
+  background: var(--muted);
   color: var(--foreground);
 }
 .target-graph-node[data-selected="true"] { outline: 2px solid var(--ring); }
-.target-graph-node[data-status="running"] { border-color: var(--primary); }
-.target-graph-node[data-status="blocked"] { border-color: var(--destructive); }
-.target-graph-node[data-status="completed"] { border-color: var(--success); }
+.target-graph-node[data-status="running"] > div:last-of-type { color: var(--primary); }
+.target-graph-node[data-status="blocked"] > div:last-of-type { color: var(--destructive); }
+.target-attention-icon { color: var(--status-task-icon-todo); }
+.target-attention-icon[data-severity="critical"] { color: var(--destructive); }
+.target-graph-edge-active .react-flow__edge-path { stroke: var(--primary); stroke-width: 2; }
 
 @font-face {
   font-family: "InterVariable";
-  src: url("../fonts/InterVariable.woff2") format("woff2");
+  src: url("/fonts/InterVariable.woff2") format("woff2");
   font-display: swap;
   font-style: normal;
   font-weight: 100 900;
@@ -49,7 +69,7 @@
 
 @font-face {
   font-family: "InterVariable";
-  src: url("../fonts/InterVariable-Italic.woff2") format("woff2");
+  src: url("/fonts/InterVariable-Italic.woff2") format("woff2");
   font-display: swap;
   font-style: italic;
   font-weight: 100 900;

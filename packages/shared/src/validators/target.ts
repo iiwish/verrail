@@ -71,6 +71,8 @@ export const targetReadModelV1Schema: z.ZodType<TargetReadModelV1> = z.object({
   title: z.string(),
   summary: z.string().nullable(),
   status: z.enum(TARGET_STATUSES),
+  archivedAt: isoDateTimeSchema.nullable().optional(),
+  archiveVersion: z.number().int().nonnegative().optional(),
   outcome: targetOutcomeSchema,
   outcomeOwner: z.object({
     principalType: z.enum(["user", "agent"]),
@@ -229,6 +231,8 @@ export const targetWorkspaceV1Schema: z.ZodType<TargetWorkspaceV1> = z.object({
 }).strict();
 
 export const targetListQuerySchema = z.object({
+  q: z.string().trim().max(200).optional(),
+  archiveState: z.enum(["unarchived", "archived", "all"]).optional().default("unarchived"),
   limit: z.coerce.number().int().min(1).max(100).optional().default(50),
   cursor: z.string().trim().min(1).max(4_096).optional(),
   collectionId: z.string().uuid().optional(),

@@ -65,6 +65,8 @@ export interface TargetCommandResponseV1 {
 }
 
 export interface TargetListOptions {
+  q?: string;
+  archiveState?: "unarchived" | "archived" | "all";
   limit?: number;
   cursor?: string;
   collectionId?: string;
@@ -75,6 +77,8 @@ export interface TargetListOptions {
 
 function listPath(workspaceId: string, options: TargetListOptions = {}) {
   const params = new URLSearchParams();
+  if (options.q) params.set("q", options.q);
+  if (options.archiveState) params.set("archiveState", options.archiveState);
   if (options.limit) params.set("limit", String(options.limit));
   if (options.cursor) params.set("cursor", options.cursor);
   if (options.collectionId) params.set("collectionId", options.collectionId);
@@ -102,6 +106,7 @@ export const targetsApi = {
     api.get<TargetListResponseV1>(listPath(workspaceId, options)),
   listForCollection: (workspaceId: string, collectionId: string, options: Omit<TargetListOptions, "collectionId"> = {}) => {
     const params = new URLSearchParams();
+    if (options.archiveState) params.set("archiveState", options.archiveState);
     if (options.limit) params.set("limit", String(options.limit));
     if (options.cursor) params.set("cursor", options.cursor);
     if (options.status) params.set("status", options.status);

@@ -5,9 +5,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { VerrailChat } from "./VerrailChat";
 
-const mocks = vi.hoisted(() => ({ listTargetDrafts: vi.fn(), openNewTarget: vi.fn(), setBreadcrumbs: vi.fn() }));
+const mocks = vi.hoisted(() => ({ listTargetDrafts: vi.fn(), openNewTarget: vi.fn(), setBreadcrumbs: vi.fn(), get: vi.fn(), confirmTargetProposal: vi.fn() }));
 vi.mock("../api/conversations", () => ({ conversationsApi: {
-  get: vi.fn().mockResolvedValue({ title: "Feishu chat", status: "active", messages: [], contextBindings: [] }),
+  get: mocks.get.mockResolvedValue({ title: "Feishu chat", status: "active", messages: [], contextBindings: [] }),
+  confirmTargetProposal: mocks.confirmTargetProposal,
   listTargetDrafts: mocks.listTargetDrafts,
 } }));
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "workspace-1", selectedCompany: { name: "Workspace" } }) }));
@@ -34,6 +35,35 @@ async function render() {
 }
 
 describe("Verrail Chat channel drafts", () => {
+  it.each(["archive", "restore"])("requires human confirmation for %s and explains execution is unchanged", async (operation) => {
+    mocks.listTargetDrafts.mockResolvedValue([]);
+    const message = { id: "archive-proposal", role: "tool", body: "Target", metadata: { kind: "director_target_proposal", targetId: "00000000-0000-4000-8000-000000000001", targetTitle: "Target", initiatedByPrincipalId: "owner", sourceMessageId: "00000000-0000-4000-8000-000000000002", before: { title: "Target", summary: null, goal: "Goal" }, input: { operation, expectedTargetRevisionId: "00000000-0000-4000-8000-000000000003", expectedArchiveVersion: 0 } } };
+    mocks.get.mockResolvedValueOnce({ title: "Archive review", status: "active", contextBindings: [], messages: [{ ...message, workspaceId: "workspace-1", conversationId: "conversation-1" }] });
+    mocks.confirmTargetProposal.mockResolvedValue({});
+    await render();
+    expect(container.textContent).toContain(operation === "archive" ? "Archiving does not stop running work" : "it does not restart work");
+    expect(mocks.confirmTargetProposal).not.toHaveBeenCalled();
+    const confirm = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("Confirm change"));
+    expect(confirm).toBeTruthy();
+    await act(async () => confirm!.click());
+    expect(mocks.confirmTargetProposal).toHaveBeenCalledWith("workspace-1", "conversation-1", "archive-proposal");
+  });
+  it("shows definition differences and requires an explicit click before mutation", async () => {
+    mocks.listTargetDrafts.mockResolvedValue([]);
+    const message = { id: "proposal", workspaceId: "workspace-1", conversationId: "conversation-1", role: "tool", body: "Original", metadata: { kind: "director_target_proposal", targetId: "00000000-0000-4000-8000-000000000001", targetTitle: "Original", initiatedByPrincipalId: "owner", sourceMessageId: "00000000-0000-4000-8000-000000000002", before: { title: "Original", summary: null, goal: "Goal" }, input: { operation: "update", expectedTargetRevisionId: "00000000-0000-4000-8000-000000000003", title: "Revised" } } };
+    mocks.get.mockResolvedValueOnce({ title: "Review", status: "active", contextBindings: [], messages: [message] });
+    mocks.confirmTargetProposal.mockResolvedValue({});
+    await render();
+    expect(container.querySelector("del")?.textContent).toBe("Original");
+    expect(container.querySelector('header button[aria-label="Switch current Target"]')).not.toBeNull();
+    expect(container.querySelector("header")?.textContent).not.toContain("New Target");
+    expect(container.querySelector("ins")?.textContent).toBe("Revised");
+    expect(mocks.confirmTargetProposal).not.toHaveBeenCalled();
+    const confirm = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("Confirm change"));
+    expect(confirm).toBeTruthy();
+    await act(async () => confirm!.click());
+    expect(mocks.confirmTargetProposal).toHaveBeenCalledWith("workspace-1", "conversation-1", "proposal");
+  });
   it("opens the original versioned draft and hides canceled or converted draft actions", async () => {
     const draft = { id: "channel-draft", workspaceId: "workspace-1", conversationId: "conversation-1", status: "collecting", activeRevisionNumber: 3, activeRevision: { definition: { title: "Channel outcome" } } };
     const converted = { ...draft, id: "done", status: "converted", convertedTargetId: "target-1" };

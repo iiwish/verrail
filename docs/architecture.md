@@ -111,11 +111,23 @@ Target Workspace 暴露 Stages、Work、Attention、Submission、Artifacts、Evi
 
 Workspace 配置固定一个默认 Agent Deployment。未显式绑定 Agent 的 Conversation 和初始协调 Invocation 解析到该 Deployment；消息、Run 和审计记录实际执行身份，不能只记录“系统助手”。默认 Agent 可以通过受治理命令提出创建专业 Agent、新 Conversation、Target 或 GraphProposal，但不拥有隐式写权限。Target GraphRevision 显式选择其他 Director 或 Specialist Deployment 时，以版本绑定选择为准。
 
-当前 TypeScript Compatibility API 提供会话列表、创建、读取、重命名、置顶、归档、恢复和本地流式回复，并为每个 Workspace 幂等供给一个展示名为 `Director` 的兼容默认 Agent；内部 `ceo` role 仅用于存量授权兼容，不构成产品 CEO 或组织图语义。新建的普通兼容 Agent 在未显式声明根级身份时挂到该默认 Agent，已有 Workspace 在启动协调时补齐默认 Agent。消息与上下文绑定持久化到 PostgreSQL，兼容回复记录实际默认 Agent ID 与本地运行来源。仅 `local_trusted` 部署可调用本地 CLI 兼容运行时：默认使用临时会话、禁用工具、只读 Sandbox、受限环境变量和空工作目录中的 Codex CLI，可通过 `VERRAIL_CHAT_RUNTIME=claude` 切换到同样禁用工具的 Claude CLI，并通过 `VERRAIL_CHAT_MODEL` 固定模型。认证部署在配置受治理的模型执行路径前保持关闭。该兼容运行时不授予领域写入权限，也不继承数据库、Paperclip 或云厂商凭证；即使默认 Agent 具有创建 Agent 的兼容 Grant，当前只读 Chat 运行也不能绕过结构化 API、审批与审计执行写操作。后续模型调用接入版本化 Agent Runtime Adapter，并在需要长时执行、重试、取消、预算和审计时通过 Run/Temporal 编排，而不是把 SSE 连接作为流程事实。
+Conversation 的目标上下文合同区分持久的单一当前目标、多个关联引用与每次请求的不可变对象快照。上下文选择由版本化、幂等、可审计的专用命令处理，必须校验同 Workspace 和当次发起人的访问权限；切换不能重定向已保存的提案或正在执行的 Invocation。Director 可响应明确用户意图调用该低风险命令，无须领域变更审批。旧 ContextBinding 只保留关联和历史来源语义，迁移不得直接把第一条或最后一条绑定推断为当前目标。
+
+系统能力以逐项注册的领域工具接入会话，每项明确参数、身份、作用域、确认策略及结果回执。操作可覆盖当前目标之外的授权对象，但不能借用创建会话者的权限，不能通过任意 API 代理或通用 Shell 绕过命令门禁。完整系统操作入口是产品覆盖合同，不代表兼容运行时已经暴露全部系统能力。Compatibility API 持久化 `currentTargetId` 和 `contextVersion`，专用上下文变更表同时保存幂等回执和审计；`POST /api/workspaces/:workspaceId/conversations/:conversationId/context` 校验成员、目标归属和预期版本。Director 的 `get_conversation_context` 与 `switch_current_target` 只读取或改变当前会话的上下文。用户消息和回复记录请求快照，创建确认捕获上下文版本，回执重放不重新聚焦。目标侧相关会话按 ContextBinding 查询，沿用当前 Workspace Board 的全控制访问边界；下述受限运行时不暴露任意系统操作。
+
+当前 TypeScript Compatibility API 提供会话列表、创建、读取、重命名、置顶、归档、恢复和本地流式回复，并为每个 Workspace 幂等供给一个展示名为 `Director` 的兼容默认 Agent；内部 `ceo` role 仅用于存量授权兼容，不构成产品 CEO 或组织图语义。消息与上下文绑定持久化到 PostgreSQL，兼容回复记录实际默认 Agent ID 与本地运行来源。仅 `local_trusted` 部署可调用本地 CLI 兼容运行时：Codex 使用临时会话、只读 Sandbox、空工作目录和受限环境，禁用 Shell、浏览器、应用及计算机等通用工具，仅配置工作区范围的 Director MCP。Claude 使用无工具 CLI，并明确告知查询限制。`VERRAIL_CHAT_RUNTIME` 和 `VERRAIL_CHAT_MODEL` 提供发布时的 Director 运行配置来源；实际回复使用已启用 AgentVersion 的固定值，环境变量修改需要重新发布并启用。认证部署在配置受治理的模型执行路径前保持关闭。兼容运行时不继承数据库、Paperclip 或云厂商凭证；后续长时执行、重试、预算和审计通过版本化 Agent Runtime Adapter 与 Run/Temporal 编排。
+
+Director MCP 每次调用使用最多 120 秒有效的随机能力令牌，绑定发起人、Workspace、Conversation、来源 Message 和 Director 身份，响应结束即撤销。工具仅允许分页查询目标、读取目标详情、创建待确认草稿和提出目标变更；每次重新校验成员与 Director 状态，禁止模型提交人工确认或启动执行。目标名称、摘要与描述的修改形成独立 TargetRevision；逻辑取消采用保留历史的 `canceled` 状态，不提供物理删除。修改及取消只支持没有激活工作图、Run 或 ActionRequest 的未终结目标。用户在提案中检查字段差异并点击确认后，Go `target.manage.v1` 命令校验成员、预期版本和幂等键，在事务内写入修订、命令回执及审计。取消后的目标不能创建或激活工作图。归档与恢复支持任何执行状态，独立校验 `archiveVersion`，仅更新归档元数据及审计，不改变 TargetRevision 或执行事实；列表按 `archiveState` 筛选，待处理视图包含已归档目标。具备执行历史的定义及执行状态变更必须使用独立的 Graph Engine 生命周期合同，不通过聊天绕过。
+
+本地 CLI 命令优先使用 `VERRAIL_CHAT_COMMAND` 或服务进程 PATH；macOS Codex 可回退发现已安装且可执行的桌面应用 bundle。命令选择不改变只读 Sandbox、通用工具禁用或用户配置排除策略。受限本地部署可经操作员授权，通过 `VERRAIL_CHAT_HTTPS_PROXY` 为聊天子进程配置独立代理；本机代理使用临时认证并只允许明确列出的模型与认证域名 HTTPS CONNECT，保持端到端 TLS，不记录提示词或凭证。Director MCP 使用本机 API 端口，不经模型出站代理；此授权不开放通用网络出站，不启动 Worker 或自动任务。
+
+本地兼容聊天使用同一个 Director 指令组合器提供实际运行输入和只读草稿预览。`adapterConfig.directorChatInstructions` 是角色草稿，GET 和预览接口不代表当前生效版本。PUT 限制为有权人类，校验预期配置 Hash，在 Agent 行锁内更新草稿、配置历史与审计；一般 Adapter 更新不得直接覆盖该字段。回复开始时从主 Deployment 的活动修订读取 AgentVersion 的 Prompt、Runtime 和 Model，再组合当前平台规则及工具权限。回复记录 AgentVersion ID/Hash、DeploymentRevision ID 和指令指纹。没有已启用版本，或 Director 暂停、终止、待批准时拒绝新回复，不回退到草稿或其他助手。
 
 Target Workbench 通过服务端命令创建绑定当前 Target 和活动 TargetRevision 的
 Conversation。ContextBinding 由服务端在 Target 读取授权后构造，客户端不能伪造资源归属；
 Target 存在可选 Collection 关联时可以附加对应 ContextBinding。Conversation 仍只拥有交互上下文，任何 Target 或交付状态变化必须调用结构化领域命令。
+
+智能体工作记录复用 Workspace-scoped Conversation 列表的可选 `agentId` 过滤。查询通过同 Workspace 的 `assistant` Message、`authorPrincipalType=agent` 和实际 `authorPrincipalId` 判断参与，不把当前默认身份回填到历史会话，不从用户消息中的名称或标识推断 Agent 作者。活动与归档会话分别查询，读取失败不呈现为空记录。该只读投影不产生 Invocation、Run 或 Acceptance。
 
 ### Graph Engine
 
@@ -128,6 +140,12 @@ Target 存在可选 Collection 关联时可以附加对应 ContextBinding。Conv
 ### Agent Lifecycle
 
 负责 AgentDefinition、AgentVersion、Deployment、EvaluationRun、ImprovementProposal 和版本发布/回滚。Harness 私有配置通过 Adapter Manifest 固定，但不成为身份或权限事实。
+
+智能体详情顶部发布已保存配置，发布预览由 BFF 读取已保存行为与指令文件生成，确认请求只携带源快照 Hash；源内容不一致返回 409。BFF 不解析凭据，也不在预览中修复指令文件。不可变版本由 Go Domain API 写入并记录幂等回执与审计。`supplyChain.source = saved_agent_configuration.v2` 保存指令文件、行为选项与固定技能版本引用；权限、预算、凭据和执行目录不作为可恢复配置打包。版本页集中展示生效状态、更新、回滚和版本历史，人工录入验证结果与模型评测执行保持区别。
+
+数据库以部分唯一索引约束每个定义最多一个 `is_primary` Deployment。首次启用创建入口，并原子停用该定义的非主历史部署、清除其默认标记；更新与回滚追加主入口修订，不支持承接历史部署。激活命令固定观察到的主入口和最新修订，串行化竞争与过期确认返回 409。迁移默认不选主入口，历史 v1 版本需要重新发布。非主历史部署不能绑定新图或创建新 Run，既有图和 Run 的版本引用不改写。
+
+兼容执行器读取固定版本，在临时私有目录物化指令，将版本化行为选项覆盖到当前配置，并保留当前权限、凭据和主机设置。运行不合并草稿模型配置，也不复用其他版本的 Provider 会话。临时指令目录在运行结束时清理。Director 版本由聊天路径消费，不能作为交付执行器。专业智能体启用时从高级设置解析本地目录并固定到修订；同工作区注册目录 API 保持兼容。回滚恢复行为而不恢复历史授权和主机配置。远程工作区不在此路径的支持范围内。详见 [ADR 0014](adrs/0014-single-effective-agent-version.md)。
 
 ### Artifact and Evidence
 

@@ -111,6 +111,7 @@ export function agentLifecycleService(db: Db) {
           name: deployment.name,
           status: deployment.status as DeploymentV1["status"],
           isDefault: deployment.isDefault,
+          isPrimary: deployment.isPrimary,
           activeRevision: deploymentRevisions.at(-1) ?? null,
           revisions: deploymentRevisions,
           createdAt: iso(deployment.createdAt),

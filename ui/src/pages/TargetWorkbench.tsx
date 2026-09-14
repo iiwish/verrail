@@ -1,10 +1,13 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { TargetConversations } from "../components/targets/TargetConversations";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   ArrowLeft,
   Check,
   CheckCircle2,
+  ChevronDown,
+  FileText,
   Circle,
   Download,
   GitPullRequest,
@@ -24,6 +27,7 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { statusBadge, statusBadgeDefault } from "../lib/status-colors";
@@ -41,11 +45,14 @@ import type {
   AssuranceEvidenceV1,
   AssuranceVerdict,
   TargetAvailableCommandV1,
+  TargetAttentionItemV1,
+  TargetWorkItemV1,
 } from "@paperclipai/shared";
 import { useTranslation } from "@/i18n";
 import { CriterionProofEditor } from "@/components/targets/CriterionProofEditor";
 import { TargetWorkGraph } from "@/components/targets/TargetWorkGraph";
-import { TARGET_TABS, targetTab, deliveryFacts } from "@/components/targets/workbench-model";
+import { TARGET_TABS, targetTab, deliveryFacts, attentionCommand, priorityWorkItem, commandReasonKey } from "@/components/targets/workbench-model";
+import { TargetAttention } from "@/components/targets/TargetAttention";
 import { TargetActivity } from "@/components/targets/TargetActivity";
 import { ArtifactPreview } from "@/components/targets/ArtifactPreview";
 
@@ -246,6 +253,12 @@ export function TargetWorkbench() {
   const { userId: accountUserId, settled: accountIdentitySettled } = useAccountIdentity();
   const activeTab = targetTab(tab);
   const [runsExpanded, setRunsExpanded] = useState(false);
+  const [focusedRunId, setFocusedRunId] = useState<string | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [inspectedCommandId, setInspectedCommandId] = useState<string | null>(null);
+  const runsRef = useRef<HTMLElement>(null);
+  const commandsRef = useRef<HTMLElement>(null);
+  const graphRef = useRef<HTMLDivElement>(null);
   const showRuns = activeTab === "overview" && (tab === "runs" || runsExpanded);
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
   const [showCommandDetails, setShowCommandDetails] = useState(false);
@@ -276,8 +289,28 @@ export function TargetWorkbench() {
       : ["targets", "workspace", "disabled"],
     queryFn: () => targetsApi.getWorkspace(selectedCompanyId!, targetId!),
     enabled: Boolean(selectedCompanyId && targetId && !isRevision),
-    refetchInterval: activeTab === "overview" && !isRevision && (showRuns || (query.data?.runSummary.active ?? 0) > 0) ? 5_000 : false,
+    refetchInterval: (state) => {
+      const facts = state.state.data;
+      const executionActive = facts?.runs.some((run) => ["queued", "running", "cancel_requested"].includes(run.status))
+        || facts?.actionRequests.some((action) => ["executing", "unknown_effect"].includes(action.status));
+      return activeTab === "overview" && !isRevision && (showRuns || executionActive || (query.data?.runSummary.active ?? 0) > 0) ? 5_000 : false;
+    },
   });
+
+  useEffect(() => {
+    if (showRuns) {
+      runsRef.current?.scrollIntoView?.({ block: "start" });
+      runsRef.current?.focus({ preventScroll: true });
+    }
+  }, [showRuns, focusedRunId]);
+
+  useEffect(() => {
+    if (inspectedCommandId) {
+      const row = commandsRef.current?.querySelector<HTMLElement>(`[data-command-id="${inspectedCommandId}"]`);
+      row?.scrollIntoView?.({ block: "nearest" });
+      row?.focus();
+    }
+  }, [inspectedCommandId, showCommandDetails]);
 
   const agentLifecycleQuery = useQuery({
     queryKey: selectedCompanyId ? queryKeys.agentLifecycle(selectedCompanyId) : ["agent-lifecycle", "disabled"],
@@ -460,6 +493,10 @@ export function TargetWorkbench() {
     setGraphDeploymentRevisionId("");
     setSelectedSubmissionId(null);
     setRunsExpanded(false);
+    setSelectedNodeId(null);
+    setFocusedRunId(null);
+    setInspectedCommandId(null);
+    setShowCommandDetails(false);
     setReviewComments("");
     setReviewVerdict("approved");
     setLastCommand(null);
@@ -493,6 +530,43 @@ export function TargetWorkbench() {
   const runCommandError = retryOutbox.error ?? retryRun.error ?? cancelRun.error;
   const runCommandFailureDetail = commandFailureDetail(runCommandError);
   const targetCommandFailureDetail = commandFailureDetail(commandMutation.error);
+  const inspectRun = (id: string) => { setFocusedRunId(id); setRunsExpanded(true); setSelectedNodeId(null); };
+  const principalName = (principal: TargetWorkItemV1["responsiblePrincipal"]) => {
+    if (!principal) return t("targets.unassigned");
+    if (principal.principalType === target.outcomeOwner?.principalType && principal.principalId === target.outcomeOwner.principalId) return target.outcomeOwner.displayName ?? t("targets.outcomeOwner");
+    if (principal.principalType === "agent") {
+      for (const definition of agentLifecycleQuery.data?.definitions ?? []) {
+        const deployment = definition.deployments.find((item) => item.activeRevision?.id === principal.principalId || item.revisions?.some((revision) => revision.id === principal.principalId));
+        if (deployment) return `${definition.name} / ${deployment.name}`;
+      }
+    }
+    return t(`targets.workbench.principals.${principal.principalType}`);
+  };
+  const inspectAttention = (item: TargetAttentionItemV1) => {
+    if (item.runId) { inspectRun(item.runId); return; }
+    if (item.workNodeId && workspace?.work.some((node) => node.id === item.workNodeId)) {
+      setSelectedNodeId(item.workNodeId);
+      graphRef.current?.scrollIntoView?.({ block: "nearest" });
+      return;
+    }
+    if (item.resourceType === "action_request" || item.kind === "draft_graph") {
+      const command = attentionCommand(item, workspace?.availableCommands ?? []);
+      if (command) { setInspectedCommandId(command.id); return; }
+      if (item.kind === "draft_graph") {
+        setInspectedCommandId(workspace?.availableCommands.some((entry) => entry.id === "activate_graph_revision" && entry.state === "available") ? "activate_graph_revision" : "create_graph_revision");
+        return;
+      }
+      const action = workspace?.actionRequests.find((entry) => entry.id === item.resourceId);
+      setSelectedSubmissionId(action?.submissionId ?? "");
+      navigate(`/targets/${target.targetId}/delivery`);
+      return;
+    }
+    const submissionId = item.resourceType === "submission" ? item.resourceId
+      : item.resourceType === "review" ? workspace?.reviews.find((review) => review.id === item.resourceId)?.submissionId
+      : item.resourceType === "acceptance" ? workspace?.acceptances.find((acceptance) => acceptance.id === item.resourceId)?.submissionId : undefined;
+    setSelectedSubmissionId(submissionId ?? "");
+    navigate(`/targets/${target.targetId}/delivery`);
+  };
 
   const invokeProjectedCommand = (command: TargetAvailableCommandV1) => {
     if (!workspace || command.state !== "available" || !command.resourceId) return;
@@ -548,13 +622,13 @@ export function TargetWorkbench() {
       if (command.id === "record_review" && command.resourceId !== delivery.submission.id) return false;
       if (command.id === "accept_submission" && !delivery.reviews.some((review) => review.id === command.resourceId)) return false;
     }
-    if (command.id === "create_graph_revision" && workspace.graph && !showCommandDetails) return false;
-    return showCommandDetails || (command.state === "available" && command.id !== "reconcile_action");
+    if (command.id === "create_graph_revision" && workspace.graph && !showCommandDetails && inspectedCommandId !== command.id) return false;
+    return showCommandDetails || inspectedCommandId === command.id || (command.state === "available" && command.id !== "reconcile_action");
   }) ?? [];
 
   const commandPanel = (!isRevision && workspace ? (
-            <section aria-labelledby="target-commands-title" className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
+            <section ref={commandsRef} tabIndex={-1} aria-labelledby="target-commands-title" className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 id="target-commands-title" className="text-sm font-semibold">{t("targets.delivery.nextActions")}</h3>
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={showCommandDetails} onChange={(event) => setShowCommandDetails(event.target.checked)} />{t("targets.delivery.commandDetails")}</label>
@@ -566,7 +640,12 @@ export function TargetWorkbench() {
                   </ToneBadge>
                 </div>
               </div>
-              <ol className="divide-y divide-border border-b border-border">
+              {workspaceQuery.isError ? <p role="alert" className="text-sm text-destructive">{t("targets.workbench.staleFacts")}</p> : null}
+              {activeTab === "overview" ? <TargetAttention items={workspace.attention.filter((item) => {
+                const command = attentionCommand(item, visibleCommands);
+                return !command || (command.id !== inspectedCommandId && (command.state !== "available" || command.id === "reconcile_action"));
+              })} commands={workspace.availableCommands} onInspect={inspectAttention} executingActionIds={workspace.actionRequests.filter((action) => action.status === "executing").map((action) => action.id)} /> : null}
+              <ol className="grid gap-3">
                 {visibleCommands.map((command) => {
                   const boundReview = command.id === "accept_submission" ? workspace.reviews.find((item) => item.id === command.resourceId) : null;
                   const boundSubmission = boundReview ? workspace.submissions.find((item) => item.id === boundReview.submissionId) : null;
@@ -580,12 +659,13 @@ export function TargetWorkbench() {
                   const isAutomatic = command.id === "reconcile_action";
                   const isPending = commandMutation.isPending && commandMutation.variables?.request.id === command.id;
                   const canInvoke = command.state === "available"
+                    && !workspaceQuery.isError
                     && !isCandidateOnly
                     && !isAutomatic
                     && accountIdentitySettled
                     && (command.id !== "create_run" || runNode?.responsiblePrincipal?.principalType === "agent");
                   return (
-                    <li key={command.id} className="space-y-3 py-3" data-command-id={command.id}>
+                    <li key={`${command.id}:${command.resourceId}`} tabIndex={-1} className="space-y-3 rounded-lg bg-muted/50 p-4 outline-none focus-visible:ring-2 focus-visible:ring-ring" data-command-id={command.id}>
                       <div className="flex flex-wrap items-start gap-3">
                         {command.state === "completed" ? (
                           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden="true" />
@@ -601,7 +681,10 @@ export function TargetWorkbench() {
                               {t(`targets.commands.states.${command.state}`)}
                             </ToneBadge>
                           </div>
-                          {command.reason ? <p className="mt-1 text-xs text-muted-foreground">{command.reason}</p> : null}
+                          {command.reason ? <p className="mt-1 text-xs text-muted-foreground">{commandReasonKey(command.reason) ? t(commandReasonKey(command.reason)!) : command.reason}</p> : null}
+                          {runNode ? <p className="mt-1 break-words text-sm text-muted-foreground">{runNode.title}</p> : null}
+                          {action ? <p className="mt-1 text-xs text-muted-foreground">{t("targets.workbench.externalAction")}</p> : null}
+                          {action && command.state === "blocked" ? <Button size="sm" variant="link" className="h-auto p-0" onClick={() => { setSelectedSubmissionId(action.submissionId); navigate(`/targets/${target.targetId}/delivery`); }}>{t("targets.delivery.openDelivery")}</Button> : null}
                           {command.resourceId ? (
                             <div className="mt-1 flex flex-wrap gap-3">
                               <CommandBinding value={command.resourceId} label={t("targets.commands.resource")} />
@@ -621,7 +704,7 @@ export function TargetWorkbench() {
                           {isAutomatic && command.state === "available" ? (
                             <p className="mt-1 text-xs text-muted-foreground">{t("targets.commands.automaticRecovery")}</p>
                           ) : null}
-                          {command.id === "create_run" && command.state === "available" && !canInvoke ? (
+                          {command.id === "create_run" && command.state === "available" && runNode?.responsiblePrincipal?.principalType !== "agent" ? (
                             <p className="mt-1 text-xs text-destructive">{t("targets.commands.agentBindingRequired")}</p>
                           ) : null}
                         </div>
@@ -672,7 +755,7 @@ export function TargetWorkbench() {
                             type="button"
                             size="sm"
                             variant="outline"
-                            disabled={!selectedDeploymentRevisionId || !deliveryCompletion.trim() || deliveryCompletion.trim().length > 4000 || commandMutation.isPending}
+                            disabled={!selectedDeploymentRevisionId || !deliveryCompletion.trim() || deliveryCompletion.trim().length > 4000 || commandMutation.isPending || workspaceQuery.isError || !accountIdentitySettled}
                             onClick={() => submitCommand({ id: "create_graph_revision", deploymentRevisionId: selectedDeploymentRevisionId, completionDefinition: deliveryCompletion.trim() })}
                           >
                             {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
@@ -709,7 +792,9 @@ export function TargetWorkbench() {
                   );
                 })}
               </ol>
-              {visibleCommands.length === 0 ? <p className="text-sm text-muted-foreground">{t("targets.delivery.noActions")}</p> : null}
+              {inspectedCommandId ? <Button size="sm" variant="ghost" onClick={() => setInspectedCommandId(null)}><ArrowLeft className="h-4 w-4" />{t("targets.workbench.backToActions")}</Button> : null}
+              {visibleCommands.length === 0 && (activeTab !== "overview" || workspace.attention.length === 0) ? <p className="text-sm text-muted-foreground">{activeTab !== "overview" ? t("targets.delivery.noActions") : t(workspace.outcome.state === "blocked" ? "targets.workbench.blocked" : workspace.outcome.state === "accepted" ? "targets.workbench.accepted" : workspace.outcome.state === "canceled" ? "targets.workbench.canceled" : workspace.runs.some((run) => ["running", "queued", "cancel_requested"].includes(run.status)) ? "targets.workbench.running" : "targets.workbench.idle")}</p> : null}
+              {activeTab === "overview" && workspace.outcome.state === "blocked" && workspace.attention.length === 0 ? workspace.outcome.controls.filter((control) => control.state === "blocked" || control.state === "invalidated").map((control) => <p key={control.key} className="text-xs text-muted-foreground">{control.reason ?? t("targets.workbench.unknownReason")}</p>) : null}
               {commandMutation.isPending ? (
                 <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
                   <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -727,7 +812,7 @@ export function TargetWorkbench() {
                   <AlertCircle className="h-4 w-4" />
                   <span>{targetCommandFailureDetail ? t("targets.commands.failedDetail", { detail: targetCommandFailureDetail }) : t("targets.commands.failed")}</span>
                   {lastCommand ? (
-                    <Button type="button" size="sm" variant="outline" onClick={() => commandMutation.mutate(lastCommand)}>
+                    <Button type="button" size="sm" variant="outline" disabled={workspaceQuery.isError} onClick={() => commandMutation.mutate(lastCommand)}>
                       <RefreshCw className="h-4 w-4" />
                       {t("common.retry")}
                     </Button>
@@ -738,7 +823,7 @@ export function TargetWorkbench() {
           ) : null);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="min-w-0 space-y-5">
       {isRevision ? (
         <Link to={`/targets/${target.targetId}/overview`} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" />
@@ -746,21 +831,13 @@ export function TargetWorkbench() {
         </Link>
       ) : null}
 
-      <header className="space-y-3 border-b border-border pb-5">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span>{t(`targets.statuses.${target.status}`)}</span>
-          <span>·</span>
-          <span>{target.currentStage?.label ?? t("targets.unknownStage")}</span>
-          <span>·</span>
-          <span>
-            {isRevision
-              ? t("targets.immutableRevision")
-              : t("targets.nativeRevision")}
-          </span>
-        </div>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <h2 className="text-xl font-semibold">{target.title}</h2>
+      <header className="space-y-2 pb-3">
+        {isRevision ? <p className="text-xs text-muted-foreground">{t("targets.immutableRevision")}</p> : null}
+        <div className="flex flex-col items-start gap-3 lg:flex-row lg:justify-between">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3"><h2 className="min-w-0 break-words text-xl font-semibold">{target.title}</h2><ToneBadge tone={target.status === "blocked" ? "danger" : "neutral"}>{t(`targets.statuses.${target.status}`)}</ToneBadge>{target.archivedAt ? <ToneBadge tone="neutral">{t("targets.list.archived")}</ToneBadge> : null}</div>
           {!isRevision ? (
+            <div className="flex flex-wrap items-center gap-2">
+            <TargetConversations workspaceId={selectedCompanyId!} targetId={target.targetId} />
             <Button
               variant="outline"
               size="sm"
@@ -770,12 +847,21 @@ export function TargetWorkbench() {
               <MessageSquare className="h-4 w-4" />
               {createConversation.isPending ? t("targets.conversationCreating") : t("targets.discuss")}
             </Button>
+            </div>
           ) : null}
         </div>
         {createConversation.isError ? (
           <p className="text-sm text-destructive">{t("targets.conversationFailed")}</p>
         ) : null}
         {target.summary ? <p className="max-w-3xl text-sm text-muted-foreground">{target.summary}</p> : null}
+        {!isRevision ? <Sheet>
+          <SheetTrigger asChild><Button variant="ghost" size="sm"><FileText className="h-4 w-4" />{t("targets.delivery.targetDetails")}</Button></SheetTrigger>
+          <SheetContent className="overflow-y-auto">
+            <SheetHeader><SheetTitle>{t("targets.delivery.targetDetails")}</SheetTitle><SheetDescription>{target.title}</SheetDescription></SheetHeader>
+            <div className="space-y-5 p-4"><section className="space-y-2"><h3 className="text-sm font-semibold">{t("targets.goal")}</h3><p className="whitespace-pre-wrap break-words text-sm">{target.definition.goal}</p></section>
+            {target.definition.constraints.length ? <section className="space-y-2"><h3 className="text-sm font-semibold">{t("targets.constraints")}</h3><ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">{target.definition.constraints.map((constraint) => <li key={constraint}>{constraint}</li>)}</ul></section> : null}</div>
+          </SheetContent>
+        </Sheet> : null}
         <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
           <span>{t("targets.outcomeOwner")}: {target.outcomeOwner?.displayName ?? target.outcomeOwner?.principalId ?? t("targets.unassigned")}</span>
           <span>{t("targets.risk")}: {t(`targets.risks.${target.risk.level}`)}</span>
@@ -835,15 +921,9 @@ export function TargetWorkbench() {
 
       {(isRevision || activeTab === "overview" || activeTab === "delivery") ? (
         <div className="space-y-7">
-          {!isRevision && activeTab === "overview" && workspace?.attention.length ? <details className="border-b border-border pb-3">
-            <summary className="cursor-pointer text-sm font-medium">{t("targets.attention")} · {workspace.attention.length}</summary>
-            <ul className="mt-3 divide-y divide-border">{workspace.attention.map((item) => <li key={item.id} className="py-2 text-sm">
-              <Link to={`/targets/${target.targetId}/${item.runId ? "runs" : item.resourceType && item.resourceType !== "target" && item.resourceType !== "action_request" ? "delivery" : "overview"}`} className="hover:underline">{t(`targets.attentionKinds.${item.kind}`)}</Link>
-              {item.detail ? <p className="mt-1 break-words text-xs text-muted-foreground">{item.detail}</p> : null}
-            </li>)}</ul>
-          </details> : null}
+          {activeTab === "overview" && workspace?.attention.length ? <Button variant="ghost" size="sm" className="justify-start text-muted-foreground" onClick={() => { commandsRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }); commandsRef.current?.focus(); }}><AlertCircle className="h-4 w-4" />{t("targets.graph.pendingAttention", { count: workspace.attention.length })}<ChevronDown className="h-4 w-4" /></Button> : null}
           {!isRevision && activeTab === "overview" ? <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.work")}>
-            {workspace ? <TargetWorkGraph items={workspace.work} graph={workspace.graph} inspector={(node) => {
+            {workspace ? <div ref={graphRef}><TargetWorkGraph key={target.targetId} items={workspace.work} graph={workspace.graph} versions={workspace.graphVersions} onCreateRevision={!workspaceQuery.isError && workspace.availableCommands.some((command) => command.id === "create_graph_revision" && command.state === "available") ? () => setInspectedCommandId("create_graph_revision") : undefined} selectedId={selectedNodeId} onSelect={setSelectedNodeId} priorityId={priorityWorkItem(workspace.work, workspace.attention)?.id} ownerName={(node) => principalName(node.responsiblePrincipal)} inspector={(node, closeExpanded) => {
               const runs = workspace.runs.filter((run) => run.workNodeId === node.id && run.graphRevisionId === node.graphRevisionId);
               const integrations = workspace.integrationRuns.filter((run) => run.workNodeId === node.id && run.graphRevisionId === node.graphRevisionId);
               const humanResults = workspace.humanWorkResults.filter((result) => result.workNodeId === node.id && result.graphRevisionId === node.graphRevisionId);
@@ -851,49 +931,18 @@ export function TargetWorkbench() {
               return <div className="space-y-3 border-t border-border pt-3">
                 {runs.length ? <ul className="space-y-2">{runs.map((run) => <li key={run.id} className="flex flex-wrap items-center gap-3 text-xs">
                   <span className="font-mono">{run.id.slice(0, 8)}</span><span>{t(`targets.execution.statuses.${run.status}`)}</span>
-                  <Button size="sm" variant="ghost" onClick={() => setRunsExpanded(true)}><Play className="h-4 w-4" />{t("targets.delivery.nodeRuns")}</Button>
+                  <Button size="sm" variant="ghost" onClick={() => { closeExpanded(); inspectRun(run.id); }}><Play className="h-4 w-4" />{t("targets.delivery.nodeRuns")}</Button>
                 </li>)}</ul> : null}
                 {integrations.map((run) => <p key={run.id} className="text-xs">{run.provider} · {t(`targets.assurance.verdicts.${run.conclusion === "success" ? "passed" : run.conclusion === "failure" ? "failed" : "inconclusive"}`)} · {formatDateTime(run.createdAt)}</p>)}
                 {humanResults.map((result) => <p key={result.id} className="text-xs">{result.submittedBy.principalId} · {formatDateTime(result.createdAt)}</p>)}
                 {!runs.length && !integrations.length && !humanResults.length ? <p className="text-xs text-muted-foreground">{t("targets.emptyTabs.runs")}</p> : null}
                 {artifacts.length ? <ul className="space-y-1 text-sm">{artifacts.map((artifact) => <li key={artifact.id}>{artifact.title}</li>)}</ul> : null}
-                <Link to={`/targets/${target.targetId}/delivery`} className="text-xs underline">{t("targets.delivery.openDelivery")}</Link>
+                <Link to={`/targets/${target.targetId}/delivery`} onClick={() => { closeExpanded(); setSelectedSubmissionId(""); }} className="text-xs underline">{t("targets.delivery.openDelivery")}</Link>
               </div>;
-            }} /> : null}
+            }} /></div> : null}
           </WorkspaceSectionState> : null}
-          {activeTab === "overview" ? commandPanel : null}
 
-          {activeTab === "overview" || isRevision ? <details className="border-y border-border py-3">
-          <summary className="cursor-pointer text-sm font-medium">{t("targets.delivery.targetDetails")}</summary>
-          <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="py-4 sm:pr-5">
-              <dt className="text-xs text-muted-foreground">{t("targets.collection")}</dt>
-              <dd className="mt-1 text-sm font-medium">
-                {target.collection ? (
-                  <Link to="/collections" className="hover:underline">
-                    {target.collection.name}
-                  </Link>
-                ) : t("targets.noCollection")}
-              </dd>
-            </div>
-            <div className="border-t border-border py-4 sm:border-l sm:border-t-0 sm:px-5">
-              <dt className="text-xs text-muted-foreground">{t("targets.outcomeOwner")}</dt>
-              <dd className="mt-1 text-sm font-medium">
-                {target.outcomeOwner?.displayName ?? target.outcomeOwner?.principalId ?? t("targets.unassigned")}
-              </dd>
-            </div>
-            <div className="border-t border-border py-4 sm:pr-5 lg:border-l lg:border-t-0 lg:px-5">
-              <dt className="text-xs text-muted-foreground">{t("targets.risk")}</dt>
-              <dd className="mt-1 text-sm font-medium">{t(`targets.risks.${target.risk.level}`)}</dd>
-            </div>
-            <div className="border-t border-border py-4 sm:border-l sm:px-5 lg:border-t-0">
-              <dt className="text-xs text-muted-foreground">{t("targets.updated")}</dt>
-              <dd className="mt-1 text-sm font-medium">{formatDateTime(target.updatedAt)}</dd>
-            </div>
-          </dl>
-          <p className="whitespace-pre-wrap text-sm">{target.definition.goal}</p>
-          {target.definition.constraints.length ? <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted-foreground">{target.definition.constraints.map((constraint) => <li key={constraint}>{constraint}</li>)}</ul> : null}
-          </details> : null}
+          {activeTab === "overview" ? commandPanel : null}
 
           {target.definition && (isRevision || (activeTab === "delivery" && !delivery?.submission)) ? (
             <section aria-labelledby="target-definition-title" className="space-y-5 border-y border-border py-5">
@@ -964,33 +1013,6 @@ export function TargetWorkbench() {
             <p>{t("targets.readOnlyNotice")}</p>
           </div> : null}
         </div>
-      ) : null}
-
-      {activeTab === "overview" && !isRevision ? (
-        <details open={tab === "stages"} className="border-b border-border pb-3">
-        <summary className="cursor-pointer text-sm font-medium">{t("targets.tabs.stages")}</summary>
-        <WorkspaceSectionState
-          loading={workspaceQuery.isLoading}
-          error={workspaceQuery.isError}
-          empty={t("targets.emptyTabs.stages")}
-        >
-          {workspace?.stages.length ? (
-            <ol className="border-y border-border">
-              {workspace.stages.map((stage) => (
-                <li key={stage.key} className="flex items-center gap-3 border-b border-border py-4 last:border-b-0">
-                  {stage.state === "completed" ? (
-                    <Check className="h-4 w-4 text-success" />
-                  ) : (
-                    <Circle className={stage.state === "blocked" ? "h-4 w-4 text-destructive" : "h-4 w-4 text-muted-foreground"} />
-                  )}
-                  <span className="text-sm font-medium">{t(`targets.stageNames.${stage.key}`)}</span>
-                  <span className="ml-auto text-xs text-muted-foreground">{t(`targets.stageStates.${stage.state}`)}</span>
-                </li>
-              ))}
-            </ol>
-          ) : null}
-        </WorkspaceSectionState>
-        </details>
       ) : null}
 
       {activeTab === "delivery" && !isRevision && delivery?.submission ? (
@@ -1181,9 +1203,11 @@ export function TargetWorkbench() {
         </section>
       ) : null}
 
-      {activeTab === "overview" && !isRevision ? <Button variant="outline" size="sm" onClick={() => { if (tab === "runs") navigate(`/targets/${target.targetId}/overview`); setRunsExpanded(!showRuns); }}><Play className="h-4 w-4" />{t(showRuns ? "targets.delivery.hideRuns" : "targets.delivery.allRuns", { count: workspace?.runs.length ?? 0 })}</Button> : null}
+      {activeTab === "overview" && !isRevision ? <Button variant="ghost" className="h-auto w-full justify-start rounded-md bg-muted/50 p-4" aria-expanded={showRuns && !focusedRunId} size="sm" onClick={() => { setFocusedRunId(null); if (tab === "runs") navigate(`/targets/${target.targetId}/overview`); setRunsExpanded(focusedRunId ? true : !showRuns); }}><Play className="h-4 w-4" />{t(showRuns && !focusedRunId ? "targets.delivery.hideRuns" : "targets.delivery.allRuns", { count: workspace?.runs.length ?? 0 })}<ChevronDown className={cn("ml-auto h-4 w-4", showRuns && !focusedRunId && "rotate-180")} /></Button> : null}
       {showRuns && !isRevision ? (
+        <section ref={runsRef} tabIndex={-1} className="outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={t("targets.delivery.nodeRuns")}>
         <WorkspaceSectionState loading={workspaceQuery.isLoading} error={workspaceQuery.isError} empty={t("targets.emptyTabs.runs")}>
+          {focusedRunId && workspace && !workspace.runs.some((run) => run.id === focusedRunId) ? <p role="status" className="py-3 text-sm text-muted-foreground">{t("targets.workbench.runUnavailable")}</p> : null}
           {outboxFailures.isError ? (
             <div role="alert" className="flex items-center gap-3 border-b border-border py-3 text-sm text-destructive">
               <span className="min-w-0 flex-1">{t("targets.execution.outboxLoadFailed")}</span>
@@ -1191,14 +1215,15 @@ export function TargetWorkbench() {
             </div>
           ) : null}
           {workspace?.runs.length ? (
-            <ul className="border-y border-border">
-              {workspace.runs.map((run) => (
-                <li key={run.id} className="space-y-4 border-b border-border py-4 last:border-b-0">
+            <ul className="grid gap-3">
+              {workspace.runs.filter((run) => !focusedRunId || run.id === focusedRunId).map((run) => (
+                <li key={run.id} className="space-y-4 rounded-lg bg-muted/50 p-4">
                   <div className="flex flex-wrap items-center gap-3">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">{run.actor.principalId}</p>
+                      <p className="break-words text-sm font-medium" title={run.actor.principalId}>{principalName(run.actor)}</p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {run.kind} · {t("targets.execution.runId", { id: run.id.slice(0, 8) })} · {t("targets.execution.attemptCount", { count: run.attempt })}
+                        {t(run.kind === "agent_run" ? "targets.graph.kinds.agent_task" : "targets.graph.kinds.integration_task")} · {t("targets.execution.runId", { id: run.id.slice(0, 8) })} · {t("targets.execution.attemptCount", { count: run.attempt })}
+                        {" · "}{t("targets.graph.version")} · {workspace.graphVersions?.find((revision) => revision.id === run.graphRevisionId) ? `r${workspace.graphVersions.find((revision) => revision.id === run.graphRevisionId)!.revisionNumber}` : run.graphRevisionId}
                       </p>
                     </div>
                     <span className="text-xs font-medium">{t(`targets.execution.statuses.${run.status}`)}</span>
@@ -1208,7 +1233,7 @@ export function TargetWorkbench() {
                         size="sm"
                         variant="outline"
                         onClick={() => retryRun.mutate(run.id)}
-                        disabled={pendingRunId === run.id}
+                        disabled={pendingRunId === run.id || workspaceQuery.isError}
                       >
                         <RefreshCw className="h-4 w-4" />
                         {t(run.attempt === 0 ? "targets.execution.start" : "targets.execution.retry")}
@@ -1220,13 +1245,14 @@ export function TargetWorkbench() {
                         size="sm"
                         variant="outline"
                         onClick={() => cancelRun.mutate(run.id)}
-                        disabled={pendingRunId === run.id}
+                        disabled={pendingRunId === run.id || workspaceQuery.isError}
                       >
                         <Square className="h-4 w-4" />
                         {t("targets.execution.cancel")}
                       </Button>
                     ) : null}
                   </div>
+                  <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">{t("targets.delivery.auditDetails")}</summary><p className="mt-2 break-all font-mono">{run.actor.principalType} · {run.actor.principalId}</p></details>
                   {(outboxFailures.data ?? []).filter((event) => event.runId === run.id).map((event) => (
                     <div key={event.eventId} className="flex flex-wrap items-center gap-3 border-t border-border pt-3">
                       <div className="min-w-0 flex-1 text-xs">
@@ -1271,6 +1297,7 @@ export function TargetWorkbench() {
             </p>
           ) : null}
         </WorkspaceSectionState>
+        </section>
       ) : null}
 
       {activeTab === "timeline" && !isRevision ? (

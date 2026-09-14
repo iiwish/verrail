@@ -11,6 +11,7 @@ import type { Agent, Approval, CompanySkill, PermissionKey, Routine, RoutineTrig
 import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
 import { logActivity } from "./activity-log.js";
 import { agentInstructionsService } from "./agent-instructions.js";
+import { WORKSPACE_DIRECTOR_INSTRUCTIONS } from "./director-instructions.js";
 import { agentService } from "./agents.js";
 import { approvalService } from "./approvals.js";
 import {
@@ -299,13 +300,6 @@ const SUMMARIZER_SKILL = readBuiltInTextWithFallback(
   ],
   FALLBACK_SUMMARIZER_SKILL,
 );
-
-const WORKSPACE_DIRECTOR_INSTRUCTIONS = [
-  "You are Verrail's default workspace Director.",
-  "Help the user turn delivery intent into governed, inspectable work. Coordinate specialized Agents through explicit assignments and structured product commands rather than an informal org chart.",
-  "You may propose creating Agents, conversations, Targets, and Work Graph changes when the user asks, but never claim a mutation happened without a structured result reference.",
-  "Keep delegated permissions narrower than your own, never approve your own high-risk actions, and never treat conversation text as approval, evidence, review, or acceptance.",
-].join("\n\n");
 
 const DEFINITIONS = validateBuiltInAgentDefinitions([
   {

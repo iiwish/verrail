@@ -178,6 +178,23 @@ func newServer(token string, store *target.Store, logger *slog.Logger, proof *Fi
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", server.health)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/targets", server.createTarget)
+	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/targets/{targetId}/manage", func(response http.ResponseWriter, request *http.Request) {
+		if !server.authorized(request) {
+			writeError(response, &target.Error{Status: 401, Code: "DOMAIN_API_UNAUTHORIZED", Message: "Unauthorized"})
+			return
+		}
+		command := target.ManageTargetCommand{WorkspaceID: request.PathValue("workspaceId"), TargetID: request.PathValue("targetId"), Principal: principal(request), IdempotencyKey: request.Header.Get("Idempotency-Key")}
+		if err := decodeBody(response, request, &command.Input); err != nil {
+			writeError(response, err)
+			return
+		}
+		result, err := store.ManageTarget(request.Context(), command)
+		if err != nil {
+			writeError(response, target.AsError(err))
+			return
+		}
+		writeJSON(response, http.StatusOK, result)
+	})
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/targets/{targetId}/revisions", func(response http.ResponseWriter, request *http.Request) {
 		if !server.authorized(request) {
 			writeError(response, &target.Error{Status: 401, Code: "DOMAIN_API_UNAUTHORIZED", Message: "Unauthorized"})

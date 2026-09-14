@@ -32,6 +32,10 @@ import {
   startAdapterAuthSessionRequestSchema,
   startClaudeSetupTokenSessionRequestSchema,
   submitBrowserCodeRequestSchema,
+  DIRECTOR_INSTRUCTIONS_CONFIG_KEY,
+  isWorkspaceDirector,
+  previewDirectorInstructionsSchema,
+  applyDirectorInstructionsSchema,
 } from "@paperclipai/shared";
 import {
   isForbiddenConfigEnvKey,
@@ -42,6 +46,7 @@ import {
 } from "@paperclipai/adapter-utils/server-utils";
 import { trackAgentCreated } from "@paperclipai/shared/telemetry";
 import { validate } from "../middleware/validate.js";
+import { buildDirectorInstructions, resolveDirectorChatRuntime } from "../services/director-instructions.js";
 import {
   agentService,
   agentInstructionsService,
@@ -310,6 +315,7 @@ export function agentRoutes(
     "instructionsEntryFile",
     "instructionsFilePath",
     "agentsMdPath",
+    DIRECTOR_INSTRUCTIONS_CONFIG_KEY,
   ] as const;
   const KNOWN_INSTRUCTIONS_BUNDLE_KEY_SET: ReadonlySet<string> = new Set(KNOWN_INSTRUCTIONS_BUNDLE_KEYS);
 
@@ -3777,6 +3783,47 @@ export function agentRoutes(
       adapterConfigKey,
       path: pathValue,
     });
+  });
+
+  function directorInstructionsView(agent: { name: string; adapterConfig: unknown; status: string; pausedAt?: Date | null }, candidatePrompt?: string) {
+    const runtime = resolveDirectorChatRuntime();
+    return buildDirectorInstructions({
+      agentName: agent.name, adapterConfig: agent.adapterConfig, runtime,
+      available: (options.deploymentMode ?? "local_trusted") === "local_trusted"
+        && !["paused", "pending_approval", "terminated"].includes(agent.status) && !agent.pausedAt,
+      toolsAvailable: runtime === "codex",
+      candidatePrompt,
+    });
+  }
+
+  router.get("/agents/:id/director-instructions", async (req, res) => {
+    assertBoard(req);
+    const existing = await getAccessibleResource(req, res, svc.getById(req.params.id as string), "Agent not found");
+    if (!existing) return;
+    await assertCanReadAgent(req, existing);
+    if (!isWorkspaceDirector(existing.metadata)) throw notFound("Workspace Director not found");
+    res.json(directorInstructionsView(existing));
+  });
+
+  router.post("/agents/:id/director-instructions/preview", validate(previewDirectorInstructionsSchema), async (req, res) => {
+    assertBoard(req);
+    const existing = await getAccessibleResource(req, res, svc.getById(req.params.id as string), "Agent not found");
+    if (!existing) return;
+    await assertCanReadAgent(req, existing);
+    if (!isWorkspaceDirector(existing.metadata)) throw notFound("Workspace Director not found");
+    res.json(directorInstructionsView(existing, req.body.rolePrompt));
+  });
+
+  router.put("/agents/:id/director-instructions", validate(applyDirectorInstructionsSchema), async (req, res) => {
+    assertBoard(req);
+    const existing = await getAccessibleResource(req, res, svc.getById(req.params.id as string), "Agent not found");
+    if (!existing) return;
+    await assertCanManageInstructionsPath(req, existing);
+    if (!isWorkspaceDirector(existing.metadata)) throw notFound("Workspace Director not found");
+    const actor = getActorInfo(req);
+    if (actor.actorType !== "user") throw forbidden("A human operator must apply Director instructions");
+    const updated = await svc.applyDirectorInstructions(existing.companyId, existing.id, actor.actorId, req.body);
+    res.json(directorInstructionsView(updated));
   });
 
   router.get("/agents/:id/instructions-bundle", async (req, res) => {

@@ -44,6 +44,8 @@ export const verrailTargets = pgTable(
     collectionId: uuid("collection_id"),
     activeTargetRevisionId: uuid("active_target_revision_id").notNull(),
     status: text("status").notNull().default("draft"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    archiveVersion: integer("archive_version").notNull().default(0),
     createdByPrincipalType: text("created_by_principal_type").notNull(),
     createdByPrincipalId: text("created_by_principal_id").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -65,6 +67,8 @@ export const verrailTargets = pgTable(
       table.workspaceId,
       table.updatedAt,
     ),
+    workspaceArchiveUpdatedIdx: index("verrail_targets_workspace_archive_updated_idx").on(table.workspaceId, table.archivedAt, table.updatedAt),
+    archiveVersionCheck: check("verrail_targets_archive_version_check", sql`${table.archiveVersion} >= 0`),
     workspaceCollectionUpdatedIdx: index("verrail_targets_workspace_collection_updated_idx").on(
       table.workspaceId,
       table.collectionId,

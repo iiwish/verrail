@@ -8,6 +8,8 @@ import {
   updateAgentPermissionsSchema,
   updateAgentInstructionsPathSchema,
   updateAgentInstructionsBundleSchema,
+  previewDirectorInstructionsSchema,
+  applyDirectorInstructionsSchema,
   upsertAgentInstructionsFileSchema,
   createAgentKeySchema,
   builtInAgentEmptyMutationSchema,
@@ -2003,6 +2005,33 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "get",
+  path: "/api/agents/{id}/director-instructions",
+  tags: ["agents"],
+  summary: "Inspect effective local Director chat instructions (board only)",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/agents/{id}/director-instructions/preview",
+  tags: ["agents"],
+  summary: "Preview a Director role draft without a model run or mutation (board only)",
+  request: { params: z.object({ id: z.string() }), body: jsonBody(previewDirectorInstructionsSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/agents/{id}/director-instructions",
+  tags: ["agents"],
+  summary: "Apply a concurrency-checked local Director instruction snapshot (human operator only)",
+  request: { params: z.object({ id: z.string() }), body: jsonBody(applyDirectorInstructionsSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
   method: "patch",
   path: "/api/agents/{id}/instructions-bundle",
   tags: ["agents"],
@@ -3211,6 +3240,22 @@ registry.registerPath({
   },
 });
 
+registry.registerPath({
+  method: "get", path: "/api/workspaces/{workspaceId}/agents/{agentId}/publication-preview", tags: ["agents"],
+  summary: "Preview a saved configuration snapshot without resolving credentials",
+  request: { params: z.object({ workspaceId: z.string().uuid(), agentId: z.string().uuid() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.badRequest },
+});
+registry.registerPath({
+  method: "post", path: "/api/workspaces/{workspaceId}/agent-definitions/{definitionId}/publish-saved", tags: ["agents"],
+  summary: "Publish the saved configuration after checking the preview hash",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), definitionId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(z.object({ sourceHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict()),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
 registry.registerPath({
   method: "get",
   path: "/api/workspaces/{workspaceId}/agent-lifecycle",

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
+import { publicationHash, readAgentPublication } from "./agent-publication.js";
 import {
   agentWakeupRequests, heartbeatRuns, verrailAgentDefinitions, verrailAgentVersions,
   verrailDeploymentRevisions, verrailExecutionLeases, verrailRunAttempts, verrailRuns, type Db,
@@ -78,6 +79,11 @@ export async function resolveNativeRunWorkspace(
     requestedByActorId: agentWakeupRequests.requestedByActorId,
     wakeIdempotencyKey: agentWakeupRequests.idempotencyKey,
     runtimeConfig: verrailDeploymentRevisions.runtimeConfig,
+    publishedSnapshot: {
+      runtime: verrailAgentVersions.runtime, model: verrailAgentVersions.model, prompt: verrailAgentVersions.prompt,
+      skills: verrailAgentVersions.skills, tools: verrailAgentVersions.tools, outputSchema: verrailAgentVersions.outputSchema,
+      capabilityCeiling: verrailAgentVersions.capabilityCeiling, supplyChain: verrailAgentVersions.supplyChain,
+    },
   }).from(heartbeatRuns)
     .innerJoin(agentWakeupRequests, and(
       eq(agentWakeupRequests.id, heartbeatRuns.wakeupRequestId),
@@ -102,6 +108,13 @@ export async function resolveNativeRunWorkspace(
     .innerJoin(verrailAgentDefinitions, and(eq(verrailAgentDefinitions.id, verrailAgentVersions.agentDefinitionId), eq(verrailAgentDefinitions.workspaceId, verrailRunAttempts.workspaceId)))
     .where(and(eq(heartbeatRuns.id, input.heartbeatRunId), eq(heartbeatRuns.companyId, input.workspaceId), eq(heartbeatRuns.agentId, input.agentId)));
   const binding = validateNativeWorkspaceBinding(rows[0] ?? null, {...input, attemptId, runId});
+  const published = rows[0].publishedSnapshot;
+  if (published.supplyChain?.source === "saved_agent_configuration.v1") {
+    const current = await readAgentPublication(db, input.workspaceId, input.agentId);
+    if (current.mode !== "compatibility_executor" || current.sourceHash !== publicationHash(published)) {
+      throw new Error("NATIVE_CONFIGURATION_DRIFT: saved configuration or instructions differ from the published version");
+    }
+  }
   const cwd = await realpath(binding.cwd);
   if (!(await stat(cwd)).isDirectory()) throw new Error("NATIVE_WORKSPACE_INVALID: cwd must be an existing directory");
   const manifest = { schemaVersion: 1, source: "deployment_revision", ...binding,

@@ -1,9 +1,10 @@
-import { and, asc, desc, eq, ilike } from "drizzle-orm";
+import { and, asc, desc, eq, exists, ilike, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   verrailConversationContextBindings,
   verrailConversationMessages,
   verrailConversations,
+  verrailTargetCreationDrafts,
 } from "@paperclipai/db";
 import type {
   Conversation,
@@ -15,6 +16,7 @@ import type {
   UpdateConversationInput,
 } from "@paperclipai/shared";
 import { conflict, forbidden } from "../errors.js";
+import { readConversationTarget, switchConversationContext } from "./conversation-context.js";
 
 type ConversationActor = {
   principalType: "user" | "agent";
@@ -76,20 +78,34 @@ export function conversationService(db: Db) {
       const rows = await db
         .select()
         .from(verrailConversations)
-        .where(where)
+        .where(and(where, query.targetId ? exists(db.select({ id: verrailConversationContextBindings.id }).from(verrailConversationContextBindings).where(and(
+          eq(verrailConversationContextBindings.workspaceId, workspaceId),
+          eq(verrailConversationContextBindings.conversationId, verrailConversations.id),
+          eq(verrailConversationContextBindings.contextType, "target"),
+          eq(verrailConversationContextBindings.contextId, query.targetId),
+        ))) : undefined, query.agentId ? exists(db.select({ id: verrailConversationMessages.id }).from(verrailConversationMessages).where(and(
+          eq(verrailConversationMessages.workspaceId, workspaceId),
+          eq(verrailConversationMessages.conversationId, verrailConversations.id),
+          eq(verrailConversationMessages.role, "assistant"),
+          eq(verrailConversationMessages.authorPrincipalType, "agent"),
+          eq(verrailConversationMessages.authorPrincipalId, query.agentId),
+        ))) : undefined))
         .orderBy(
-          desc(verrailConversations.pinnedAt),
-          desc(verrailConversations.lastMessageAt),
-          desc(verrailConversations.updatedAt),
+          sql`${verrailConversations.pinnedAt} desc nulls last`,
+          desc(sql`coalesce(${verrailConversations.lastMessageAt}, ${verrailConversations.createdAt})`),
+          asc(verrailConversations.id),
         );
-      return rows.map(mapConversation);
+      const sources = query.targetId ? await db.select({ conversationId: verrailTargetCreationDrafts.conversationId }).from(verrailTargetCreationDrafts)
+        .where(and(eq(verrailTargetCreationDrafts.workspaceId, workspaceId), eq(verrailTargetCreationDrafts.convertedTargetId, query.targetId), eq(verrailTargetCreationDrafts.status, "converted"))) : [];
+      const sourceIds = new Set(sources.map(row => row.conversationId));
+      return rows.map(row => ({ ...mapConversation(row), ...(query.targetId ? { targetRelation: sourceIds.has(row.id) ? "source" as const : "related" as const } : {}) }));
     },
 
     create: async (
       workspaceId: string,
       input: CreateConversationInput,
       actor: ConversationActor,
-      options: { trustedContext?: boolean } = {},
+      options: { trustedContext?: boolean; initialTargetId?: string } = {},
     ): Promise<ConversationDetail> => {
       if (input.contextBindings.length > 0 && !options.trustedContext) {
         throw forbidden("Conversation context bindings are server-owned", {
@@ -120,10 +136,21 @@ export function conversationService(db: Db) {
               })))
               .returning()
           : [];
+        if (options.initialTargetId) {
+          if (actor.principalType !== "user") throw forbidden("A human Workspace member is required");
+          await switchConversationContext(tx, { workspaceId, conversationId: conversation.id, principalId: actor.principalId }, { targetId: options.initialTargetId, expectedContextVersion: 0, idempotencyKey: "conversation-created" });
+        }
         return {
           ...mapConversation(conversation),
-          contextBindings: contextBindings.map(mapBinding),
-          messages: [],
+          currentTargetId: options.initialTargetId ?? null,
+          contextVersion: options.initialTargetId ? 1 : 0,
+          currentTarget: await readConversationTarget(tx, workspaceId, options.initialTargetId ?? null),
+          contextBindings: options.initialTargetId
+            ? (await tx.select().from(verrailConversationContextBindings).where(and(eq(verrailConversationContextBindings.workspaceId, workspaceId), eq(verrailConversationContextBindings.conversationId, conversation.id)))).map(mapBinding)
+            : contextBindings.map(mapBinding),
+          messages: options.initialTargetId
+            ? (await tx.select().from(verrailConversationMessages).where(and(eq(verrailConversationMessages.workspaceId, workspaceId), eq(verrailConversationMessages.conversationId, conversation.id)))).map(mapMessage)
+            : [],
         };
       });
     },
@@ -151,6 +178,7 @@ export function conversationService(db: Db) {
       ]);
       return {
         ...mapConversation(row),
+        currentTarget: await readConversationTarget(db, workspaceId, row.currentTargetId),
         messages: messages.map(mapMessage),
         contextBindings: bindings.map(mapBinding),
       };
@@ -205,6 +233,16 @@ export function conversationService(db: Db) {
           });
         }
         const now = new Date();
+        if (input.role === "tool" && input.metadata?.kind === "director_target_proposal" && typeof input.metadata.targetId === "string") {
+          const [source] = typeof input.metadata.sourceMessageId === "string"
+            ? await tx.select().from(verrailConversationMessages).where(and(eq(verrailConversationMessages.workspaceId, workspaceId), eq(verrailConversationMessages.conversationId, conversationId), eq(verrailConversationMessages.id, input.metadata.sourceMessageId))) : [];
+          const context = source?.metadata?.conversationContext as { contextVersion?: number } | undefined;
+          // A late reply retains its provenance, but cannot undo a newer unlink or focus change.
+          if (context?.contextVersion === conversation.contextVersion) {
+            const target = await readConversationTarget(tx, workspaceId, input.metadata.targetId);
+            if (target) await tx.insert(verrailConversationContextBindings).values({ workspaceId, conversationId, contextType: "target", contextId: target.targetId, label: target.title, href: `/targets/${target.targetId}/overview` }).onConflictDoNothing();
+          }
+        }
         const message = await tx
           .insert(verrailConversationMessages)
           .values({
@@ -215,7 +253,7 @@ export function conversationService(db: Db) {
             status: input.status ?? "complete",
             authorPrincipalType: input.actor?.principalType ?? null,
             authorPrincipalId: input.actor?.principalId ?? null,
-            metadata: input.metadata ?? null,
+            metadata: input.role === "user" ? { ...input.metadata, conversationContext: { currentTargetId: conversation.currentTargetId, contextVersion: conversation.contextVersion } } : input.metadata ?? null,
           })
           .returning()
           .then((rows) => rows[0]!);

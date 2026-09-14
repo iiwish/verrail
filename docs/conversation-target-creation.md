@@ -35,6 +35,10 @@ Provider Group / Direct Chat / Web Chat
 
 Conversation 保存消息连续性和上下文引用，不拥有 Target、Run、Artifact、Evidence、ActionApproval、DeliveryReview 或 Acceptance 事实。归档 Conversation 不取消其已经创建的 Target。
 
+Web 会话提供相关目标管理：关联已有目标不改变当前焦点，切换目标可自动建立关联，解除当前目标关联同时清空焦点。关系命令与焦点命令共享 `contextVersion`、行锁和幂等收据；过期确认返回冲突，不自动套用新版本。解除关联只移除当前目标引用，目标修订、历史消息快照、创建草稿和执行事实保留。归档会话允许查看进度与关联目标，但修改关系需要先恢复会话。
+
+相关目标面板按需读取目标工作台的当前活动图节点、待处理事项和结果状态。节点完成计数与验收状态分别展示；不存在活动节点时展示空状态，不以模型总结或草稿图推断运行进度。目标侧提供活动及归档关联会话回链，并支持创建聚焦该目标的新会话。读取和操作使用当前 Workspace 权限，关联不是授权。
+
 ### ProviderConversationBinding
 
 Connector Plugin 把 Provider 特有身份归一为 `ProviderConversationBinding`，至少包含 Workspace、Connection、Provider 会话类型、外部会话稳定标识和内部 Conversation。`(connection_id, external_conversation_id)` 在一个 Workspace 中唯一。
@@ -149,6 +153,8 @@ Host 要求父消息、会话和正文摘要与原发送占用一致，Provider 
 Chat 是创建目标的主入口。全局 `New Target` 命令打开或创建 Conversation，并发送结构化“开始创建目标”意图，而不是展示要求用户一次填完全部字段的长表单。
 
 草稿在会话中使用可检查对象呈现，显示缺失字段、当前版本和下一步操作。创建成功后显示 Target 链接，并允许继续在同一 Conversation 讨论该 Target；后续普通消息不会创建新的 Target，除非用户再次明确启动创建流程。
+
+创建产生的 Target/TargetRevision ContextBinding 保存来源关系，不代表永久聚焦。会话没有当前目标且上下文版本未被并发修改时，成功创建后聚焦该目标；会话已有当前目标时保留原选择，并提供“围绕新目标继续”。创建重放或通知重试不再次切换上下文。用户可以手动切换或通过明确会话意图让 Director 切换、清除当前目标，不因此改变已确认 Draft、Target 或提案的归属。完整上下文与权限规则见 `product-design.md` 的 Conversation 定义。
 
 Target 列表直接属于 Workspace。Collection 只作为可选筛选、保存视图和批量聚合，不出现在 Target 的必选面包屑中。
 

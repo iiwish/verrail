@@ -17,6 +17,53 @@ Current implementation status:
 - Go 1.26+ for the Verrail Domain API and orchestration worker
 - Docker with Compose for the local Temporal development server
 
+## Local Conversation Runtime
+
+Director publication defaults to Codex CLI (`VERRAIL_CHAT_RUNTIME=claude` selects Claude for the snapshot).
+Chat uses the activated AgentVersion, not the editable configuration. Publish a version,
+record its validation result, and activate it before chatting. First activation creates the
+sole primary entry and retires historical entries atomically, without selecting or adopting one.
+The service resolves the CLI from its PATH; on macOS, Codex also discovers executable
+Codex/ChatGPT application bundles in the user's Applications directory and /Applications.
+`VERRAIL_CHAT_COMMAND` selects an explicit executable (not a shell command).
+`VERRAIL_CHAT_MODEL` overrides the saved model at publication; a concrete model is required for activation.
+Runtime/model changes require publication and activation. Codex authentication uses CODEX_HOME,
+but user configuration and rules are excluded; general-purpose tools stay disabled and the sandbox stays read-only.
+Codex receives only the invocation-scoped Director MCP for Target reads and human-review proposals.
+The same scoped MCP includes get_conversation_context and switch_current_target.
+Focus switches are low-risk context commands, not Target changes or permission grants.
+The chat header supports search, switch, clear and version-bound undo. Target-origin
+conversations focus that Target; creating a Target only takes focus when the captured
+conversation context is still empty and unchanged. Old bindings are not backfilled.
+POST /api/workspaces/:workspaceId/conversations/:conversationId/context accepts targetId
+(nullable), expectedContextVersion and idempotencyKey. Request messages retain their
+context snapshot; existing proposals never follow a later focus switch.
+Optional operation `link` or `unlink` requires a non-null targetId. Linking preserves
+focus; unlinking the focused Target clears it atomically. Relationship changes share
+the context version, membership checks and idempotency receipts. They never mutate
+Target execution or historical message snapshots. Archived conversations are read-only
+for context commands. Web related-target progress uses the existing Target workspace
+read model on demand and refreshes while the selected target is visible.
+The loopback API port must be reachable. Its short-lived token is passed in a redacted header,
+not in the URL, prompt, or CLI arguments. Claude remains text-only.
+Target creation uses the existing draft confirmation dialog. Definition updates and logical
+cancellation require the proposal's explicit confirmation control and a matching TargetRevision.
+Only unexecuted Targets without an active graph support these management changes.
+Archive and restore proposals support any execution state and require explicit human
+confirmation plus a matching archiveVersion. They only change list visibility, preserve
+TargetRevision, graph, runs and evidence, and never stop or restart work. The Target list
+defaults to unarchived; archiveState=archived or all selects the other views.
+
+`VERRAIL_CHAT_HTTPS_PROXY` overrides proxy variables only in the conversation child process.
+Restricted local instances can use `scripts/chat-egress-proxy.mjs`: an ephemeral authenticated
+loopback CONNECT proxy permitting only chatgpt.com, api.openai.com, and auth.openai.com on 443.
+It does not decrypt TLS or log prompts/credentials. The supervisor owns its lifecycle.
+An optional loopback HTTP upstream proxy supports hosts whose network requires an
+existing local proxy; destination validation occurs before forwarding CONNECT.
+Network policy must explicitly permit the proxy's loopback port; direct external access,
+automatic execution, and other providers remain subject to the existing restrictions.
+Enabling this path requires operator approval to send conversation content to the model service.
+
 ## Dependency Lockfile Policy
 
 GitHub Actions owns `pnpm-lock.yaml`.
