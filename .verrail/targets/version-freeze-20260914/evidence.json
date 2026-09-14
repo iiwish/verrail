@@ -1,0 +1,247 @@
+{
+  "schemaVersion": 1,
+  "codeCommit": "141f411f6ea36c3c3a9604d0db4c7cacff2a079e",
+  "generatedAt": "2026-09-14T09:38:34.727Z",
+  "logs": [
+    {
+      "path": "runs/run-001/verrail-freeze-build-final.log",
+      "bytes": 33025,
+      "sha256": "4f9806d2b28c63f97255cfdf658ee64e166ff831e521c0f17f3c255f6c6a14bb",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-build-frozen.log",
+      "bytes": 33026,
+      "sha256": "a70671fc416a200e1625ba9e80993f0dcfe913cfc71fd0ead15246d7ee397207",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-build.log",
+      "bytes": 33072,
+      "sha256": "895b585b13c763ce7c7f44363887c8582f6bdab37c793f2676c8ef32692da444",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-bundle-final.log",
+      "bytes": 264,
+      "sha256": "0d51a251ab7aaaf00af72cba54f33eb3472928e36b809d5c41e0419761d38640",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-bundle.log",
+      "bytes": 264,
+      "sha256": "279251bd6218f8606928650b0667cc5855ecbb8c59d6e60e9020e31a369871bd",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-ci-contract.log",
+      "bytes": 2203,
+      "sha256": "aec4c827540f0818d3615905aaf2179c1f53c05605bff0dc0e894494a21eb7b6",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-domain-integration-fixed.log",
+      "bytes": 213,
+      "sha256": "d193e97f5e9221eb65c07af2d8e878130e0b95732bb04d2fdeb1b70d860fca92",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-domain-integration.log",
+      "bytes": 1235,
+      "sha256": "9dd05155c2f54bd611a6796a0da34734c59acbe6fafec36aa682475534dd3c48",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-extra-projects.log",
+      "bytes": 3295,
+      "sha256": "1c836e6e7fa8dcc3de7def586725845753cff50e945bd4740e4989c3d6ef27a1",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-extra-retry.log",
+      "bytes": 213,
+      "sha256": "8f7d667ab980aa895ed139a974cec5d6eb112551e8123b61b400014defddddb4",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-go-build.log",
+      "bytes": 102,
+      "sha256": "4355b866fea7fc3b4c9a1ec305f28802124a0c50a33790ca47c64f4ea203e8b9",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-go-isolated-complete.log",
+      "bytes": 327078,
+      "sha256": "97c6d433dbb3bd12121c88a43810507222208856f85ff4f417138d4d6ba34979",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-go-isolated-final.log",
+      "bytes": 325384,
+      "sha256": "516ed0cef5d21442410f8d76aa15728192e3c627f78a6f5468881714566e6879",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-go-isolated.log",
+      "bytes": 223849,
+      "sha256": "7cb757228cc42f78f798af4f6376951ceecd74fd15c27f8328bbaea55ce3a4b3",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-go-test.log",
+      "bytes": 515,
+      "sha256": "26f14466804a39c22fc9605305fb631088882f6509905211d2733682ddfdfabd",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-npm-privacy.log",
+      "bytes": 145235,
+      "sha256": "d4581046304d13566c940dbd3b4a4d901c16c60f1a315350344321b0518b8ed9",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-openapi-fixed.log",
+      "bytes": 212,
+      "sha256": "0732aac45ee9d68874b267c3c8f1e55f5732613b892f6ed3664130108448d10d",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-process-retry.log",
+      "bytes": 213,
+      "sha256": "a18dcb4af67af27ff83d48f08693525821fe1b9f534671446056b83753f67993",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-proof-bridge-enabled.log",
+      "bytes": 218,
+      "sha256": "49eb5d92e2f7283873ebe0bd5880df8217b51f69696c2586315b2af23802f6f7",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-proof-bridge.log",
+      "bytes": 232,
+      "sha256": "1722ab456c85cc7f4d66de6439f8bbdff31e8a8648f777c7271bfbed8dc018f9",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-remaining-routes-2.log",
+      "bytes": 3682364,
+      "sha256": "4d3d19c40f8d1a0a740314d76e12adbc85753e6c78ead3742e840ca036196e6a",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-remaining-routes.log",
+      "bytes": 1112,
+      "sha256": "3ddf70b5c56261e6f0d3007a7aa07f21001bfd01ca587f85f1a3fc65a51390d4",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-roster-fixed.log",
+      "bytes": 216,
+      "sha256": "ef1b684cd57eb014fa768587b88ad4ae86682cc2c25b1922ebf5cc5a575316a5",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-runner-tests.log",
+      "bytes": 1443,
+      "sha256": "1264ed54abb87626f894ccb7e6f7a92db05e37f876508eb65527a4bb591e42aa",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-serialized-retry.log",
+      "bytes": 64297,
+      "sha256": "fe93502512f3210d90a8ebca7c2d0546af399499499377ba3eae9882b8daa059",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-serialized.log",
+      "bytes": 1641,
+      "sha256": "aed003909fca248439fc171616fc543e45737762ac76fe2fdfab36300a24dc5d",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-server-build-last.log",
+      "bytes": 430,
+      "sha256": "3d1998d02bf040b9b717df28d4ce4779feee1ba9ccfb237f7b9d7a2ddf750176",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-server-typecheck-last.log",
+      "bytes": 301,
+      "sha256": "fe2a703b5854e05b260671517db5ea41696ae77ebdb21dcebf092692a01f7793",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-tests.log",
+      "bytes": 243704,
+      "sha256": "2889f24e5e60acfa44549fced257220c198891f35261482c7938d217a5a77aaa",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-token-gates.log",
+      "bytes": 410,
+      "sha256": "f372fbd96fe42933ab21ee6fc08055a98d46bb229b5c6ea0346b18e3534475a0",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-typecheck-final.log",
+      "bytes": 8314,
+      "sha256": "1ff0f9a523478eaf6867d2a11f41e928f7607a13616f0ea493f530b3f3cb5c54",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-typecheck.log",
+      "bytes": 8314,
+      "sha256": "ad6dca932c01be142bcfe1ff05be90c83221ccdeaa61f73c805f3ee00c25749a",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-ui-build.log",
+      "bytes": 20456,
+      "sha256": "79a1806367339a82b08ef132622f89c1ff8fd39c2b276f79c72e116ddfb558fc",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-ui-failures.log",
+      "bytes": 47318,
+      "sha256": "6254f37d29865a106515d0e4b7dfd2d1f0374570b7c94027a31d593b53dc01e3",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-ui-typecheck-final.log",
+      "bytes": 75,
+      "sha256": "b64c460fd700d0dd8fc2c237b86d493f56de8c52e77494d5b2fb89380a720008",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-ui-typecheck.log",
+      "bytes": 75,
+      "sha256": "b64c460fd700d0dd8fc2c237b86d493f56de8c52e77494d5b2fb89380a720008",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-workspaces-a-retry.log",
+      "bytes": 63675,
+      "sha256": "0f03f597892d87bd40621fa1f26289ac645eed18141c960dc776ffced4724112",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-workspaces-a.log",
+      "bytes": 235118,
+      "sha256": "6d2ef5b09d7b3c6a00c5a2c7b6e096acd97d71dd59705cbda6e17b315902d91e",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-workspaces-b-retry.log",
+      "bytes": 2239,
+      "sha256": "ff2738a346dde91a147066cf3fd9855e6feacd194e46b062bb0be3252d3d401e",
+      "storage": "local_gitignored"
+    },
+    {
+      "path": "runs/run-001/verrail-freeze-workspaces-b.log",
+      "bytes": 3299,
+      "sha256": "3c02d7554c4f5400d57256169bcef0c3b3f5f3a9a827ccedc0b6fa7f4fc6979a",
+      "storage": "local_gitignored"
+    }
+  ]
+}
