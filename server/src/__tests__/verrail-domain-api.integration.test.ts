@@ -254,7 +254,11 @@ describeEmbeddedPostgres("Go Verrail Domain API Target command", () => {
         tools: [],
         outputSchema: {},
         capabilityCeiling: [],
-        supplyChain: { fixture: true },
+        supplyChain: {
+          fixture: true,
+          source: "saved_agent_configuration.v2",
+          mode: "compatibility_executor",
+        },
       },
       "agent-version:publish:graph-integration",
     );
@@ -283,11 +287,11 @@ describeEmbeddedPostgres("Go Verrail Domain API Target command", () => {
         evaluationRunId: evaluation.resourceId,
         name: "Integration deployment",
         isDefault: true,
-        runtimeConfig: {},
+        runtimeConfig: { cwd: serviceRoot },
       },
       "deployment:create:graph-integration",
     );
-    expect(deploymentResponse.status).toBe(201);
+    expect(deploymentResponse.status, await deploymentResponse.clone().text()).toBe(201);
     const deployment = await deploymentResponse.json() as { resourceId: string };
     const [deploymentRevision] = await db.select().from(verrailDeploymentRevisions).where(
       eq(verrailDeploymentRevisions.deploymentId, deployment.resourceId),
