@@ -176,6 +176,17 @@ function loadSpecRoutes() {
 }
 
 describe("openapi routes", () => {
+  it("documents Director invocation authentication separately from board access", () => {
+    const spec = buildOpenApiSpec();
+    expect(spec.components.securitySchemes.DirectorInvocationToken).toMatchObject({
+      type: "apiKey", in: "header", name: "X-Verrail-Chat-Token",
+    });
+    expect(spec.paths["/api/director/mcp"].post.security).toEqual([{ DirectorInvocationToken: [] }]);
+    expect(spec.paths["/api/director/mcp"].post["x-paperclip-authorization"]).toEqual({
+      actor: "director_invocation", deploymentMode: "local_trusted",
+    });
+  });
+
   it("serves the generated OpenAPI document", async () => {
     const res = await request(createApp()).get("/api/openapi.json");
 

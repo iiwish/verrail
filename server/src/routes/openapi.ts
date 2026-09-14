@@ -235,6 +235,7 @@ import {
   conversationListQuerySchema,
   createConversationSchema,
   updateConversationSchema,
+  switchConversationContextSchema,
   sendConversationMessageSchema,
   confirmTargetCreationDraftSchema,
   createProviderConversationBindingSchema,
@@ -1148,6 +1149,12 @@ function applyOperationStatusOverride(
 function applyDocumentFixups(document: any): any {
   document.components ??= {};
   document.components.securitySchemes = {
+    DirectorInvocationToken: {
+      type: "apiKey",
+      in: "header",
+      name: "X-Verrail-Chat-Token",
+      description: "Short-lived invocation-scoped Director token; local_trusted mode only.",
+    },
     [BOARD_SESSION_AUTH_SCHEME]: {
       type: "apiKey",
       in: "cookie",
@@ -1192,6 +1199,10 @@ function applyDocumentFixups(document: any): any {
               : { actor: "public" };
 
       const key = operationKey(method, path);
+      if (key === "POST /api/director/mcp") {
+        operation.security = [{ DirectorInvocationToken: [] }];
+        operation["x-paperclip-authorization"] = { actor: "director_invocation", deploymentMode: "local_trusted" };
+      }
       if (authLevel !== "public") {
         const responses = (operation.responses ??= {}) as Record<string, unknown>;
         if (!responses["403"]) {
@@ -2894,6 +2905,39 @@ registry.registerPath({
 });
 
 // ─── Workspace conversations ────────────────────────────────────────────────
+
+registry.registerPath({
+  method: "post",
+  path: "/api/director/mcp",
+  tags: ["conversations"],
+  summary: "Handle invocation-scoped Director MCP requests in local trusted mode",
+  request: { body: jsonBody(z.record(z.string(), z.unknown())) },
+  responses: { 200: r.ok(), 202: { description: "Notification accepted" }, 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/context",
+  tags: ["conversations"],
+  summary: "Switch, link or unlink a Target using the observed conversation context version",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), conversationId: z.string().uuid() }),
+    body: jsonBody(switchConversationContextSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/proposals/{messageId}/confirm",
+  tags: ["conversations", "targets"],
+  summary: "Confirm the initiating member's version-bound Director Target proposal",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), conversationId: z.string().uuid(), messageId: z.string().uuid() }),
+    body: jsonBody(z.object({}).strict()),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: { description: "Domain API unavailable" } },
+});
 
 registry.registerPath({
   method: "get",
