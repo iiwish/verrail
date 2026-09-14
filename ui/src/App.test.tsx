@@ -81,9 +81,9 @@ function unmountRoot(root: ReturnType<typeof createRoot>) {
 }
 
 describe("CloudAccessGate", () => {
-  it("opens the agent roster by default and preserves the lifecycle workspace", () => {
+  it("opens the agent roster and redirects the retired lifecycle workspace", () => {
     expect(appSource).toContain('<Route path="agents" element={<Agents />} />');
-    expect(appSource).toContain('<Route path="agents/lifecycle" element={<VerrailAgents />} />');
+    expect(appSource).toContain('<Route path="agents/lifecycle" element={<Navigate to="/agents" replace />} />');
     expect(appSource).not.toContain('<Route path="agents" element={<VerrailAgents />} />');
   });
   let container: HTMLDivElement;

@@ -312,7 +312,9 @@ Use the cheap local default unless you are specifically working on browser flows
 pnpm test
 ```
 
-`pnpm test` runs the Vitest suite only. For interactive Vitest watch mode use:
+`pnpm test` runs the Vitest suite only. The stable runner covers every configured
+workspace project, separates server route suites, and bounds database fixtures
+to one worker. For interactive Vitest watch mode use:
 
 ```sh
 pnpm test:watch

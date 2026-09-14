@@ -246,11 +246,14 @@ describe("gemini remote execution", () => {
         stats: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 },
       }),
     ].join("\n");
+    // The restore transport reads a size followed by an empty tar archive.
     const runnerExecute = vi.fn(async (input: { command: string; args?: string[] }) => ({
       exitCode: 0,
       signal: null,
       timedOut: false,
-      stdout: input.command === "gemini" ? geminiOutput : "",
+      stdout: input.command === "gemini" ? geminiOutput
+        : input.args?.some((arg) => arg.startsWith("wc -c < ")) ? "1024"
+          : input.args?.some((arg) => arg.startsWith("dd if=")) ? Buffer.alloc(1024).toString("base64") : "",
       stderr: "",
       pid: 321,
       startedAt: new Date().toISOString(),

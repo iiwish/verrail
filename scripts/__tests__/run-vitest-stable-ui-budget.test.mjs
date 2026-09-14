@@ -1,10 +1,25 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createVitest } from "vitest/node";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+test("the stable runner covers every configured non-server project", async () => {
+  const vitest = await createVitest("test", { root: repoRoot, watch: false });
+  try {
+    const selected = ["general-workspaces-a", "general-workspaces-b"].flatMap((group) => {
+      const output = execFileSync(process.execPath, ["scripts/run-vitest-stable.mjs", "--mode", "general", "--group", group, "--dry-run"], { cwd: repoRoot, encoding: "utf8" });
+      return JSON.parse(output).workspaceProjects;
+    });
+    const expected = vitest.projects.map((project) => project.config.name).filter((name) => name !== "@paperclipai/server");
+    assert.deepEqual([...selected].sort(), expected.sort());
+  } finally {
+    await vitest.close();
+  }
+});
 
 test("the UI project bounds workers without relaxing deadlines or filtering regressions", async () => {
   const vitest = await createVitest("test", {

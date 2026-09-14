@@ -28,6 +28,17 @@ describe("single effective version UI", () => {
   async function render() { await act(async () => root.render(<QueryClientProvider client={client}><AgentVersions agent={agent} /></QueryClientProvider>)); await flush(); }
   function button(text: string) { const result = [...container.querySelectorAll("button")].find((b) => b.textContent === text); expect(result, text).toBeTruthy(); return result!; }
   async function click(text: string) { await act(async () => button(text).click()); await flush(); }
+  it("does not invent a validation verdict or measurements", async () => {
+    await render();
+    const evaluate = [...container.querySelectorAll("button")].find((item) => item.textContent === i18n.t("agentLifecycle.evaluate"));
+    expect(evaluate).toBeDefined(); await act(async () => evaluate!.click()); await flush();
+    const dialog = container.querySelector('[role="dialog"]')!;
+    expect((dialog.querySelector("select") as HTMLSelectElement).value).toBe("inconclusive");
+    expect((dialog.querySelector('input[type="checkbox"]') as HTMLInputElement).checked).toBe(false);
+    expect(dialog.querySelector('input[type="number"]')).toBeNull();
+    expect(button("Confirm").disabled).toBe(true);
+    expect(api.recordEvaluation).not.toHaveBeenCalled();
+  });
   it("updates the existing runtime and keeps the observed revision despite background refetch", async () => {
     await render(); await click("Update to v2");
     data.definitions[0].deployments[0].activeRevision.id = "r2-concurrent";
