@@ -71,16 +71,30 @@ suite("repository lease authority in PostgreSQL", () => {
     await expect(createRepositoryLeaseValidator(db)({ ...request, model: "fixture/other" }, new AbortController().signal)).rejects.toThrow("REPOSITORY_LEASE_LOST");
   });
 
-  it.each(["cancel", "expire", "suspect", "archive", "pause", "graph", "attempt"])("revokes execution for %s", async change => {
+  it.each(["cancel", "expire", "suspect", "retire", "graph", "attempt"])("revokes execution for %s", async change => {
     const { request: r, validate, deploymentId } = await seed();
     if (change === "cancel") await db.update(verrailRuns).set({ cancelRequestedAt: new Date() }).where(eq(verrailRuns.id, r.runId));
     if (change === "expire") await db.update(verrailExecutionLeases).set({ expiresAt: new Date(0) }).where(eq(verrailExecutionLeases.id, r.leaseId));
     if (change === "suspect") await db.update(verrailExecutionLeases).set({ status: "suspect" }).where(eq(verrailExecutionLeases.id, r.leaseId));
-    if (change === "archive") await db.update(verrailTargets).set({ archivedAt: new Date() }).where(eq(verrailTargets.id, r.targetId));
-    if (change === "pause") await db.update(verrailDeployments).set({ status: "paused" }).where(eq(verrailDeployments.id, deploymentId));
+    if (change === "retire") await db.update(verrailDeployments).set({ status: "retired" }).where(eq(verrailDeployments.id, deploymentId));
     if (change === "graph") await db.update(verrailGraphRevisions).set({ status: "superseded" }).where(eq(verrailGraphRevisions.id, r.graphRevisionId));
     if (change === "attempt") await db.update(verrailRuns).set({ attemptCount: 2 }).where(eq(verrailRuns.id, r.runId));
     await expect(validate()).rejects.toThrow("REPOSITORY_LEASE_LOST");
+  });
+
+  it.each(["archive", "pause"])("preserves admitted Run phases after %s", async change => {
+    const { request: r, deploymentId } = await seed();
+    const signal = new AbortController().signal;
+    if (change === "archive") await db.update(verrailTargets).set({ archivedAt: new Date() }).where(eq(verrailTargets.id, r.targetId));
+    else await db.update(verrailDeployments).set({ status: "paused" }).where(eq(verrailDeployments.id, deploymentId));
+    await expect(createRepositoryLeaseValidator(db)(r, signal)).resolves.toBeUndefined();
+    await db.update(verrailRunAttempts).set({ status: "pending" }).where(eq(verrailRunAttempts.id, r.runAttemptId));
+    await db.update(verrailRuns).set({ status: "queued" }).where(eq(verrailRuns.id, r.runId));
+    await expect(createRepositoryClaimedLeaseValidator(db)(r, signal)).resolves.toBeUndefined();
+    await db.update(verrailExecutionLeases).set({ status: "offered" }).where(eq(verrailExecutionLeases.id, r.leaseId));
+    await expect(createRepositoryOfferedLeaseValidator(db)(r, signal)).resolves.toBeUndefined();
+    await db.update(verrailRuns).set({ cancelRequestedAt: new Date() }).where(eq(verrailRuns.id, r.runId));
+    await expect(createRepositoryOfferedLeaseValidator(db)(r, signal)).rejects.toThrow("REPOSITORY_LEASE_LOST");
   });
 
   it("keeps an already-running version pinned after a newer publication", async () => {
@@ -236,11 +250,16 @@ suite("repository lease authority in PostgreSQL", () => {
     expect(record.status).toBe("dispatched");
   });
 
-  it("persists a bounded result once without changing the Go Run", async () => {
-    const { request: r } = await seed();
+  it.each(["unchanged", "archive", "pause"])("persists a bounded result after %s without changing the Go Run", async change => {
+    const { request: r, deploymentId } = await seed();
     const store = createRepositoryDispatchStore(db, randomUUID());
     const signal = new AbortController().signal;
     await store.claim(r, signal);
+    if (change === "archive") await db.update(verrailTargets).set({ archivedAt: new Date() }).where(eq(verrailTargets.id, r.targetId));
+    if (change === "pause") await db.update(verrailDeployments).set({ status: "paused" }).where(eq(verrailDeployments.id, deploymentId));
+    await expect(store.authorize(r, signal)).resolves.toBeUndefined();
+    await expect(store.renew(r, signal)).resolves.toBeUndefined();
+    await expect(store.consumeToolCall(r, signal)).resolves.toBeUndefined();
     const artifact = { ordinal: 0, path: "changes.patch", title: "Changes", kind: "code_change", bytes: 10,
       contentHash: "d".repeat(64), contentRef: `storage:${r.workspaceId}/verrail/run-artifacts/sha256/${"d".repeat(64)}` };
     const result = { runId: r.runId, runAttemptId: r.runAttemptId, leaseId: r.leaseId,

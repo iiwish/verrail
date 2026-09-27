@@ -4,6 +4,8 @@ import { repositoryExecutionRequestSchema, type RepositoryExecutionRequest } fro
 
 // Read-only execution gate. The Go engine remains the owner of claims, renewal,
 // terminal transitions and fencing. Dispatch must separately bind the full input.
+// All phases continue an admitted Run: archive is presentation metadata, and
+// deployment pause blocks new Runs in Go rather than revoking their pinned versions.
 export function createRepositoryLeaseValidator(db: Pick<Db, "execute">) {
   return createPhaseValidator(db, "running");
 }
@@ -58,9 +60,9 @@ function createPhaseValidator(db: Pick<Db, "execute">, phase: "running" | "offer
         and run.cancel_requested_at is null
         and node.status='running' and node.kind='agent_task' and run.kind='agent'
         and graph.status='active' and work_graph.status='active' and work_graph.active_graph_revision_id=graph.id
-        and target.active_target_revision_id=run.target_revision_id and target.archived_at is null
+        and target.active_target_revision_id=run.target_revision_id
         and target.status not in ('canceled', 'accepted')
-        and deployment.status='active' and revision.state in ('active', 'superseded')
+        and deployment.status in ('active', 'paused') and revision.state in ('active', 'superseded')
         and version.runtime=${r.runtime} and version.model=${r.model}
       limit 1
     `);
