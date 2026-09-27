@@ -1,10 +1,10 @@
 # GitHub Connector 执行合同
 
-版本：0.2
+版本：0.3
 
 状态：`Confirmed`
 
-最后更新：2026-09-06
+最后更新：2026-09-27
 
 ## 1. 目的
 
@@ -33,9 +33,12 @@ ActionRequest 可以由已认证的 Agent、Service 或人类发起。ActionAppr
 - Submission 的 TargetRevision 仍是活动 Revision；
 - Outcome Owner Acceptance 仍存在并绑定同一 Workspace、Target 和 TargetRevision；
 - ActionRequest 固定的 `expected_commit_ref` 仍等于不可变 Submission 的 commit binding；
+- commit binding 是完整的 40 位小写 Git SHA，head 是绑定仓库内的分支；
 - GitHub repo binding 和 credential connection 仍有效且属于同一 Workspace。
 
 任一检查失败时，Provider API 不会被调用。
+
+已执行命令的重放返回历史 EffectReceipt 前，必须通过当前有效连接重新读取 GitHub PR，并校验同一个外部对象、head SHA、head/base 仓库和分支。历史 Receipt 不会被重写；它记录创建时的事实，不授予当前 Submission 新的 Acceptance。
 
 ## 4. Provider marker 与状态机
 
@@ -67,21 +70,27 @@ pending_approval -> approved -> executing -> executed
 
 ## 5. Lookup-before-retry
 
-每次执行首先按 repo、head、base 和 marker 查询 open/closed Pull Request：
+每次执行首先按 repo 和 marker 查询 open/closed Pull Request。查询不按可变的 head/base 过滤，避免已创建 PR 被 retarget 后误判不存在：
 
-- `found`：不调用 create，直接提交唯一 EffectReceipt；
-- `absent`：当前执行持有创建权时可以调用 create；
+- `found`：不调用 create；仅当实际 head SHA、head/base 仓库和分支与已批准参数及已验收 Commit 一致时提交唯一 EffectReceipt；
+- `absent`：当前执行持有创建权时，先读取 `git/ref/heads/{branch}`，校验分支实际 HEAD 等于已验收 Commit，才可以调用 create；
 - `inconclusive`：保持或进入 `unknown_effect`，不调用 create。
 
 活动 `executing` 状态在两分钟内只允许其他请求查询，不允许第二次 create。超时的执行可以重新取得创建权，但仍必须先 lookup。Provider timeout、连接重置、成功后响应丢失和 Effect 后数据库提交失败都进入同一对账路径。
 
-`verrail_effect_receipts` 对 `action_request_id` 和 `provider_marker` 都有唯一约束。Receipt 只保存外部对象 ID、URL、参数摘要、marker 和 effect hash，不保存凭证。
+一旦取得外部 PR number，系统在写入成功 Receipt 前独立提交 Provider Observation 审计。后续恢复按该固定 number 读取，而不依赖可编辑的 body marker。已执行重放也直接读取 Receipt 固定的 PR number。已知 PR 被删除、不可读或版本不匹配时不得重新创建；历史 Receipt 保持不变。没有取得任何外部对象身份的未知结果仍采用有界 marker 查询，不能对任意外部改写提供 exactly-once 保证。
+
+`verrail_effect_receipts` 对 `action_request_id` 和 `provider_marker` 都有唯一约束。Receipt 保存外部对象 ID、URL、参数摘要、marker、effect hash，以及实际观察到的 head SHA、head/base 仓库和分支，不保存凭证。创建响应、marker 对账和重放都检查 Provider 的实际版本，缺失字段不得视为匹配。
+
+创建或对账发现版本不匹配时，ActionRequest 保持 `unknown_effect`，审计保存预期 Commit 和实际 PR 身份，不生成成功 Receipt，不重置为可盲重试的批准状态，也不自动关闭 PR 或改写分支。已执行 Receipt 的重放发现漂移时返回冲突并追加审计，保留历史 Receipt。
+
+GitHub 的创建 PR API 不接受原子 expected-head 条件。前置读取和创建响应校验能拒绝错误版本的成功回执，但不能防止两次 API 调用之间短暂创建了错误版本的 PR，也不能保证远端分支之后永远不移动。发布操作须再次校验当前 HEAD、受验 SHA 与批准版本；需要持续不可变保证时，Operator 必须另外限制候选分支写入。
 
 ## 6. GitHub 查询边界
 
-查询使用 GitHub Pull Requests API 的 `state=all`、固定 head/base 和分页结果，并在 body 中匹配完整 marker。查询错误、响应解析失败或超过有界分页上限均为 `inconclusive`，不得解释为 `absent`。
+查询使用 GitHub Pull Requests API 的 `state=all` 和分页结果，并在 body 中匹配完整 marker。找到后逐项核验 head/base，仓库名按 GitHub 的大小写不敏感规则比较，分支名保持大小写敏感。查询错误、响应解析失败或超过有界分页上限均为 `inconclusive`，不得解释为 `absent`。
 
-真实生产验收需要一个可写测试仓库、已推送且固定的 head branch、预期 base branch，以及具备 Pull Request 创建和读取权限的短期凭证。真实 PR reference 和脱敏的无凭证持久化证明属于 G2.7 最终验收证据，不由 fake connector 测试替代。
+真实生产验收需要一个可写测试仓库、已推送且固定的 head branch、预期 base branch，以及仅限该仓库的短期凭证：Pull requests 读写、Contents 只读，采集 CI 时另需 Actions 只读，Metadata 为必需只读权限。真实 PR reference 和脱敏的无凭证持久化证明属于 G2.7 最终验收证据，不由 fake connector 测试替代。
 
 ## 7. 固定 CI Observation 采集
 

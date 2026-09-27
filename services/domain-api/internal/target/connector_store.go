@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -563,6 +564,9 @@ func (store *Store) prepareActionExecution(ctx context.Context, command AgentLif
 	if (expectedCommitRef == nil) != (currentCommitRef == nil) || (expectedCommitRef != nil && *expectedCommitRef != *currentCommitRef) {
 		return nil, nil, &Error{Status: 409, Code: "CONNECTOR_EXPECTED_COMMIT_CHANGED", Message: "The Submission commit binding changed after the ActionRequest was approved"}
 	}
+	if expectedCommitRef == nil || !githubCommitPattern.MatchString(*expectedCommitRef) {
+		return nil, nil, &Error{Status: 409, Code: "CONNECTOR_EXPECTED_COMMIT_REQUIRED", Message: "Governed pull requests require a full 40-character accepted Git commit SHA"}
+	}
 	var acceptanceExists bool
 	if err := tx.QueryRow(ctx, `select exists(select 1 from verrail_acceptances where submission_id=$1 and workspace_id=$2 and target_id=$3 and target_revision_id=$4)`, requestSubmissionID, command.WorkspaceID, requestTargetID, submissionRevisionID).Scan(&acceptanceExists); err != nil {
 		return nil, nil, err
@@ -593,6 +597,9 @@ func (store *Store) prepareActionExecution(ctx context.Context, command AgentLif
 	if expectedConnectionID != "" && connectionID != expectedConnectionID {
 		return nil, nil, &Error{Status: 409, Code: "CONNECTOR_CONNECTION_CHANGED", Message: "The GitHub connection binding changed before execution"}
 	}
+	if _, err := githubHeadBranch(repoOwner+"/"+repoName, params); err != nil {
+		return nil, nil, err
+	}
 	marker := providerMarker(command.Input.ActionRequestID, requestParamsHash)
 	if storedMarker != nil && *storedMarker != marker {
 		return nil, nil, &Error{Status: 409, Code: "CONNECTOR_PROVIDER_MARKER_MISMATCH", Message: "The stored provider marker does not match the approved parameters"}
@@ -622,7 +629,97 @@ func (store *Store) markActionDefinitiveFailure(ctx context.Context, workspaceID
 	_, _ = store.pool.Exec(ctx, `update verrail_action_requests set status='approved',provider_marker=null,execution_started_at=null,last_reconciled_at=now(),updated_at=now() where id=$1 and workspace_id=$2 and provider_marker=$3 and status='executing'`, actionRequestID, workspaceID, marker)
 }
 
-func (store *Store) finalizeActionExecution(ctx context.Context, command AgentLifecycleCommand[ExecuteActionInput], prepared actionExecutionPreparation, externalObjectID, externalURL string) (AgentLifecycleResult, error) {
+func validatePullRequestObservation(prepared actionExecutionPreparation, observation PullRequestLookup) error {
+	if prepared.ExpectedCommitRef == nil || !githubCommitPattern.MatchString(*prepared.ExpectedCommitRef) {
+		return &Error{Status: 409, Code: "CONNECTOR_EXPECTED_COMMIT_REQUIRED", Message: "Governed pull requests require a full 40-character accepted Git commit SHA"}
+	}
+	branch, err := githubHeadBranch(prepared.Repo, prepared.Params)
+	if err != nil {
+		return err
+	}
+	if observation.Status != PullRequestFound || observation.ExternalObjectID == "" || observation.ExternalURL == "" ||
+		observation.HeadSHA != *prepared.ExpectedCommitRef || observation.HeadRef != branch ||
+		!strings.EqualFold(observation.HeadRepository, prepared.Repo) || observation.BaseRef != prepared.Params.Base || !strings.EqualFold(observation.BaseRepository, prepared.Repo) {
+		return &Error{Status: 409, Code: "CONNECTOR_PROVIDER_HEAD_MISMATCH", Message: "The observed GitHub pull request does not match the accepted commit and approved repository branches"}
+	}
+	return nil
+}
+
+// Commit the known external identity before attempting a success receipt. Recovery
+// must not lose that identity when mutable GitHub branches or body markers change.
+func (store *Store) recordPullRequestObservation(ctx context.Context, command AgentLifecycleCommand[ExecuteActionInput], prepared actionExecutionPreparation, observation PullRequestLookup, mismatch bool) error {
+	tx, err := store.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	event := "connector.provider_observed"
+	if mismatch {
+		event = "connector.provider_head_mismatch"
+		if _, err := tx.Exec(ctx, `update verrail_action_requests set status='unknown_effect',last_reconciled_at=now(),updated_at=now() where id=$1 and workspace_id=$2 and provider_marker=$3 and status in ('executing','unknown_effect')`, command.Input.ActionRequestID, command.WorkspaceID, prepared.ProviderMarker); err != nil {
+			return err
+		}
+	}
+	payload, err := json.Marshal(map[string]any{"expectedCommitRef": prepared.ExpectedCommitRef, "repository": prepared.Repo, "params": prepared.Params, "observation": observation})
+	if err != nil {
+		return err
+	}
+	auditID, err := NewUUID()
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `insert into verrail_audit_events(id,workspace_id,principal_type,principal_id,event_type,aggregate_type,aggregate_id,idempotency_key,payload) values($1,$2,$3,$4,$8,'action_request',$5,$6,$7::jsonb)`, auditID, command.WorkspaceID, command.Principal.Type, command.Principal.ID, command.Input.ActionRequestID, command.IdempotencyKey, payload, event); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (store *Store) verifyActionReplay(ctx context.Context, command AgentLifecycleCommand[ExecuteActionInput], expectedConnectionID string, github GitHubClient, replay AgentLifecycleResult) error {
+	var prepared actionExecutionPreparation
+	var connectionID, externalObjectID string
+	err := store.pool.QueryRow(ctx, `
+		select action.target_id,action.params_hash,action.params,action.expected_commit_ref,action.provider_marker,
+			binding.repo_owner || '/' || binding.repo_name,binding.connection_id,receipt.external_object_id
+		from verrail_action_requests action
+		join verrail_effect_receipts receipt on receipt.action_request_id=action.id and receipt.workspace_id=action.workspace_id
+		join verrail_github_repo_bindings binding on binding.workspace_id=action.workspace_id
+		join tool_connections connection on connection.id=binding.connection_id and connection.company_id=binding.workspace_id
+		where action.id=$1 and action.workspace_id=$2 and receipt.id=$3 and action.status='executed' and connection.enabled and connection.status='active'
+	`, command.Input.ActionRequestID, command.WorkspaceID, replay.ResourceID).Scan(&prepared.TargetID, &prepared.ParamsHash, &prepared.Params, &prepared.ExpectedCommitRef, &prepared.ProviderMarker, &prepared.Repo, &connectionID, &externalObjectID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return &Error{Status: 409, Code: "CONNECTOR_NOT_BOUND", Message: "The executed action has no active bound GitHub connection and receipt"}
+	}
+	if err != nil {
+		return err
+	}
+	if expectedConnectionID != "" && expectedConnectionID != connectionID {
+		return &Error{Status: 409, Code: "CONNECTOR_CONNECTION_CHANGED", Message: "The GitHub connection binding changed before replay"}
+	}
+	observation, err := github.GetPullRequest(ctx, prepared.Repo, externalObjectID)
+	if err != nil || observation.Status != PullRequestFound {
+		return connectorUnknownEffect("The recorded GitHub effect could not be freshly verified; no create was attempted")
+	}
+	validationErr := validatePullRequestObservation(prepared, observation)
+	if validationErr == nil && observation.ExternalObjectID != externalObjectID {
+		validationErr = &Error{Status: 409, Code: "CONNECTOR_PROVIDER_HEAD_MISMATCH", Message: "The observed GitHub object does not match the immutable EffectReceipt"}
+	}
+	if validationErr != nil {
+		if err := store.recordPullRequestObservation(ctx, command, prepared, observation, true); err != nil {
+			return connectorUnknownEffect("The mismatched GitHub effect could not be recorded")
+		}
+	}
+	return validationErr
+}
+
+func (store *Store) finalizeActionExecution(ctx context.Context, command AgentLifecycleCommand[ExecuteActionInput], prepared actionExecutionPreparation, observation PullRequestLookup) (AgentLifecycleResult, error) {
+	validationErr := validatePullRequestObservation(prepared, observation)
+	if err := store.recordPullRequestObservation(ctx, command, prepared, observation, validationErr != nil); err != nil {
+		return AgentLifecycleResult{}, connectorUnknownEffect("The observed GitHub effect could not be recorded")
+	}
+	if validationErr != nil {
+		return AgentLifecycleResult{}, validationErr
+	}
+	externalObjectID, externalURL := observation.ExternalObjectID, observation.ExternalURL
 	meta := lifecycleMeta(command)
 	tx, replay, err := store.beginAgentCommand(ctx, meta)
 	if err != nil {
@@ -656,13 +753,18 @@ func (store *Store) finalizeActionExecution(ctx context.Context, command AgentLi
 		return AgentLifecycleResult{}, err
 	}
 	payload, err := json.Marshal(map[string]any{
-		"actionRequestId":   command.Input.ActionRequestID,
-		"paramsHash":        prepared.ParamsHash,
-		"params":            prepared.Params,
-		"providerMarker":    prepared.ProviderMarker,
-		"expectedCommitRef": prepared.ExpectedCommitRef,
-		"externalObjectId":  externalObjectID,
-		"externalUrl":       externalURL,
+		"actionRequestId":        command.Input.ActionRequestID,
+		"paramsHash":             prepared.ParamsHash,
+		"params":                 prepared.Params,
+		"providerMarker":         prepared.ProviderMarker,
+		"expectedCommitRef":      prepared.ExpectedCommitRef,
+		"externalObjectId":       externalObjectID,
+		"externalUrl":            externalURL,
+		"observedHeadSha":        observation.HeadSHA,
+		"observedHeadRef":        observation.HeadRef,
+		"observedHeadRepository": observation.HeadRepository,
+		"observedBaseRef":        observation.BaseRef,
+		"observedBaseRepository": observation.BaseRepository,
 	})
 	if err != nil {
 		return AgentLifecycleResult{}, fmt.Errorf("marshal effect receipt payload: %w", err)
@@ -687,17 +789,40 @@ func (store *Store) executeActionWithClient(ctx context.Context, command AgentLi
 		return AgentLifecycleResult{}, err
 	}
 	if replay != nil {
+		if err := store.verifyActionReplay(ctx, command, expectedConnectionID, github, *replay); err != nil {
+			return AgentLifecycleResult{}, err
+		}
 		return *replay, nil
 	}
-
-	lookup, lookupErr := github.LookupPullRequest(ctx, prepared.Repo, prepared.Params, prepared.ProviderMarker)
-	if lookupErr == nil && lookup.Status == PullRequestFound {
-		result, err := store.finalizeActionExecution(ctx, command, *prepared, lookup.ExternalObjectID, lookup.ExternalURL)
+	finalize := func(observation PullRequestLookup) (AgentLifecycleResult, error) {
+		result, err := store.finalizeActionExecution(ctx, command, *prepared, observation)
 		if err != nil {
 			store.markActionUnknown(ctx, command.WorkspaceID, command.Input.ActionRequestID, prepared.ProviderMarker)
-			return AgentLifecycleResult{}, connectorUnknownEffect("GitHub effect was found but its receipt could not be committed")
+			var domainErr *Error
+			if errors.As(err, &domainErr) {
+				return AgentLifecycleResult{}, err
+			}
+			return AgentLifecycleResult{}, connectorUnknownEffect("GitHub effect was observed but its receipt could not be committed")
 		}
 		return result, nil
+	}
+
+	var knownObjectID string
+	err = store.pool.QueryRow(ctx, `select payload->'observation'->>'ExternalObjectID' from verrail_audit_events where workspace_id=$1 and aggregate_type='action_request' and aggregate_id=$2 and event_type in ('connector.provider_observed','connector.provider_head_mismatch') and coalesce(payload->'observation'->>'ExternalObjectID','') <> '' order by occurred_at,id limit 1`, command.WorkspaceID, command.Input.ActionRequestID).Scan(&knownObjectID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return AgentLifecycleResult{}, err
+	}
+	if knownObjectID != "" {
+		observation, err := github.GetPullRequest(ctx, prepared.Repo, knownObjectID)
+		if err != nil || observation.Status != PullRequestFound || observation.ExternalObjectID != knownObjectID {
+			store.markActionUnknown(ctx, command.WorkspaceID, command.Input.ActionRequestID, prepared.ProviderMarker)
+			return AgentLifecycleResult{}, connectorUnknownEffect("The known GitHub effect could not be read; no create was attempted")
+		}
+		return finalize(observation)
+	}
+	lookup, lookupErr := github.LookupPullRequest(ctx, prepared.Repo, prepared.Params, prepared.ProviderMarker)
+	if lookupErr == nil && lookup.Status == PullRequestFound {
+		return finalize(lookup)
 	}
 	if lookupErr != nil || lookup.Status == PullRequestInconclusive {
 		var domainErr *Error
@@ -720,24 +845,24 @@ func (store *Store) executeActionWithClient(ctx context.Context, command AgentLi
 		return AgentLifecycleResult{}, connectorUnknownEffect("Another execution is still reconciling this GitHub effect")
 	}
 
-	externalObjectID, externalURL, createErr := github.CreatePullRequest(ctx, prepared.Repo, prepared.Params, prepared.ProviderMarker)
+	headSHA, err := github.HeadCommit(ctx, prepared.Repo, prepared.Params)
+	if err != nil {
+		store.markActionUnknown(ctx, command.WorkspaceID, command.Input.ActionRequestID, prepared.ProviderMarker)
+		return AgentLifecycleResult{}, err
+	}
+	if headSHA != *prepared.ExpectedCommitRef {
+		store.markActionDefinitiveFailure(ctx, command.WorkspaceID, command.Input.ActionRequestID, prepared.ProviderMarker)
+		return AgentLifecycleResult{}, &Error{Status: 409, Code: "CONNECTOR_PROVIDER_HEAD_MISMATCH", Message: "The GitHub branch HEAD differs from the accepted commit; no create was attempted"}
+	}
+
+	created, createErr := github.CreatePullRequest(ctx, prepared.Repo, prepared.Params, prepared.ProviderMarker)
 	if createErr == nil {
-		result, err := store.finalizeActionExecution(ctx, command, *prepared, externalObjectID, externalURL)
-		if err != nil {
-			store.markActionUnknown(ctx, command.WorkspaceID, command.Input.ActionRequestID, prepared.ProviderMarker)
-			return AgentLifecycleResult{}, connectorUnknownEffect("GitHub created the pull request but its receipt could not be committed")
-		}
-		return result, nil
+		return finalize(created)
 	}
 
 	postLookup, postLookupErr := github.LookupPullRequest(ctx, prepared.Repo, prepared.Params, prepared.ProviderMarker)
 	if postLookupErr == nil && postLookup.Status == PullRequestFound {
-		result, err := store.finalizeActionExecution(ctx, command, *prepared, postLookup.ExternalObjectID, postLookup.ExternalURL)
-		if err == nil {
-			return result, nil
-		}
-		store.markActionUnknown(ctx, command.WorkspaceID, command.Input.ActionRequestID, prepared.ProviderMarker)
-		return AgentLifecycleResult{}, connectorUnknownEffect("GitHub effect was found but its receipt could not be committed")
+		return finalize(postLookup)
 	}
 	var providerErr *GitHubProviderError
 	uncertain := !errors.As(createErr, &providerErr) || providerErr.Uncertain

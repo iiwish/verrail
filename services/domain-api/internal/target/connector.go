@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -383,6 +384,50 @@ type PullRequestLookup struct {
 	Status           PullRequestLookupStatus
 	ExternalObjectID string
 	ExternalURL      string
+	HeadSHA          string
+	HeadRef          string
+	HeadRepository   string
+	BaseRef          string
+	BaseRepository   string
+}
+
+var githubCommitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
+func githubHeadBranch(repo string, params PullRequestParams) (string, error) {
+	head := params.Head
+	if owner, branch, qualified := strings.Cut(head, ":"); qualified {
+		repoOwner, _, _ := strings.Cut(repo, "/")
+		if !strings.EqualFold(owner, repoOwner) {
+			return "", &Error{Status: 409, Code: "CONNECTOR_HEAD_REPOSITORY_MISMATCH", Message: "Governed pull requests require a branch in the bound repository"}
+		}
+		head = branch
+	}
+	return head, nil
+}
+
+type githubPullRequest struct {
+	Number  int    `json:"number"`
+	HTMLURL string `json:"html_url"`
+	Body    string `json:"body"`
+	Head    struct {
+		SHA  string `json:"sha"`
+		Ref  string `json:"ref"`
+		Repo struct {
+			FullName string `json:"full_name"`
+		} `json:"repo"`
+	} `json:"head"`
+	Base struct {
+		Ref  string `json:"ref"`
+		Repo struct {
+			FullName string `json:"full_name"`
+		} `json:"repo"`
+	} `json:"base"`
+}
+
+func (pull githubPullRequest) observation() PullRequestLookup {
+	return PullRequestLookup{Status: PullRequestFound, ExternalObjectID: strconv.Itoa(pull.Number), ExternalURL: pull.HTMLURL,
+		HeadSHA: pull.Head.SHA, HeadRef: pull.Head.Ref, HeadRepository: pull.Head.Repo.FullName,
+		BaseRef: pull.Base.Ref, BaseRepository: pull.Base.Repo.FullName}
 }
 
 type GitHubProviderError struct {
@@ -397,14 +442,40 @@ func (err *GitHubProviderError) Error() string { return err.Message }
 // the thin REST wrapper below.
 type GitHubClient interface {
 	LookupPullRequest(ctx context.Context, repo string, params PullRequestParams, marker string) (PullRequestLookup, error)
-	CreatePullRequest(ctx context.Context, repo string, params PullRequestParams, marker string) (externalObjectID string, externalURL string, err error)
+	GetPullRequest(ctx context.Context, repo, objectID string) (PullRequestLookup, error)
+	HeadCommit(ctx context.Context, repo string, params PullRequestParams) (string, error)
+	CreatePullRequest(ctx context.Context, repo string, params PullRequestParams, marker string) (PullRequestLookup, error)
 }
 
-// GitHubRESTClient is the real thin REST wrapper against api.github.com. The
-// token is injected at construction time by the control plane once workspace
-// connection credentials can be resolved outside the Node secret provider;
-// until then an empty token fails fast with a clear error and every test runs
-// against a fake (documented deviation).
+func (client *GitHubRESTClient) GetPullRequest(ctx context.Context, repo, objectID string) (PullRequestLookup, error) {
+	number, err := strconv.ParseUint(objectID, 10, 64)
+	if err != nil || number == 0 || strconv.FormatUint(number, 10) != objectID {
+		return PullRequestLookup{}, connectorUpstreamError("invalid stored GitHub pull request number")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, client.apiBase+"/repos/"+repo+"/pulls/"+objectID, nil)
+	if err != nil {
+		return PullRequestLookup{}, connectorUpstreamError("build GitHub pull request read")
+	}
+	if err := client.setHeaders(request); err != nil {
+		return PullRequestLookup{}, err
+	}
+	response, err := client.httpClient.Do(request)
+	if err != nil {
+		return PullRequestLookup{}, connectorUpstreamError("read known GitHub pull request")
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return PullRequestLookup{}, connectorUpstreamError(fmt.Sprintf("GitHub pull request read returned %d", response.StatusCode))
+	}
+	var pull githubPullRequest
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&pull); err != nil || strconv.Itoa(pull.Number) != objectID {
+		return PullRequestLookup{}, connectorUpstreamError("GitHub response did not identify the recorded pull request")
+	}
+	return pull.observation(), nil
+}
+
+// GitHubRESTClient receives an ephemeral credential resolved by the control plane
+// from the workspace-bound connection. Empty credentials fail closed.
 type GitHubRESTClient struct {
 	apiBase       string
 	authorization string
@@ -443,15 +514,11 @@ func (client *GitHubRESTClient) LookupPullRequest(ctx context.Context, repo stri
 	if !ok || repoOwner == "" {
 		return PullRequestLookup{Status: PullRequestInconclusive}, connectorUpstreamError("invalid GitHub repository binding")
 	}
-	head := params.Head
-	if !strings.Contains(head, ":") {
-		head = repoOwner + ":" + head
-	}
+	// Head/base can be changed on GitHub after an uncertain create. Search by
+	// marker across the repository, then validate the observed branches.
 	for page := 1; page <= 100; page++ {
 		query := url.Values{
 			"state":    {"all"},
-			"head":     {head},
-			"base":     {params.Base},
 			"per_page": {"100"},
 			"page":     {strconv.Itoa(page)},
 		}
@@ -474,18 +541,14 @@ func (client *GitHubRESTClient) LookupPullRequest(ctx context.Context, repo stri
 		if response.StatusCode < 200 || response.StatusCode >= 300 {
 			return PullRequestLookup{Status: PullRequestInconclusive}, &GitHubProviderError{Message: fmt.Sprintf("GitHub lookup returned %d", response.StatusCode), Uncertain: response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500}
 		}
-		var pulls []struct {
-			Number  int    `json:"number"`
-			HTMLURL string `json:"html_url"`
-			Body    string `json:"body"`
-		}
+		var pulls []githubPullRequest
 		if err := json.Unmarshal(payload, &pulls); err != nil {
 			return PullRequestLookup{Status: PullRequestInconclusive}, &GitHubProviderError{Message: "decode GitHub lookup response", Uncertain: true}
 		}
 		comment := githubMarkerComment(marker)
 		for _, pull := range pulls {
 			if pull.Number > 0 && strings.Contains(pull.Body, comment) {
-				return PullRequestLookup{Status: PullRequestFound, ExternalObjectID: strconv.Itoa(pull.Number), ExternalURL: pull.HTMLURL}, nil
+				return pull.observation(), nil
 			}
 		}
 		if len(pulls) < 100 {
@@ -495,40 +558,70 @@ func (client *GitHubRESTClient) LookupPullRequest(ctx context.Context, repo stri
 	return PullRequestLookup{Status: PullRequestInconclusive}, &GitHubProviderError{Message: "GitHub lookup exceeded the bounded page limit", Uncertain: true}
 }
 
-func (client *GitHubRESTClient) CreatePullRequest(ctx context.Context, repo string, params PullRequestParams, marker string) (string, string, error) {
+func (client *GitHubRESTClient) HeadCommit(ctx context.Context, repo string, params PullRequestParams) (string, error) {
+	branch, err := githubHeadBranch(repo, params)
+	if err != nil {
+		return "", err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, client.apiBase+"/repos/"+repo+"/git/ref/heads/"+url.PathEscape(branch), nil)
+	if err != nil {
+		return "", connectorUpstreamError("build GitHub branch request")
+	}
+	if err := client.setHeaders(request); err != nil {
+		return "", err
+	}
+	response, err := client.httpClient.Do(request)
+	if err != nil {
+		return "", connectorUpstreamError("read GitHub branch")
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return "", connectorUpstreamError(fmt.Sprintf("GitHub branch returned %d", response.StatusCode))
+	}
+	var ref struct {
+		Ref    string `json:"ref"`
+		Object struct {
+			Type string `json:"type"`
+			SHA  string `json:"sha"`
+		} `json:"object"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&ref); err != nil || ref.Ref != "refs/heads/"+branch || ref.Object.Type != "commit" || !githubCommitPattern.MatchString(ref.Object.SHA) {
+		return "", connectorUpstreamError("GitHub response did not identify the requested branch commit")
+	}
+	return ref.Object.SHA, nil
+}
+
+func (client *GitHubRESTClient) CreatePullRequest(ctx context.Context, repo string, params PullRequestParams, marker string) (PullRequestLookup, error) {
 	if strings.TrimSpace(client.authorization) == "" {
-		return "", "", connectorCredentialsNotConfigured()
+		return PullRequestLookup{}, connectorCredentialsNotConfigured()
 	}
 	body, err := json.Marshal(map[string]string{"title": params.Title, "head": params.Head, "base": params.Base, "body": githubPullRequestBody(params.Body, marker)})
 	if err != nil {
-		return "", "", connectorUpstreamError("encode pull request payload")
+		return PullRequestLookup{}, connectorUpstreamError("encode pull request payload")
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, client.apiBase+"/repos/"+repo+"/pulls", strings.NewReader(string(body)))
 	if err != nil {
-		return "", "", connectorUpstreamError("build GitHub request")
+		return PullRequestLookup{}, connectorUpstreamError("build GitHub request")
 	}
 	if err := client.setHeaders(request); err != nil {
-		return "", "", err
+		return PullRequestLookup{}, err
 	}
 	request.Header.Set("Content-Type", "application/json")
 	response, err := client.httpClient.Do(request)
 	if err != nil {
-		return "", "", &GitHubProviderError{Message: err.Error(), Uncertain: true}
+		return PullRequestLookup{}, &GitHubProviderError{Message: err.Error(), Uncertain: true}
 	}
 	defer func() { _ = response.Body.Close() }()
 	payload, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if err != nil {
-		return "", "", &GitHubProviderError{Message: "read GitHub response", Uncertain: true}
+		return PullRequestLookup{}, &GitHubProviderError{Message: "read GitHub response", Uncertain: true}
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", "", &GitHubProviderError{Message: fmt.Sprintf("GitHub returned %d: %s", response.StatusCode, strings.TrimSpace(string(payload))), Uncertain: response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500}
+		return PullRequestLookup{}, &GitHubProviderError{Message: fmt.Sprintf("GitHub returned %d", response.StatusCode), Uncertain: response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500}
 	}
-	var created struct {
-		Number  int    `json:"number"`
-		HTMLURL string `json:"html_url"`
-	}
+	var created githubPullRequest
 	if err := json.Unmarshal(payload, &created); err != nil || created.Number == 0 {
-		return "", "", &GitHubProviderError{Message: "GitHub response did not contain a pull request number", Uncertain: true}
+		return PullRequestLookup{}, &GitHubProviderError{Message: "GitHub response did not contain a pull request number", Uncertain: true}
 	}
-	return fmt.Sprintf("%d", created.Number), created.HTMLURL, nil
+	return created.observation(), nil
 }

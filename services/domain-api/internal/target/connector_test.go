@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -224,7 +225,7 @@ func TestEffectHashCanonical(t *testing.T) {
 
 func TestGitHubRESTClientWithoutTokenFailsFast(t *testing.T) {
 	client := NewGitHubRESTClient("", "")
-	_, _, err := client.CreatePullRequest(context.Background(), "owner/repo", PullRequestParams{Title: "t", Head: "h", Base: "b"}, "marker")
+	_, err := client.CreatePullRequest(context.Background(), "owner/repo", PullRequestParams{Title: "t", Head: "h", Base: "b"}, "marker")
 	domainError := AsError(err)
 	require.Equal(t, 502, domainError.Status)
 	require.Equal(t, "CONNECTOR_CREDENTIALS_NOT_CONFIGURED", domainError.Code)
@@ -248,23 +249,23 @@ func TestGitHubCredentialTransportValidation(t *testing.T) {
 func TestGitHubRESTClientMarkerCreateAndLookup(t *testing.T) {
 	const marker = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	requests := 0
+	pull := map[string]any{"number": 42, "html_url": "https://github.com/owner/repo/pull/42", "body": githubMarkerComment(marker),
+		"head": map[string]any{"sha": connectorTestCommit, "ref": "feat/marker", "repo": map[string]string{"full_name": "owner/repo"}},
+		"base": map[string]any{"ref": "main", "repo": map[string]string{"full_name": "owner/repo"}}}
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		requests++
 		require.Equal(t, "Bearer ephemeral", request.Header.Get("Authorization"))
 		response.Header().Set("Content-Type", "application/json")
 		switch request.Method {
 		case http.MethodGet:
-			require.Equal(t, "owner:feat/marker", request.URL.Query().Get("head"))
-			_ = json.NewEncoder(response).Encode([]map[string]any{{
-				"number":   42,
-				"html_url": "https://github.com/owner/repo/pull/42",
-				"body":     githubMarkerComment(marker),
-			}})
+			require.Empty(t, request.URL.Query().Get("head"))
+			require.Empty(t, request.URL.Query().Get("base"))
+			_ = json.NewEncoder(response).Encode([]map[string]any{pull})
 		case http.MethodPost:
 			var body map[string]string
 			require.NoError(t, json.NewDecoder(request.Body).Decode(&body))
 			require.Equal(t, "## Verification\n\n- Passed\n\n"+githubMarkerComment(marker), body["body"])
-			_ = json.NewEncoder(response).Encode(map[string]any{"number": 42, "html_url": "https://github.com/owner/repo/pull/42"})
+			_ = json.NewEncoder(response).Encode(pull)
 		default:
 			response.WriteHeader(http.StatusMethodNotAllowed)
 		}
@@ -277,16 +278,99 @@ func TestGitHubRESTClientMarkerCreateAndLookup(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, PullRequestFound, lookup.Status)
 	require.Equal(t, "42", lookup.ExternalObjectID)
-	objectID, externalURL, err := client.CreatePullRequest(context.Background(), "owner/repo", params, marker)
+	require.Equal(t, connectorTestObservation("feat/marker", "42"), lookup)
+	created, err := client.CreatePullRequest(context.Background(), "owner/repo", params, marker)
 	require.NoError(t, err)
-	require.Equal(t, "42", objectID)
-	require.Equal(t, "https://github.com/owner/repo/pull/42", externalURL)
+	require.Equal(t, "42", created.ExternalObjectID)
+	require.Equal(t, "https://github.com/owner/repo/pull/42", created.ExternalURL)
+	require.Equal(t, lookup, created)
 	require.Equal(t, 2, requests)
+}
+
+func TestGitHubRESTClientHeadCommit(t *testing.T) {
+	for _, test := range []struct {
+		name, ref, kind, sha string
+		status               int
+		valid                bool
+	}{
+		{"branch", "refs/heads/feat/x", "commit", connectorTestCommit, 200, true},
+		{"tag", "refs/tags/feat/x", "commit", connectorTestCommit, 200, false},
+		{"wrong branch", "refs/heads/main", "commit", connectorTestCommit, 200, false},
+		{"tree", "refs/heads/feat/x", "tree", connectorTestCommit, 200, false},
+		{"short sha", "refs/heads/feat/x", "commit", "abc123", 200, false},
+		{"not found", "", "", "", 404, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, "/repos/owner/repo/git/ref/heads/feat/x", r.URL.Path)
+				require.Equal(t, "Bearer ephemeral", r.Header.Get("Authorization"))
+				w.WriteHeader(test.status)
+				_ = json.NewEncoder(w).Encode(map[string]any{"ref": test.ref, "object": map[string]string{"type": test.kind, "sha": test.sha}})
+			}))
+			defer server.Close()
+			client := NewGitHubRESTClient(server.URL, "ephemeral")
+			sha, err := client.HeadCommit(context.Background(), "owner/repo", PullRequestParams{Head: "owner:feat/x"})
+			if test.valid {
+				require.NoError(t, err)
+				require.Equal(t, connectorTestCommit, sha)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
+	_, err := NewGitHubRESTClient("", "ephemeral").HeadCommit(context.Background(), "owner/repo", PullRequestParams{Head: "other:feat/x"})
+	require.Equal(t, "CONNECTOR_HEAD_REPOSITORY_MISMATCH", AsError(err).Code)
+}
+
+func TestValidatePullRequestObservation(t *testing.T) {
+	prepared := actionExecutionPreparation{ExpectedCommitRef: ptr(connectorTestCommit), Repo: "OWNER/Repo", Params: PullRequestParams{Head: "owner:feat/x", Base: "main"}}
+	valid := connectorTestObservation("feat/x", "42")
+	require.NoError(t, validatePullRequestObservation(prepared, valid))
+	for name, mutate := range map[string]func(*PullRequestLookup){
+		"missing sha":     func(p *PullRequestLookup) { p.HeadSHA = "" },
+		"changed sha":     func(p *PullRequestLookup) { p.HeadSHA = strings.Repeat("b", 40) },
+		"head branch":     func(p *PullRequestLookup) { p.HeadRef = "feat/X" },
+		"fork":            func(p *PullRequestLookup) { p.HeadRepository = "other/repo" },
+		"retargeted base": func(p *PullRequestLookup) { p.BaseRef = "develop" },
+		"base repository": func(p *PullRequestLookup) { p.BaseRepository = "owner/other" },
+		"missing url":     func(p *PullRequestLookup) { p.ExternalURL = "" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			observation := valid
+			mutate(&observation)
+			require.Equal(t, "CONNECTOR_PROVIDER_HEAD_MISMATCH", AsError(validatePullRequestObservation(prepared, observation)).Code)
+		})
+	}
+}
+
+func TestGitHubRESTClientReadsKnownPullRequestWithoutMarker(t *testing.T) {
+	for _, status := range []int{200, 404, 503} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, "/repos/owner/repo/pulls/42", r.URL.Path)
+				w.WriteHeader(status)
+				_ = json.NewEncoder(w).Encode(map[string]any{"number": 42, "html_url": "https://github.com/owner/repo/pull/42", "body": "Marker removed",
+					"head": map[string]any{"sha": connectorTestCommit, "ref": "feat/x", "repo": map[string]string{"full_name": "owner/repo"}},
+					"base": map[string]any{"ref": "develop", "repo": map[string]string{"full_name": "owner/repo"}}})
+			}))
+			defer server.Close()
+			observation, err := NewGitHubRESTClient(server.URL, "ephemeral").GetPullRequest(context.Background(), "owner/repo", "42")
+			if status == 200 {
+				require.NoError(t, err)
+				require.Equal(t, "42", observation.ExternalObjectID)
+				require.Equal(t, "develop", observation.BaseRef)
+			} else {
+				require.Error(t, err)
+				require.NotEqual(t, PullRequestAbsent, observation.Status)
+			}
+		})
+	}
 }
 
 type fakeGitHubClient struct {
 	calls         int
 	lookupCalls   int
+	readCalls     int
 	lastRepo      string
 	lastParams    PullRequestParams
 	lastMarker    string
@@ -295,6 +379,18 @@ type fakeGitHubClient struct {
 	err           error
 	lookupResults []PullRequestLookup
 	lookupErrors  []error
+	headSHA       string
+	headError     error
+	createResult  *PullRequestLookup
+	effects       map[string]PullRequestLookup
+	objects       map[string]PullRequestLookup
+	readError     error
+}
+
+const connectorTestCommit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+func connectorTestObservation(head, id string) PullRequestLookup {
+	return PullRequestLookup{Status: PullRequestFound, ExternalObjectID: id, ExternalURL: "https://github.com/owner/repo/pull/" + id, HeadSHA: connectorTestCommit, HeadRef: head, HeadRepository: "owner/repo", BaseRef: "main", BaseRepository: "owner/repo"}
 }
 
 func (fake *fakeGitHubClient) LookupPullRequest(_ context.Context, repo string, params PullRequestParams, marker string) (PullRequestLookup, error) {
@@ -314,18 +410,56 @@ func (fake *fakeGitHubClient) LookupPullRequest(_ context.Context, repo string, 
 		fake.lookupResults = fake.lookupResults[1:]
 		return result, nil
 	}
+	if effect, ok := fake.effects[marker]; ok {
+		return effect, nil
+	}
 	return PullRequestLookup{Status: PullRequestAbsent}, nil
 }
 
-func (fake *fakeGitHubClient) CreatePullRequest(_ context.Context, repo string, params PullRequestParams, marker string) (string, string, error) {
+func (fake *fakeGitHubClient) HeadCommit(_ context.Context, repo string, params PullRequestParams) (string, error) {
+	if fake.headError != nil {
+		return "", fake.headError
+	}
+	if fake.headSHA != "" {
+		return fake.headSHA, nil
+	}
+	return connectorTestCommit, nil
+}
+
+func (fake *fakeGitHubClient) GetPullRequest(_ context.Context, repo, objectID string) (PullRequestLookup, error) {
+	fake.readCalls++
+	if fake.readError != nil {
+		return PullRequestLookup{}, fake.readError
+	}
+	if observation, ok := fake.objects[objectID]; ok {
+		return observation, nil
+	}
+	return PullRequestLookup{}, connectorUpstreamError("not found")
+}
+
+func (fake *fakeGitHubClient) CreatePullRequest(_ context.Context, repo string, params PullRequestParams, marker string) (PullRequestLookup, error) {
 	fake.calls++
 	fake.lastRepo = repo
 	fake.lastParams = params
 	fake.lastMarker = marker
 	if fake.err != nil {
-		return "", "", fake.err
+		return PullRequestLookup{}, fake.err
 	}
-	return fake.objectID, fake.url, nil
+	result := connectorTestObservation(params.Head, fake.objectID)
+	result.ExternalURL = fake.url
+	result.HeadRepository, result.BaseRepository, result.BaseRef = repo, repo, params.Base
+	if fake.createResult != nil {
+		result = *fake.createResult
+	}
+	if fake.effects == nil {
+		fake.effects = make(map[string]PullRequestLookup)
+	}
+	fake.effects[marker] = result
+	if fake.objects == nil {
+		fake.objects = make(map[string]PullRequestLookup)
+	}
+	fake.objects[result.ExternalObjectID] = result
+	return result, nil
 }
 
 type connectorTestHarness struct {
@@ -523,7 +657,7 @@ func (h *connectorTestHarness) integrationRunInput(fixture connectorTaskFixture,
 		ConnectionID:     h.connectionIDs[0],
 		Provider:         "github",
 		ExternalRef:      externalRef,
-		CommitRef:        "abc123",
+		CommitRef:        connectorTestCommit,
 		CriterionKey:     fixture.criterionKey,
 		EnvironmentRef:   "github-actions:ubuntu-24.04",
 		Conclusion:       conclusion,
@@ -555,7 +689,7 @@ func (h *connectorTestHarness) createAcceptedSubmission(contentHash string) (str
 		TargetRevisionID:      targetRevisionID,
 		ArtifactRevisionIDs:   []string{revision.ResourceID},
 		VerificationResultIDs: []string{verificationID},
-		CommitRef:             ptr("abc123"),
+		CommitRef:             ptr(connectorTestCommit),
 	}))
 	require.NoError(h.t, err)
 	h.submissionIDs = append(h.submissionIDs, submission.ResourceID)
@@ -817,7 +951,7 @@ func TestConnectorContractsIntegration(t *testing.T) {
 		require.Equal(t, fixture.graphRevisionID, graphRevisionID)
 		require.Equal(t, "github-actions.v1", connectorVersion)
 		require.Equal(t, harness.connectionIDs[0], connectionID)
-		require.Equal(t, "abc123", commitRef)
+		require.Equal(t, connectorTestCommit, commitRef)
 		require.Equal(t, fixture.criterionKey, criterionKey)
 		require.Equal(t, "github-actions:ubuntu-24.04", environmentRef)
 		require.Equal(t, "run/1234", providerReceipt["externalRef"])
@@ -1267,7 +1401,7 @@ func TestConnectorContractsIntegration(t *testing.T) {
 		}()), marker)
 
 		harness.fake.err = nil
-		harness.fake.lookupResults = []PullRequestLookup{{Status: PullRequestFound, ExternalObjectID: "77", ExternalURL: "https://github.com/owner/repo/pull/77"}}
+		harness.fake.lookupResults = []PullRequestLookup{connectorTestObservation("feat/unknown", "77")}
 		reconciled, err := harness.executeAction(ExecuteActionInput{ActionRequestID: request.ResourceID})
 		require.NoError(t, err)
 		require.Equal(t, "effect_receipt", reconciled.ResourceType)
@@ -1344,7 +1478,6 @@ func TestConnectorContractsIntegration(t *testing.T) {
 		_, err = pool.Exec(ctx, `drop trigger verrail_t006_fail_effect_receipt on verrail_effect_receipts; drop function verrail_t006_fail_effect_receipt()`)
 		require.NoError(t, err)
 
-		harness.fake.lookupResults = []PullRequestLookup{{Status: PullRequestFound, ExternalObjectID: "42", ExternalURL: "https://github.com/owner/repo/pull/42"}}
 		_, err = harness.executeAction(ExecuteActionInput{ActionRequestID: request.ResourceID})
 		require.NoError(t, err)
 		require.Equal(t, callsBefore+1, harness.fake.calls)
@@ -1378,5 +1511,128 @@ func TestConnectorContractsIntegration(t *testing.T) {
 		requireLifecycleCode(t, err, "CONNECTOR_CONNECTION_CHANGED")
 		require.Equal(t, callsBefore, harness.fake.calls)
 		require.Equal(t, "approved", harness.actionStatus(request.ResourceID))
+	})
+
+	t.Run("branch HEAD mismatch and unavailable read fail before create", func(t *testing.T) {
+		for _, readFailure := range []bool{false, true} {
+			targetID, _, submissionID := harness.createAcceptedSubmission(assuranceTestHash)
+			request := harness.createApprovedAction(targetID, submissionID, PullRequestParams{Title: "Head preflight", Head: "feat/preflight", Base: "main"})
+			calls := harness.fake.calls
+			harness.fake.headSHA = strings.Repeat("b", 40)
+			if readFailure {
+				harness.fake.headError = connectorUpstreamError("unavailable")
+			}
+			_, err := harness.executeAction(ExecuteActionInput{ActionRequestID: request.ResourceID})
+			if readFailure {
+				requireLifecycleCode(t, err, "CONNECTOR_UPSTREAM_ERROR")
+			} else {
+				requireLifecycleCode(t, err, "CONNECTOR_PROVIDER_HEAD_MISMATCH")
+			}
+			harness.fake.headSHA, harness.fake.headError = "", nil
+			require.Equal(t, calls, harness.fake.calls)
+		}
+	})
+
+	t.Run("missing or abbreviated accepted commits fail closed", func(t *testing.T) {
+		for _, commit := range []*string{nil, ptr("abc123")} {
+			targetID, _, submissionID := harness.createAcceptedSubmission(assuranceTestHash)
+			request := harness.createApprovedAction(targetID, submissionID, PullRequestParams{Title: "Missing binding", Head: "feat/binding", Base: "main"})
+			_, err := pool.Exec(ctx, `update verrail_action_requests set expected_commit_ref=$1 where id=$2`, commit, request.ResourceID)
+			require.NoError(t, err)
+			_, err = pool.Exec(ctx, `update verrail_submissions set commit_ref=$1 where id=$2`, commit, submissionID)
+			require.NoError(t, err)
+			lookups := harness.fake.lookupCalls
+			_, err = harness.executeAction(ExecuteActionInput{ActionRequestID: request.ResourceID})
+			requireLifecycleCode(t, err, "CONNECTOR_EXPECTED_COMMIT_REQUIRED")
+			require.Equal(t, lookups, harness.fake.lookupCalls)
+		}
+	})
+
+	for _, mode := range []string{"created", "marker", "post-timeout"} {
+		t.Run("mismatched "+mode+" effect is retained without success receipt", func(t *testing.T) {
+			targetID, _, submissionID := harness.createAcceptedSubmission(assuranceTestHash)
+			request := harness.createApprovedAction(targetID, submissionID, PullRequestParams{Title: "Head race", Head: "feat/race", Base: "main"})
+			observation := connectorTestObservation("feat/race", "99")
+			observation.HeadSHA = strings.Repeat("b", 40)
+			calls := harness.fake.calls
+			switch mode {
+			case "created":
+				harness.fake.createResult = &observation
+			case "marker":
+				harness.fake.lookupResults = []PullRequestLookup{observation}
+			case "post-timeout":
+				harness.fake.err = &GitHubProviderError{Message: "timeout", Uncertain: true}
+				harness.fake.lookupResults = []PullRequestLookup{{Status: PullRequestAbsent}, observation}
+			}
+			t.Cleanup(func() { harness.fake.createResult = nil; harness.fake.err = nil; harness.fake.lookupResults = nil })
+			_, err := harness.executeAction(ExecuteActionInput{ActionRequestID: request.ResourceID})
+			requireLifecycleCode(t, err, "CONNECTOR_PROVIDER_HEAD_MISMATCH")
+			require.Equal(t, "unknown_effect", harness.actionStatus(request.ResourceID))
+			if mode == "marker" {
+				require.Equal(t, calls, harness.fake.calls)
+			} else {
+				require.Equal(t, calls+1, harness.fake.calls)
+			}
+			var receiptCount int
+			require.NoError(t, pool.QueryRow(ctx, `select count(*) from verrail_effect_receipts where action_request_id=$1`, request.ResourceID).Scan(&receiptCount))
+			require.Zero(t, receiptCount)
+			var payload map[string]any
+			require.NoError(t, pool.QueryRow(ctx, `select payload from verrail_audit_events where aggregate_id=$1 and event_type='connector.provider_head_mismatch'`, request.ResourceID).Scan(&payload))
+			require.Equal(t, connectorTestCommit, payload["expectedCommitRef"])
+			require.Equal(t, observation.ExternalURL, payload["observation"].(map[string]any)["ExternalURL"])
+		})
+	}
+
+	t.Run("same-key and new-key replay freshly detect drift without rewriting receipt", func(t *testing.T) {
+		targetID, _, submissionID := harness.createAcceptedSubmission(assuranceTestHash)
+		request := harness.createApprovedAction(targetID, submissionID, PullRequestParams{Title: "Replay", Head: "feat/replay", Base: "main"})
+		command := buildConnectorCommandAs(harness, harness.principalID, ConnectorActionExecuteCommand, ExecuteActionInput{ActionRequestID: request.ResourceID})
+		result, err := harness.storeWithFake.ExecuteAction(ctx, command)
+		require.NoError(t, err)
+		var payloadBefore string
+		require.NoError(t, pool.QueryRow(ctx, `select payload::text from verrail_effect_receipts where id=$1`, result.ResourceID).Scan(&payloadBefore))
+		require.Contains(t, payloadBefore, `"observedHeadSha": "`+connectorTestCommit+`"`)
+		calls, reads := harness.fake.calls, harness.fake.readCalls
+		marker := harness.fake.lastMarker
+		observation := harness.fake.effects[marker]
+		observation.HeadSHA = strings.Repeat("c", 40)
+		harness.fake.effects[marker] = observation
+		harness.fake.objects[observation.ExternalObjectID] = observation
+		_, err = harness.storeWithFake.ExecuteAction(ctx, command)
+		requireLifecycleCode(t, err, "CONNECTOR_PROVIDER_HEAD_MISMATCH")
+		_, err = harness.executeAction(ExecuteActionInput{ActionRequestID: request.ResourceID})
+		requireLifecycleCode(t, err, "CONNECTOR_PROVIDER_HEAD_MISMATCH")
+		require.Equal(t, reads+2, harness.fake.readCalls)
+		require.Equal(t, calls, harness.fake.calls)
+		var payloadAfter string
+		require.NoError(t, pool.QueryRow(ctx, `select payload::text from verrail_effect_receipts where id=$1`, result.ResourceID).Scan(&payloadAfter))
+		require.Equal(t, payloadBefore, payloadAfter)
+	})
+
+	t.Run("known mismatched effect survives marker removal and unreadable provider", func(t *testing.T) {
+		targetID, _, submissionID := harness.createAcceptedSubmission(assuranceTestHash)
+		request := harness.createApprovedAction(targetID, submissionID, PullRequestParams{Title: "Known identity", Head: "feat/known", Base: "main"})
+		observation := connectorTestObservation("feat/known", "98")
+		observation.BaseRef = "develop"
+		harness.fake.createResult = &observation
+		t.Cleanup(func() { harness.fake.createResult = nil; harness.fake.readError = nil })
+		_, err := harness.executeAction(ExecuteActionInput{ActionRequestID: request.ResourceID})
+		requireLifecycleCode(t, err, "CONNECTOR_PROVIDER_HEAD_MISMATCH")
+		calls, lookups := harness.fake.calls, harness.fake.lookupCalls
+		delete(harness.fake.effects, harness.fake.lastMarker)
+		_, err = harness.executeAction(ExecuteActionInput{ActionRequestID: request.ResourceID})
+		requireLifecycleCode(t, err, "CONNECTOR_PROVIDER_HEAD_MISMATCH")
+		harness.fake.readError = connectorUpstreamError("404")
+		_, err = harness.executeAction(ExecuteActionInput{ActionRequestID: request.ResourceID})
+		requireLifecycleCode(t, err, "CONNECTOR_EFFECT_UNKNOWN")
+		require.Equal(t, calls, harness.fake.calls)
+		require.Equal(t, lookups, harness.fake.lookupCalls)
+		require.Equal(t, "unknown_effect", harness.actionStatus(request.ResourceID))
+		harness.fake.readError = nil
+		observation.BaseRef = "main"
+		harness.fake.objects["98"] = observation
+		_, err = harness.executeAction(ExecuteActionInput{ActionRequestID: request.ResourceID})
+		require.NoError(t, err)
+		require.Equal(t, calls, harness.fake.calls)
 	})
 }
