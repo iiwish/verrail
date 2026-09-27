@@ -85,7 +85,10 @@ app.get('/api/agents/me', (req, res) => { if (req.actor.type !== 'agent') return
 res.json({ id: req.actor.agentId, companyId: req.actor.companyId }); });
 app.get('/api/workspaces/:workspaceId/delivery-context/codex', (req, res) => { assertBoard(req); res.json({}); });
 app.use(errorHandler);
-app.listen(Number(process.env.PORT), '127.0.0.1');`, resolveDir: path.join(repo, "server"), loader: "ts" },
+app.listen(Number(process.env.PORT), '127.0.0.1');
+// Debugger.pause stops at the next JavaScript statement, not while libuv is idle.
+// This fixture-owned tick is part of the hashed source, not inspector-injected code.
+setInterval(() => {}, 100).unref();`, resolveDir: path.join(repo, "server"), loader: "ts" },
       outfile: path.join(directory, "app/server.mjs"), bundle: true, platform: "node", format: "esm", logLevel: "silent",
       banner: { js: "import { createRequire as __fixtureRequire } from 'node:module'; const require = __fixtureRequire(import.meta.url); globalThis.__zod_globalConfig = { jitless: true };" },
       plugins: [{ name: "fixture-db", setup(builder) {

@@ -547,7 +547,8 @@ describeEmbeddedPostgres("Go Verrail Domain API Target command", () => {
     expect(eventRows).toHaveLength(8);
     expect(eventRows.find(event => event.eventType === "progress")?.payload).toMatchObject({ text: "Working" });
     expect(finalRun).toMatchObject({ status: "canceled", attemptCount: 2 });
-  }, process.env.VERRAIL_TEST_OPENCODE_HTTP === "1" ? 90_000 : 15_000);
+  // Repository cases run two bounded Go scheduler probes, including cold compilation.
+  }, 150_000);
 
   it("rolls back every fact when a later transaction write fails", async () => {
     const before = await Promise.all([

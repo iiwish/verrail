@@ -83,6 +83,13 @@ non-tmpfs storage before credential resolution. Git HOME and TMPDIR are inside
 that scratch area. Release Compose must provide and verify this mount before
 enabling source acquisition in the scheduler.
 
+Each trusted Git command has a 120-second execution deadline. Cancellation,
+output overflow and deadline expiry enter a bounded cleanup window that requires
+both closed process pipes and confirmed process-group absence. Unconfirmed
+cleanup rejects acquisition and retains its private scratch directory; operators
+must confirm the owned process group is gone before removing retained scratch.
+No bundle is admitted on this path.
+
 The harness uses scoped repository tools. It does not receive control-plane
 credentials or direct shell access outside the command sandbox. Runtime completion
 must wait for child-process cleanup. Cancellation and authority loss prevent output

@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type { Db } from "@paperclipai/db";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
@@ -118,3 +118,69 @@ it("supervises a real Git process and cancels its process group", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it.each([false, true])("requires confirmed group absence after a kill permission error (persistent=%s)", async persistent => {
+  const root = await mkdtemp(join(tmpdir(), "verrail-git-permission-"));
+  const nativeKill = process.kill.bind(process);
+  const kill = vi.spyOn(process, "kill").mockImplementation((pid, signal) => {
+    if (pid < 0) {
+      const error = new Error("synthetic group state") as NodeJS.ErrnoException;
+      error.code = signal === 0 && !persistent ? "ESRCH" : "EPERM";
+      throw error;
+    }
+    return nativeKill(pid, signal);
+  });
+  try {
+    const run = runTrustedRepositoryGit(["--version"], { cwd: root, env: { PATH: process.env.PATH, HOME: root }, signal: new AbortController().signal });
+    if (persistent) await expect(run).rejects.toThrow("REPOSITORY_GIT_CLEANUP_FAILED");
+    else expect(await run).toContain("git version");
+    expect(kill).toHaveBeenCalledWith(expect.any(Number), 0);
+  } finally { kill.mockRestore(); await rm(root, { recursive: true, force: true }); }
+});
+
+it.each([false, true])("bounds canceled live groups with denied signals and retains unconfirmed scratch (acquisition=%s)", async acquisition => {
+  const root = await mkdtemp(join(tmpdir(), "verrail-git-live-permission-"));
+  const controller = new AbortController();
+  const nativeKill = process.kill.bind(process);
+  let group: number | undefined;
+  let acquisitionRoot = "";
+  const kill = vi.spyOn(process, "kill").mockImplementation((pid, signal) => {
+    if (pid < 0) {
+      group = pid;
+      const error = new Error("synthetic denied signal") as NodeJS.ErrnoException;
+      error.code = "EPERM";
+      throw error;
+    }
+    return nativeKill(pid, signal);
+  });
+  const git: RepositoryGitCommand = async (_args, options) => {
+    acquisitionRoot = options.cwd;
+    return runTrustedRepositoryGit(["-c", "alias.pause=!sleep 30", "pause"], options);
+  };
+  const timer = setTimeout(() => controller.abort(), 100);
+  const started = Date.now();
+  try {
+    const run = acquisition
+      ? acquireRepositoryGitHubBundle({ repository: "owner/repo", baseCommit: "a".repeat(40),
+        authorization: "Bearer test", signal: controller.signal, recheck: async () => {}, git,
+        scratchRoot: root, validateScratch: async () => {} })
+      : git([], { cwd: root, env: { PATH: process.env.PATH, HOME: root }, signal: controller.signal });
+    await expect(run).rejects.toThrow(acquisition ? "REPOSITORY_GITHUB_ACQUISITION_FAILED" : "REPOSITORY_GIT_CLEANUP_FAILED");
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(group).toBeDefined();
+    if (acquisition) expect((await stat(acquisitionRoot)).isDirectory()).toBe(true);
+  } finally {
+    clearTimeout(timer);
+    kill.mockRestore();
+    if (group) {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        try { nativeKill(group, "SIGKILL"); } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ESRCH") break;
+        }
+        if (attempt === 99) throw new Error("Fixture group cleanup failed");
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+    }
+    await rm(root, { recursive: true, force: true });
+  }
+}, 10_000);

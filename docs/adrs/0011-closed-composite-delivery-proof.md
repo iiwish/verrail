@@ -57,6 +57,13 @@ processes, the observer cold-starts a private immutable executable copy and
 checks its identity before producing a witness. Native Harness arguments are
 fixed by configuration, and the proxy preserves the child's exit status.
 
+Node checkpoints require an actual debugger pause at a JavaScript statement.
+An idle event loop that executes no JavaScript within the checkpoint deadline
+fails closed with no witness; a pause acknowledgement alone is not evidence.
+Acceptance fixtures include a lightweight, unreferenced periodic callback in
+their manifest-hashed source. The observer does not inject code to wake an idle
+candidate or relax the source allowlist.
+
 Long-lived service witnesses are freshly requested and cover the source window.
 A native Harness can finish before output registration: its separately signed
 terminal witness records executable identity, execution identity, times and exit
