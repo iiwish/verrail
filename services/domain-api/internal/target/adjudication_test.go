@@ -450,7 +450,7 @@ func TestAdjudicationContractsIntegration(t *testing.T) {
 		TargetRevisionID:      targetRevisionID,
 		ArtifactRevisionIDs:   []string{artifactRevisionID},
 		VerificationResultIDs: []string{verification.ResourceID},
-		CommitRef:             ptr("abc123"),
+		CommitRef:             ptr(connectorTestCommit),
 		EnvironmentSummary:    ptr("candidate-1"),
 	}
 	newSubmission := func(t *testing.T, commitRef string) string {
@@ -460,7 +460,7 @@ func TestAdjudicationContractsIntegration(t *testing.T) {
 			TargetRevisionID:      targetRevisionID,
 			ArtifactRevisionIDs:   []string{artifactRevisionID},
 			VerificationResultIDs: []string{verification.ResourceID},
-			CommitRef:             ptr("abc123"),
+			CommitRef:             ptr(connectorTestCommit),
 			EnvironmentSummary:    ptr(commitRef),
 		})
 		require.NoError(t, err)

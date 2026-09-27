@@ -72,7 +72,7 @@ func TestDefaultDeliveryGraphIntegration(t *testing.T) {
 	require.Equal(t, "pending", status("review"))
 	var artifactRevisionID string
 	require.NoError(t, pool.QueryRow(ctx, `select revision.id from verrail_artifact_revisions revision join verrail_artifacts artifact on artifact.id=revision.artifact_id where artifact.target_id=$1 order by revision.created_at desc limit 1`, targetID).Scan(&artifactRevisionID))
-	partial, err := h.store.CreateSubmission(ctx, buildConnectorCandidateCommandAs(h, "service", "graph-orchestrator", AdjudicationSubmissionCreateCommand, CreateSubmissionInput{TargetID: targetID, TargetRevisionID: revisionID, ArtifactRevisionIDs: []string{artifactRevisionID}, VerificationResultIDs: []string{}, CommitRef: ptr("abc123")}))
+	partial, err := h.store.CreateSubmission(ctx, buildConnectorCandidateCommandAs(h, "service", "graph-orchestrator", AdjudicationSubmissionCreateCommand, CreateSubmissionInput{TargetID: targetID, TargetRevisionID: revisionID, ArtifactRevisionIDs: []string{artifactRevisionID}, VerificationResultIDs: []string{}, CommitRef: ptr(connectorTestCommit)}))
 	require.NoError(t, err)
 	partialReview, err := h.store.RecordDeliveryReview(ctx, buildConnectorCommandAs(h, h.principalID, AdjudicationReviewRecordCommand, RecordDeliveryReviewInput{SubmissionID: partial.ResourceID, ReviewerPrincipalType: "user", ReviewerPrincipalID: h.principalID, Verdict: "approved", UnprovenItems: []string{"CI pending"}}))
 	require.NoError(t, err)
@@ -91,7 +91,7 @@ func TestDefaultDeliveryGraphIntegration(t *testing.T) {
 	reconcile()
 	require.Equal(t, "completed", status("review"))
 	require.Equal(t, "ready", status("accept"))
-	submission, err := h.store.CreateSubmission(ctx, buildConnectorCandidateCommandAs(h, "service", "graph-orchestrator", AdjudicationSubmissionCreateCommand, CreateSubmissionInput{TargetID: targetID, TargetRevisionID: revisionID, ArtifactRevisionIDs: []string{artifactRevisionID}, VerificationResultIDs: []string{verificationID}, CommitRef: ptr("abc123")}))
+	submission, err := h.store.CreateSubmission(ctx, buildConnectorCandidateCommandAs(h, "service", "graph-orchestrator", AdjudicationSubmissionCreateCommand, CreateSubmissionInput{TargetID: targetID, TargetRevisionID: revisionID, ArtifactRevisionIDs: []string{artifactRevisionID}, VerificationResultIDs: []string{verificationID}, CommitRef: ptr(connectorTestCommit)}))
 	require.NoError(t, err)
 	reconcile()
 	require.Equal(t, "ready", status("review"), "a new Submission cannot inherit the old Review")

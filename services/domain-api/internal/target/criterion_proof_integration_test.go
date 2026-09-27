@@ -102,7 +102,7 @@ func TestPhasedCriterionProofIntegration(t *testing.T) {
 			requirement = contract.AllOf[3]
 			input.WorkNodeID = workNodeIDByKey(t, pool, created.GraphRevisionID, "post")
 		}
-		coverage := map[string]any{"contractHash": proofHash(contract), "requirementId": requirementID, "assertions": requirement.Assertions, "targetRevisionId": revised.TargetRevisionID, "graphRevisionId": created.GraphRevisionID, "commitRef": "abc123", "verifiedAt": time.Now().UTC().Format(time.RFC3339Nano)}
+		coverage := map[string]any{"contractHash": proofHash(contract), "requirementId": requirementID, "assertions": requirement.Assertions, "targetRevisionId": revised.TargetRevisionID, "graphRevisionId": created.GraphRevisionID, "commitRef": input.CommitRef, "verifiedAt": time.Now().UTC().Format(time.RFC3339Nano)}
 		coverage["providerRunId"] = input.ExternalRef
 		coverage["providerAttempt"] = 1
 		if submissionID != nil {
@@ -132,7 +132,7 @@ func TestPhasedCriterionProofIntegration(t *testing.T) {
 	h.runIDs = append(h.runIDs, pre.ResourceID)
 	var preResult string
 	require.NoError(t, pool.QueryRow(ctx, `select verification_result_id from verrail_integration_runs where id=$1`, pre.ResourceID).Scan(&preResult))
-	submission, err := h.store.CreateSubmission(ctx, buildConnectorCandidateCommandAs(h, "service", "candidate-service", AdjudicationSubmissionCreateCommand, CreateSubmissionInput{TargetID: targetID, TargetRevisionID: revised.TargetRevisionID, ArtifactRevisionIDs: []string{artifactRevision.ResourceID}, VerificationResultIDs: []string{preResult}, CommitRef: ptr("abc123")}))
+	submission, err := h.store.CreateSubmission(ctx, buildConnectorCandidateCommandAs(h, "service", "candidate-service", AdjudicationSubmissionCreateCommand, CreateSubmissionInput{TargetID: targetID, TargetRevisionID: revised.TargetRevisionID, ArtifactRevisionIDs: []string{artifactRevision.ResourceID}, VerificationResultIDs: []string{preResult}, CommitRef: ptr(connectorTestCommit)}))
 	require.NoError(t, err)
 	h.submissionIDs = append(h.submissionIDs, submission.ResourceID)
 	review, err := h.store.RecordDeliveryReview(ctx, buildConnectorCommandAs(h, h.approverID, AdjudicationReviewRecordCommand, RecordDeliveryReviewInput{SubmissionID: submission.ResourceID, ReviewerPrincipalType: "user", ReviewerPrincipalID: h.approverID, Verdict: "approved", UnprovenItems: []string{}}))
@@ -239,7 +239,7 @@ func TestPhasedCriterionProofIntegration(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, tx.Rollback(ctx))
 	require.False(t, facts.acceptanceValid(), "replayed pre-proof is not a new current candidate proof")
-	_, err = h.store.CreateSubmission(ctx, buildConnectorCandidateCommandAs(h, "service", "candidate-service", AdjudicationSubmissionCreateCommand, CreateSubmissionInput{TargetID: targetID, TargetRevisionID: revised.TargetRevisionID, ArtifactRevisionIDs: []string{artifactRevision.ResourceID}, VerificationResultIDs: []string{preResult, lateResult}, CommitRef: ptr("abc123")}))
+	_, err = h.store.CreateSubmission(ctx, buildConnectorCandidateCommandAs(h, "service", "candidate-service", AdjudicationSubmissionCreateCommand, CreateSubmissionInput{TargetID: targetID, TargetRevisionID: revised.TargetRevisionID, ArtifactRevisionIDs: []string{artifactRevision.ResourceID}, VerificationResultIDs: []string{preResult, lateResult}, CommitRef: ptr(connectorTestCommit)}))
 	require.Error(t, err, "a late result cannot enter a new immutable pre-proof candidate")
 	var bindingCount int
 	require.NoError(t, pool.QueryRow(ctx, `select count(*) from verrail_criterion_proofs where target_id=$1`, targetID).Scan(&bindingCount))
@@ -310,7 +310,7 @@ func TestFourCriteriaCollectSeparatePreProofs(t *testing.T) {
 		fixture := connectorTaskFixture{targetID: target.TargetID, targetRevisionID: revision.TargetRevisionID, graphRevisionID: graph.GraphRevisionID, workNodeID: workNodeIDByKey(t, pool, graph.GraphRevisionID, nodeKey), claimID: claim, criterionKey: criterion.ID}
 		input := h.integrationRunInput(fixture, "ci/"+mustNewUUID(t), "success", assuranceTestHash, "ci:four-criteria")
 		input.ProofContext = &CriterionProofContext{RequirementID: requirement.ID}
-		input.ProviderReceipt["criterionProof"] = map[string]any{"contractHash": proofHash(contracts[index]), "requirementId": requirement.ID, "assertions": requirement.Assertions, "targetRevisionId": revision.TargetRevisionID, "graphRevisionId": graph.GraphRevisionID, "commitRef": "abc123", "verifiedAt": time.Now().UTC().Format(time.RFC3339Nano), "providerRunId": input.ExternalRef, "providerAttempt": 1}
+		input.ProviderReceipt["criterionProof"] = map[string]any{"contractHash": proofHash(contracts[index]), "requirementId": requirement.ID, "assertions": requirement.Assertions, "targetRevisionId": revision.TargetRevisionID, "graphRevisionId": graph.GraphRevisionID, "commitRef": input.CommitRef, "verifiedAt": time.Now().UTC().Format(time.RFC3339Nano), "providerRunId": input.ExternalRef, "providerAttempt": 1}
 		result, err := recordTrustedIntegrationProofFixture(ctx, h.store, buildConnectorCandidateCommandAs(h, "service", "independent-ci-collector", ConnectorIntegrationRunRecordCommand, input))
 		require.NoError(t, err, "each pre requirement owns a distinct active node, even after the first completes")
 		h.runIDs = append(h.runIDs, result.ResourceID)
@@ -321,7 +321,7 @@ func TestFourCriteriaCollectSeparatePreProofs(t *testing.T) {
 	artifact := h.createArtifact(target.TargetID)
 	artifactRevision, err := h.addRevision(artifact, AddArtifactRevisionInput{ContentHash: assuranceTestHash, ContentRef: "git:four-criteria"})
 	require.NoError(t, err)
-	submission, err := h.store.CreateSubmission(ctx, buildConnectorCandidateCommandAs(h, "service", "candidate-service", AdjudicationSubmissionCreateCommand, CreateSubmissionInput{TargetID: target.TargetID, TargetRevisionID: revision.TargetRevisionID, ArtifactRevisionIDs: []string{artifactRevision.ResourceID}, VerificationResultIDs: resultIDs, CommitRef: ptr("abc123")}))
+	submission, err := h.store.CreateSubmission(ctx, buildConnectorCandidateCommandAs(h, "service", "candidate-service", AdjudicationSubmissionCreateCommand, CreateSubmissionInput{TargetID: target.TargetID, TargetRevisionID: revision.TargetRevisionID, ArtifactRevisionIDs: []string{artifactRevision.ResourceID}, VerificationResultIDs: resultIDs, CommitRef: ptr(connectorTestCommit)}))
 	require.NoError(t, err, "both pre proofs aggregate without requiring future governance or effect proof")
 	h.submissionIDs = append(h.submissionIDs, submission.ResourceID)
 	probe, err := pool.Begin(ctx)
