@@ -1,0 +1,38 @@
+name: verrail-test
+services:
+  container-client-check:
+    image: ${VERRAIL_CONTAINER_CLIENT_IMAGE:?verified client fixture digest required}
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    cpus: 1
+    mem_limit: 256m
+    restart: "no"
+    logging:
+      driver: json-file
+      options: {max-size: 2m, max-file: "1"}
+    volumes:
+      - type: bind
+        source: /opt/maco-apps/verrail/test/data/repository/workspaces
+        target: /var/lib/verrail-repository/workspaces
+        bind: {create_host_path: false}
+      - type: bind
+        source: /opt/maco-ops/secrets/verrail/test/runtime/container-runner.json
+        target: /run/secrets/container-runner.json
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: /opt/maco-ops/secrets/verrail/test/runtime/container-runner-key
+        target: /run/secrets/container-runner-key
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: /opt/maco-ops/secrets/verrail/test/runtime/container-runner-known-hosts
+        target: /run/secrets/container-runner-known-hosts
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [container-check]
+networks:
+  container-check: {driver: bridge}

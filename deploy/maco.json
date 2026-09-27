@@ -20,7 +20,9 @@
   },
   "persistent_data": [
     "/opt/maco-apps/verrail/test/data/control-plane",
-    "/opt/maco-apps/verrail/test/data/gateway"
+    "/opt/maco-apps/verrail/test/data/gateway",
+    "/opt/maco-apps/verrail/test/data/artifacts",
+    "/opt/maco-apps/verrail/test/data/repository"
   ],
   "services": {
     "migrate": {"kind": "job"},
@@ -29,6 +31,8 @@
     "temporal-namespace": {"kind": "job"},
     "domain-api": {"kind": "service"},
     "orchestration-worker": {"kind": "service"},
+    "repository-recovery": {"kind": "service"},
+    "repository-executor": {"kind": "service"},
     "execution-gateway": {"kind": "service"},
     "control-plane": {"kind": "service"}
   }

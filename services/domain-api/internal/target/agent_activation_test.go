@@ -87,3 +87,34 @@ func TestActivationRequiresObservedRevisionAndBinding(t *testing.T) {
 	input.ExpectedPrimaryDeploymentID = "arbitrary"
 	require.Error(t, ValidateReviseDeploymentInput(&input))
 }
+
+func TestDirectorRuntimeActivationIntegration(t *testing.T) {
+	url := os.Getenv("VERRAIL_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("VERRAIL_TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, url)
+	require.NoError(t, err)
+	defer pool.Close()
+	for _, runtime := range []string{"opencode", "codex", "claude"} {
+		t.Run(runtime, func(t *testing.T) {
+			h := newLifecycleTestHarness(t, pool)
+			defer h.cleanup(pool)
+			definition := h.createDefinition()
+			published, err := h.store.PublishAgentVersion(ctx, buildLifecycleCommand(h, "agent_version.publish.v1", definition, PublishAgentVersionInput{
+				Runtime: runtime, Model: "fixture/test", Prompt: "Read the conversation context",
+				SupplyChain: map[string]any{"source": "saved_agent_configuration.v2", "mode": "director_chat"},
+			}))
+			require.NoError(t, err)
+			h.trackAggregate(published.ResourceID)
+			evaluation := h.recordPassingEvaluation(published.ResourceID)
+			deployment := h.createDeployment(definition, published.ResourceID, evaluation, "director-runtime")
+			var pinnedRuntime string
+			var config map[string]any
+			require.NoError(t, pool.QueryRow(ctx, `select v.runtime,r.runtime_config from verrail_deployment_revisions r join verrail_agent_versions v on v.id=r.agent_version_id where r.deployment_id=$1`, deployment).Scan(&pinnedRuntime, &config))
+			require.Equal(t, runtime, pinnedRuntime)
+			require.Empty(t, config, "conversation runtimes do not require a host working directory")
+		})
+	}
+}

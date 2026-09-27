@@ -8,7 +8,7 @@ const db = createDb(process.env.DATABASE_URL, { maxConnections: 1 });
 try {
   const userId = process.argv[2];
   const identity = await db.transaction(async tx => {
-    const [workspace] = await tx.insert(companies).values({ name: "Compose fixture", issuePrefix: "CMP" }).returning();
+    const [workspace] = await tx.insert(companies).values({ id: process.argv[3] || randomUUID(), name: "Compose fixture", issuePrefix: "CMP" }).returning();
     const workspaceId = workspace.id;
     await tx.insert(companyMemberships).values({ companyId: workspaceId, principalType: "user", principalId: userId,
       membershipRole: "owner", status: "active" });

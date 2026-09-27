@@ -5,6 +5,55 @@ const options = { url: "http://opencode:4096", password: "test-only-password", d
 const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } });
 
 describe("OpenCode HTTP transport", () => {
+  it.each([undefined, 900_000])("bounds prompt and stream with the configured execution deadline: %s", async executionTimeoutMs => {
+    vi.useFakeTimers();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation(ms => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new Error("deadline")), ms);
+      return controller.signal;
+    });
+    try {
+      const fetch = vi.fn().mockResolvedValueOnce(json({ healthy: true, version: "1.2.3" }))
+        .mockResolvedValueOnce(json({ id: "ses_123" }))
+        .mockImplementationOnce(async (_url, init) => new Response(new ReadableStream({
+          start(controller) { init.signal.addEventListener("abort", () => controller.error(init.signal.reason), { once: true }); },
+        }), { headers: { "Content-Type": "text/event-stream" } }))
+        .mockImplementationOnce((_url, init) => new Promise((_resolve, reject) => {
+          init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+        }));
+      const client = createOpenCodeHttpClient({ ...options, executionTimeoutMs, fetch });
+      const id = await client.createSession();
+      const stream = await client.subscribeText(id, () => {});
+      const failedStream = expect(stream.done).rejects.toThrow("deadline");
+      const failedPrompt = expect(client.prompt(id, { model: "provider/model", system: "rules", prompt: "hello" })).rejects.toThrow("deadline");
+      const signals = [fetch.mock.calls[2][1].signal, fetch.mock.calls[3][1].signal];
+      const budget = executionTimeoutMs ?? 120_000;
+      await vi.advanceTimersByTimeAsync(budget - 1);
+      expect(signals.every(signal => !signal.aborted)).toBe(true);
+      await vi.advanceTimersByTimeAsync(1);
+      await failedStream;
+      await failedPrompt;
+      expect(timeout.mock.calls.map(([ms]) => ms)).toEqual([120_000, 120_000, budget, budget]);
+    } finally { timeout.mockRestore(); vi.useRealTimers(); }
+  });
+
+  it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 3_600_001])("rejects invalid execution timeout %s", executionTimeoutMs => {
+    expect(() => createOpenCodeHttpClient({ ...options, executionTimeoutMs })).toThrow("timeout");
+  });
+
+  it.each(["health", "session"])("cancels during %s setup without waiting for its control timeout", async phase => {
+    const controller = new AbortController();
+    const fetch = vi.fn(async (url, init) => {
+      if (phase === "session" && String(url).includes("/global/health")) return json({ healthy: true, version: "1.2.3" });
+      return await new Promise<Response>((_resolve, reject) => {
+        init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+        controller.abort(new Error("run canceled"));
+      });
+    });
+    await expect(createOpenCodeHttpClient({ ...options, fetch }).createSession({}, controller.signal)).rejects.toThrow("run canceled");
+    expect(fetch).toHaveBeenCalledTimes(phase === "session" ? 2 : 1);
+  });
+
   it("checks the pinned version and creates a deny-by-default session", async () => {
     const fetch = vi.fn().mockResolvedValueOnce(json({ healthy: true, version: "1.2.3" })).mockResolvedValueOnce(json({ id: "ses_123" }));
     const client = createOpenCodeHttpClient({ ...options, fetch });
@@ -54,7 +103,7 @@ describe("OpenCode HTTP transport", () => {
   });
 
   it("streams only text deltas for the allocated session", async () => {
-    const event = (sessionID: string, delta: string) => `data: ${JSON.stringify({ type: "message.part.delta", properties: { sessionID, field: "text", delta } })}\n\n`;
+    const event = (sessionID: string, delta: string) => `data: ${JSON.stringify({ type: "message.part.delta", properties: { sessionID, messageID: "msg_123", field: "text", delta } })}\n\n`;
     const fetch = vi.fn().mockResolvedValueOnce(json({ healthy: true, version: "1.2.3" })).mockResolvedValueOnce(json({ id: "ses_123" }))
       .mockResolvedValueOnce(new Response(event("ses_other", "private") + event("ses_123", "hello"), { headers: { "Content-Type": "text/event-stream" } }));
     const client = createOpenCodeHttpClient({ ...options, fetch });
@@ -65,6 +114,35 @@ describe("OpenCode HTTP transport", () => {
     expect(chunks).toEqual(["hello"]);
     stream.close();
   });
+
+  it("retains message identity when tool rounds produce separate assistant messages", async () => {
+    const event = (messageID: string, delta: string) => `data: ${JSON.stringify({ type: "message.part.delta",
+      properties: { sessionID: "ses_123", messageID, field: "text", delta } })}\n\n`;
+    const fetch = vi.fn().mockResolvedValueOnce(json({ healthy: true, version: "1.2.3" }))
+      .mockResolvedValueOnce(json({ id: "ses_123" }))
+      .mockResolvedValueOnce(new Response(event("msg_tool", "Working") + event("msg_final", "Done"),
+        { headers: { "Content-Type": "text/event-stream" } }))
+      .mockResolvedValueOnce(json({ info: { id: "msg_final", sessionID: "ses_123", role: "assistant" },
+        parts: [{ type: "text", text: "Done" }] }));
+    const client = createOpenCodeHttpClient({ ...options, fetch });
+    const id = await client.createSession();
+    const chunks: { text: string; messageId: string }[] = [];
+    const stream = await client.subscribeText(id, (text, messageId) => { chunks.push({ text, messageId }); });
+    await stream.done;
+    expect(chunks).toEqual([{ text: "Working", messageId: "msg_tool" }, { text: "Done", messageId: "msg_final" }]);
+    expect(await client.promptMessage(id, { model: "provider/model", system: "rules", prompt: "hello" }))
+      .toEqual({ messageId: "msg_final", text: "Done" });
+  });
+
+  it.each([{ id: "msg_123", sessionID: "ses_other" }, { id: "../bad", sessionID: "ses_123" }])(
+    "rejects a final message outside the allocated identity: %j", async info => {
+      const fetch = vi.fn().mockResolvedValueOnce(json({ healthy: true, version: "1.2.3" }))
+        .mockResolvedValueOnce(json({ id: "ses_123" }))
+        .mockResolvedValueOnce(json({ info: { ...info, role: "assistant" }, parts: [{ type: "text", text: "unexpected" }] }));
+      const client = createOpenCodeHttpClient({ ...options, fetch });
+      const id = await client.createSession();
+      await expect(client.promptMessage(id, { model: "provider/model", system: "rules", prompt: "hello" })).rejects.toThrow("identity");
+    });
 
   it("rejects non-SSE event responses", async () => {
     const fetch = vi.fn().mockResolvedValueOnce(json({ healthy: true, version: "1.2.3" })).mockResolvedValueOnce(json({ id: "ses_123" })).mockResolvedValueOnce(json({}));

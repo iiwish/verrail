@@ -4,6 +4,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { verrailCollections, type Db } from "@paperclipai/db";
 import {
   createTargetSchema,
+  prepareTargetRepositorySourceSchema,
   reviseTargetProofSchema,
   createGraphRevisionSchema,
   createRunSchema,
@@ -20,6 +21,8 @@ import {
 import { badRequest, HttpError, notFound } from "../errors.js";
 import { privateJsonEtag } from "../middleware/private-json-etag.js";
 import { validate } from "../middleware/validate.js";
+import { prepareAuthorizedRepositorySource } from "../execution/repository-github-source.js";
+import { getStorageService } from "../storage/index.js";
 import {
   conversationService,
   createVerrailDomainApiClient,
@@ -42,6 +45,9 @@ type CursorPayload = {
   updatedAt: string;
   targetId: string;
 };
+
+// One trusted Git acquisition at a time bounds the shared private scratch volume.
+let repositorySourceBusy = false;
 
 function principalKey(req: Request) {
   const actor = getActorInfo(req);
@@ -148,11 +154,49 @@ export function targetRoutes(
   options: { domainApiClient?: VerrailDomainApiClient | null } = {},
 ) {
   const router = Router();
+  const executionProfile = process.env.VERRAIL_EXECUTOR_RUNTIME_PROFILE?.trim() || "host_trusted";
+  if (executionProfile !== "host_trusted" && executionProfile !== "repository_sandbox") {
+    throw new Error("Invalid executor runtime profile");
+  }
+  const repositorySourceRequired = executionProfile === "repository_sandbox";
   const svc = targetReadModelService(db);
   const conversations = conversationService(db);
   const domainApi = options.domainApiClient === undefined
     ? createVerrailDomainApiClient()
     : options.domainApiClient;
+
+  router.post("/workspaces/:workspaceId/targets/:targetId/repository-sources",
+    validate(prepareTargetRepositorySourceSchema), async (req, res) => {
+      const workspaceId = req.params.workspaceId as string;
+      const targetId = req.params.targetId as string;
+      assertBoard(req);
+      assertCompanyAccess(req, workspaceId);
+      const actor = getActorInfo(req);
+      if (actor.actorType !== "user") throw new HttpError(403, "User authorization required");
+      const scratchRoot = process.env.VERRAIL_REPOSITORY_SOURCE_SCRATCH;
+      if (!domainApi || !scratchRoot) throw new HttpError(503, "Repository source preparation is unavailable");
+      if (!await svc.getByTargetId(workspaceId, targetId)) throw notFound("Target not found");
+      if (repositorySourceBusy) throw new HttpError(409, "Repository source preparation is busy");
+      repositorySourceBusy = true;
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      res.once("close", abort);
+      try {
+        const receipt = await prepareAuthorizedRepositorySource({ db,
+          input: { ...req.body, workspaceId, targetId }, actor,
+          scratchRoot, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]),
+          storage: getStorageService(), domainApi });
+        await logActivity(db, { companyId: workspaceId, actorType: actor.actorType,
+          actorId: actor.actorId, action: "target.repository_source_prepared", entityType: "target", entityId: targetId,
+          details: { baseCommit: receipt.baseCommit, repositorySourceRevisionId: receipt.provenanceArtifact.artifactRevisionId } });
+        if (!controller.signal.aborted) res.status(201).json(receipt);
+      } catch {
+        if (!controller.signal.aborted) throw new HttpError(422, "Repository source preparation failed; verify authorization and the selected revision");
+      } finally {
+        res.removeListener("close", abort);
+        repositorySourceBusy = false;
+      }
+    });
   const etag = privateJsonEtag(principalKey);
 
   router.post("/workspaces/:workspaceId/targets/:targetId/revisions", validate(reviseTargetProofSchema), async (req, res) => {
@@ -353,6 +397,9 @@ export function targetRoutes(
       if (!domainApi) throw new HttpError(503, "Verrail Domain API is unavailable", { code: "TARGET_DOMAIN_API_UNAVAILABLE", retryable: true });
       if (!await svc.getByTargetId(workspaceId, targetId)) throw notFound("Target not found");
       const actor = getActorInfo(req);
+      if (repositorySourceRequired && !req.body.repositorySourceRevisionId) {
+        throw new HttpError(409, "Pin a repository source before creating a Run", { code: "REPOSITORY_SOURCE_BINDING_REQUIRED" });
+      }
       const result = await domainApi.createRun({
         workspaceId,
         targetId,
@@ -432,7 +479,7 @@ export function targetRoutes(
     assertWorkspaceRead(req, workspaceId);
     const model = await svc.getByTargetId(workspaceId, targetId);
     if (!model) throw notFound("Target not found");
-    res.json(await svc.workspace(model));
+    res.json({ ...await svc.workspace(model), repositorySourceRequired });
   });
 
   router.post("/workspaces/:workspaceId/targets/:targetId/conversation", async (req, res) => {

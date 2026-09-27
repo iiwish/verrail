@@ -75,7 +75,7 @@ Codex 等 Harness 负责高质量执行单个编码任务；Verrail 负责跨任
 ```text
 GitHub 需求
   -> 创建 TargetRevision 并固定验收条件
-  -> 选择已发布的 Codex AgentVersion
+  -> 选择已发布的 OpenCode AgentVersion
   -> 在受控 Workspace/Sandbox 执行
   -> 生成 CodeChange ArtifactRevision
   -> CI IntegrationTask 针对 Criterion 产生 Evidence 与 VerificationResult
@@ -86,6 +86,8 @@ GitHub 需求
 ```
 
 这个闭环必须能演示失败、重试、人工拒绝、修订后重新验收和安全回滚，不能只覆盖一次成功路径。
+
+1.0 首发采用 OpenCode-first：单机私有部署使用 OpenCode 完成真实仓库修改、版本绑定产物、独立验证与人工验收。已有 Codex 能力与历史证据保留，其兼容回归仍须通过，但不要求第二套运行时同时完成首发端到端验收。不同运行时的证明必须绑定各自真实身份、版本和执行事实，不得复用或改写其他运行时的历史证明。
 
 ## 6. 阶段路线
 
@@ -200,7 +202,7 @@ GitHub 需求
 5. 构建 Workspace-scoped Target 列表与 Target Workbench 的只读真实数据骨架，验证可选 Collection、Target 与 Work 映射；
 6. 实现 ProviderConversationBinding 与 TargetCreationDraft：普通消息保持会话，显式创建意图进入多轮补全，确认后幂等创建不依赖 Collection 的 Target；
 7. 完成 Go + Temporal 最小 Spike：Outbox 启动、Signal、Activity 幂等、Worker 重启、Workflow replay 和版本升级；
-8. 打通一个固定 Codex Deployment 的 GitHub 到 Submission/Acceptance 闭环；
+8. 打通一个固定 OpenCode Deployment 的 GitHub 到 Submission/Acceptance 闭环；
 9. 把 Runner Protocol 和 SandboxDriver 从进程实现中抽成稳定接口；
 10. 按 Workspace/Target、Orchestration、Assurance、Execution 的纵向切片迁入 Go；
 11. 在真实 Linux 环境完成 CubeSandbox Spike，再决定生产准入；

@@ -59,7 +59,7 @@ func main() {
 	domainActivities := orchestration.NewDomainActivities(target.NewStore(pool), orchestration.DomainActivitiesConfig{
 		ServicePrincipalID:  config.ServicePrincipalID,
 		ExecutorPrincipalID: config.ExecutorPrincipalID,
-		RuntimeProfile:      "host_trusted",
+		RuntimeProfile:      config.RuntimeProfile,
 		LeaseDuration:       config.RunLeaseDuration,
 		GraceDuration:       config.RunGraceDuration,
 	})

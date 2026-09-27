@@ -218,8 +218,8 @@ func (store *Store) ReportRunEvent(ctx context.Context, command ReportRunEventCo
 		}
 		return baseResult, nil
 	}
-	err = tx.QueryRow(ctx, `select content_hash from verrail_run_events where run_attempt_id=$1 and cursor=$2`, command.RunAttemptID, command.Input.Cursor).Scan(&existingHash)
-	if err == nil {
+	lookupErr := tx.QueryRow(ctx, `select content_hash from verrail_run_events where run_attempt_id=$1 and cursor=$2`, command.RunAttemptID, command.Input.Cursor).Scan(&existingHash)
+	if lookupErr == nil {
 		if existingHash != command.RequestHash {
 			return ReportRunEventResult{}, &Error{Status: 409, Code: "RUN_EVENT_CURSOR_CONFLICT", Message: "Cursor already contains a different event"}
 		}
@@ -229,8 +229,8 @@ func (store *Store) ReportRunEvent(ctx context.Context, command ReportRunEventCo
 		}
 		return baseResult, nil
 	}
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return ReportRunEventResult{}, err
+	if lookupErr != nil && !errors.Is(lookupErr, pgx.ErrNoRows) {
+		return ReportRunEventResult{}, lookupErr
 	}
 	if command.Input.Cursor != lastCursor+1 {
 		baseResult.RejectionCode = rejection("EVENT_CURSOR_GAP")

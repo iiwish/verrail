@@ -365,6 +365,23 @@ Go 重构遵守以下边界：
 - Adapter、Harness、镜像和 Plugin 固定版本、来源 Hash、许可证和 SBOM；
 - AuditEvent 追加保存，敏感字段按分类脱敏或仅保存 Hash。
 
+### Repository Run Profile
+
+`repository_sandbox` 使用专属执行身份 `verrail-repository-runner`，不能与
+`host_trusted` 执行身份互换。RunAttempt 与 ExecutionLease 在数据库及命令合同
+中同时约束这组绑定；本机执行器和本机证明读取路径仅接受 `host_trusted`。
+Profile 标识不是隔离证明：部署准入仍须验证运行平台的沙箱能力、取消后的
+进程清理、固定源码输入和带 fencing token 的产物登记。服务器仓库执行不授予
+远程 Git push、merge、交付批准或验收权限。
+
+服务器仓库执行采用可信控制器与短期命令容器分离：`repository-executor`
+保留模型访问、租约检查和领域报告；仓库命令仅在无应用凭据、无应用网络、
+仅挂载本次 checkout 的独立容器中执行。常驻服务不挂载 Docker socket，
+通过专用 SSH 身份调用只接受固定容器协议的受限运维网关。容器销毁确认
+先于清理回执与产物采集；模糊响应不授权重放或成功取消。该后端不依赖
+Landlock ABI 6，部署仍需真实隔离和故障验证。见
+[ADR 0017](./adrs/0017-disposable-repository-command-containers.md)。
+
 ### Compatibility Tool Gateway 审批边界
 
 当前 TypeScript Tool Gateway 的立即审批执行、已审批恢复、显式

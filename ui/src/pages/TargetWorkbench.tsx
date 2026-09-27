@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { TargetConversations } from "../components/targets/TargetConversations";
+import { TargetRepositorySource } from "../components/targets/TargetRepositorySource";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -47,6 +48,7 @@ import type {
   TargetAvailableCommandV1,
   TargetAttentionItemV1,
   TargetWorkItemV1,
+  RepositorySourceReceipt,
 } from "@paperclipai/shared";
 import { useTranslation } from "@/i18n";
 import { CriterionProofEditor } from "@/components/targets/CriterionProofEditor";
@@ -59,7 +61,7 @@ import { ArtifactPreview } from "@/components/targets/ArtifactPreview";
 type WorkbenchCommandRequest =
   | { id: "create_graph_revision"; deploymentRevisionId: string; completionDefinition: string }
   | { id: "activate_graph_revision"; graphRevisionId: string }
-  | { id: "create_run"; graphRevisionId: string; workNodeId: string; deploymentRevisionId: string }
+  | { id: "create_run"; graphRevisionId: string; workNodeId: string; deploymentRevisionId: string; repositorySourceRevisionId?: string }
   | { id: "record_review"; submissionId: string; verdict: AdjudicationReviewVerdict; comments: string }
   | { id: "accept_submission"; submissionId: string; reviewId: string }
   | { id: "approve_action"; action: ConnectorActionRequestV1 }
@@ -253,6 +255,8 @@ export function TargetWorkbench() {
   const { userId: accountUserId, settled: accountIdentitySettled } = useAccountIdentity();
   const activeTab = targetTab(tab);
   const [runsExpanded, setRunsExpanded] = useState(false);
+  const [repositorySource, setRepositorySource] = useState<RepositorySourceReceipt | null>(null);
+  const [repositorySourceBusy, setRepositorySourceBusy] = useState(false);
   const [focusedRunId, setFocusedRunId] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [inspectedCommandId, setInspectedCommandId] = useState<string | null>(null);
@@ -408,6 +412,7 @@ export function TargetWorkbench() {
         case "create_run":
           return targetsApi.createRun(workspaceId, targetId!, request.graphRevisionId, request.workNodeId, {
             kind: "agent_run",
+            ...(request.repositorySourceRevisionId ? { repositorySourceRevisionId: request.repositorySourceRevisionId } : {}),
             actor: { principalType: "agent", principalId: request.deploymentRevisionId },
           }, idempotencyKey);
         case "record_review":
@@ -568,6 +573,11 @@ export function TargetWorkbench() {
     navigate(`/targets/${target.targetId}/delivery`);
   };
 
+  const sourceRevisionId = repositorySource?.workspaceId === selectedCompanyId && repositorySource.targetId === targetId
+    && repositorySource.targetRevisionId === workspace?.targetRevisionId
+    && repositorySource.graphRevisionId === workspace?.graph?.activeGraphRevisionId
+    ? repositorySource.provenanceArtifact.artifactRevisionId : undefined;
+
   const invokeProjectedCommand = (command: TargetAvailableCommandV1) => {
     if (!workspace || command.state !== "available" || !command.resourceId) return;
     switch (command.id) {
@@ -575,6 +585,7 @@ export function TargetWorkbench() {
         submitCommand({ id: command.id, graphRevisionId: command.resourceId });
         return;
       case "create_run": {
+        if (repositorySourceBusy || (workspace.repositorySourceRequired && !sourceRevisionId)) return;
         const node = workspace.work.find((item) => item.id === command.resourceId);
         if (!workspace.graph?.activeGraphRevisionId || node?.responsiblePrincipal?.principalType !== "agent") return;
         submitCommand({
@@ -582,6 +593,7 @@ export function TargetWorkbench() {
           graphRevisionId: workspace.graph.activeGraphRevisionId,
           workNodeId: node.id,
           deploymentRevisionId: node.responsiblePrincipal.principalId,
+          ...(sourceRevisionId ? { repositorySourceRevisionId: sourceRevisionId } : {}),
         });
         return;
       }
@@ -641,6 +653,11 @@ export function TargetWorkbench() {
                 </div>
               </div>
               {workspaceQuery.isError ? <p role="alert" className="text-sm text-destructive">{t("targets.workbench.staleFacts")}</p> : null}
+              {workspace.graph?.activeGraphRevisionId && visibleCommands.some(command => command.id === "create_run" && command.state === "available") ? (
+                <TargetRepositorySource key={`${selectedCompanyId}:${targetId}:${workspace.targetRevisionId}:${workspace.graph.activeGraphRevisionId}`}
+                  workspaceId={selectedCompanyId!} targetId={targetId!} targetRevisionId={workspace.targetRevisionId}
+                  graphRevisionId={workspace.graph.activeGraphRevisionId} onPrepared={setRepositorySource} onBusy={setRepositorySourceBusy} />
+              ) : null}
               {activeTab === "overview" ? <TargetAttention items={workspace.attention.filter((item) => {
                 const command = attentionCommand(item, visibleCommands);
                 return !command || (command.id !== inspectedCommandId && (command.state !== "available" || command.id === "reconcile_action"));
@@ -714,7 +731,7 @@ export function TargetWorkbench() {
                             size="sm"
                             variant={command.id === "execute_action" ? "default" : "outline"}
                             onClick={() => invokeProjectedCommand(command)}
-                            disabled={commandMutation.isPending}
+                            disabled={commandMutation.isPending || (command.id === "create_run" && (repositorySourceBusy || Boolean(workspace.repositorySourceRequired && !sourceRevisionId)))}
                           >
                             {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : command.id === "create_run" ? <Play className="h-4 w-4" /> : command.id === "approve_action" || command.id === "accept_submission" || command.id === "record_review" ? <UserCheck className="h-4 w-4" /> : command.id === "execute_action" ? <GitPullRequest className="h-4 w-4" /> : <Check className="h-4 w-4" />}
                             {isPending ? t("targets.commands.pending") : t(`targets.commands.actions.${command.id}`)}

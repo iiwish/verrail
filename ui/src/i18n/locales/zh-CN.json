@@ -921,6 +921,11 @@
     }
   },
   "targets": {
+    "repositorySource": {
+      "ref": "GitHub 分支或提交",
+      "prepare": "固定源码",
+      "failed": "源码准备失败，请检查仓库授权和所选版本后重试。"
+    },
     "criterionProof": {
       "revise": "修订证明合同",
       "revisionWarning": "所有证明均为必需。保存将创建 TargetRevision 并要求建立新工作图；现有决定保留为历史。",

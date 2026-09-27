@@ -87,6 +87,12 @@ func (activities *DomainActivities) ReconcileTarget(ctx context.Context, input R
 		AllCompleted:       reconciled.AllCompleted,
 	}
 	for _, node := range reconciled.AgentNodes {
+		// Repository input is selected by the human CreateRun command. Do not
+		// consume a ready node before that command pins its source revision.
+		if activities.runtimeProfile == "repository_sandbox" {
+			result.WaitingTaskNodeIDs = append(result.WaitingTaskNodeIDs, node.WorkNodeID)
+			continue
+		}
 		runCommand := target.CreateRunCommand{
 			WorkspaceID:     input.WorkspaceID,
 			TargetID:        input.TargetID,

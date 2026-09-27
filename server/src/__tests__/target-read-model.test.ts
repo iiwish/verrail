@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { getTableName } from "drizzle-orm";
 import {
@@ -131,6 +131,14 @@ describePostgres("native TargetReadModel", () => {
     expect(workspace.work).toEqual([expect.objectContaining({ nodeKey: "implement", kind: "agent_task" })]);
     expect(workspace.runs).toEqual([expect.objectContaining({ kind: "agent_run", status: "queued" })]);
     expect(workspace.stages.find((stage) => stage.key === "execute")?.state).toBe("current");
+  });
+
+  it("reads historical JSON null optional arrays written by omitted Go fields", async () => {
+    const seeded = await seed();
+    await db.execute(sql`update verrail_target_revisions set resource_refs='null'::jsonb,constraints='null'::jsonb where id=${seeded.targetRevisionId}`);
+    const model = await targetReadModelService(db).getByTargetId(seeded.workspace.id, seeded.targetId);
+    expect(model?.definition.resourceRefs).toEqual([]);
+    expect(model?.definition.constraints).toEqual([]);
   });
 
   it("keeps historical failures inspectable without blocking a ready replacement graph", async () => {

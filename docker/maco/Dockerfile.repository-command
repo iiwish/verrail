@@ -1,0 +1,10 @@
+# syntax=docker/dockerfile:1
+ARG NODE_IMAGE
+FROM ${NODE_IMAGE}
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends git python3 coreutils \
+    && rm -rf /var/lib/apt/lists/*
+COPY docker/maco/repository-container-init.py /usr/local/lib/verrail/repository-container-init.py
+USER 1000:1000
+WORKDIR /work
+ENTRYPOINT ["/usr/bin/timeout"]

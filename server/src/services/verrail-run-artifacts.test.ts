@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm, symlink, link } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { collectNativeRunArtifacts } from "./verrail-run-artifacts.js";
+import { collectNativeRunArtifacts, prepareNativeRunArtifacts } from "./verrail-run-artifacts.js";
 import { createStorageService } from "../storage/service.js";
 import { createLocalDiskStorageProvider } from "../storage/local-disk-provider.js";
 
@@ -23,6 +23,23 @@ describe("native Run artifact collection", () => {
 
   it("keeps runs without an output manifest compatible", async () => {
     expect(await collect()).toEqual([]);
+  });
+  it("enforces narrower per-execution allocations before upload", async () => {
+    await writeFile(path.join(output, "review.md"), "1234");
+    await writeFile(path.join(output, "other.md"), "5678");
+    await writeFile(path.join(output, "manifest.json"), JSON.stringify({ schemaVersion: 1, artifacts: [
+      { title: "One", kind: "report", path: "review.md" },
+      { title: "Two", kind: "report", path: "other.md" },
+    ] }));
+    for (const limits of [
+      { maxFiles: 1, maxFileBytes: 4, maxTotalBytes: 8 },
+      { maxFiles: 2, maxFileBytes: 3, maxTotalBytes: 8 },
+      { maxFiles: 2, maxFileBytes: 4, maxTotalBytes: 7 },
+    ]) {
+      await expect(prepareNativeRunArtifacts({ cwd, workspaceId, runAttemptId, limits })).rejects.toThrow("NATIVE_ARTIFACT_INVALID");
+    }
+    expect((await prepareNativeRunArtifacts({ cwd, workspaceId, runAttemptId,
+      limits: { maxFiles: 2, maxFileBytes: 4, maxTotalBytes: 8 } })).collectionStatus).toBe("collected");
   });
   it("hashes actual bytes and produces the same stored references on replay", async () => {
     await writeFile(path.join(output, "review.md"), "candidate bytes");

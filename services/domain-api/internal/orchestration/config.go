@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/verrail/verrail/services/domain-api/internal/target"
 	"go.temporal.io/sdk/client"
 )
 
@@ -25,6 +26,7 @@ type RuntimeConfig struct {
 	BackoffMax          time.Duration
 	ServicePrincipalID  string
 	ExecutorPrincipalID string
+	RuntimeProfile      string
 	RunLeaseDuration    time.Duration
 	RunGraceDuration    time.Duration
 }
@@ -44,11 +46,15 @@ func LoadRuntimeConfig() (RuntimeConfig, error) {
 		BackoffMax:          time.Minute,
 		ServicePrincipalID:  envOrDefault("VERRAIL_ORCHESTRATION_PRINCIPAL_ID", "verrail-orchestration-worker"),
 		ExecutorPrincipalID: envOrDefault("VERRAIL_EXECUTOR_PRINCIPAL_ID", "verrail-host-runner"),
+		RuntimeProfile:      envOrDefault("VERRAIL_EXECUTOR_RUNTIME_PROFILE", "host_trusted"),
 		RunLeaseDuration:    2 * time.Minute,
 		RunGraceDuration:    30 * time.Second,
 	}
 	if config.DatabaseURL == "" {
 		return RuntimeConfig{}, fmt.Errorf("DATABASE_URL is required")
+	}
+	if err := target.ValidateExecutorRuntimeProfile(config.RuntimeProfile, config.ExecutorPrincipalID); err != nil {
+		return RuntimeConfig{}, fmt.Errorf("invalid executor configuration: %w", err)
 	}
 	var err error
 	if config.PollInterval, err = durationFromEnv("VERRAIL_OUTBOX_POLL_INTERVAL", config.PollInterval); err != nil {

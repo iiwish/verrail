@@ -157,6 +157,16 @@ func hashExecutionInput(input any) (string, error) {
 	return hex.EncodeToString(digest[:]), nil
 }
 
+func ValidateExecutorRuntimeProfile(profile, executorID string) error {
+	if profile != "host_trusted" && profile != "repository_sandbox" {
+		return validation("Unsupported RuntimeProfile")
+	}
+	if (profile == "repository_sandbox") != (executorID == "verrail-repository-runner") {
+		return validation("Repository execution requires its dedicated executor and runtime profile")
+	}
+	return nil
+}
+
 func ValidateCreateRunAttemptCommand(command *CreateRunAttemptCommand) error {
 	command.WorkspaceID, command.RunID = strings.TrimSpace(command.WorkspaceID), strings.TrimSpace(command.RunID)
 	command.Principal.Type, command.Principal.ID = strings.TrimSpace(command.Principal.Type), strings.TrimSpace(command.Principal.ID)
@@ -164,13 +174,13 @@ func ValidateCreateRunAttemptCommand(command *CreateRunAttemptCommand) error {
 	if err := validateSchedulingCommandIdentity(command.WorkspaceID, command.RunID, command.Principal, command.IdempotencyKey); err != nil {
 		return err
 	}
-	if command.Input.RuntimeProfile != "host_trusted" {
-		return validation("G2.2 supports only the host_trusted RuntimeProfile")
-	}
 	command.Input.Executor.PrincipalType = strings.TrimSpace(command.Input.Executor.PrincipalType)
 	command.Input.Executor.PrincipalID = strings.TrimSpace(command.Input.Executor.PrincipalID)
 	if command.Input.Executor.PrincipalType != "service" || command.Input.Executor.PrincipalID == "" || len(command.Input.Executor.PrincipalID) > 200 {
 		return validation("executor must be a bounded service Principal")
+	}
+	if err := ValidateExecutorRuntimeProfile(command.Input.RuntimeProfile, command.Input.Executor.PrincipalID); err != nil {
+		return err
 	}
 	if command.Input.LeaseDurationSeconds == 0 {
 		command.Input.LeaseDurationSeconds = 120

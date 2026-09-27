@@ -301,6 +301,7 @@ export interface TargetTimelineEventV1 {
 
 export interface TargetWorkspaceV1 {
   schemaVersion: typeof TARGET_WORKSPACE_SCHEMA_VERSION;
+  repositorySourceRequired?: boolean;
   targetId: string;
   targetRevisionId: string;
   workspaceId: string;
@@ -356,10 +357,12 @@ export interface ActivateGraphRevisionResponseV1 extends CreateGraphRevisionResp
 export interface CreateRunInputV1 {
   kind: "agent_run";
   actor: { principalType: "agent"; principalId: string };
+  repositorySourceRevisionId?: string;
 }
 
 export interface CreateRunResponseV1 {
   schemaVersion: 1;
+  repositorySourceRevisionId?: string;
   runId: string;
   targetId: string;
   targetRevisionId: string;

@@ -24,6 +24,7 @@ test("local candidate configuration satisfies the unchanged maco policy checker"
     VERRAIL_DOMAIN_IMAGE: "verrail-domain:local-check",
     VERRAIL_GATEWAY_IMAGE: "verrail-gateway:local-check",
     VERRAIL_TEMPORAL_IMAGE: "verrail-temporal:local-check",
+    VERRAIL_REPOSITORY_IMAGE: "verrail-repository:local-check",
   };
   const pinned = {};
   for (const [key, image] of Object.entries(images)) {
@@ -32,7 +33,8 @@ test("local candidate configuration satisfies the unchanged maco policy checker"
     pinned[key] = `${image.split(":")[0]}@${descriptor.digest}`;
   }
   const env = { ...process.env, VERRAIL_PUBLIC_URL: "http://127.0.0.1:3271",
-    VERRAIL_ALLOWED_HOSTNAMES: "127.0.0.1", VERRAIL_CHAT_MODEL: "fixture/test" };
+    VERRAIL_ALLOWED_HOSTNAMES: "127.0.0.1", VERRAIL_CHAT_MODEL: "fixture/test",
+    VERRAIL_REPOSITORY_WORKSPACE_IDS: '["11111111-1111-4111-8111-111111111111"]' };
   const directory = mkdtempSync(path.join(os.tmpdir(), "verrail-policy-fixture-"));
   const filename = path.join(directory, "compose.json");
   const check = (imageVariables, overlay = false, hostPaths = false) => {
@@ -42,16 +44,20 @@ test("local candidate configuration satisfies the unchanged maco policy checker"
     writeFileSync(filename, config, { mode: 0o600 });
     const result = run("python3", [process.env.VERRAIL_MACO_PREFLIGHT_PATH, "--manifest", "deploy/maco.json",
       "--compose-json", filename, ...(hostPaths ? ["--check-host-paths"] : [])]);
-    return { code: result.status, report: JSON.parse(result.stdout) };
+    return { code: result.status, report: JSON.parse(result.stdout),
+      serviceCount: Object.keys(JSON.parse(config).services).length };
   };
   try {
     for (const overlay of [false, true]) {
-      assert.deepEqual(check(pinned, overlay), { code: 0, report: { ok: true, errors: [] } });
+      const result = check(pinned, overlay);
+      assert.equal(result.code, 0);
+      assert.deepEqual(result.report, { ok: true, errors: [] });
     }
     const unpinned = check(images);
     assert.equal(unpinned.code, 1);
     assert.equal(unpinned.report.ok, false);
-    assert.equal(unpinned.report.errors.filter(error => error.includes("immutable image digest required")).length, 8);
+    assert.equal(unpinned.report.errors.filter(error => error.includes("immutable image digest required")).length,
+      unpinned.serviceCount);
     assert.notEqual(os.hostname(), "maco", "This is a local-only verification, not a host release check");
     const hostCheck = check(pinned, false, true);
     assert.equal(hostCheck.code, 1);

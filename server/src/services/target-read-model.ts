@@ -35,6 +35,7 @@ import {
   TARGET_READ_MODEL_POLICY_VERSION,
   TARGET_READ_MODEL_SCHEMA_VERSION,
   TARGET_WORKSPACE_SCHEMA_VERSION,
+  runtimeProfileV1Schema,
   deriveAcceptanceValidity,
   type AdjudicationAcceptanceV1,
   type AdjudicationDeliveryReviewV1,
@@ -89,8 +90,8 @@ function asIso(value: Date | null | undefined) {
   return value?.toISOString() ?? null;
 }
 
-function resourceRefs(value: Array<Record<string, unknown>>): TargetResourceRefV1[] {
-  return value.flatMap((entry) => {
+function resourceRefs(value: Array<Record<string, unknown>> | null): TargetResourceRefV1[] {
+  return (value ?? []).flatMap((entry) => {
     if (typeof entry.kind !== "string" || typeof entry.id !== "string") return [];
     return [{
       kind: entry.kind,
@@ -515,7 +516,7 @@ function mapRun(row: typeof verrailRuns.$inferSelect, facts: ExecutionFacts): Ta
         attemptNumber: attempt.attemptNumber,
         deploymentRevisionId: attempt.deploymentRevisionId,
         agentVersionId: attempt.agentVersionId,
-        runtimeProfile: attempt.runtimeProfile as "host_trusted",
+        runtimeProfile: runtimeProfileV1Schema.parse(attempt.runtimeProfile),
         executor: { principalType: "service" as const, principalId: attempt.executorPrincipalId },
         fencingToken: attempt.fencingToken,
         status: attempt.status as TargetRunV1["attempts"][number]["status"],
@@ -527,7 +528,7 @@ function mapRun(row: typeof verrailRuns.$inferSelect, facts: ExecutionFacts): Ta
           id: lease.id,
           runAttemptId: lease.runAttemptId,
           executorPrincipalId: lease.executorPrincipalId,
-          runtimeProfile: lease.runtimeProfile as "host_trusted",
+          runtimeProfile: runtimeProfileV1Schema.parse(lease.runtimeProfile),
           fencingToken: lease.fencingToken,
           status: lease.status as NonNullable<TargetRunV1["attempts"][number]["lease"]>["status"],
           expiresAt: lease.expiresAt.toISOString(),
@@ -1208,7 +1209,7 @@ export function targetReadModelService(db: Db) {
       },
       definition: {
         goal: row.revision.goal,
-        constraints: row.revision.constraints,
+        constraints: row.revision.constraints ?? [],
         acceptanceCriteria: row.revision.acceptanceCriteria,
         deadline: row.revision.deadline,
         policySummary: row.revision.policySummary,

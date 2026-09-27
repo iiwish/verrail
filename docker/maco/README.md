@@ -1,12 +1,22 @@
 # Maco Container Build Components
 
 These are candidate build and Compose components, not an approved release.
-`compose.yaml` and `deploy/maco.json` declare five services and three one-shot
+`compose.yaml` and `deploy/maco.json` declare seven services and three one-shot
 jobs. Image variables require operator-supplied verified digests; no release
 digest set is frozen. Durable invocation routes require explicit gateway
 configuration. An authenticated application/OpenCode fixture verifies scoped
 tools, persisted replies and cancellation against a local provider simulator.
 Full-stack and real-provider acceptance remain incomplete.
+
+The authenticated Target source preparation endpoint accepts a Git ref plus
+current Target/Graph revision identities. It uses the workspace's authorized
+GitHub binding, pins the commit and registers bundle/provenance artifacts for Run
+binding. Caller-supplied repository URLs and credentials are rejected. One source
+acquisition runs at a time per control-plane process, with a four-minute request
+deadline and cancellation on disconnect. The control plane has Git and a private,
+non-executable 512 MiB tmpfs at `VERRAIL_REPOSITORY_SOURCE_SCRATCH`; no acquisition
+checkout or Git credential is mounted into the repository executor. Browser
+source selection and assembled container acceptance remain incomplete.
 
 `Dockerfile.control-plane` is the external-database-only Node build candidate.
 It retains the frozen-lockfile workspace installation and the repo's TS package
@@ -40,7 +50,8 @@ owner, serializes jobs with an advisory transaction lock, applies repo migration
 and grants runtime DML and read-only migration history access. Runtime DDL
 authority fails the job. Temporal and visibility use separate custom schemas;
 default grants cover tables created by subsequent Temporal migrations. Proposed
-runtime pool allocation is Node 6, Domain API 2, worker 2 and Temporal at most 8;
+runtime pool allocation is Node 6, Domain API 2, worker 2, repository recovery 1,
+repository executor 1 and Temporal at most 8 (20 total);
 the registered 20-connection aggregate budget still requires live verification.
 
 `Dockerfile.domain` builds the Domain API and orchestration worker from the same
@@ -82,6 +93,148 @@ VERRAIL_PGX_POOL_MAX adds the pgx-only connection limit; do not set it for the
 Node postgres.js client. Allocate Node and Go pools together, not independently.
 Mount runtime and migrator credentials only in their respective containers.
 
+The `repository-recovery` service uses the control-plane image and one runtime
+database connection. Set `VERRAIL_REPOSITORY_WORKSPACE_IDS` to a JSON array of
+authorized existing workspace UUIDs. Empty or malformed scope prevents startup.
+It registers persisted repository outputs and confirmed-cleanup cancellation
+receipts through the domain API; it cannot
+launch a harness, edit a checkout or replace the repository execution scheduler.
+Only the runtime PostgreSQL file and domain token are mounted. Loopback port 3213
+reports healthy only after a successful scan within the last 15 seconds.
+The candidate image must include `server/dist/execution/repository-recovery-main.js`;
+the conversation-only baseline image does not satisfy this service contract.
+
+`server/src/execution/repository-execution-main.ts` is the repository controller
+entrypoint for Linux. It requires an explicit workspace allowlist, providers file,
+OpenCode version and local content-addressed storage root. Without
+`VERRAIL_REPOSITORY_REQUEST_FILE`, it polls Go-offered attempts serially, one per
+workspace per scan, and waits five seconds between scans. The keyset cursor
+advances past invalid inputs so they cannot indefinitely hide later offers.
+Setting `VERRAIL_REPOSITORY_REQUEST_FILE` selects one-attempt operation using a
+trusted mounted identity packet. It reads the event
+cursor from PostgreSQL, validates the live lease and submits each command to the
+fixed restricted container gateway. It has no host-shell or in-controller shell
+fallback. `VERRAIL_REPOSITORY_CHECKOUT_ROOT` is a private bounded tmpfs shared with
+the gateway; `VERRAIL_REPOSITORY_CONTAINER_CONFIG_FILE` names the mounted SSH
+configuration. The command container receives only the selected checkout.
+The packet contains only Workspace, Target/Graph/Node, Run/Attempt, lease/fence
+and AgentVersion/DeploymentRevision identities. Source comes from the Run's
+registered provenance revision; model and instructions come from published agent
+and pinned Target/Node records. Caller-supplied runtime, prompt and source fields
+are rejected. The execution budget is 900 seconds, at most ten output files,
+32 MiB per file and 64 MiB in total.
+An offered pending attempt is claimed and started through Go events, with
+authority rechecked between transitions. Already-claimed or running attempts are
+not admitted for another execution. An uncertain claim/start response stops execution rather than
+replaying a changed event or launching the harness without confirmed authority.
+The controller consumes Go scheduling decisions; it does not activate graph
+nodes or allocate attempts. Shutdown stops discovery and awaits active execution
+cleanup. It exposes no execution HTTP endpoint. Assembled-image verification is
+required before releasing it as the server-side Target execution path.
+
+With the repository runtime profile, ready agent nodes wait for a human-created
+Run bound to a selected source provenance revision. The scheduler does not create
+unbound repository Runs or infer a latest source. The Run-created outbox event
+starts normal attempt allocation. Existing unbound Runs require explicit review;
+the scheduler does not silently rebind them.
+
+Cancellation is terminal only after runtime cleanup is confirmed and Go accepts
+the fenced `terminated` event. The current controller persists a cleanup receipt
+before reporting, so `repository-recovery` can retry an interrupted report without
+repeating model or repository execution. Cleanup uncertainty and expired authority
+remain unresolved rather than being reported as canceled.
+
+Polling mode exposes `GET /health` on loopback port 3214
+(`VERRAIL_REPOSITORY_HEALTH_PORT`). Idle readiness requires a successful scan
+within 15 seconds. While preparing or running an attempt, readiness has a
+45-second grace window refreshed only after successful controller admission or
+Go lease plus dispatch renewal. Long-running work does not require a new scan to
+stay healthy. Stale renewal, startup without a successful scan and shutdown are
+unhealthy. The response contains no job IDs, credentials or error diagnostics.
+
+`Dockerfile.repository` extends a control-plane image built from the same source
+revision and adds pinned OpenCode, Git and the OpenSSH client. Build arg
+`CONTROL_IMAGE` must be a verified immutable image; `OPENCODE_VERSION`
+is an exact version. The image rejects a control-plane base missing the execution
+entrypoint. All repository executors share one private `VERRAIL_REPOSITORY_ROOT`
+mount; its exclusive process-tree lock permits one active executor and one database
+connection. Together with the other services this allocates 20 connections.
+The Compose `repository-executor` service uses this image separately from the
+conversation gateway. It shares only the dedicated artifact directory with the
+control plane, and has a private execution lock directory. It receives runtime
+database, domain API and model provider credentials, not GitHub credentials or
+the control-plane secret directory. Source preparation and assembled native
+Linux execution acceptance remain release gates.
+
+## Restricted Command Gateway
+
+The seven long-running services use disposable command containers, not a
+Landlock-dependent launcher. `Dockerfile.repository-command` builds the separate
+secret-free Node/Git/Python tool image from a pinned `NODE_IMAGE`. Freeze its actual
+OCI digest in the root-owned gateway policy. The command image does not contain
+the controller, provider configuration or database credentials.
+The supplied image contains Node, Git and Python. Projects needing additional
+toolchains or offline dependencies require a reviewed replacement image; commands
+cannot enable networking or install host tooling to fill missing dependencies.
+
+`repository-container-gateway.py` is a fixed-command host operations helper,
+invoked over SSH by a dedicated `verrail-command` identity. It accepts only
+bounded `start`, `poll`, and `stop` JSON packets. The caller cannot select an image,
+mount, network, user, capability, environment or engine option. Its private key
+does not grant a shell, forwarding, Docker-group membership or general sudo.
+Project containers never mount the Docker socket. The helper uses the host engine
+as the explicitly authorized operations boundary, not as a project service.
+
+Every command container has network `none`, a read-only root, UID/GID 1000,
+all capabilities dropped, no-new-privileges, default Docker seccomp, 1 CPU,
+512 MiB memory, 64 PIDs, bounded logs and a 16 MiB `/tmp`. Only the exact checkout
+is mounted at `/work`, anchored through an open directory descriptor and a
+root-owned temporary host bind mount during creation. A PID-1 deadline limits commands to 120 seconds and container teardown
+kills detached descendants. Command output is bounded to 1 MiB. The gateway
+confirms removal before acknowledging cleanup; uncertain engine responses never
+establish cancellation. Durable command IDs and stop tombstones prevent replay.
+
+The host checkout root is a dedicated 512 MiB tmpfs at
+`/opt/maco-apps/verrail/test/data/repository/workspaces`, owned by UID/GID 1000,
+mode 0700, nosuid/nodev. It is executable for build/test artifacts. It must be
+mounted before starting the executor. An absent tmpfs fails startup; no disk
+fallback or implicit host remount is allowed. The provided first-install script
+does not change fstab, so an authorized operator must restore this mount after
+a host reboot before starting repository execution.
+
+After owner authorization, a reviewed root-owned source export can run
+`install-repository-container-gateway.py --image <verified-command-image-digest>`.
+The first-install-only script requires successful live platform inspection,
+rejects existing identities/configuration, creates the bounded scratch and fixed
+policy, and runs real-container acceptance before enabling SSH authority. It
+pins the origin host's Ed25519 key without changing sshd, shared networks or
+databases. The protected runtime secret directory receives `container-runner.json`,
+`container-runner-key` and `container-runner-known-hosts`; Compose mounts these
+individual files only into the trusted executor. Native and installation receipts
+live under `/opt/maco-ops/apps/verrail/test/`. An interrupted install requires
+inspection, not a blind rerun or overwrite. `--resume-prepared` accepts only the
+matching policy and empty scratch after an inspected preparation-only failure;
+it still refuses an existing SSH identity or credential files.
+
+Updates require verifying the installed helper and policy against the recorded
+hashes, preserving the reviewed version and atomically installing root-owned
+replacements. To revoke command authority, remove only this identity's authorized
+key and sudoers entry after stopping/draining the executor. Remove only containers
+whose exact Verrail command name and ownership label agree. Preserve durable
+tombstones while delayed requests remain possible. Do not prune Docker globally.
+
+`repository-container-native.py` exercises the admitted policy against the real
+engine: writes/output, no credentials/network/socket/artifact mount, read-only
+root, bounded output, timeout, cancellation of detached descendants, repeat-start
+idempotency and stop-before-start. It does not prove the SSH transport or the full
+Target lifecycle. The `repository-container-client.ts` fixture bundles the
+production TypeScript transport into `Dockerfile.repository-container-client-fixture`.
+Its separate `container-client.compose.yaml` and `container-client-manifest.json`
+describe a one-shot, database-free verification job. Validate the rendered job
+through the unmodified maco preflight, then run only `container-client-check`.
+It verifies pinned SSH, shared checkout, timeout and abort cleanup from a
+non-root Docker client. It does not replace seven-service checks.
+
 The registered `postgres.env` and `postgres-migration.env` stay root-owned 0600
 and remain credential sources of truth. Authorized release provisioning must
 materialize identical protected mount copies at `runtime/postgres.env` and
@@ -105,7 +258,9 @@ Build from a sanitized frozen source export. The root .dockerignore excludes
 local delivery records, environment files and recovery identities, but is not a
 complete secret scanner. Base and dependency provenance, linux/amd64 builds,
 health checks, bounded resources, persistent mounts, Temporal storage, migrations,
-backup and the maco platform preflight all remain release gates.
+and the maco platform preflight all remain release gates. COS backup is not a
+maco deployment gate. Platform inspection records backup verification as not
+performed; a passing inspection does not establish current recoverability.
 
 Local launcher and Compose structure tests (not the release preflight):
 
@@ -124,7 +279,7 @@ VERRAIL_TEST_GATEWAY_IMAGE=verrail-gateway:local-check node --test scripts/smoke
 These checks use read-only containers without networking. They establish image
 identity/runtime prerequisites, not authenticated full-stack readiness.
 
-Local release-Compose startup and login fixture (requires all four locally built
+Local release-Compose startup and login fixture (requires all five locally built
 images plus `postgres:17-alpine`; no real provider credentials):
 
 ```sh
@@ -139,7 +294,7 @@ fixture uses random credentials and never contacts a paid model. An additional
 fixture-only provider container speaks the model protocol to the real OpenCode
 binary. A transactional fixture seeds a workspace, Director version and
 conversation; this does not test workspace creation or version publication UI.
-It checks all five service health states, the first-operator job, disabled public
+It checks all seven service health states, the first-operator job, disabled public
 signup, authenticated HTTP access, the six scoped Director tools, persisted SSE
 output and idempotent replay after control-plane restart. It also verifies that
 SSE disconnect does not cancel execution, explicit cancellation reaches a
@@ -158,6 +313,19 @@ An explicitly configured public loopback URL uses the host-published port, not
 the container's internal listener port.
 The control-plane hostname allowlist includes the exact `control-plane` service
 name for authenticated Director callbacks; no wildcard hostname is required.
+
+Repository execution requires the admitted restricted gateway and its shared
+checkout root. The local conversation fixture does not provision host SSH/sudo
+authority and explicitly rejects `VERRAIL_TEST_COMPOSE_REPOSITORY=1`; it cannot
+claim repository acceptance. Its repository lifecycle assertions remain fixtures
+for a gateway-aware stack runner. Full native-amd64 verification must exercise a
+source-bound Run, registered patch bytes/hash, active-command cancellation and
+recovery after interrupted registration without repeated model execution. This
+remains an acceptance gate, including real GitHub acquisition and provider
+integration where required. `VERRAIL_TEST_COMPOSE_REPORT` optionally records the
+conversation fixture result. Legacy Landlock smoke tests are opt-in backend tests,
+not a kernel requirement of this container deployment. CPU emulation is not a
+substitute for native container-boundary checks.
 
 Local Temporal database fixture after building its candidate image:
 
@@ -213,7 +381,7 @@ local fixture evidence does not replace that release check.
 
 ## Local Deployment Policy Check
 
-With the four `:local-check` images built locally, validate the base Compose
+With the five `:local-check` images built locally, validate the base Compose
 and first-operator overlay against the unmodified platform checker:
 
 ```sh

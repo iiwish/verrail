@@ -22,7 +22,7 @@ export interface RunOutboxFailureV1 {
   createdAt: string;
 }
 
-export type RuntimeProfileV1 = "host_trusted";
+export type RuntimeProfileV1 = "host_trusted" | "repository_sandbox";
 export type RunAttemptStatusV1 = "pending" | "running" | "cancel_requested" | "cancel_acknowledged" | "succeeded" | "failed" | "canceled" | "superseded";
 export type ExecutionLeaseStatusV1 = "offered" | "active" | "suspect" | "expired" | "released" | "revoked";
 export type RunEventTypeV1 = "claimed" | "heartbeat" | "started" | "progress" | "succeeded" | "failed" | "cancel_acknowledged" | "terminated";

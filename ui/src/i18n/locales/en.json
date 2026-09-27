@@ -921,6 +921,11 @@
     }
   },
   "targets": {
+    "repositorySource": {
+      "ref": "GitHub branch or commit",
+      "prepare": "Pin source",
+      "failed": "Source preparation failed. Check repository authorization and the selected revision, then retry."
+    },
     "criterionProof": {
       "revise": "Revise proof contract",
       "revisionWarning": "Every proof remains mandatory. Saving creates a TargetRevision and requires a new work graph; existing decisions stay in history.",

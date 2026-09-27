@@ -17,6 +17,7 @@ const retryRunOutbox = vi.hoisted(() => vi.fn());
 const createGraphRevision = vi.hoisted(() => vi.fn());
 const activateGraphRevision = vi.hoisted(() => vi.fn());
 const createRun = vi.hoisted(() => vi.fn());
+const prepareRepositorySource = vi.hoisted(() => vi.fn());
 const recordDeliveryReview = vi.hoisted(() => vi.fn());
 const acceptSubmission = vi.hoisted(() => vi.fn());
 const approveAction = vi.hoisted(() => vi.fn());
@@ -53,6 +54,7 @@ vi.mock("../api/targets", () => ({
     createGraphRevision,
     activateGraphRevision,
     createRun,
+    prepareRepositorySource,
     recordDeliveryReview,
     acceptSubmission,
     approveAction,
@@ -847,6 +849,7 @@ describe("TargetWorkbench", () => {
   it("creates and activates a graph revision, then starts its bound Agent Run", async () => {
     getWorkspace.mockResolvedValue({
       ...targetWorkspace(),
+      repositorySourceRequired: true,
       work: [{ ...targetWorkspace().work[0], status: "ready" }],
       availableCommands: targetWorkspace().availableCommands.map((command) => {
         if (command.id === "activate_graph_revision") return { ...command, state: "available", resourceId: "graph-revision-2" };
@@ -891,8 +894,28 @@ describe("TargetWorkbench", () => {
     await flushReact();
     expect(activateGraphRevision).toHaveBeenCalledWith("workspace-1", "target-1", "graph-revision-2", expect.any(String));
 
+    const unboundStart = Array.from(container.querySelectorAll("button")).find(button => button.textContent?.includes("Start run"));
+    expect(unboundStart?.disabled).toBe(true);
+    await act(async () => unboundStart?.click());
+    expect(createRun).not.toHaveBeenCalled();
+    prepareRepositorySource.mockResolvedValue({ workspaceId: "workspace-1", targetId: "target-1",
+      targetRevisionId: "revision-1", graphRevisionId: "graph-revision-1", repository: "owner/repo",
+      baseCommit: "a".repeat(40), provenanceArtifact: { artifactRevisionId: "source-revision-1" } });
+    const refInput = Array.from(container.querySelectorAll("label")).find(label => label.textContent?.includes("GitHub branch or commit"))?.querySelector("input");
+    expect(refInput).toBeTruthy();
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(refInput, "main");
+      refInput!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => Array.from(container.querySelectorAll("button")).find(button => button.textContent === "Pin source")?.click());
+    await flushReact();
+    expect(prepareRepositorySource).toHaveBeenCalledWith("workspace-1", "target-1", {
+      targetRevisionId: "revision-1", graphRevisionId: "graph-revision-1", ref: "main",
+    }, expect.any(AbortSignal));
+
     const startButton = Array.from(container.querySelectorAll("button"))
       .find((candidate) => candidate.textContent?.includes("Start run"));
+    expect(startButton?.disabled).toBe(false);
     await act(async () => startButton?.click());
     await flushReact();
     expect(createRun).toHaveBeenCalledWith(
@@ -900,7 +923,7 @@ describe("TargetWorkbench", () => {
       "target-1",
       "graph-revision-1",
       "node-1",
-      { kind: "agent_run", actor: { principalType: "agent", principalId: "agent-1" } },
+      { kind: "agent_run", actor: { principalType: "agent", principalId: "agent-1" }, repositorySourceRevisionId: "source-revision-1" },
       expect.any(String),
     );
   });

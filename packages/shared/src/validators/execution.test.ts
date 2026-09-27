@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { reportRunEventSchema } from "./execution.js";
+import { createRunAttemptSchema, reportRunEventSchema } from "./execution.js";
+
+describe("Run executor isolation contract", () => {
+  it.each([
+    ["host_trusted", "verrail-host-runner", true],
+    ["repository_sandbox", "verrail-repository-runner", true],
+    ["repository_sandbox", "verrail-host-runner", false],
+    ["repository_sandbox", "arbitrary-runner", false],
+    ["host_trusted", "verrail-repository-runner", false],
+    ["unknown", "verrail-repository-runner", false],
+  ])("validates %s with %s", (runtimeProfile, principalId, valid) => {
+    expect(createRunAttemptSchema.safeParse({ runtimeProfile,
+      executor: { principalType: "service", principalId } }).success).toBe(valid);
+  });
+});
 
 const hash = "a".repeat(64);
 const artifact = { title: "Candidate", kind: "report", contentHash: hash, contentRef: `storage:86679997-3f3a-4477-a2fa-d4da812140ae/verrail/run-artifacts/sha256/${hash}` };

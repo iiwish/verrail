@@ -10,7 +10,7 @@ import { sampleConnections } from "./fixtures/sample-connections.mjs";
 
 test("release Compose starts privately with disabled signup and a bootstrapped operator", {
   skip: process.env.VERRAIL_TEST_MACO_COMPOSE !== "1",
-  timeout: 360_000,
+  timeout: 600_000,
 }, async t => {
   const docker = (args, options = {}) => spawnSync("docker", args, {
     encoding: "utf8", timeout: 60_000, maxBuffer: 4 * 1024 * 1024, ...options,
@@ -23,14 +23,20 @@ test("release Compose starts privately with disabled signup and a bootstrapped o
   assert.ok(!process.env.DOCKER_HOST && !process.env.DOCKER_CONTEXT, "Do not override the local Docker context");
   const context = JSON.parse(checked(["context", "inspect"]));
   assert.match(context[0].Endpoints.docker.Host, /^unix:\/\//);
+  if (process.env.VERRAIL_TEST_COMPOSE_REPOSITORY === "1") {
+    assert.fail("Repository acceptance requires an admitted fixed-command container gateway and shared bounded scratch. "
+      + "This disposable local conversation fixture does not provision host SSH or Docker authority.");
+  }
   const name = `verrail-compose-fixture-${randomUUID().slice(0, 8)}`;
   const directory = mkdtempSync(path.join(os.tmpdir(), name));
   const password = randomUUID();
+  const workspaceId = randomUUID();
   const images = {
     VERRAIL_CONTROL_IMAGE: process.env.VERRAIL_TEST_CONTROL_IMAGE ?? "verrail-control-plane:local-check",
     VERRAIL_DOMAIN_IMAGE: process.env.VERRAIL_TEST_DOMAIN_IMAGE ?? "verrail-domain:local-check",
     VERRAIL_GATEWAY_IMAGE: process.env.VERRAIL_TEST_GATEWAY_IMAGE ?? "verrail-gateway:local-check",
     VERRAIL_TEMPORAL_IMAGE: process.env.VERRAIL_TEST_TEMPORAL_IMAGE ?? "verrail-temporal:local-check",
+    VERRAIL_REPOSITORY_IMAGE: process.env.VERRAIL_TEST_REPOSITORY_IMAGE ?? "verrail-repository:local-check",
   };
   const postgres = process.env.VERRAIL_TEST_POSTGRES_IMAGE ?? "postgres:17-alpine";
   for (const image of [...Object.values(images), postgres]) checked(["image", "inspect", image]);
@@ -40,7 +46,8 @@ test("release Compose starts privately with disabled signup and a bootstrapped o
   await new Promise(resolve => socket.close(resolve));
   const origin = `http://127.0.0.1:${port}`;
   const env = { ...process.env, ...images, VERRAIL_PUBLIC_URL: origin,
-    VERRAIL_ALLOWED_HOSTNAMES: "127.0.0.1", VERRAIL_PRIVATE_PORT: String(port), VERRAIL_CHAT_MODEL: "fixture/test" };
+    VERRAIL_ALLOWED_HOSTNAMES: "127.0.0.1", VERRAIL_PRIVATE_PORT: String(port), VERRAIL_CHAT_MODEL: "fixture/test",
+    VERRAIL_REPOSITORY_WORKSPACE_IDS: JSON.stringify([workspaceId]) };
   const file = path.join(directory, "compose.json");
   const bootstrapFile = path.join(directory, "bootstrap.json");
   const compose = (...args) => ["compose", "-p", name, "-f", file, ...args];
@@ -67,6 +74,10 @@ test("release Compose starts privately with disabled signup and a bootstrapped o
               npm: "@ai-sdk/openai-compatible", name: "Fixture", options: { baseURL: "http://fixture-provider:8080/v1", apiKey: "fixture-only" },
               models: { test: { name: "Test", limit: { context: 32000, output: 1000 } } },
             } });
+            if (source.endsWith("container-runner.json")) content = JSON.stringify({
+              destination: "unconfigured@127.0.0.1", identityFile: "/run/secrets/container-runner-key",
+              knownHostsFile: "/run/secrets/container-runner-known-hosts",
+            });
             writeFileSync(target, content, { mode: 0o600 });
           }
         }
@@ -79,6 +90,9 @@ test("release Compose starts privately with disabled signup and a bootstrapped o
       for (const service of Object.values(config.services)) {
         for (const volume of service.volumes ?? []) volume.source = sources.get(volume.source);
       }
+      // Conversation-only fixture: private bounded scratch, no real command gateway.
+      config.services["repository-executor"].tmpfs.push(
+        "/var/lib/verrail-repository/workspaces:rw,nosuid,nodev,noexec,size=512m,mode=0700,uid=1000,gid=1000");
     }
     writeFileSync(file, JSON.stringify(normalized), { mode: 0o600 });
     writeFileSync(bootstrapFile, JSON.stringify(bootstrap), { mode: 0o600 });
@@ -114,7 +128,7 @@ test("release Compose starts privately with disabled signup and a bootstrapped o
       `type=bind,source=${path.resolve("scripts/smoke/fixtures/compose-provider.mjs")},target=/fixture.mjs,readonly`,
       images.VERRAIL_CONTROL_IMAGE, "/fixture.mjs"]);
     const states = checked(compose("ps", "--all", "--format", "json")).split("\n").filter(Boolean).map(line => JSON.parse(line));
-    assert.equal(states.filter(state => state.Health === "healthy").length, 5);
+    assert.equal(states.filter(state => state.Health === "healthy").length, 7);
     const request = async (url, options = {}) => {
       try {
         return await fetch(`${origin}${url}`, { signal: AbortSignal.timeout(10_000), ...options,
@@ -141,7 +155,7 @@ test("release Compose starts privately with disabled signup and a bootstrapped o
     assert.equal((await login.json()).user.id, created.userId);
     assert.equal((await request("/api/companies", { headers: { cookie: cookies } })).status, 200);
     const identity = JSON.parse(checked(compose("exec", "-T", "control-plane", "python3", "/usr/local/lib/verrail/runtime_env.py",
-      "node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "--input-type=module", "-", created.userId), {
+      "node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "--input-type=module", "-", created.userId, workspaceId), {
       input: readFileSync("scripts/smoke/fixtures/compose-conversation-seed.mjs", "utf8"),
     }));
     const invocationUrl = `/api/workspaces/${identity.workspaceId}/conversations/${identity.conversationId}/invocations`;
@@ -273,9 +287,13 @@ test("release Compose starts privately with disabled signup and a bootstrapped o
     assert.equal(capacity.samples, 900);
     assert.ok(capacity.peak > 0 && capacity.peak <= 20, `Aggregate runtime allocation exceeded: ${JSON.stringify(capacity)}`);
     t.diagnostic(`Conversation capacity fixture: ${JSON.stringify(capacity)}`);
+    if (process.env.VERRAIL_TEST_COMPOSE_REPORT) writeFileSync(process.env.VERRAIL_TEST_COMPOSE_REPORT,
+      JSON.stringify({ result: "pass", scope: "conversation", images, healthyServices: 7, capacity,
+        repository: { status: "not_run", reason: "Requires admitted command gateway and gateway-aware stack runner" },
+        completedAt: new Date().toISOString() }, null, 2) + "\n");
   } catch (error) {
     // Fixture-only logs contain no real user/provider credentials.
-    const logs = docker(compose("logs", "--no-color", "--tail", "35", "control-plane", "execution-gateway", "domain-api", "orchestration-worker"));
+    const logs = docker(compose("logs", "--no-color", "--tail", "35", "control-plane", "execution-gateway", "domain-api", "orchestration-worker", "repository-executor", "repository-recovery"));
     throw new Error(`${error.message}\n${(logs.stdout ?? "").replaceAll(password, "[redacted]")}`, { cause: error });
   } finally {
     docker(["rm", "-f", `${name}-provider`]);

@@ -38,6 +38,7 @@ import type {
 import { HttpError } from "../errors.js";
 
 type HumanCommand = {
+  signal?: AbortSignal;
   workspaceId: string;
   principalType: "user";
   principalId: string;
@@ -181,8 +182,11 @@ export function createVerrailDomainApiClient(options: {
   ): Promise<T> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const signal = command.signal ? AbortSignal.any([controller.signal, command.signal]) : controller.signal;
     let response: Response;
+    let payload: DomainApiErrorPayload | T;
     try {
+      signal.throwIfAborted();
       response = await fetchImpl(`${baseUrl}${path}`, {
         method,
         headers: {
@@ -194,8 +198,14 @@ export function createVerrailDomainApiClient(options: {
           ...ephemeralHeaders,
         },
         body: JSON.stringify(body ?? {}),
-        signal: controller.signal,
+        signal,
       });
+      payload = await response.json().catch((error: unknown) => {
+        signal.throwIfAborted();
+        if (error instanceof SyntaxError) return {};
+        throw error;
+      }) as DomainApiErrorPayload | T;
+      signal.throwIfAborted();
     } catch (error) {
       throw new HttpError(503, "Verrail Domain API is unavailable", {
         code: "TARGET_DOMAIN_API_UNAVAILABLE",
@@ -205,7 +215,6 @@ export function createVerrailDomainApiClient(options: {
     } finally {
       clearTimeout(timer);
     }
-    const payload = await response.json().catch(() => ({})) as DomainApiErrorPayload | T;
     if (!response.ok) {
       const error = payload as DomainApiErrorPayload;
       throw new HttpError(response.status, typeof error.error === "string" ? error.error : "Domain command failed", {

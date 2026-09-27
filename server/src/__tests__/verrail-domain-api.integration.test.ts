@@ -1,5 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
+import type { RepositoryExecutionRequest } from "@paperclipai/shared";
+import type { PutFileInput } from "../storage/types.js";
+import { registerRepositorySource } from "../execution/repository-source-registration.js";
+import { validateBoundRepositorySource } from "../execution/repository-bound-source.js";
 import { fileURLToPath } from "node:url";
 import { and, count, eq, sql } from "drizzle-orm";
 import detectPort from "detect-port";
@@ -8,6 +13,8 @@ import {
   companyMemberships,
   createDb,
   verrailAuditEvents,
+  verrailArtifacts,
+  verrailArtifactRevisions,
   verrailCollections,
   verrailCommandReceipts,
   verrailDeploymentRevisions,
@@ -17,12 +24,16 @@ import {
   verrailTargetRevisions,
   verrailTargets,
   verrailRuns,
+  verrailRunSources,
   verrailRunAttempts,
   verrailRunEvents,
   verrailWorkNodes,
   verrailWorkGraphs,
 } from "@paperclipai/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createVerrailDomainApiClient } from "../services/verrail-domain-api-client.js";
+import { verifyRepositoryHarness } from "./helpers/repository-harness.js";
+import { verifyRepositoryScheduling } from "./helpers/repository-scheduler.js";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -79,6 +90,7 @@ describeEmbeddedPostgres("Go Verrail Domain API Target command", () => {
   let baseUrl: string;
   let workspaceId: string;
   let collectionId: string;
+  let serviceErrors = "";
   const userId = `user-${randomUUID()}`;
   const token = `test-${randomUUID()}`;
 
@@ -94,8 +106,10 @@ describeEmbeddedPostgres("Go Verrail Domain API Target command", () => {
         VERRAIL_DOMAIN_API_TOKEN: token,
         VERRAIL_DOMAIN_API_LISTEN: `127.0.0.1:${port}`,
       },
-      stdio: "ignore",
+      stdio: ["ignore", "pipe", "pipe"],
     });
+    child.stderr?.on("data", chunk => { serviceErrors = (serviceErrors + chunk.toString()).slice(-16_384); });
+    child.stdout?.on("data", chunk => { serviceErrors = (serviceErrors + chunk.toString()).slice(-16_384); });
     await waitForHealth(baseUrl, child);
   }
 
@@ -227,8 +241,18 @@ describeEmbeddedPostgres("Go Verrail Domain API Target command", () => {
     expect(facts.map((rows) => rows[0]?.value)).toEqual([1, 1, 1, 1, 1, 1, 1]);
   });
 
-  it("activates a native WorkGraph and creates an idempotent Run", async () => {
-    const targetResponse = await create(validPayload({ title: "Graph-owned Target" }), "target:create:graph-integration");
+  const domainCommand = command;
+  it.each([
+    { runtimeProfile: "host_trusted", outcome: "cancel", responseLost: false },
+    { runtimeProfile: "repository_sandbox", outcome: "cancel", responseLost: false },
+    { runtimeProfile: "repository_sandbox", outcome: "success", responseLost: false },
+    { runtimeProfile: "repository_sandbox", outcome: "success", responseLost: true },
+  ])("exercises $runtimeProfile Run lifecycle with $outcome (responseLost=$responseLost)", async ({ runtimeProfile, outcome, responseLost }) => {
+    const scope = `${runtimeProfile}:${outcome}:${responseLost}`;
+    const realHarness = outcome === "success" && process.env.VERRAIL_TEST_OPENCODE_HTTP === "1";
+    const command = (path: string, payload: Record<string, unknown> | null, key: string) => domainCommand(path, payload, `${key}:${scope}`);
+    const executorId = runtimeProfile === "repository_sandbox" ? "verrail-repository-runner" : "host-trusted-integration";
+    const targetResponse = await create(validPayload({ title: "Graph-owned Target" }), `target:create:graph-integration:${scope}`);
     expect(targetResponse.status).toBe(201);
     const target = await targetResponse.json() as {
       targetId: string;
@@ -239,7 +263,7 @@ describeEmbeddedPostgres("Go Verrail Domain API Target command", () => {
 
     const definitionResponse = await command(
       `/v1/workspaces/${workspaceId}/agent-definitions`,
-      { name: "Integration executor", description: "Version-bound graph fixture" },
+      { name: `Integration executor ${scope}`, description: "Version-bound graph fixture" },
       "agent-definition:create:graph-integration",
     );
     expect(definitionResponse.status).toBe(201);
@@ -247,8 +271,8 @@ describeEmbeddedPostgres("Go Verrail Domain API Target command", () => {
     const versionResponse = await command(
       `/v1/workspaces/${workspaceId}/agent-definitions/${definition.resourceId}/versions`,
       {
-        runtime: "test-runtime",
-        model: "test-model",
+        runtime: realHarness ? "opencode" : "test-runtime",
+        model: realHarness ? "fixture/test" : "test-model",
         prompt: "Execute only the assigned governed WorkNode.",
         skills: [],
         tools: [],
@@ -285,7 +309,7 @@ describeEmbeddedPostgres("Go Verrail Domain API Target command", () => {
         agentDefinitionId: definition.resourceId,
         agentVersionId: version.resourceId,
         evaluationRunId: evaluation.resourceId,
-        name: "Integration deployment",
+        name: `Integration deployment ${scope}`,
         isDefault: true,
         runtimeConfig: { cwd: serviceRoot },
       },
@@ -344,11 +368,71 @@ describeEmbeddedPostgres("Go Verrail Domain API Target command", () => {
     ));
     expect(node).toMatchObject({ status: "ready", completionDefinition });
 
+    if (runtimeProfile === "repository_sandbox") {
+      await verifyRepositoryScheduling({ databaseUrl: tempDb!.connectionString, workspaceId,
+        targetId: target.targetId, targetRevisionId: target.targetRevisionId, graphRevisionId: graph.graphRevisionId, cycle: 1 });
+    }
+
     const runPath = `/v1/workspaces/${workspaceId}/targets/${target.targetId}/graph-revisions/${graph.graphRevisionId}/nodes/${node!.id}/runs`;
-    const runInput = { kind: "agent_run", actor: { principalType: "agent", principalId: deploymentRevision!.id } };
+    let repositorySourceRevisionId: string | undefined;
+    let validateSource: ((runId: string) => Promise<void>) | undefined;
+    {
+      const objects = new Map<string, Buffer>();
+      const storage = {
+        putFile: async (input: PutFileInput) => {
+          const sha256 = createHash("sha256").update(input.body).digest("hex");
+          const objectKey = `${input.companyId}/verrail/run-artifacts/sha256/${sha256}`;
+          objects.set(objectKey, Buffer.from(input.body));
+          return { provider: "local_disk" as const, objectKey, sha256, byteSize: input.body.length,
+            contentType: input.contentType, originalFilename: input.originalFilename };
+        },
+        getObject: async (_workspace: string, key: string) => {
+          const body = objects.get(key)!; return { stream: Readable.from([body]), contentLength: body.length };
+        },
+      };
+      const bundle = Buffer.from("binding fixture; Git validation is covered by the harness suite");
+      const registered = await registerRepositorySource({ storage,
+        domainApi: createVerrailDomainApiClient({ baseUrl, token })!, principalId: userId,
+        signal: AbortSignal.timeout(30_000), recheck: async () => {}, source: { bundle,
+          baseCommit: "a".repeat(40), contentHash: createHash("sha256").update(bundle).digest("hex"),
+          provenance: { schemaVersion: 1, workspaceId, targetId: target.targetId, targetRevisionId: target.targetRevisionId,
+            graphRevisionId: graph.graphRevisionId, bindingId: randomUUID(), connectionId: randomUUID(), repository: "fixture/repo",
+            ref: "main", baseCommit: "a".repeat(40), authorizationContextHash: "b".repeat(64) } } });
+      repositorySourceRevisionId = registered.provenanceArtifact.artifactRevisionId;
+      validateSource = async runId => {
+        const request: RepositoryExecutionRequest = { schemaVersion: 1, kind: "target_repository_execution", workspaceId,
+          targetId: target.targetId, targetRevisionId: target.targetRevisionId, graphRevisionId: graph.graphRevisionId, workNodeId: node!.id,
+          runId, runAttemptId: randomUUID(), leaseId: randomUUID(), fencingToken: 1, agentVersionId: version.resourceId,
+          deploymentRevisionId: deploymentRevision!.id, source: { artifactId: registered.source.artifactId,
+            contentHash: registered.source.contentHash, baseCommit: registered.source.baseCommit, format: "git_bundle" },
+          runtime: "opencode", model: "fixture/test", instructions: "Test binding", timeoutSeconds: 60,
+          output: { maxFiles: 1, maxFileBytes: 1024, maxTotalBytes: 1024 } };
+        expect(await validateBoundRepositorySource({ db, storage, request, signal: new AbortController().signal }))
+          .toMatchObject({ source: { artifactRevisionId: registered.source.artifactRevisionId } });
+        await expect(validateBoundRepositorySource({ db, storage, request: { ...request, targetId: randomUUID() },
+          signal: new AbortController().signal })).rejects.toThrow("BINDING_REQUIRED");
+        await expect(validateBoundRepositorySource({ db, storage, request: { ...request,
+          source: { ...request.source, baseCommit: "c".repeat(40) } }, signal: new AbortController().signal })).rejects.toThrow("BINDING_INVALID");
+      };
+      const invalidSource = await command(runPath, { kind: "agent_run", actor: { principalType: "agent", principalId: deploymentRevision!.id },
+        repositorySourceRevisionId: randomUUID() }, "run:invalid-source:integration");
+      expect(invalidSource.status).toBe(400);
+      expect(await invalidSource.json()).toMatchObject({ code: "TARGET_COMMAND_INVALID",
+        error: "Repository source revision must be a registered report in this Target" });
+    }
+    const runInput = { kind: "agent_run", actor: { principalType: "agent", principalId: deploymentRevision!.id }, repositorySourceRevisionId };
     const run = await command(runPath, runInput, "run:create:integration");
     expect(run.status).toBe(201);
     const createdRun = await run.json() as { runId: string };
+    await validateSource?.(createdRun.runId);
+    if (repositorySourceRevisionId) {
+      expect(await db.select().from(verrailRunSources).where(eq(verrailRunSources.runId, createdRun.runId)))
+        .toEqual([expect.objectContaining({ workspaceId, repositorySourceRevisionId })]);
+      const changedSource = await command(runPath, { ...runInput, repositorySourceRevisionId: randomUUID() }, "run:create:integration");
+      expect(changedSource.status).toBe(409);
+      const omittedSource = await command(runPath, { kind: runInput.kind, actor: runInput.actor }, "run:create:integration");
+      expect(omittedSource.status).toBe(409);
+    }
     expect(await db.select().from(verrailRuns).where(eq(verrailRuns.id, createdRun.runId))).toEqual([
       expect.objectContaining({
         status: "queued",
@@ -372,14 +456,19 @@ describeEmbeddedPostgres("Go Verrail Domain API Target command", () => {
 
     const attemptPath = `/v1/workspaces/${workspaceId}/runs/${createdRun.runId}/attempts`;
     const attemptInput = {
-      runtimeProfile: "host_trusted",
-      executor: { principalType: "service", principalId: "host-trusted-integration" },
+      runtimeProfile,
+      executor: { principalType: "service", principalId: executorId },
       leaseDurationSeconds: 120,
       graceDurationSeconds: 30,
     };
     const firstAttemptResponse = await command(attemptPath, attemptInput, "attempt:create:first");
     expect(firstAttemptResponse.status).toBe(201);
     const firstAttempt = await firstAttemptResponse.json() as { runAttemptId: string; leaseId: string; fencingToken: number };
+    if (runtimeProfile === "repository_sandbox") {
+      await verifyRepositoryScheduling({ databaseUrl: tempDb!.connectionString, workspaceId,
+        targetId: target.targetId, targetRevisionId: target.targetRevisionId, graphRevisionId: graph.graphRevisionId,
+        cycle: 2, runId: createdRun.runId });
+    }
     const firstEventPath = `${attemptPath}/${firstAttempt.runAttemptId}/events`;
     const report = (path: string, key: string, attempt: typeof firstAttempt, cursor: number, eventType: string, payload: Record<string, unknown> = {}) => executorCommand(path, {
       leaseId: attempt.leaseId,
@@ -388,16 +477,51 @@ describeEmbeddedPostgres("Go Verrail Domain API Target command", () => {
       eventType,
       emittedAt: new Date().toISOString(),
       payload,
-    }, key);
+    }, `${key}:${scope}`, executorId);
+    if (realHarness) {
+      const client = createVerrailDomainApiClient({ baseUrl, token })!;
+      await verifyRepositoryHarness({ db, principalId: userId, domainApi: { ...client, reportRunEvent: async input => {
+        try { return await client.reportRunEvent(input); }
+        catch (error) { throw new Error(`Repository ${input.input.eventType} failed: ${serviceErrors}`, { cause: error }); }
+      } }, recovery: { databaseUrl: tempDb!.connectionString, domainApiUrl: baseUrl, token }, responseLost,
+        identity: { workspaceId, targetId: target.targetId, targetRevisionId: target.targetRevisionId,
+          graphRevisionId: graph.graphRevisionId, workNodeId: node!.id, runId: createdRun.runId,
+          runAttemptId: firstAttempt.runAttemptId, leaseId: firstAttempt.leaseId, fencingToken: firstAttempt.fencingToken,
+          agentVersionId: version.resourceId, deploymentRevisionId: deploymentRevision!.id } });
+      return;
+    }
     expect((await report(firstEventPath, "event:first:claim", firstAttempt, 1, "claimed")).status).toBe(201);
     expect((await report(firstEventPath, "event:first:start", firstAttempt, 2, "started")).status).toBe(201);
-    expect((await report(firstEventPath, "event:first:failed", firstAttempt, 3, "failed", { errorCode: "TEST_FAILURE", errorMessage: "retry me" })).status).toBe(201);
+    if (outcome === "success") {
+      // This proves Go metadata registration, not storage-byte or harness execution.
+      const contentHash = "a".repeat(64);
+      const artifact = { title: "Repository changes", kind: "code_change", contentHash,
+        contentRef: `storage:${workspaceId}/verrail/run-artifacts/sha256/${contentHash}` };
+      const input = { leaseId: firstAttempt.leaseId, fencingToken: firstAttempt.fencingToken,
+        cursor: 3, eventType: "succeeded", emittedAt: new Date().toISOString(), payload: {}, artifacts: [artifact] };
+      const submit = () => executorCommand(firstEventPath, input, `repository-success:${createdRun.runId}`, executorId);
+      const completed = await submit();
+      expect(completed.status).toBe(201);
+      expect(await completed.json()).toMatchObject({ authoritative: true, runStatus: "succeeded", attemptStatus: "succeeded", leaseStatus: "released" });
+      const replayed = await submit();
+      expect(replayed.status).toBe(200);
+      expect(await replayed.json()).toMatchObject({ authoritative: true, replayed: true });
+      const revisions = await db.select().from(verrailArtifactRevisions).where(eq(verrailArtifactRevisions.sourceRunId, createdRun.runId));
+      expect(revisions).toHaveLength(1);
+      expect(revisions[0]).toMatchObject({ workspaceId, sourceWorkNodeId: node!.id, contentHash, contentRef: artifact.contentRef });
+      const artifacts = await db.select().from(verrailArtifacts).where(eq(verrailArtifacts.id, revisions[0].artifactId));
+      expect(artifacts).toHaveLength(1);
+      expect(artifacts[0]).toMatchObject({ kind: "code_change", createdByPrincipalId: executorId });
+      return;
+    }
+    expect((await report(firstEventPath, "event:first:progress", firstAttempt, 3, "progress", { text: "Working" })).status).toBe(201);
+    expect((await report(firstEventPath, "event:first:failed", firstAttempt, 4, "failed", { errorCode: "TEST_FAILURE", errorMessage: "retry me" })).status).toBe(201);
 
     const secondAttemptResponse = await command(attemptPath, attemptInput, "attempt:create:second");
     expect(secondAttemptResponse.status).toBe(201);
     const secondAttempt = await secondAttemptResponse.json() as typeof firstAttempt;
     expect(secondAttempt.fencingToken).toBeGreaterThan(firstAttempt.fencingToken);
-    const stale = await report(firstEventPath, "event:first:stale", firstAttempt, 4, "heartbeat");
+    const stale = await report(firstEventPath, "event:first:stale", firstAttempt, 5, "heartbeat");
     expect(stale.status).toBe(202);
     expect(await stale.json()).toMatchObject({ authoritative: false, rejectionCode: "STALE_FENCING_TOKEN" });
 
@@ -420,9 +544,10 @@ describeEmbeddedPostgres("Go Verrail Domain API Target command", () => {
     ]);
     expect(attemptRows.map((attempt) => attempt.status)).toEqual(["failed", "canceled"]);
     expect(leaseRows.map((lease) => lease.status)).toEqual(["released", "released"]);
-    expect(eventRows).toHaveLength(7);
+    expect(eventRows).toHaveLength(8);
+    expect(eventRows.find(event => event.eventType === "progress")?.payload).toMatchObject({ text: "Working" });
     expect(finalRun).toMatchObject({ status: "canceled", attemptCount: 2 });
-  });
+  }, process.env.VERRAIL_TEST_OPENCODE_HTTP === "1" ? 90_000 : 15_000);
 
   it("rolls back every fact when a later transaction write fails", async () => {
     const before = await Promise.all([

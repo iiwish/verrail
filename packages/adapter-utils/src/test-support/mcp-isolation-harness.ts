@@ -53,16 +53,23 @@ export async function runCommand(
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
     });
-    child.once("error", reject);
-
     const timer = setTimeout(() => {
       timedOut = true;
-      if (process.platform === "win32") child.kill("SIGTERM");
-      else process.kill(-child.pid!, "SIGTERM");
+      try {
+        if (process.platform === "win32") child.kill("SIGTERM");
+        else if (child.pid && Number.isSafeInteger(child.pid) && child.pid > 0) process.kill(-child.pid, "SIGTERM");
+        else reject(new Error("Command did not provide a valid process identity"));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") reject(error);
+      }
     }, options.timeoutMs ?? 15_000);
     timer.unref();
 
-    child.once("exit", (exitCode, signal) => {
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("close", (exitCode, signal) => {
       clearTimeout(timer);
       resolve({ exitCode, signal, stdout, stderr, timedOut });
     });

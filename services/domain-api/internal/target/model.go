@@ -104,6 +104,12 @@ func ValidateCommand(command *CreateCommand) error {
 	input.RiskLevel = strings.TrimSpace(input.RiskLevel)
 	input.OutcomeOwner.PrincipalType = strings.TrimSpace(input.OutcomeOwner.PrincipalType)
 	input.OutcomeOwner.PrincipalID = strings.TrimSpace(input.OutcomeOwner.PrincipalID)
+	if input.Constraints == nil {
+		input.Constraints = []string{}
+	}
+	if input.ResourceRefs == nil {
+		input.ResourceRefs = []ResourceRef{}
+	}
 
 	if !uuidPattern.MatchString(command.WorkspaceID) {
 		return validation("workspaceId must be a UUID")

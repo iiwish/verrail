@@ -15,6 +15,7 @@ func TestLoadRuntimeConfigDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("VERRAIL_OUTBOX_MAX_ATTEMPTS", "12")
 	t.Setenv("VERRAIL_ORCHESTRATION_PRINCIPAL_ID", "scheduler-service")
 	t.Setenv("VERRAIL_EXECUTOR_PRINCIPAL_ID", "runner-service")
+	t.Setenv("VERRAIL_EXECUTOR_RUNTIME_PROFILE", "")
 	t.Setenv("VERRAIL_RUN_LEASE_DURATION", "3m")
 	t.Setenv("VERRAIL_RUN_GRACE_DURATION", "45s")
 
@@ -28,8 +29,36 @@ func TestLoadRuntimeConfigDefaultsAndOverrides(t *testing.T) {
 	require.Equal(t, 12, config.MaxAttempts)
 	require.Equal(t, "scheduler-service", config.ServicePrincipalID)
 	require.Equal(t, "runner-service", config.ExecutorPrincipalID)
+	require.Equal(t, "host_trusted", config.RuntimeProfile)
 	require.Equal(t, 3*time.Minute, config.RunLeaseDuration)
 	require.Equal(t, 45*time.Second, config.RunGraceDuration)
+}
+
+func TestRepositoryExecutorConfiguration(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://verrail:test@localhost/verrail")
+	for _, test := range []struct {
+		profile, executor string
+		valid             bool
+	}{
+		{"repository_sandbox", "verrail-repository-runner", true},
+		{"repository_sandbox", "verrail-host-runner", false},
+		{"host_trusted", "verrail-repository-runner", false},
+		{"unknown", "verrail-repository-runner", false},
+	} {
+		t.Run(test.profile+"/"+test.executor, func(t *testing.T) {
+			t.Setenv("VERRAIL_EXECUTOR_RUNTIME_PROFILE", test.profile)
+			t.Setenv("VERRAIL_EXECUTOR_PRINCIPAL_ID", test.executor)
+			config, err := LoadRuntimeConfig()
+			if test.valid {
+				require.NoError(t, err)
+				require.Equal(t, test.profile, config.RuntimeProfile)
+				require.Equal(t, test.executor, config.ExecutorPrincipalID)
+			} else {
+				require.ErrorContains(t, err, "invalid executor configuration")
+				require.Empty(t, config.DatabaseURL)
+			}
+		})
+	}
 }
 
 func TestLoadRuntimeConfigFailsClosed(t *testing.T) {

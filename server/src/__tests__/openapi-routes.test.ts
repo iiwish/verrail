@@ -177,6 +177,20 @@ function loadSpecRoutes() {
 }
 
 describe("openapi routes", () => {
+  it("documents authorized repository preparation with strict source provenance", () => {
+    const operation = buildOpenApiSpec().paths["/api/workspaces/{workspaceId}/targets/{targetId}/repository-sources"].post;
+    expect(operation["x-paperclip-authorization"]).toEqual({ actor: "board" });
+    expect(operation.security).not.toContainEqual({ AgentBearerAuth: [] });
+    expect(operation.parameters.some((parameter: { in: string }) => parameter.in === "header")).toBe(false);
+    const body = operation.requestBody.content["application/json"].schema;
+    expect(body.additionalProperties).toBe(false);
+    expect(body.required).toEqual(["targetRevisionId", "graphRevisionId", "ref"]);
+    const receipt = operation.responses["201"].content["application/json"].schema;
+    expect(receipt.additionalProperties).toBe(false);
+    expect(receipt.required).toContain("provenanceArtifact");
+    expect(Object.keys(operation.responses).sort()).toEqual(["201", "400", "401", "403", "404", "409", "422", "503"]);
+  });
+
   it("documents durable conversation invocation authority, replay and cancellation", () => {
     const spec = buildOpenApiSpec();
     const base = "/api/workspaces/{workspaceId}/conversations/{conversationId}/invocations";

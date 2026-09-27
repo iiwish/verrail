@@ -84,6 +84,8 @@ export {
 } from "./types/target.js";
 export {
   targetListQuerySchema,
+  prepareTargetRepositorySourceSchema,
+  type PrepareTargetRepositorySourceInput,
   createTargetSchema,
   createGraphRevisionSchema,
   createRunSchema,
@@ -2715,3 +2717,4 @@ export * from "./validators/criterion-proof.js";
 export * from "./validators/director.js";
 export * from "./conversation-invocation.js";
 export * from "./execution-gateway.js";
+export * from "./repository-execution.js";

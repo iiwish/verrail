@@ -6,6 +6,9 @@ import type { TargetReadModelV1, TargetWorkspaceV1 } from "@paperclipai/shared";
 const targetService = vi.hoisted(() => ({ list: vi.fn(), getByTargetId: vi.fn(), getByRevisionId: vi.fn(), workspace: vi.fn(), runOutboxFailures: vi.fn() }));
 const conversationService = vi.hoisted(() => ({ create: vi.fn() }));
 const logActivity = vi.hoisted(() => vi.fn());
+const prepareSource = vi.hoisted(() => vi.fn());
+vi.mock("../execution/repository-github-source.js", () => ({ prepareAuthorizedRepositorySource: prepareSource }));
+vi.mock("../storage/index.js", () => ({ getStorageService: () => ({}) }));
 
 vi.mock("../services/index.js", () => ({
   targetReadModelService: () => targetService,
@@ -65,6 +68,44 @@ async function createApp(domainApi: any, actorOverride?: Record<string, unknown>
 }
 
 describe("native Target routes", () => {
+  it("denies repository preparation to agents and foreign workspace users before acquisition", async () => {
+    prepareSource.mockClear();
+    const url = `/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}/repository-sources`;
+    const input = { targetRevisionId: REVISION_ID, graphRevisionId: GRAPH_REVISION_ID, ref: "main" };
+    for (const actor of [
+      { type: "agent", agentId: "agent-1", companyId: WORKSPACE_ID, source: "agent_key" },
+      { type: "board", userId: "foreign", companyIds: [], memberships: [], source: "session", isInstanceAdmin: false },
+    ]) {
+      const app = await createApp(domainApi, actor);
+      expect((await request(app).post(url).send(input)).status).toBe(403);
+    }
+    expect(prepareSource).not.toHaveBeenCalled();
+  });
+  it("prepares only a bound source as the authenticated human and records its revision", async () => {
+    vi.stubEnv("VERRAIL_REPOSITORY_SOURCE_SCRATCH", "/private-scratch");
+    const receipt = { baseCommit: "a".repeat(40), provenanceArtifact: { artifactRevisionId: REVISION_ID } };
+    prepareSource.mockResolvedValue(receipt);
+    targetService.getByTargetId.mockResolvedValue(model());
+    try {
+      const app = await createApp(domainApi);
+      const url = `/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}/repository-sources`;
+      const input = { targetRevisionId: REVISION_ID, graphRevisionId: GRAPH_REVISION_ID, ref: "main" };
+      expect((await request(app).post(url).send({ ...input, repository: "attacker/repo" })).status).toBe(400);
+      expect(prepareSource).not.toHaveBeenCalled();
+      const response = await request(app).post(url).send(input);
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual(receipt);
+      expect(prepareSource).toHaveBeenCalledWith(expect.objectContaining({
+        input: { ...input, workspaceId: WORKSPACE_ID, targetId: TARGET_ID },
+        actor: expect.objectContaining({ actorType: "user", actorId: "user-1" }),
+      }));
+      expect(logActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: "target.repository_source_prepared" }));
+      prepareSource.mockRejectedValue(new Error("Bearer secret-sentinel"));
+      const failed = await request(app).post(url).send(input);
+      expect(failed.status).toBe(422);
+      expect(JSON.stringify(failed.body)).not.toContain("secret-sentinel");
+    } finally { vi.unstubAllEnvs(); prepareSource.mockReset(); }
+  });
   it("searches Target titles and scopes cursors to the search term", async () => {
     targetService.list.mockResolvedValue([model(), { ...model(), targetId: "00000000-0000-4000-8000-000000000099", title: "Another Target" }]);
     const app = await createApp(domainApi);
@@ -162,7 +203,7 @@ describe("native Target routes", () => {
     expect(listed.status).toBe(200);
     expect(listed.body.readModelPolicyVersion).toBe("native.v1");
     expect(listed.body.items).toEqual([expect.objectContaining({ targetId: TARGET_ID })]);
-    expect((await request(app).get(`/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}/workspace`)).body).toEqual(workspace());
+    expect((await request(app).get(`/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}/workspace`)).body).toEqual({ ...workspace(), repositorySourceRequired: false });
   });
 
   it("proxies human Target creation and returns its initial graph identities", async () => {
@@ -206,5 +247,19 @@ describe("native Target routes", () => {
     const app = await createApp(domainApi);
     expect((await request(app).post(`/api/workspaces/${WORKSPACE_ID}/target-projections`).send({})).status).toBe(404);
     expect((await request(app).post(`/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}/reconcile`).send({})).status).toBe(404);
+  });
+
+  it("requires a source before forwarding repository-mode Run creation", async () => {
+    vi.stubEnv("VERRAIL_EXECUTOR_RUNTIME_PROFILE", "repository_sandbox");
+    try {
+      const app = await createApp(domainApi);
+      expect((await request(app).get(`/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}/workspace`)).body.repositorySourceRequired).toBe(true);
+      const url = `/api/workspaces/${WORKSPACE_ID}/targets/${TARGET_ID}/graph-revisions/${GRAPH_REVISION_ID}/nodes/${NODE_ID}/runs`;
+      const input = { kind: "agent_run", actor: { principalType: "agent", principalId: NODE_ID } };
+      await request(app).post(url).set("Idempotency-Key", "repository-run").send(input).expect(409);
+      expect(domainApi.createRun).not.toHaveBeenCalled();
+      await request(app).post(url).set("Idempotency-Key", "repository-run").send({ ...input, repositorySourceRevisionId: REVISION_ID }).expect(201);
+      expect(domainApi.createRun).toHaveBeenCalledOnce();
+    } finally { vi.unstubAllEnvs(); }
   });
 });

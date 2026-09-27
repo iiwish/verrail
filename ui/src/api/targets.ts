@@ -17,6 +17,7 @@ import type {
   CreateGraphRevisionInputV1,
   CreateGraphRevisionResponseV1,
   CreateRunInputV1,
+  PrepareTargetRepositorySourceInput,
   CreateRunResponseV1,
   ConnectorActionRequestV1,
   ConnectorEffectReceiptV1,
@@ -34,6 +35,7 @@ import type {
   TargetWorkspaceV1,
 } from "@paperclipai/shared";
 import { api } from "./client";
+import { repositorySourceReceiptSchema } from "@paperclipai/shared";
 
 /**
  * Local extension of the shared TargetWorkspaceV1 contract: the server's
@@ -143,6 +145,10 @@ export const targetsApi = {
     {},
     { headers: { "Idempotency-Key": idempotencyKey } },
   ),
+  prepareRepositorySource: async (workspaceId: string, targetId: string, input: PrepareTargetRepositorySourceInput, signal?: AbortSignal) =>
+    repositorySourceReceiptSchema.parse(await api.post<unknown>(
+      `/workspaces/${workspaceId}/targets/${targetId}/repository-sources`, input, { signal },
+    )),
   createRun: (
     workspaceId: string,
     targetId: string,

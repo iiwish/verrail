@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { createServer } from "node:http";
+import { once } from "node:events";
 import { HttpError } from "../errors.js";
 import { createVerrailDomainApiClient } from "./verrail-domain-api-client.js";
 
@@ -19,6 +21,55 @@ const command = {
 };
 
 describe("Verrail Domain API client", () => {
+  it("times out an unfinished response body over real HTTP", async () => {
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.write('{"pending":');
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("Missing fixture address");
+      const client = createVerrailDomainApiClient({ baseUrl: `http://127.0.0.1:${address.port}`, token: "fixture", timeoutMs: 100 })!;
+      await expect(client.createTarget(command)).rejects.toMatchObject({ status: 503,
+        details: { code: "TARGET_DOMAIN_API_UNAVAILABLE" } });
+    } finally {
+      const closed = new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+      server.closeAllConnections();
+      await closed;
+    }
+  });
+
+  it.each(["deadline", "shutdown"])("bounds a stalled response body on %s", async mode => {
+    const controller = new AbortController();
+    let reading!: () => void;
+    const started = new Promise<void>(resolve => { reading = resolve; });
+    const fetchImpl = vi.fn(async (_url: unknown, init: RequestInit) => new Response(new ReadableStream({
+      start(stream) {
+        stream.enqueue(new TextEncoder().encode('{"pending":'));
+        init.signal!.addEventListener("abort", () => stream.error(new Error("body aborted")), { once: true });
+        reading();
+      },
+    })));
+    const client = createVerrailDomainApiClient({ baseUrl: "http://127.0.0.1:3211", token: "secret",
+      timeoutMs: mode === "deadline" ? 30 : 60_000, fetchImpl: fetchImpl as typeof fetch })!;
+    const pending = client.createTarget({ ...command, signal: controller.signal });
+    const assertion = expect(pending).rejects.toMatchObject({ status: 503,
+      details: { code: "TARGET_DOMAIN_API_UNAVAILABLE" } });
+    await started;
+    if (mode === "shutdown") controller.abort();
+    await assertion;
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not send a command after its caller has stopped", async () => {
+    const fetchImpl = vi.fn();
+    const client = createVerrailDomainApiClient({ baseUrl: "http://127.0.0.1:3211", token: "secret", fetchImpl })!;
+    await expect(client.createTarget({ ...command, signal: AbortSignal.abort() })).rejects.toMatchObject({ status: 503 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("forwards only the bounded command and trusted Principal context", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       schemaVersion: 1,

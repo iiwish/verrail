@@ -214,6 +214,8 @@ import {
   createRunSchema,
   createSubmissionSchema,
   createTargetSchema,
+  prepareTargetRepositorySourceSchema,
+  repositorySourceReceiptSchema,
   reviseTargetProofSchema,
   createGithubRepoBindingSchema,
   executeActionSchema,
@@ -897,6 +899,7 @@ const BOARD_ONLY_PREFIXES = [
 ];
 
 const BOARD_ONLY_OPERATIONS = new Set([
+  "POST /api/workspaces/{workspaceId}/targets/{targetId}/repository-sources",
   "GET /api/workspaces/{workspaceId}/conversation-runtime",
   "GET /api/workspaces/{workspaceId}/conversations/{conversationId}/invocations",
   "POST /api/workspaces/{workspaceId}/conversations/{conversationId}/invocations",
@@ -3195,6 +3198,19 @@ registry.registerPath({
 });
 
 // ─── Native Target domain read model ────────────────────────────────────────
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/targets/{targetId}/repository-sources",
+  tags: ["targets"],
+  summary: "Prepare an authorized, version-bound repository source",
+  description: "Board user and Workspace access required. Resolves the selected repository ref through the configured authorization and records immutable source provenance. Preparation is bounded and rejects concurrent requests.",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid() }),
+    body: jsonBody(prepareTargetRepositorySourceSchema),
+  },
+  responses: { 201: r.ok(repositorySourceReceiptSchema), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable, 503: r.serviceUnavailable },
+});
 
 registry.registerPath({
   method: "post",

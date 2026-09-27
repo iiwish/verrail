@@ -11,6 +11,7 @@ export function createOpenCodeHttpClient(options: {
   password: string;
   directory: string;
   version: string;
+  executionTimeoutMs?: number;
   fetch?: typeof fetch;
 }) {
   const base = new URL(options.url);
@@ -22,16 +23,20 @@ export function createOpenCodeHttpClient(options: {
     throw new Error("Invalid OpenCode runtime configuration");
   }
   const request = options.fetch ?? fetch;
+  const executionTimeoutMs = options.executionTimeoutMs ?? 120_000;
+  if (!Number.isSafeInteger(executionTimeoutMs) || executionTimeoutMs < 1 || executionTimeoutMs > 3_600_000) {
+    throw new Error("Invalid OpenCode execution timeout");
+  }
   const sessions = new Set<string>();
   const headers = {
     Authorization: `Basic ${Buffer.from(`opencode:${options.password}`).toString("base64")}`,
     "Content-Type": "application/json",
   };
 
-  async function call(path: string, method: string, body?: unknown, signal?: AbortSignal) {
+  async function call(path: string, method: string, body?: unknown, signal?: AbortSignal, timeoutMs = 120_000) {
     const url = new URL(path, base);
     url.searchParams.set("directory", options.directory);
-    const timeout = AbortSignal.timeout(120_000);
+    const timeout = AbortSignal.timeout(timeoutMs);
     const response = await request(url, {
       method, headers, redirect: "error", signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -65,41 +70,50 @@ export function createOpenCodeHttpClient(options: {
     return `/session/${encodeURIComponent(id)}`;
   }
 
+  async function promptMessage(id: string, input: { model: string; system: string; prompt: string }, signal?: AbortSignal) {
+    const path = sessionPath(id);
+    const separator = input.model.indexOf("/");
+    if (separator < 1 || separator === input.model.length - 1) throw new Error("OpenCode requires provider/model");
+    const result = object(await call(`${path}/message`, "POST", {
+      model: { providerID: input.model.slice(0, separator), modelID: input.model.slice(separator + 1) },
+      system: input.system, parts: [{ type: "text", text: input.prompt }],
+    }, signal, executionTimeoutMs));
+    const info = object(result.info);
+    if (info.role !== "assistant" || info.error) throw new Error("OpenCode execution failed");
+    if (info.sessionID !== id || typeof info.id !== "string" || !/^msg_[A-Za-z0-9]+$/.test(info.id)) {
+      throw new Error("Invalid OpenCode message identity");
+    }
+    if (!Array.isArray(result.parts)) throw new Error("Invalid OpenCode message parts");
+    return { messageId: info.id,
+      text: result.parts.map(object).filter(part => part.type === "text" && typeof part.text === "string").map(part => part.text as string).join("") };
+  }
+
   return {
-    async createSession(sessionOptions: { allowedTools?: readonly string[] } = {}) {
+    async createSession(sessionOptions: { allowedTools?: readonly string[] } = {}, signal?: AbortSignal) {
       const tools = sessionOptions.allowedTools ?? [];
       if (tools.length > 20 || tools.some(name => !/^[a-z][a-z0-9_]{0,99}$/.test(name))) throw new Error("Invalid OpenCode tool allowlist");
-      const health = object(await call("/global/health", "GET"));
+      const health = object(await call("/global/health", "GET", undefined, signal));
       if (health.healthy !== true || health.version !== options.version) throw new Error("OpenCode health or version mismatch");
       const session = object(await call("/session", "POST", {
         permission: [{ permission: "*", pattern: "*", action: "deny" },
           ...tools.map(name => ({ permission: name, pattern: "*", action: "allow" }))],
-      }));
+      }, signal));
       if (typeof session.id !== "string" || !/^ses_[A-Za-z0-9]+$/.test(session.id)) throw new Error("Invalid OpenCode session ID");
       sessions.add(session.id);
       return session.id;
     },
     async prompt(id: string, input: { model: string; system: string; prompt: string }, signal?: AbortSignal) {
-      const path = sessionPath(id);
-      const separator = input.model.indexOf("/");
-      if (separator < 1 || separator === input.model.length - 1) throw new Error("OpenCode requires provider/model");
-      const result = object(await call(`${path}/message`, "POST", {
-        model: { providerID: input.model.slice(0, separator), modelID: input.model.slice(separator + 1) },
-        system: input.system, parts: [{ type: "text", text: input.prompt }],
-      }, signal));
-      const info = object(result.info);
-      if (info.role !== "assistant" || info.error) throw new Error("OpenCode execution failed");
-      if (!Array.isArray(result.parts)) throw new Error("Invalid OpenCode message parts");
-      return result.parts.map(object).filter(part => part.type === "text" && typeof part.text === "string").map(part => part.text as string).join("\n");
+      return (await promptMessage(id, input, signal)).text;
     },
+    promptMessage,
     async abort(id: string) {
       // Aborting an HTTP request does not stop the harness. Require an explicit acknowledgement.
       if (await call(`${sessionPath(id)}/abort`, "POST") !== true) throw new Error("OpenCode abort was not acknowledged");
     },
-    async subscribeText(id: string, onText: (text: string) => void | Promise<void>, signal?: AbortSignal) {
+    async subscribeText(id: string, onText: (text: string, messageId: string) => void | Promise<void>, signal?: AbortSignal) {
       sessionPath(id);
       const stop = new AbortController();
-      const timeout = AbortSignal.timeout(120_000);
+      const timeout = AbortSignal.timeout(executionTimeoutMs);
       const combined = AbortSignal.any([stop.signal, timeout, ...(signal ? [signal] : [])]);
       const url = new URL("/event", base);
       url.searchParams.set("directory", options.directory);
@@ -139,9 +153,12 @@ export function createOpenCodeHttpClient(options: {
                 if (event.type !== "message.part.delta") continue;
                 const properties = object(event.properties);
                 if (properties.sessionID !== id || properties.field !== "text" || typeof properties.delta !== "string") continue;
+                if (typeof properties.messageID !== "string" || !/^msg_[A-Za-z0-9]+$/.test(properties.messageID)) {
+                  throw new Error("Invalid OpenCode event message identity");
+                }
                 outputSize += Buffer.byteLength(properties.delta);
                 if (outputSize > 2 * 1024 * 1024) throw new Error("OpenCode output exceeds limit");
-                await onText(properties.delta);
+                await onText(properties.delta, properties.messageID);
               }
             }
           }

@@ -468,7 +468,7 @@ func assertActivatableAgentVersion(ctx context.Context, tx pgx.Tx, workspaceID, 
 	if err := tx.QueryRow(ctx, `select coalesce(supply_chain->>'source',''), coalesce(supply_chain->>'mode',''), model,runtime from verrail_agent_versions where id=$1 and workspace_id=$2`, versionID, workspaceID).Scan(&source, &mode, &model, &runtime); err != nil {
 		return NotFound()
 	}
-	if source != "saved_agent_configuration.v2" || strings.TrimSpace(model) == "" || model == "unconfigured" || model == "runtime_default" || (mode != "director_chat" && mode != "compatibility_executor") || (mode == "director_chat" && runtime != "codex" && runtime != "claude") {
+	if source != "saved_agent_configuration.v2" || strings.TrimSpace(model) == "" || model == "unconfigured" || model == "runtime_default" || (mode != "director_chat" && mode != "compatibility_executor") || (mode == "director_chat" && runtime != "opencode" && runtime != "codex" && runtime != "claude") {
 		return &Error{Status: 409, Code: "AGENT_VERSION_REPUBLISH_REQUIRED", Message: "Publish a version with pinned runtime settings before activation"}
 	}
 	return nil

@@ -63,8 +63,9 @@ type ActivateGraphRevisionResult struct {
 }
 
 type CreateRunInput struct {
-	Kind  string               `json:"kind"`
-	Actor ResponsiblePrincipal `json:"actor"`
+	Kind                       string               `json:"kind"`
+	Actor                      ResponsiblePrincipal `json:"actor"`
+	RepositorySourceRevisionID *string              `json:"repositorySourceRevisionId,omitempty"`
 }
 
 type CreateRunCommand struct {
@@ -79,16 +80,17 @@ type CreateRunCommand struct {
 }
 
 type CreateRunResult struct {
-	SchemaVersion        int     `json:"schemaVersion"`
-	RunID                string  `json:"runId"`
-	TargetID             string  `json:"targetId"`
-	TargetRevisionID     string  `json:"targetRevisionId"`
-	GraphRevisionID      string  `json:"graphRevisionId"`
-	WorkNodeID           string  `json:"workNodeId"`
-	DeploymentRevisionID *string `json:"deploymentRevisionId"`
-	AgentVersionID       *string `json:"agentVersionId"`
-	Status               string  `json:"status"`
-	Replayed             bool    `json:"replayed"`
+	RepositorySourceRevisionID *string `json:"repositorySourceRevisionId,omitempty"`
+	SchemaVersion              int     `json:"schemaVersion"`
+	RunID                      string  `json:"runId"`
+	TargetID                   string  `json:"targetId"`
+	TargetRevisionID           string  `json:"targetRevisionId"`
+	GraphRevisionID            string  `json:"graphRevisionId"`
+	WorkNodeID                 string  `json:"workNodeId"`
+	DeploymentRevisionID       *string `json:"deploymentRevisionId"`
+	AgentVersionID             *string `json:"agentVersionId"`
+	Status                     string  `json:"status"`
+	Replayed                   bool    `json:"replayed"`
 }
 
 const GraphReconcileCommandType = "graph.reconcile.v1"
@@ -262,6 +264,9 @@ func ValidateCreateRunCommand(command *CreateRunCommand) error {
 	}
 	if command.Input.Kind != "agent_run" {
 		return validation("Agent Run kind must be agent_run")
+	}
+	if command.Input.RepositorySourceRevisionID != nil && !uuidPattern.MatchString(*command.Input.RepositorySourceRevisionID) {
+		return validation("repositorySourceRevisionId must be a UUID")
 	}
 	if command.Input.Actor.PrincipalType != "agent" {
 		return validation("Agent Run actor must be an agent")

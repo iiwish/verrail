@@ -77,7 +77,15 @@ export async function prepareNativeRunArtifacts(input: {
   check?: () => void;
   source?: { identity: NativeSourceIdentity; observation: NativeSourceObservation };
   timeoutMs?: number;
+  limits?: { maxFiles: number; maxFileBytes: number; maxTotalBytes: number };
 }) {
+  const limits = z.object({
+    maxFiles: z.number().int().min(1).max(10),
+    maxFileBytes: z.number().int().min(1).max(32 * 1024 * 1024),
+    maxTotalBytes: z.number().int().min(1).max(64 * 1024 * 1024),
+  }).strict().refine(value => value.maxFileBytes <= value.maxTotalBytes).parse(input.limits ?? {
+    maxFiles: 10, maxFileBytes: 32 * 1024 * 1024, maxTotalBytes: 64 * 1024 * 1024,
+  });
   const check = input.check ?? (() => {});
   const readStartedAt = new Date().toISOString();
   const files: Array<{ item: z.infer<typeof fileSchema>; body: Buffer; sourceSnapshot?: NativeSourceSnapshot }> = [];
@@ -106,6 +114,7 @@ export async function prepareNativeRunArtifacts(input: {
         throw error;
       }
       const manifest = manifestSchema.parse(JSON.parse((await readBoundedFile(manifestPath, 65_536, root, check)).toString("utf8")));
+      if (manifest.artifacts.length > limits.maxFiles) throw new Error("Artifact count exceeds allocation");
       let total = 0;
       for (const [ordinal, entry] of manifest.artifacts.entries()) {
         const snapshot = "type" in entry && entry.type === "source_snapshot";
@@ -114,9 +123,10 @@ export async function prepareNativeRunArtifacts(input: {
           check, timeoutMs: Math.max(0, Math.floor(deadline - performance.now())) }) : null;
         const item = "path" in entry ? { title: entry.title, kind: entry.kind, path: entry.path }
           : { title: entry.title, kind: "code_change" as const, path: `source-${ordinal}.bundle` };
-        const body = generated?.body ?? await readBoundedFile(path.join(root, item.path), 32 * 1024 * 1024, root, check);
+        const body = generated?.body ?? await readBoundedFile(path.join(root, item.path), limits.maxFileBytes, root, check);
+        if (body.length > limits.maxFileBytes) throw new Error("Artifact exceeds file allocation");
         total += body.length;
-        if (total > 64 * 1024 * 1024) throw new Error("Artifact total exceeds 64 MiB");
+        if (total > limits.maxTotalBytes) throw new Error("Artifact total exceeds allocation");
         files.push({ item, body, ...(generated ? { sourceSnapshot: generated.sourceSnapshot } : {}) });
       }
       collectionStatus = "collected";
@@ -127,7 +137,7 @@ export async function prepareNativeRunArtifacts(input: {
   await read();
   const readFinishedAt = new Date().toISOString();
   // Buffers stay private: later source scans and uploads never reread the workspace.
-  return { collectionStatus, readStartedAt, readFinishedAt, hasSourceSnapshot: files.some((file) => !!file.sourceSnapshot), async upload(storage?: Pick<StorageService, "putFile">): Promise<NativeArtifactMapping[]> {
+  return { collectionStatus: collectionStatus as "collected" | "no_manifest", readStartedAt, readFinishedAt, hasSourceSnapshot: files.some((file) => !!file.sourceSnapshot), async upload(storage?: Pick<StorageService, "putFile">): Promise<NativeArtifactMapping[]> {
     const artifacts: NativeArtifactMapping[] = [];
     for (const { item, body, sourceSnapshot } of files) {
       check();

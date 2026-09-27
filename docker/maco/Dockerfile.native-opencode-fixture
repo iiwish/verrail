@@ -1,0 +1,9 @@
+# syntax=docker/dockerfile:1
+# Local native-kernel test fixture, not a release image.
+ARG NODE_IMAGE
+FROM ${NODE_IMAGE}
+ARG OPENCODE_VERSION
+RUN test -n "$OPENCODE_VERSION" \
+    && node -e 'if (!/^\d+\.\d+\.\d+$/.test(process.argv[1])) process.exit(1)' "$OPENCODE_VERSION" \
+    && npm install --global "opencode-ai@${OPENCODE_VERSION}"
+USER 1000:1000

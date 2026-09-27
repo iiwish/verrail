@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -45,6 +46,18 @@ function dryRunJson(args) {
 
 const SHARD_COUNT = 5;
 const SERIALIZED_SHARD_COUNT = 5;
+
+test("general and serialized lanes cover every server suite, including colocated route tests", () => {
+  const source = path.join(repoRoot, "server/src");
+  const expected = readdirSync(source, { recursive: true })
+    .filter(file => file.endsWith(".test.ts"))
+    .map(file => `server/src/${file.split(path.sep).join("/")}`).sort();
+  const general = dryRunJson(["--mode", "general", "--group", "general-server", "--shard-index", "0", "--shard-count", "1"]);
+  const serialized = dryRunJson(["--mode", "serialized", "--shard-index", "0", "--shard-count", "1"]);
+  const actual = [...general.selectedGeneralServerSuites, ...serialized.selectedSerializedSuites].sort();
+  assert.deepEqual(actual, expected, "a suite must never disappear between the two lane filters");
+  assert.ok(serialized.selectedSerializedSuites.includes("server/src/routes/setup-token-route.test.ts"));
+});
 
 test("successful invocations remove their isolated test roots", () => {
   const fixtureRoot = mkdtempSync(path.join(os.tmpdir(), "paperclip-vitest-runner-cleanup-"));

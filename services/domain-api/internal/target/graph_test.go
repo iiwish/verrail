@@ -106,6 +106,15 @@ func TestGraphOrchestrationContractsIntegration(t *testing.T) {
 	humanNodeID := workNodeIDByKey(t, pool, graphResult.GraphRevisionID, "human-agent")
 	dependentNodeID := workNodeIDByKey(t, pool, graphResult.GraphRevisionID, "dependent-human")
 	serviceRunCommand := buildGraphRunCommand(t, workspaceID, targetResult.TargetID, graphResult.GraphRevisionID, serviceNodeID, deploymentRevisionID, servicePrincipal, "g2-7-service-run")
+	repositoryStore := NewStore(pool, WithRequiredRepositorySource())
+	_, err = repositoryStore.CreateRun(ctx, serviceRunCommand)
+	requireLifecycleCode(t, err, "REPOSITORY_SOURCE_BINDING_REQUIRED")
+	var nodeStatus string
+	require.NoError(t, pool.QueryRow(ctx, `select status from verrail_work_nodes where id=$1`, serviceNodeID).Scan(&nodeStatus))
+	require.Equal(t, "ready", nodeStatus, "missing source must not consume the node")
+	var runCount int
+	require.NoError(t, pool.QueryRow(ctx, `select count(*) from verrail_runs where work_node_id=$1`, serviceNodeID).Scan(&runCount))
+	require.Zero(t, runCount)
 	serviceRun, err := store.CreateRun(ctx, serviceRunCommand)
 	require.NoError(t, err)
 	replayedRun, err := store.CreateRun(ctx, serviceRunCommand)

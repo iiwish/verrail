@@ -283,7 +283,7 @@ Home、Chat 与 Targets 分工明确：Home 回答“什么需要我”，Chat �
 - Web Chat 与至少一个企业 Channel Connector 的完整创建闭环，钉钉、飞书和企微共享同一插件合同；
 - AgentDefinition、AgentVersion、Deployment 与基础 EvaluationRun；
 - 版本化 GraphRevision、TaskNode/GateNode 与 Temporal 耐久编排；
-- Codex Adapter 的固定版本执行与事件归一化；
+- OpenCode 的固定版本仓库执行与事件归一化；保留已有 Codex 能力和兼容回归，不要求第二套运行时同步完成首发端到端验收；
 - AcceptanceCriterion、Claim、ArtifactRevision、Git Diff、Evidence、VerificationResult、Submission、DeliveryReview 与 Acceptance；
 - GitHub 需求和 Pull Request 的 Connector 闭环；
 - HostTrusted Runner、工作区范围、Lease、恢复和审计；
@@ -314,7 +314,7 @@ Home、Chat 与 Targets 分工明确：Home 回答“什么需要我”，Chat �
 MVP 通过以下端到端验收：
 
 1. 普通群聊、私聊和 Web Chat 消息不创建 Target；用户明确要求后通过可恢复的多轮会话补齐并确认 TargetCreationDraft，不选择 Collection 也能创建 TargetRevision；
-2. 用户可以从 GitHub 需求或 Conversation 固定验收条件和 Codex AgentVersion；
+2. 用户可以从 GitHub 需求或 Conversation 固定验收条件和 OpenCode AgentVersion；
 3. Agent 在授权工作区生成代码 ArtifactRevision，系统记录环境、日志、成本和权限；
 4. 独立 IntegrationTask 对固定 Commit 和 Criterion 产生 CI Evidence 与 VerificationResult；
 5. 系统创建固定 TargetRevision、ArtifactRevision、VerificationResult 和环境摘要的 Submission；
@@ -337,7 +337,6 @@ MVP 通过以下端到端验收：
 
 ## 12. 开放问题
 
-- MVP 是否只正式支持 Codex，还是要求第二个 Adapter 同步达到完整合同；
 - 默认 Stage 模板是否允许 Workspace 管理员编辑；
 - Acceptance 默认由单一 Outcome Owner 还是角色组法定人数完成；
 - Artifact 大文件和敏感内容在 Cloud/Private Runner 之间的默认出站策略；

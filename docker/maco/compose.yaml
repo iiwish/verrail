@@ -99,6 +99,7 @@ services:
       VERRAIL_PGX_POOL_MAX: "2"
       VERRAIL_DOMAIN_API_TOKEN_FILE: /run/secrets/domain-token
       VERRAIL_DOMAIN_API_LISTEN: 0.0.0.0:3211
+      VERRAIL_EXECUTOR_RUNTIME_PROFILE: repository_sandbox
     volumes: [*postgres, *domain-token]
     networks: [runtime, 1panel-network]
     depends_on:
@@ -120,6 +121,8 @@ services:
       TEMPORAL_ADDRESS: temporal:7233
       TEMPORAL_NAMESPACE: verrail-test
       VERRAIL_WORKER_HEALTH_LISTEN: 127.0.0.1:3212
+      VERRAIL_EXECUTOR_RUNTIME_PROFILE: repository_sandbox
+      VERRAIL_EXECUTOR_PRINCIPAL_ID: verrail-repository-runner
     volumes: [*postgres]
     networks: [runtime, 1panel-network]
     depends_on:
@@ -129,6 +132,92 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
+
+  repository-recovery:
+    <<: *common
+    image: ${VERRAIL_CONTROL_IMAGE:?Supply a verified immutable control-plane image}
+    command: [node, --import, ./server/node_modules/tsx/dist/loader.mjs, /app/server/dist/execution/repository-recovery-main.js]
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      VERRAIL_POSTGRES_ENV_FILE: /run/secrets/postgres.env
+      DATABASE_POOL_MAX: "1"
+      VERRAIL_DOMAIN_API_URL: http://domain-api:3211
+      VERRAIL_DOMAIN_API_TOKEN_FILE: /run/secrets/domain-token
+      VERRAIL_REPOSITORY_WORKSPACE_IDS: ${VERRAIL_REPOSITORY_WORKSPACE_IDS:?Supply a JSON array of authorized workspace UUIDs}
+      VERRAIL_REPOSITORY_RECOVERY_HEALTH_PORT: "3213"
+    volumes: [*postgres, *domain-token]
+    networks: [runtime, 1panel-network]
+    depends_on:
+      domain-api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3213/health',{signal:AbortSignal.timeout(3000)}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  repository-executor:
+    <<: *common
+    image: ${VERRAIL_REPOSITORY_IMAGE:?Supply a verified immutable repository executor image}
+    restart: unless-stopped
+    cpus: 2
+    mem_limit: 2g
+    pids_limit: 128
+    stop_grace_period: 45s
+    tmpfs: ["/tmp:rw,nosuid,nodev,size=512m,mode=1777"]
+    environment:
+      VERRAIL_POSTGRES_ENV_FILE: /run/secrets/postgres.env
+      DATABASE_POOL_MAX: "1"
+      VERRAIL_DOMAIN_API_URL: http://domain-api:3211
+      VERRAIL_DOMAIN_API_TOKEN_FILE: /run/secrets/domain-token
+      VERRAIL_REPOSITORY_WORKSPACE_IDS: ${VERRAIL_REPOSITORY_WORKSPACE_IDS:?Supply a JSON array of authorized workspace UUIDs}
+      VERRAIL_REPOSITORY_PROVIDERS_FILE: /run/secrets/providers.json
+      VERRAIL_REPOSITORY_STORAGE_ROOT: /var/lib/verrail-artifacts
+      VERRAIL_REPOSITORY_ROOT: /var/lib/verrail-repository
+      VERRAIL_REPOSITORY_HEALTH_PORT: "3214"
+      VERRAIL_REPOSITORY_CHECKOUT_ROOT: /var/lib/verrail-repository/workspaces
+      VERRAIL_REPOSITORY_CONTAINER_CONFIG_FILE: /run/secrets/container-runner.json
+    volumes:
+      - *postgres
+      - *domain-token
+      - type: bind
+        source: /opt/maco-ops/secrets/verrail/test/container-runner.json
+        target: /run/secrets/container-runner.json
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: /opt/maco-ops/secrets/verrail/test/container-runner-key
+        target: /run/secrets/container-runner-key
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: /opt/maco-ops/secrets/verrail/test/container-runner-known-hosts
+        target: /run/secrets/container-runner-known-hosts
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: /opt/maco-ops/secrets/verrail/test/providers.json
+        target: /run/secrets/providers.json
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: /opt/maco-apps/verrail/test/data/artifacts
+        target: /var/lib/verrail-artifacts
+        bind: {create_host_path: false}
+      - type: bind
+        source: /opt/maco-apps/verrail/test/data/repository
+        target: /var/lib/verrail-repository
+        bind: {create_host_path: false}
+    networks: [runtime, 1panel-network]
+    depends_on:
+      domain-api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3214/health',{signal:AbortSignal.timeout(3000)}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   execution-gateway:
     <<: *common
@@ -162,6 +251,9 @@ services:
 
   control-plane:
     <<: *common
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=256m,mode=1777
+      - /var/lib/verrail-source-scratch:rw,nosuid,nodev,noexec,size=512m,mode=0700,uid=1000,gid=1000
     image: ${VERRAIL_CONTROL_IMAGE:?Supply a verified immutable control-plane image}
     restart: unless-stopped
     cpus: 2
@@ -172,6 +264,10 @@ services:
       DATABASE_POOL_MAX: "6"
       BETTER_AUTH_SECRET_FILE: /run/secrets/auth-key
       PAPERCLIP_INSTANCE_ID: verrail-test
+      PAPERCLIP_STORAGE_PROVIDER: local_disk
+      PAPERCLIP_STORAGE_LOCAL_DIR: /var/lib/verrail-artifacts
+      VERRAIL_REPOSITORY_SOURCE_SCRATCH: /var/lib/verrail-source-scratch
+      VERRAIL_EXECUTOR_RUNTIME_PROFILE: repository_sandbox
       PAPERCLIP_AUTH_BASE_URL_MODE: explicit
       PAPERCLIP_AUTH_PUBLIC_BASE_URL: ${VERRAIL_PUBLIC_URL:?Supply the private HTTPS or loopback URL}
       PAPERCLIP_ALLOWED_HOSTNAMES: ${VERRAIL_ALLOWED_HOSTNAMES:?Supply the private URL hostname},control-plane
@@ -204,6 +300,10 @@ services:
       - type: bind
         source: /opt/maco-apps/verrail/test/data/control-plane
         target: /var/lib/verrail
+        bind: {create_host_path: false}
+      - type: bind
+        source: /opt/maco-apps/verrail/test/data/artifacts
+        target: /var/lib/verrail-artifacts
         bind: {create_host_path: false}
     ports:
       - target: 3100

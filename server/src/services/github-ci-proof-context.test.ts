@@ -8,6 +8,7 @@ import {
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "../__tests__/helpers/embedded-postgres.js";
 import { loadGitHubCiCollectionContext } from "./github-ci-proof-context.js";
 import { resolveGithubConnectorCredential, secretService } from "./secrets.js";
+import { resolveRepositoryGitHubRevision } from "../execution/repository-github-revision.js";
 
 const support = await getEmbeddedPostgresTestSupport();
 const suite = support.supported ? describe : describe.skip;
@@ -37,6 +38,25 @@ suite("GitHub CI current database context", () => {
     expect(JSON.stringify(context)).not.toContain("synthetic-test-token");
     await expect(loadGitHubCiCollectionContext(db, randomUUID(), s.targetId)).rejects.toMatchObject({ status: 409 });
     await expect(loadGitHubCiCollectionContext(db, s.workspaceId, randomUUID())).rejects.toMatchObject({ status: 409 });
+  });
+  it("pins repository input with real credentials and rejects revocation during HTTP", async () => {
+    const s = await seed();
+    const options = {
+      db, input: { workspaceId: s.workspaceId, targetId: s.targetId,
+        targetRevisionId: s.targetRevisionId, graphRevisionId: s.graphRevisionId, ref: "main" },
+      actor: { actorType: "user" as const, actorId: "test-user", actorSource: "local_implicit" as const },
+      signal: new AbortController().signal,
+    };
+    const result = await resolveRepositoryGitHubRevision({ ...options, fetch: async (_url, init) => {
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer synthetic-test-token-not-live");
+      return Response.json({ sha: "a".repeat(40) });
+    } });
+    expect(result).toMatchObject({ bindingId: s.bindingId, repository: "owner/repo", baseCommit: "a".repeat(40) });
+    expect(JSON.stringify(result)).not.toContain("synthetic-test-token");
+    await expect(resolveRepositoryGitHubRevision({ ...options, fetch: async () => {
+      await db.update(companySecretVersions).set({ revokedAt: new Date() }).where(eq(companySecretVersions.secretId, s.secretId));
+      return Response.json({ sha: "a".repeat(40) });
+    } })).rejects.toThrow("authorization changed");
   });
   it("allows real resolver read bookkeeping, but detects rotation metadata", async () => {
     const s = await seed(); const initial = await s.load();

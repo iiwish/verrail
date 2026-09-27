@@ -30,6 +30,11 @@ func main() {
 		logger.Error("DATABASE_URL and VERRAIL_DOMAIN_API_TOKEN are required")
 		os.Exit(1)
 	}
+	profile := strings.TrimSpace(os.Getenv("VERRAIL_EXECUTOR_RUNTIME_PROFILE"))
+	if profile != "" && profile != "host_trusted" && profile != "repository_sandbox" {
+		logger.Error("Invalid executor runtime profile")
+		os.Exit(1)
+	}
 	// Validate optional proof trust before connecting. No secret/config value is logged.
 	proofToken, proofProfile := os.Getenv("VERRAIL_GITHUB_CI_PROOF_TOKEN"), os.Getenv("VERRAIL_GITHUB_CI_PROOF_TRUST")
 	deliveryProfile := os.Getenv("VERRAIL_DELIVERY_PROOF_TRUST")
@@ -73,7 +78,11 @@ func main() {
 		os.Exit(1)
 	}
 	cancel()
-	store := target.NewStore(pool)
+	var storeOptions []target.StoreOption
+	if profile == "repository_sandbox" {
+		storeOptions = append(storeOptions, target.WithRequiredRepositorySource())
+	}
+	store := target.NewStore(pool, storeOptions...)
 	proof, err := httpapi.ConfigureFixedCIProof(token, proofToken, proofProfile, store)
 	if err != nil {
 		logger.Error("FIXED_CI_PROOF_CONFIG_INVALID")

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { criterionProofContractSchema } from "./criterion-proof.js";
+import { runtimeProfileV1Schema } from "./execution.js";
 import {
   TARGET_READ_MODEL_POLICY_VERSION,
   TARGET_READ_MODEL_SCHEMA_VERSION,
@@ -14,6 +15,12 @@ import {
 } from "../types/target.js";
 
 const isoDateTimeSchema = z.iso.datetime({ offset: true });
+export const prepareTargetRepositorySourceSchema = z.object({
+  targetRevisionId: z.string().uuid(),
+  graphRevisionId: z.string().uuid(),
+  ref: z.string().min(1).max(256).refine(value => value !== "." && value !== ".." && !/[\x00-\x20\x7f]/.test(value)),
+}).strict();
+export type PrepareTargetRepositorySourceInput = z.infer<typeof prepareTargetRepositorySourceSchema>;
 const nullableTrimmed = (max: number) => z.string().trim().min(1).max(max).nullable().optional();
 const principalSchema = z.object({
   principalType: z.enum(["user", "agent"]),
@@ -117,7 +124,7 @@ const workStatusSchema = z.enum(["pending", "ready", "running", "blocked", "comp
 const runStatusSchema = z.enum(["queued", "running", "cancel_requested", "succeeded", "failed", "canceled"]);
 const executionLeaseSchema = z.object({
   id: z.string().uuid(), runAttemptId: z.string().uuid(), executorPrincipalId: z.string().min(1),
-  runtimeProfile: z.literal("host_trusted"), fencingToken: z.number().int().positive(),
+  runtimeProfile: runtimeProfileV1Schema, fencingToken: z.number().int().positive(),
   status: z.enum(["offered", "active", "suspect", "expired", "released", "revoked"]),
   expiresAt: isoDateTimeSchema, graceExpiresAt: isoDateTimeSchema,
   claimedAt: isoDateTimeSchema.nullable(), lastHeartbeatAt: isoDateTimeSchema.nullable(),
@@ -132,7 +139,7 @@ const runEventSchema = z.object({
 const runAttemptSchema = z.object({
   id: z.string().uuid(), runId: z.string().uuid(), attemptNumber: z.number().int().positive(),
   deploymentRevisionId: z.string().uuid(), agentVersionId: z.string().uuid(),
-  runtimeProfile: z.literal("host_trusted"),
+  runtimeProfile: runtimeProfileV1Schema,
   executor: z.object({ principalType: z.literal("service"), principalId: z.string().min(1) }).strict(),
   fencingToken: z.number().int().positive(),
   status: z.enum(["pending", "running", "cancel_requested", "cancel_acknowledged", "succeeded", "failed", "canceled", "superseded"]),
@@ -144,6 +151,7 @@ const runAttemptSchema = z.object({
 
 export const targetWorkspaceV1Schema: z.ZodType<TargetWorkspaceV1> = z.object({
   schemaVersion: z.literal(TARGET_WORKSPACE_SCHEMA_VERSION),
+  repositorySourceRequired: z.boolean().optional(),
   targetId: z.string().uuid(),
   targetRevisionId: z.string().uuid(),
   workspaceId: z.string().uuid(),
@@ -277,6 +285,7 @@ export const createGraphRevisionSchema = z.object({
 
 export const createRunSchema = z.object({
   kind: z.literal("agent_run"),
+  repositorySourceRevisionId: z.string().uuid().optional(),
   actor: z.object({
     principalType: z.literal("agent"),
     principalId: z.string().trim().min(1).max(200),

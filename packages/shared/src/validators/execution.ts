@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const runtimeProfileV1Schema = z.enum(["host_trusted"]);
+export const runtimeProfileV1Schema = z.enum(["host_trusted", "repository_sandbox"]);
 export const runEventTypeV1Schema = z.enum([
   "claimed",
   "heartbeat",
@@ -20,7 +20,12 @@ export const createRunAttemptSchema = z.object({
   }).strict(),
   leaseDurationSeconds: z.number().int().min(15).max(3_600).default(120),
   graceDurationSeconds: z.number().int().min(0).max(600).default(30),
-}).strict();
+}).strict().refine(input => input.runtimeProfile === "repository_sandbox"
+  ? input.executor.principalId === "verrail-repository-runner"
+  : input.executor.principalId !== "verrail-repository-runner", {
+  message: "Repository execution requires its dedicated executor and runtime profile",
+  path: ["executor", "principalId"],
+});
 
 export const reportRunEventSchema = z.object({
   leaseId: z.string().uuid(),

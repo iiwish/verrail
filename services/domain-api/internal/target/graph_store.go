@@ -458,6 +458,14 @@ func (store *Store) CreateRun(ctx context.Context, command CreateRunCommand) (Cr
 		if existing.TargetID != command.TargetID || existing.GraphRevisionID != command.GraphRevisionID || existing.WorkNodeID != command.WorkNodeID || existingKind != "agent" || existingActorType != command.Input.Actor.PrincipalType || existingActorID != command.Input.Actor.PrincipalID {
 			return CreateRunResult{}, IdempotencyConflict()
 		}
+		var sourceID *string
+		if err := tx.QueryRow(ctx, `select (select repository_source_revision_id from verrail_run_sources where run_id=$1 and workspace_id=$2)`, existing.RunID, command.WorkspaceID).Scan(&sourceID); err != nil {
+			return CreateRunResult{}, err
+		}
+		if (sourceID == nil) != (command.Input.RepositorySourceRevisionID == nil) || (sourceID != nil && *sourceID != *command.Input.RepositorySourceRevisionID) {
+			return CreateRunResult{}, IdempotencyConflict()
+		}
+		existing.RepositorySourceRevisionID = sourceID
 		existing.SchemaVersion = SchemaVersion
 		existing.Replayed = true
 		return existing, nil
@@ -495,15 +503,32 @@ func (store *Store) CreateRun(ctx context.Context, command CreateRunCommand) (Cr
 		return CreateRunResult{}, err
 	}
 	deploymentRevisionID, agentVersionID = responsibleID, &resolvedVersionID
+	if store.requireRepositorySource && command.Input.RepositorySourceRevisionID == nil {
+		return CreateRunResult{}, &Error{Status: 409, Code: "REPOSITORY_SOURCE_BINDING_REQUIRED", Message: "Pin a repository source before creating a Run"}
+	}
+	if command.Input.RepositorySourceRevisionID != nil {
+		var admitted bool
+		if err := tx.QueryRow(ctx, `select exists(select 1 from verrail_artifact_revisions revision join verrail_artifacts artifact on artifact.id=revision.artifact_id and artifact.workspace_id=revision.workspace_id where revision.id=$1 and revision.workspace_id=$2 and artifact.target_id=$3 and artifact.kind='report')`, *command.Input.RepositorySourceRevisionID, command.WorkspaceID, command.TargetID).Scan(&admitted); err != nil {
+			return CreateRunResult{}, err
+		}
+		if !admitted {
+			return CreateRunResult{}, validation("Repository source revision must be a registered report in this Target")
+		}
+	}
 	if _, err := tx.Exec(ctx, `insert into verrail_runs(id,workspace_id,target_id,target_revision_id,graph_revision_id,work_node_id,kind,status,actor_principal_type,actor_principal_id,deployment_revision_id,agent_version_id,attempt_count,idempotency_key) values($1,$2,$3,$4,$5,$6,$7,'queued',$8,$9,$10,$11,0,$12)`, runID, command.WorkspaceID, command.TargetID, targetRevisionID, command.GraphRevisionID, command.WorkNodeID, storedKind, command.Input.Actor.PrincipalType, command.Input.Actor.PrincipalID, deploymentRevisionID, agentVersionID, command.IdempotencyKey); err != nil {
 		return CreateRunResult{}, err
 	}
 	if _, err := tx.Exec(ctx, `update verrail_work_nodes set status='running',updated_at=now() where id=$1`, command.WorkNodeID); err != nil {
 		return CreateRunResult{}, err
 	}
+	if command.Input.RepositorySourceRevisionID != nil {
+		if _, err := tx.Exec(ctx, `insert into verrail_run_sources(run_id,workspace_id,repository_source_revision_id) values($1,$2,$3)`, runID, command.WorkspaceID, *command.Input.RepositorySourceRevisionID); err != nil {
+			return CreateRunResult{}, err
+		}
+	}
 	auditID, _ := NewUUID()
 	outboxID, _ := NewUUID()
-	payload, _ := json.Marshal(map[string]any{"schemaVersion": SchemaVersion, "targetId": command.TargetID, "targetRevisionId": targetRevisionID, "graphRevisionId": command.GraphRevisionID, "workNodeId": command.WorkNodeID, "runId": runID})
+	payload, _ := json.Marshal(map[string]any{"schemaVersion": SchemaVersion, "targetId": command.TargetID, "targetRevisionId": targetRevisionID, "graphRevisionId": command.GraphRevisionID, "workNodeId": command.WorkNodeID, "runId": runID, "repositorySourceRevisionId": command.Input.RepositorySourceRevisionID})
 	if _, err := tx.Exec(ctx, `insert into verrail_audit_events(id,workspace_id,principal_type,principal_id,event_type,aggregate_type,aggregate_id,idempotency_key,payload) values($1,$2,$3,$4,'run.created','target',$5,$6,$7::jsonb)`, auditID, command.WorkspaceID, command.Principal.Type, command.Principal.ID, command.TargetID, command.IdempotencyKey, payload); err != nil {
 		return CreateRunResult{}, err
 	}
@@ -513,5 +538,5 @@ func (store *Store) CreateRun(ctx context.Context, command CreateRunCommand) (Cr
 	if err := tx.Commit(ctx); err != nil {
 		return CreateRunResult{}, err
 	}
-	return CreateRunResult{SchemaVersion: SchemaVersion, RunID: runID, TargetID: command.TargetID, TargetRevisionID: targetRevisionID, GraphRevisionID: command.GraphRevisionID, WorkNodeID: command.WorkNodeID, DeploymentRevisionID: deploymentRevisionID, AgentVersionID: agentVersionID, Status: "queued"}, nil
+	return CreateRunResult{SchemaVersion: SchemaVersion, RunID: runID, TargetID: command.TargetID, TargetRevisionID: targetRevisionID, GraphRevisionID: command.GraphRevisionID, WorkNodeID: command.WorkNodeID, DeploymentRevisionID: deploymentRevisionID, AgentVersionID: agentVersionID, RepositorySourceRevisionID: command.Input.RepositorySourceRevisionID, Status: "queued"}, nil
 }

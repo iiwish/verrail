@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "kind": "independent_ai_technical_review",
+  "reviewer": "independent_candidate_review",
+  "sourceHash": "a6e8ed6b235660d11f7e496aec86bcdf59c22a116b5300ecb8b7ae2194dbdf65",
+  "baseCommit": "5e3298418798bb46ee1ad72d06d9ba5ddce474a0",
+  "scope": "Selected candidate changes from the base commit; not the full unpublished history",
+  "findings": [
+    { "id": "R1", "priority": "P2", "summary": "An unbound repository Run consumed its ready node", "status": "resolved", "resolution": "Repository mode rejects missing source in the facade and the Go transaction; the UI requires a current-version source before Start" },
+    { "id": "R2", "priority": "P2", "summary": "Repository prompt and SSE inherited a two-minute execution ceiling", "status": "resolved", "resolution": "Bound execution timeout follows the repository Run budget; cancellation also reaches health and session setup" }
+  ],
+  "followupChecks": ["Strict shared workspace validator accepts the optional policy field", "Cleanup fixture retains its original uncertain-cleanup assertion", "Session setup receives cancellation"],
+  "independentlyRunTests": { "httpTransport": 23, "sharedTarget": 7, "deadlineAndCleanup": 2, "failed": 0 },
+  "conclusion": "No additional substantiated finding in this limited re-review",
+  "limitations": ["Not human Acceptance", "Not a formal GitHub approval", "Current-source full verification is recorded separately", "Prior image and paid-model evidence does not automatically apply to the new source"]
+}
