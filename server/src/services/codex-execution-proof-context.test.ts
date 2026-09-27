@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import express from "express";
 import request from "supertest";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   createDb, companies, agents, heartbeatRuns, agentWakeupRequests, verrailTargets, verrailTargetRevisions,
   verrailWorkGraphs, verrailGraphRevisions, verrailWorkNodes, verrailRuns, verrailRunAttempts, verrailRunEvents,
@@ -44,6 +44,7 @@ suite("Codex execution context (synthetic, not a real model run)", () => {
   let database: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>>;
   let sourceDir: string, logDir: string;
   let logs: ReturnType<typeof createDurableRunLogStore>;
+  afterEach(() => vi.unstubAllEnvs());
   beforeAll(async () => {
     database = await startEmbeddedPostgresTestDatabase("verrail-codex-proof-");
     db = createDb(database.connectionString);
@@ -233,6 +234,7 @@ suite("Codex execution context (synthetic, not a real model run)", () => {
 
   it.skipIf(process.env.VERRAIL_TEST_CODEX_GO_BRIDGE !== "1").each(["feishu_target", "codex_execution"] as const)(
     "collects %s through scoped reads, actual runtime witnesses and Go HTTP admission", async kind => {
+      vi.stubEnv("PAPERCLIP_INSTANCE_ID", `delivery-proof-${kind}`);
       const [workspace] = await db.insert(companies).values({ name: "Synthetic closed proof", issuePrefix: `DP${randomUUID().slice(0, 6)}` }).returning();
       const scope = { workspaceId: workspace!.id, targetId: randomUUID(), targetRevisionId: randomUUID(), graphRevisionId: randomUUID() };
       const executionIdentity = { agentId: randomUUID(), heartbeatRunId: randomUUID() };

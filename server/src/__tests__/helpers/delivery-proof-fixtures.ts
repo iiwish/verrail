@@ -111,6 +111,7 @@ app.listen(Number(process.env.PORT), '127.0.0.1');`, resolveDir: path.join(repo,
         schemaVersion: 1 as const, root: directory, candidateCommit, executable, executableSha256,
         entrypoint: component === "server" ? "app/server.mjs" : "worker.mjs", files: [] as Array<{ path: string; sha256: string }>,
         env: component === "server" ? { ...env, DATABASE_URL: databaseUrl, PORT: String(apiPort),
+          PAPERCLIP_INSTANCE_ID: process.env.PAPERCLIP_INSTANCE_ID ?? "default",
           PAPERCLIP_AGENT_JWT_SECRET: "synthetic-native-permission-secret", NODE_ENV: "production" } : env } };
     });
     for (const item of runtimeConfigs) {
