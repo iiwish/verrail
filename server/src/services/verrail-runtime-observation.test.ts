@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { launchObservedNodeRuntime } from "./verrail-runtime-observation.js";
+import { launchObservedNodeRuntime, runtimeObservationFailureCode } from "./verrail-runtime-observation.js";
 import { buildDeliveryProofRuntime } from "./delivery-proof-reader-build.js";
 
 const sha256 = (text: string | Buffer) => createHash("sha256").update(text).digest("hex");
@@ -39,7 +39,10 @@ describe("externally observed Node runtime bytes (synthetic processes)", () => {
     expect(JSON.stringify(observation)).not.toContain("export const");
   });
   it("runs the standalone proxy with normal stdio and a separately signed runtime witness", async () => {
-    const f = await fixture(`process.stdin.setEncoding('utf8'); process.stdin.once('data', text => console.log('echo:' + text.trim())); console.log('transport-ready');`);
+    const f = await fixture(`process.stdin.setEncoding('utf8'); process.stdin.on('data', text => {
+      if (text.trim() === 'reject') { new Function('return "private-generated-source"')(); console.log('generated-ready'); }
+      else console.log('echo:' + text.trim());
+    }); console.log('transport-ready');`);
     const entry = path.join(f.root, "observer.mjs"), configPath = path.join(f.root, "observer.json");
     await buildDeliveryProofRuntime(entry);
     const { publicKey, privateKey } = generateKeyPairSync("ed25519");
@@ -61,6 +64,14 @@ describe("externally observed Node runtime bytes (synthetic processes)", () => {
       expect(verify(null, Buffer.concat([Buffer.from("verrail.runtime-witness.v1\0"), payload]), publicKey, Buffer.from(witness!.signature, "base64"))).toBe(true);
       expect(JSON.parse(payload.toString())).toMatchObject({ component: "server", sessionId,
         observation: { assurance: "observed_main_thread_scripts", candidateCommit: f.configuration.candidateCommit } });
+      proxy.stdin.write("reject\n");
+      await vi.waitFor(() => expect(stdout).toContain("generated-ready"));
+      proxy.kill("SIGUSR2");
+      await vi.waitFor(() => expect(stderr).toContain("DELIVERY_RUNTIME_CHECKPOINT_FAILED:generated_script"), { timeout: 15000 });
+      await vi.waitFor(() => expect(proxy.exitCode).toBe(1));
+      expect(stderr).not.toContain("private-generated-source");
+      expect(await readFile(path.join(f.root, `${sessionId}-server.witness.json`), "utf8"))
+        .toBe(JSON.stringify(witness));
     } finally {
       if (proxy.exitCode === null && proxy.signalCode === null) { const exited = once(proxy, "exit"); proxy.kill("SIGTERM"); await exited; }
     }
@@ -73,7 +84,14 @@ describe("externally observed Node runtime bytes (synthetic processes)", () => {
   it("refuses an unmanifested dynamically evaluated script", async () => {
     const f = await fixture("new Function('return 99')();");
     const child = await start(f.configuration);
-    await expect(child.checkpoint()).rejects.toThrow("RUNTIME_OBSERVATION_UNAVAILABLE");
+    await expect(child.checkpoint()).rejects.toMatchObject({ message: "RUNTIME_OBSERVATION_UNAVAILABLE", cause: "generated_script" });
+  });
+  it("exposes only fixed diagnostic codes, never source paths or arbitrary causes", () => {
+    expect(runtimeObservationFailureCode(new Error('private source', { cause: 'source_hash' }))).toBe('source_hash');
+    for (const error of [new Error('private source'), new Error('failed', { cause: '/private/secret' }),
+      new Error('failed', { cause: new Error('private token') }), { cause: 'source_hash' }]) {
+      expect(runtimeObservationFailureCode(error)).toBe('unknown');
+    }
   });
   it("accepts only explicitly pinned generated source bytes", async () => {
     const f = await fixture("new Function('return 99')();");

@@ -24,7 +24,16 @@ export type ObservedNodeRuntimeConfiguration = z.infer<typeof configurationSchem
 type RuntimeTransport = { stdin?: Readable; stdout?: Writable; stderr?: Writable;
   onMessage?: (value: unknown) => void; onExit?: () => void };
 const digest = (value: unknown) => createHash("sha256").update(canonicalJson(value)).digest("hex");
-const unavailable = () => new Error("RUNTIME_OBSERVATION_UNAVAILABLE");
+const failureCodes = ["unknown", "stdin", "ipc", "child_exit", "child_error", "command_timeout", "command_rejected",
+  "protocol", "script_metadata", "generated_script", "script_url", "source_hash", "source_queue", "socket",
+  "checkpoint_state", "pause_timeout", "entrypoint_missing", "executable_identity"] as const;
+type RuntimeFailureCode = typeof failureCodes[number];
+const unavailable = (cause: RuntimeFailureCode = "unknown") => new Error("RUNTIME_OBSERVATION_UNAVAILABLE", { cause });
+
+export function runtimeObservationFailureCode(error: unknown): RuntimeFailureCode {
+  const cause = error instanceof Error ? error.cause : undefined;
+  return failureCodes.includes(cause as RuntimeFailureCode) ? cause as RuntimeFailureCode : "unknown";
+}
 
 async function stableHash(name: string, maxBytes: number) {
   const file = await open(name, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -50,6 +59,8 @@ async function stableHash(name: string, maxBytes: number) {
 export async function launchObservedNodeRuntime(raw: ObservedNodeRuntimeConfiguration, transport: RuntimeTransport = {}) {
   let child: ChildProcess | undefined, socket: WebSocket | undefined;
   let stopped = false, failed = false;
+  let firstFailure: RuntimeFailureCode | undefined;
+  const fail = (code: RuntimeFailureCode) => { failed = true; firstFailure ??= code; };
   const pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   const messageWaiters = new Set<{ kind: string; resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   const messages: Array<{ kind: string; value: unknown }> = [];
@@ -89,20 +100,20 @@ export async function launchObservedNodeRuntime(raw: ObservedNodeRuntimeConfigur
       cwd: root, env: config.env, detached: true, stdio: ["pipe", "pipe", "pipe", "ipc"],
     });
     if (transport.stdin) transport.stdin.pipe(child.stdin!);
-    child.stdin!.on("error", () => { failed = true; });
+    child.stdin!.on("error", () => { fail("stdin"); });
     if (transport.stdout) child.stdout!.pipe(transport.stdout, { end: false }); else child.stdout!.resume();
     child.on("message", value => {
       if (transport.onMessage) { transport.onMessage(value); return; }
       if (!value || typeof value !== "object" || typeof (value as { kind?: unknown }).kind !== "string"
-        || Buffer.byteLength(JSON.stringify(value)) > 8192) { failed = true; return; }
+        || Buffer.byteLength(JSON.stringify(value)) > 8192) { fail("ipc"); return; }
       const kind = (value as { kind: string }).kind;
       const waiter = [...messageWaiters].find(item => item.kind === kind);
       if (waiter) { clearTimeout(waiter.timer); messageWaiters.delete(waiter); waiter.resolve(value); }
       else if (messages.length < 16) messages.push({ kind, value });
-      else failed = true;
+      else fail("ipc");
     });
-    child.on("exit", () => { failed = true; transport.onExit?.(); });
-    child.on("error", () => { failed = true; });
+    child.on("exit", () => { fail("child_exit"); transport.onExit?.(); });
+    child.on("error", () => { fail("child_error"); });
     const endpoint = await new Promise<string>((resolve, reject) => {
       let buffer = "";
       const timer = setTimeout(() => { cleanup(); reject(unavailable()); }, 10_000);
@@ -123,7 +134,7 @@ export async function launchObservedNodeRuntime(raw: ObservedNodeRuntimeConfigur
       if (stopped || socket!.readyState !== WebSocket.OPEN || pending.size >= 256) return Promise.reject(unavailable());
       return new Promise((resolve, reject) => {
         const id = ++nextId;
-        const timer = setTimeout(() => { pending.delete(id); failed = true; reject(unavailable()); }, 10_000);
+        const timer = setTimeout(() => { pending.delete(id); fail("command_timeout"); reject(unavailable("command_timeout")); }, 10_000);
         pending.set(id, { resolve, reject, timer }); socket!.send(JSON.stringify({ id, method, params }));
       });
     }
@@ -136,37 +147,37 @@ export async function launchObservedNodeRuntime(raw: ObservedNodeRuntimeConfigur
         const message = JSON.parse(data.toString());
         if (typeof message.id === "number") {
           const request = pending.get(message.id);
-          if (!request) { failed = true; return; }
+          if (!request) { fail("protocol"); return; }
           pending.delete(message.id); clearTimeout(request.timer);
-          if (message.error) request.reject(unavailable()); else request.resolve(message.result);
+          if (message.error) request.reject(unavailable("command_rejected")); else request.resolve(message.result);
         } else if (message.method === "Debugger.scriptParsed") {
           const script = message.params;
-          if (++scriptCount > 20000 || typeof script.url !== "string" || script.hasSourceURL) { failed = true; return; }
+          if (++scriptCount > 20000 || typeof script.url !== "string" || script.hasSourceURL) { fail("script_metadata"); return; }
           if (script.url.startsWith("node:")) return;
           sourceQueue = sourceQueue.then(async () => {
             if (script.url === "") {
               const result = await post("Debugger.getScriptSource", { scriptId: script.scriptId });
-              if (typeof result.scriptSource !== "string" || Buffer.byteLength(result.scriptSource) > 1024 * 1024) throw unavailable();
+              if (typeof result.scriptSource !== "string" || Buffer.byteLength(result.scriptSource) > 1024 * 1024) throw unavailable("generated_script");
               const sha256 = createHash("sha256").update(result.scriptSource).digest("hex");
-              if (!config.generatedScriptSha256?.includes(sha256)) throw unavailable();
+              if (!config.generatedScriptSha256?.includes(sha256)) throw unavailable("generated_script");
               generatedScripts.add(sha256);
               return;
             }
-            if (!script.url.startsWith("file:")) throw unavailable();
+            if (!script.url.startsWith("file:")) throw unavailable("script_url");
             const entry = expected.get(fileURLToPath(script.url));
-            if (!entry) throw unavailable();
+            if (!entry) throw unavailable("script_url");
             const result = await post("Debugger.getScriptSource", { scriptId: script.scriptId });
             if (typeof result.scriptSource !== "string" || Buffer.byteLength(result.scriptSource) > 16 * 1024 * 1024
-              || createHash("sha256").update(result.scriptSource).digest("hex") !== entry.sha256) throw unavailable();
+              || createHash("sha256").update(result.scriptSource).digest("hex") !== entry.sha256) throw unavailable("source_hash");
             scripts.set(entry.path, entry);
-          }).catch(() => { failed = true; });
+          }).catch(error => { const code = runtimeObservationFailureCode(error); fail(code === "unknown" ? "source_queue" : code); });
         } else if (message.method === "Debugger.paused") {
           if (checkpointing) pausedResolve?.();
-          else void sourceQueue.then(() => post("Debugger.resume")).catch(() => { failed = true; });
+          else void sourceQueue.then(() => post("Debugger.resume")).catch(() => { fail("command_rejected"); });
         }
-      } catch { failed = true; }
+      } catch { fail("protocol"); }
     });
-    socket.on("error", () => { failed = true; }); socket.on("close", () => { failed = true; });
+    socket.on("error", () => { fail("socket"); }); socket.on("close", () => { fail("socket"); });
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => { socket!.terminate(); reject(unavailable()); }, 10_000);
       socket!.once("open", () => { clearTimeout(timer); resolve(); });
@@ -178,7 +189,7 @@ export async function launchObservedNodeRuntime(raw: ObservedNodeRuntimeConfigur
       stop,
       send(value: unknown) {
         if (stopped || !child?.connected) throw unavailable();
-        child.send(value as Parameters<ChildProcess["send"]>[0], error => { if (error) failed = true; });
+        child.send(value as Parameters<ChildProcess["send"]>[0], error => { if (error) fail("ipc"); });
       },
       async waitForMessage(kind: string): Promise<unknown> {
         const index = messages.findIndex(message => message.kind === kind);
@@ -190,18 +201,18 @@ export async function launchObservedNodeRuntime(raw: ObservedNodeRuntimeConfigur
         });
       },
       async checkpoint() {
-        if (stopped || failed || checkpointing) throw unavailable();
+        if (stopped || failed || checkpointing) throw unavailable(firstFailure ?? "checkpoint_state");
         checkpointing = true;
         let timer: NodeJS.Timeout | undefined;
         try {
           const paused = new Promise<void>((resolve, reject) => {
-            pausedResolve = resolve; timer = setTimeout(() => reject(unavailable()), 10_000);
+            pausedResolve = resolve; timer = setTimeout(() => reject(unavailable("pause_timeout")), 10_000);
           });
           // Observe at an actual V8 pause, not after an arbitrary sleep.
           await Promise.all([post("Debugger.pause"), paused]);
           await sourceQueue;
-          if (failed || !scripts.has(config.entrypoint)) throw unavailable();
-          if (canonicalJson(await stableHash(executable, 512 * 1024 * 1024)) !== canonicalJson(executableIdentity)) throw unavailable();
+          if (failed || !scripts.has(config.entrypoint)) throw unavailable(firstFailure ?? "entrypoint_missing");
+          if (canonicalJson(await stableHash(executable, 512 * 1024 * 1024)) !== canonicalJson(executableIdentity)) throw unavailable("executable_identity");
           const observation = { schemaVersion: 1, kind: "verrail.node-runtime-observation", assurance: "observed_main_thread_scripts",
             observerSessionId, pid: child!.pid!, candidateCommit: config.candidateCommit, executableSha256: config.executableSha256,
             manifestSha256: digest({ candidateCommit: config.candidateCommit, files: config.files }), startedAt, observedAt: new Date().toISOString(),
@@ -209,8 +220,8 @@ export async function launchObservedNodeRuntime(raw: ObservedNodeRuntimeConfigur
             generatedScriptSha256: [...generatedScripts].sort(),
             limitations: ["main_thread_only", "native_addons_and_child_processes_not_attested", "build_provenance_requires_pinned_manifest"] };
           return { ...observation, sha256: digest(observation) };
-        } catch { throw unavailable(); }
-        finally { clearTimeout(timer); pausedResolve = undefined; checkpointing = false; await post("Debugger.resume").catch(() => { failed = true; }); }
+        } catch (error) { throw unavailable(firstFailure ?? runtimeObservationFailureCode(error)); }
+        finally { clearTimeout(timer); pausedResolve = undefined; checkpointing = false; await post("Debugger.resume").catch(() => { fail("command_rejected"); }); }
       },
     };
   } catch { await stop(); throw unavailable(); }

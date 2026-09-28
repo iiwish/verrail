@@ -27,7 +27,7 @@ import { deliveryContextRoutes } from "../routes/delivery-context.js";
 import { loadNativeDispatchConfiguration, NATIVE_DISPATCH_CONTEXT_KEY } from "./verrail-native-dispatch.js";
 import { provisionDeliveryProofReader, removeDeliveryProofReader, assertDeliveryProofReader } from "./delivery-proof-reader-access.js";
 import { recordDeliveryProof } from "./delivery-proof-recorder.js";
-import { deliveryRuntimeFixture, githubDeliveryFixture, channelDeliveryFixture } from "../__tests__/helpers/delivery-proof-fixtures.js";
+import { deliveryRuntimeFixture, githubDeliveryFixture, channelDeliveryFixture, deliveryRuntimeDiagnosticCodes } from "../__tests__/helpers/delivery-proof-fixtures.js";
 import { DELIVERY_PROOF_ASSERTIONS, type DeliveryProofKind } from "@paperclipai/shared";
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { observeNativePermissions, NATIVE_PERMISSION_CONTEXT_KEY } from "./verrail-native-permission-observation.js";
@@ -38,6 +38,12 @@ const digest = (value: unknown) => createHash("sha256").update(canonicalJson(val
 const author = { createdByPrincipalType: "service", createdByPrincipalId: "verrail-host-runner" };
 const support = await getEmbeddedPostgresTestSupport();
 const suite = support.supported ? describe : describe.skip;
+
+it("bounds checkpoint diagnostics and redacts forged arbitrary causes", () => {
+  expect(deliveryRuntimeDiagnosticCodes('DELIVERY_RUNTIME_CHECKPOINT_FAILED:source_hash\nDELIVERY_RUNTIME_CHECKPOINT_FAILED:private_token_value\nDELIVERY_RUNTIME_CHECKPOINT_FAILED:/private/secret\n'))
+    .toEqual(['source_hash', 'unknown', 'unknown']);
+  expect(deliveryRuntimeDiagnosticCodes('DELIVERY_RUNTIME_CHECKPOINT_FAILED:socket\n'.repeat(20))).toHaveLength(4);
+});
 
 suite("Codex execution context (synthetic, not a real model run)", () => {
   let db: ReturnType<typeof createDb>;
@@ -270,7 +276,7 @@ suite("Codex execution context (synthetic, not a real model run)", () => {
         await expect(recordDeliveryProof(reader, access, wrong, runtime.config, logs)).rejects.toThrow();
         expect(await db.select().from(verrailCriterionProofs).where(eq(verrailCriterionProofs.workspaceId, scope.workspaceId))).toHaveLength(0);
         const result = await recordDeliveryProof(reader, access, request, runtime.config, logs).catch(error => {
-          throw new Error(`${error.message}; ${String(error.cause ?? "")}`);
+          throw new Error(`${error.message}; ${String(error.cause ?? "")}; observers=${JSON.stringify(runtime.diagnostics())}`);
         });
         expect(result.replayed).toBe(false);
         expect(await recordDeliveryProof(reader, access, request, runtime.config, logs)).toMatchObject({ resourceId: result.resourceId, replayed: true });

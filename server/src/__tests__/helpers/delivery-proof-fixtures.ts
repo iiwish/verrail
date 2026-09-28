@@ -13,6 +13,7 @@ import { type Db, verrailConversations, verrailConversationMessages, verrailProv
   verrailTargetCreationDrafts, verrailTargetCreationDraftRevisions, verrailTargets, verrailTargetRevisions,
   verrailCommandReceipts, verrailAuditEvents, verrailChannelEvents, verrailChannelTargetReplies } from "@paperclipai/db";
 import { loadChannelTargetProofContext } from "../../services/channel-target-proof-context.js";
+import { runtimeObservationFailureCode } from "../../services/verrail-runtime-observation.js";
 
 const exec = promisify(execFile);
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
@@ -20,6 +21,11 @@ const repo = path.resolve(import.meta.dirname, "../../../..");
 const workflowPath = ".github/workflows/verrail-candidate-verify.yml", helperPath = ".github/scripts/verrail-candidate-proof.mjs";
 const checks = ["ts_tests", "ts_typecheck", "ts_build", "go_tests"];
 const steps = ["checkout", "source_identity", "setup_pnpm", "setup_node", "setup_go", "install", "proof_tests", ...checks, "source_unchanged"];
+
+export function deliveryRuntimeDiagnosticCodes(output: string) {
+  return [...output.matchAll(/^DELIVERY_RUNTIME_CHECKPOINT_FAILED:([^\r\n]*)$/gm)].slice(-4)
+    .map(match => runtimeObservationFailureCode(new Error("checkpoint", { cause: match[1] })));
+}
 
 async function freePort() {
   const server = createServer();
@@ -142,8 +148,11 @@ setInterval(() => {}, 100).unref();`, resolveDir: path.join(repo, "server"), loa
           verifierBuildSha256: observerHash, directory, privateKey, [item.engine]: item.config }), { mode: 0o600 });
         const child = spawn(executable, [proxy, ...(item.component === "plugin" ? [path.join(directory, "worker.mjs")] : [])], {
           env: { PATH: process.env.PATH, VERRAIL_RUNTIME_OBSERVER_CONFIG: configPath }, stdio: ["pipe", "pipe", "pipe"] });
-        processes.push(child); let errors = "";
-        const capture = (chunk: Buffer) => { errors += chunk; output.set(item.component, errors); };
+        processes.push(child); let errors = "", tail = Buffer.alloc(0);
+        const capture = (chunk: Buffer) => {
+          tail = Buffer.concat([tail, chunk]).subarray(-8192);
+          errors = tail.toString("utf8"); output.set(item.component, errors);
+        };
         child.stdout?.on("data", capture); child.stderr?.on("data", capture);
         const deadline = Date.now() + 20_000;
         while (true) {
@@ -174,7 +183,11 @@ setInterval(() => {}, 100).unref();`, resolveDir: path.join(repo, "server"), loa
         await new Promise(resolve => setTimeout(resolve, 25));
       }
     };
-    return { directory, sessionId, pluginId, apiOrigin, domainOrigin, entry, trust, start, close, finishHarness,
+    const diagnostics = () => runtimeConfigs.map((item, index) => ({
+      component: item.component, exitCode: processes[index]?.exitCode ?? null, signalCode: processes[index]?.signalCode ?? null,
+      checkpointFailures: deliveryRuntimeDiagnosticCodes(output.get(item.component) ?? ""),
+    }));
+    return { directory, sessionId, pluginId, apiOrigin, domainOrigin, entry, trust, start, close, finishHarness, diagnostics,
       config: { trust, privateKey, domainOrigin, githubPolicy: JSON.stringify([entry]), githubAuthorization: "Bearer synthetic-github",
         runtime: { directory, publicKey, sessionId, manifest, manifestSha256 } } as DeliveryProofRecorderConfig };
   } catch (error) { await close(); throw error; }

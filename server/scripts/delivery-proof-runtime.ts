@@ -4,7 +4,7 @@ import { open, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalJson } from "@paperclipai/shared/portability-hash";
-import { deliveryRuntimeConfigurationSchema, launchObservedNativeRuntime, launchObservedNodeRuntime } from "../src/services/verrail-runtime-observation.js";
+import { deliveryRuntimeConfigurationSchema, launchObservedNativeRuntime, launchObservedNodeRuntime, runtimeObservationFailureCode } from "../src/services/verrail-runtime-observation.js";
 
 // This entry is bundled outside the checkout. It carries no request-controlled
 // code, profile, entrypoint or key; plugin stdio/IPC are transparent transports.
@@ -99,7 +99,10 @@ try {
   process.on("SIGUSR2", () => {
     if (busy || closing) return;
     busy = true;
-    void publishWitness().catch(() => close(1)).finally(() => { busy = false; });
+    void publishWitness().catch(error => {
+      process.stderr.write(`DELIVERY_RUNTIME_CHECKPOINT_FAILED:${runtimeObservationFailureCode(error)}\n`);
+      return close(1);
+    }).finally(() => { busy = false; });
   });
   process.on("SIGTERM", () => { void close(0); });
   process.on("SIGINT", () => { void close(0); });
