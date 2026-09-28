@@ -1538,9 +1538,8 @@ export function createPluginWorkerHandle(
     loginPtyRoute = route;
 
     route.state = "opening";
-    let openResult: HostToWorkerMethods["loginPtyOpen"][1];
     try {
-      openResult = await callInternal(
+      await callInternal(
         "loginPtyOpen",
         {
           hostRouteId,
@@ -1552,6 +1551,18 @@ export function createPluginWorkerHandle(
           sessionHome: input.sessionHome,
         },
         loginPtyOpenTimeoutMs,
+        undefined,
+        false,
+        (openResult) => {
+          const workerSessionId = readBindableWorkerSessionId(route, openResult);
+          if (loginPtyRoute !== route || !workerSessionId) {
+            throw new Error(LOGIN_PTY_OPEN_FAILED);
+          }
+          // Bind before readline dispatches the next frame in the same chunk.
+          // The await continuation may run after output or even terminalization.
+          route.workerSessionId = workerSessionId;
+          route.state = "open";
+        },
       );
     } catch (err) {
       // A send failure, an RPC rejection, or an open timeout. Terminalize the
@@ -1559,17 +1570,6 @@ export function createPluginWorkerHandle(
       await terminalizeLoginPtyRoute(route);
       throw err instanceof Error ? err : new Error(LOGIN_PTY_OPEN_FAILED);
     }
-
-    const workerSessionId = readBindableWorkerSessionId(route, openResult);
-    if (!workerSessionId) {
-      // A malformed reply, or a route that already left `opening`. A late or a
-      // duplicate reply never binds, revives, or reopens a route.
-      await terminalizeLoginPtyRoute(route);
-      throw new Error(LOGIN_PTY_OPEN_FAILED);
-    }
-    // Bind the worker session identifier one time and move the route to `open`.
-    route.workerSessionId = workerSessionId;
-    route.state = "open";
 
     return {
       onData(listener: (chunk: string) => void): void {
@@ -3207,6 +3207,7 @@ export function createPluginWorkerHandle(
     timeoutMs?: number,
     executeLogSink?: ExecuteLogSink,
     meterDuplexWrite = false,
+    beforeResolve?: (result: HostToWorkerMethods[M][1]) => void,
   ): Promise<HostToWorkerMethods[M][1]> {
     const rpcPromise = new Promise<HostToWorkerMethods[M][1]>((resolve, reject) => {
       if (!childProcess?.stdin?.writable) {
@@ -3261,7 +3262,14 @@ export function createPluginWorkerHandle(
         method,
         resolve: (response: JsonRpcResponse) => {
           if (isJsonRpcSuccessResponse(response)) {
-            settle(resolve, response.result as HostToWorkerMethods[M][1]);
+            settle((result: HostToWorkerMethods[M][1]) => {
+              try {
+                beforeResolve?.(result);
+                resolve(result);
+              } catch (error) {
+                reject(error);
+              }
+            }, response.result as HostToWorkerMethods[M][1]);
           } else if ("error" in response && response.error) {
             settle(reject, new JsonRpcCallError(response.error));
           } else {

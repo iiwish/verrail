@@ -51,6 +51,7 @@ describe("externally observed Node runtime bytes (synthetic processes)", () => {
       manifestSha256: "a".repeat(64), verifierBuildSha256: sha256(await readFile(entry)), directory: f.root,
       privateKey: privateKey.export({ type: "pkcs8", format: "pem" }), node: f.configuration }), { mode: 0o600 });
     const proxy = spawn(process.execPath, [entry], { env: { VERRAIL_RUNTIME_OBSERVER_CONFIG: configPath }, stdio: ["pipe", "pipe", "pipe"] });
+    const proxyExited = once(proxy, "exit");
     let stdout = "", stderr = "";
     proxy.stdout.on("data", chunk => { stdout += chunk; }); proxy.stderr.on("data", chunk => { stderr += chunk; });
     try {
@@ -68,7 +69,9 @@ describe("externally observed Node runtime bytes (synthetic processes)", () => {
       await vi.waitFor(() => expect(stdout).toContain("generated-ready"));
       proxy.kill("SIGUSR2");
       await vi.waitFor(() => expect(stderr).toContain("DELIVERY_RUNTIME_CHECKPOINT_FAILED:generated_script"), { timeout: 15000 });
-      await vi.waitFor(() => expect(proxy.exitCode).toBe(1));
+      // stop() includes a one-second SIGTERM grace period. Await its exit event,
+      // rather than racing that grace period against waitFor's one-second default.
+      await expect(proxyExited).resolves.toEqual([1, null]);
       expect(stderr).not.toContain("private-generated-source");
       expect(await readFile(path.join(f.root, `${sessionId}-server.witness.json`), "utf8"))
         .toBe(JSON.stringify(witness));
