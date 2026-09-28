@@ -117,6 +117,33 @@ function createLocalSandboxRunner() {
 }
 
 describe("codex execute", () => {
+  it("retains the native versioned task brief in the CLI fallback prompt", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "verrail-codex-native-prompt-"));
+    const commandPath = path.join(root, "codex");
+    const capturePath = path.join(root, "capture.json");
+    const previousHome = process.env.HOME;
+    process.env.HOME = root;
+    await seedSharedCodexAuth(root);
+    await writeFakeCodexCommand(commandPath);
+    try {
+      await execute({
+        runId: "native-cli-prompt",
+        agent: { id: "agent-1", companyId: "company-1", name: "Director", adapterType: "codex_local", adapterConfig: {engine: "cli"} },
+        runtime: { sessionId: null, sessionParams: null, sessionDisplayId: null, taskKey: null },
+        config: {engine: "cli", command: commandPath, cwd: root, env: {PAPERCLIP_TEST_CAPTURE_PATH: capturePath}},
+        context: {verrailRunAttemptId: "native-attempt", paperclipTaskMarkdown: "# Pinned AgentVersion\nExact versioned instructions.\n# Native Target\nNo external effects without approval."},
+        onLog: async () => {},
+      });
+      const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
+      expect(capture.prompt).toContain("Exact versioned instructions.");
+      expect(capture.prompt).toContain("No external effects without approval.");
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      await fs.rm(root, {recursive: true, force: true});
+    }
+  });
+
   it("uses a Paperclip-managed CODEX_HOME outside worktree mode while preserving shared auth and config", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-default-"));
     const workspace = path.join(root, "workspace");

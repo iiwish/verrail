@@ -13,6 +13,8 @@
 //     id; a test sets a wrong `sid` to prove the host drops a mismatched
 //     notification.
 //   - `exitCode`: when set, the fixture emits an exit notification after the outputs.
+//   - `coalesced`: emit the open reply and notifications in one NDJSON write.
+//   - `beforeOpen`: emit output and exit before the reply to test the binding gate.
 //   - `closeMode`: "ack" | "bad-ack" | "no-ack" (default "ack"). It controls the
 //     close reply, so a test proves the host retires the worker on an unconfirmed
 //     close.
@@ -71,6 +73,33 @@ rl.on("line", (line) => {
       // Never reply, so the host open call times out.
       return;
     }
+    if (directive.coalesced) {
+      const frames = [];
+      if (directive.beforeOpen) {
+        frames.push(
+          { jsonrpc: "2.0", method: "loginPty.output", params: { workerSessionId, chunk: "before-open" } },
+          { jsonrpc: "2.0", method: "loginPty.exit", params: { workerSessionId, exitCode: 99 } },
+        );
+      }
+      frames.push({
+        jsonrpc: "2.0", id: message.id,
+        result: mode === "malformed-open" ? {} : { workerSessionId },
+      });
+      if (mode === "duplicate-open-reply") {
+        frames.push({ jsonrpc: "2.0", id: message.id, result: { workerSessionId: "ws-EVIL" } });
+      }
+      for (const entry of directive.outputs ?? []) {
+        frames.push({
+          jsonrpc: "2.0", method: "loginPty.output",
+          params: { workerSessionId: entry.sid ?? workerSessionId, chunk: entry.chunk },
+        });
+      }
+      if (typeof directive.exitCode === "number") {
+        frames.push({ jsonrpc: "2.0", method: "loginPty.exit", params: { workerSessionId, exitCode: directive.exitCode } });
+      }
+      process.stdout.write(frames.map((frame) => JSON.stringify(frame)).join("\n") + "\n");
+      return;
+    }
     if (mode === "malformed-open") {
       // Reply with no worker session id, so the host terminalizes the route.
       send({ jsonrpc: "2.0", id: message.id, result: {} });
@@ -85,8 +114,7 @@ rl.on("line", (line) => {
       reply();
     }
 
-    // Emit the scripted output and the exit after the open reply, so the host
-    // binds the route first.
+    // These writes follow the reply, but can still share a parent stdout chunk.
     setImmediate(() => {
       const outputs = Array.isArray(directive.outputs) ? directive.outputs : [];
       for (const entry of outputs) {

@@ -1,0 +1,31 @@
+{
+  "id": "T018-A001",
+  "target_id": "g2-7-production-closure",
+  "task_id": "T018",
+  "agent": "codex",
+  "runner": "local_direct_execute",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "output_commit": null,
+  "branch": "codex/g2-7-production-closure",
+  "changed_files": [
+    "server/src/services/verrail-run-executor.ts",
+    "server/src/services/verrail-run-executor.test.ts",
+    "ui/src/pages/VerrailAgents.tsx",
+    "ui/src/pages/VerrailAgents.test.tsx"
+  ],
+  "commands": [
+    {"command": "native runner focused suite", "status": "passed", "summary": "10 tests passed."},
+    {"command": "VerrailAgents focused suite", "status": "passed", "summary": "4 tests passed."},
+    {"command": "server and UI typecheck", "status": "passed"},
+    {"command": "pnpm check:token-gates", "status": "passed", "summary": "817 files; all four gates clean."},
+    {"command": "git diff --check", "status": "passed"}
+  ],
+  "logs": [
+    ".verrail/targets/g2-7-production-closure/runs/T018-A001/logs/tdd.md",
+    ".verrail/targets/g2-7-production-closure/runs/T018-A001/logs/review.md"
+  ],
+  "errors": [],
+  "summary": "HostTrusted execution now proves the versioned runtime, model and prompt match the actual compatibility executor snapshot before launching Codex."
+}

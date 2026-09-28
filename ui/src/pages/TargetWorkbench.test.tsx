@@ -12,9 +12,27 @@ const getWorkspace = vi.hoisted(() => vi.fn());
 const createConversation = vi.hoisted(() => vi.fn());
 const createRunAttempt = vi.hoisted(() => vi.fn());
 const requestRunCancellation = vi.hoisted(() => vi.fn());
+const runOutboxFailures = vi.hoisted(() => vi.fn());
+const retryRunOutbox = vi.hoisted(() => vi.fn());
+const createGraphRevision = vi.hoisted(() => vi.fn());
+const activateGraphRevision = vi.hoisted(() => vi.fn());
+const createRun = vi.hoisted(() => vi.fn());
+const prepareRepositorySource = vi.hoisted(() => vi.fn());
+const recordDeliveryReview = vi.hoisted(() => vi.fn());
+const acceptSubmission = vi.hoisted(() => vi.fn());
+const approveAction = vi.hoisted(() => vi.fn());
+const executeAction = vi.hoisted(() => vi.fn());
+const getAgentLifecycle = vi.hoisted(() => vi.fn());
 const navigate = vi.hoisted(() => vi.fn());
 const setBreadcrumbs = vi.hoisted(() => vi.fn());
 const route = vi.hoisted(() => ({ targetId: "target-1", tab: "overview", targetRevisionId: undefined as string | undefined }));
+
+// Canvas geometry is verified in-browser; jsdom has no layout observer.
+vi.stubGlobal("ResizeObserver", class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+});
 
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children, ...props }: { to: string; children: React.ReactNode }) => (
@@ -24,7 +42,30 @@ vi.mock("@/lib/router", () => ({
   useParams: () => route,
 }));
 vi.mock("../api/targets", () => ({
-  targetsApi: { get, getRevision, getWorkspace, createConversation, createRunAttempt, requestRunCancellation },
+  targetsApi: {
+    get,
+    getRevision,
+    getWorkspace,
+    createConversation,
+    createRunAttempt,
+    requestRunCancellation,
+    runOutboxFailures,
+    retryRunOutbox,
+    createGraphRevision,
+    activateGraphRevision,
+    createRun,
+    prepareRepositorySource,
+    recordDeliveryReview,
+    acceptSubmission,
+    approveAction,
+    executeAction,
+  },
+}));
+vi.mock("../api/agentLifecycle", () => ({
+  agentLifecycleApi: { get: getAgentLifecycle },
+}));
+vi.mock("../api/companies-query", () => ({
+  useAccountIdentity: () => ({ userId: "owner-1", settled: true }),
 }));
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "workspace-1" }) }));
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs }) }));
@@ -71,6 +112,26 @@ function targetWorkspace() {
     workspaceId: "workspace-1",
     generatedAt: "2026-08-26T10:00:02.000Z",
     graph: { workGraphId: "graph-1", activeGraphRevisionId: "graph-revision-1", status: "active", revisionNumber: 1 },
+    outcome: {
+      state: "open",
+      latestSubmissionId: null,
+      latestReviewId: null,
+      validAcceptanceId: null,
+      effectReceiptIds: [],
+      controls: [],
+    },
+    availableCommands: [
+      { id: "create_graph_revision", state: "available", reason: null, resourceId: "graph-1" },
+      { id: "activate_graph_revision", state: "completed", reason: null, resourceId: "graph-revision-1" },
+      { id: "create_run", state: "blocked", reason: "No ready agent task is available.", resourceId: null },
+      { id: "create_submission", state: "blocked", reason: "Complete work first.", resourceId: null },
+      { id: "record_review", state: "blocked", reason: "A current complete Submission is required.", resourceId: null },
+      { id: "accept_submission", state: "blocked", reason: "A current approved Review is required.", resourceId: null },
+      { id: "request_pull_request", state: "blocked", reason: "A current Submission is required.", resourceId: null },
+      { id: "approve_action", state: "blocked", reason: "An ActionRequest is required.", resourceId: null },
+      { id: "execute_action", state: "blocked", reason: "An approved ActionRequest is required.", resourceId: null },
+      { id: "reconcile_action", state: "blocked", reason: "Only an unknown effect can be reconciled.", resourceId: null },
+    ],
     stages: [
       { key: "define", label: "Define", state: "completed" },
       { key: "execute", label: "Execute", state: "current" },
@@ -98,6 +159,11 @@ function targetWorkspace() {
     evidence: [],
     claims: [],
     verificationResults: [],
+    integrationRuns: [],
+    humanWorkResults: [],
+    actionRequests: [],
+    effectReceipts: [],
+    workspaceBinding: null,
     runs: [],
     timeline: [{
       id: "target:target-1:created",
@@ -323,6 +389,39 @@ function adjudicationFacts() {
   };
 }
 
+const ACTION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const ACTION_PARAMS_HASH = "8f14e45fceea167a5a36dedd4bea2543d4a0d5d7a8df6a8ca3e9d42e3a1f8201";
+
+function actionFact() {
+  return {
+    id: ACTION_ID,
+    targetId: "target-1",
+    submissionId: SUBMISSION_ID_A,
+    actionType: "create_pull_request",
+    params: { title: "Ship governed release", head: "codex/release", base: "main" },
+    paramsHash: ACTION_PARAMS_HASH,
+    expectedCommitRef: "e07fc1f90ae7",
+    status: "approved",
+    providerMarker: null,
+    executionAttemptCount: 0,
+    executionStartedAt: null,
+    lastReconciledAt: null,
+    requestedBy: { principalType: "agent", principalId: "agent-1" },
+    createdAt: "2026-08-26T11:25:00.000Z",
+    updatedAt: "2026-08-26T11:30:00.000Z",
+    approvals: {
+      count: 1,
+      latest: {
+        id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        approvedBy: { principalType: "user", principalId: "owner-1" },
+        paramsHash: ACTION_PARAMS_HASH,
+        createdAt: "2026-08-26T11:30:00.000Z",
+      },
+    },
+    executedReceipt: null,
+  };
+}
+
 async function flushReact() {
   await act(async () => {
     await Promise.resolve();
@@ -426,12 +525,54 @@ describe("TargetWorkbench", () => {
   let root: ReturnType<typeof createRoot>;
 
   beforeEach(() => {
+    runOutboxFailures.mockResolvedValue([]);
     route.targetId = "target-1";
     route.tab = "overview";
     route.targetRevisionId = undefined;
     get.mockResolvedValue(targetModel());
     getRevision.mockResolvedValue(targetModel());
     getWorkspace.mockResolvedValue(targetWorkspace());
+    getAgentLifecycle.mockResolvedValue({
+      schemaVersion: 1,
+      workspaceId: "workspace-1",
+      generatedAt: "2026-09-04T00:00:00.000Z",
+      defaultDeploymentId: "deployment-1",
+      definitions: [{
+        id: "definition-1",
+        workspaceId: "workspace-1",
+        compatibilityAgentId: "agent-42",
+        name: "Delivery Agent",
+        description: null,
+        status: "published",
+        versions: [],
+        evaluations: [],
+        deployments: [{
+          id: "deployment-1",
+          workspaceId: "workspace-1",
+          agentDefinitionId: "definition-1",
+          name: "Production",
+          status: "active",
+          isDefault: true,
+          activeRevision: {
+            id: "deployment-revision-1",
+            workspaceId: "workspace-1",
+            deploymentId: "deployment-1",
+            revisionNumber: 1,
+            agentVersionId: "agent-version-1",
+            evaluationRunId: "evaluation-1",
+            state: "active",
+            runtimeConfig: {},
+            contentHash: "a".repeat(64),
+            createdAt: "2026-09-04T00:00:00.000Z",
+          },
+          revisions: [],
+          createdAt: "2026-09-04T00:00:00.000Z",
+          updatedAt: "2026-09-04T00:00:00.000Z",
+        }],
+        createdAt: "2026-09-04T00:00:00.000Z",
+        updatedAt: "2026-09-04T00:00:00.000Z",
+      }],
+    });
     createConversation.mockResolvedValue({ id: "conversation-1" });
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -441,6 +582,7 @@ describe("TargetWorkbench", () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
@@ -461,9 +603,11 @@ describe("TargetWorkbench", () => {
     await renderWorkbench();
     expect(container.textContent).toContain("Release Verrail");
     expect(container.textContent).toContain("Owner");
-    expect(container.textContent).toContain("Release a governed version");
+    await act(async () => (Array.from(container.querySelectorAll("header button")).find((item) => item.textContent === "Goal and constraints") as HTMLButtonElement).click());
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Release a governed version");
     expect(container.textContent).toContain("Work Graph");
-    expect(container.textContent).toContain("Acceptance");
+    expect(container.textContent).toContain("Delivery");
+    expect(Array.from(container.querySelectorAll('#target-section-select option')).map((option) => option.textContent)).toEqual(["Workbench", "Delivery", "Activity"]);
     expect(container.querySelector('a[href="/VER/issues/VER-1"]')).toBeNull();
     expect(container.textContent).not.toContain("Accepted");
     expect(setBreadcrumbs).toHaveBeenLastCalledWith([
@@ -507,9 +651,25 @@ describe("TargetWorkbench", () => {
     await renderWorkbench();
 
     expect(getWorkspace).toHaveBeenCalledWith("workspace-1", "target-1");
-    expect(container.textContent).toContain("release · Release Verrail");
-    expect(container.textContent).toContain("agent_task · execute");
+    expect(container.querySelector(".target-work-graph")).not.toBeNull();
+    expect(container.textContent).toContain("Agent task");
+    expect(container.textContent).toContain("Running");
+    expect(container.textContent).toContain("Execute");
     expect(container.querySelector('a[href="/VER/issues/VER-1"]')).toBeNull();
+  });
+
+  it("uses the graph for progress and keeps goal details free of repeated header metadata", async () => {
+    route.tab = "stages";
+    await renderWorkbench();
+    expect(container.querySelector(".target-work-graph")).not.toBeNull();
+    expect(Array.from(container.querySelectorAll("summary")).some((item) => item.textContent === "Stages")).toBe(false);
+    const trigger = Array.from(container.querySelectorAll("header button")).find((item) => item.textContent === "Goal and constraints") as HTMLButtonElement;
+    await act(async () => trigger.click());
+    const details = document.querySelector('[role="dialog"]');
+    expect(details?.textContent).toContain("Release a governed version.");
+    expect(details?.textContent).not.toContain("Outcome owner");
+    expect(details?.textContent).not.toContain("Risk");
+    expect(container.querySelector("header")?.textContent).toContain("Owner");
   });
 
   it("opens a server-validated Target-bound conversation", async () => {
@@ -523,6 +683,413 @@ describe("TargetWorkbench", () => {
 
     expect(createConversation).toHaveBeenCalledWith("workspace-1", "target-1");
     expect(navigate).toHaveBeenCalledWith("/chat/conversation-1");
+  });
+
+  it("puts the graph before detailed attention and inspects only the bound command", async () => {
+    const workspace = targetWorkspace();
+    getWorkspace.mockResolvedValue({
+      ...workspace,
+      outcome: { ...workspace.outcome, state: "blocked" },
+      actionRequests: [actionFact()],
+      attention: [{ id: "attention-action", kind: "action_execution_required", severity: "warning", resourceType: "action_request", resourceId: ACTION_ID, workNodeId: null, runId: null, detail: "create_pull_request" }],
+      availableCommands: workspace.availableCommands.map((command) => command.id === "execute_action" ? { ...command, resourceId: ACTION_ID, reason: "An approved ActionRequest and current Acceptance are required." } : command),
+    });
+    await renderWorkbench();
+    const actions = container.querySelector('section[aria-labelledby="target-commands-title"]')!;
+    const graph = container.querySelector(".target-work-graph")!;
+    expect(graph.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(actions.textContent).toContain("current acceptance");
+    expect(actions.textContent).not.toContain("No action available in this view");
+    const inspect = actions.querySelector<HTMLButtonElement>('button[aria-label^="Inspect ·"]')!;
+    await act(async () => inspect.click());
+    expect(container.querySelector('[data-command-id="execute_action"]')?.textContent).toContain("current acceptance");
+    expect(container.querySelector('[data-command-id="create_graph_revision"]')).toBeNull();
+    expect(container.querySelector('[data-command-id="execute_action"]')?.textContent).toContain("Inspect delivery");
+    expect(executeAction).not.toHaveBeenCalled();
+  });
+
+  it("does not show an executing external action as waiting for another write", async () => {
+    getWorkspace.mockResolvedValue({
+      ...targetWorkspace(),
+      actionRequests: [{ ...actionFact(), status: "executing" }],
+      attention: [{ id: "attention-action", kind: "action_execution_required", severity: "warning", resourceType: "action_request", resourceId: ACTION_ID, workNodeId: null, runId: null, detail: null }],
+    });
+    await renderWorkbench();
+    expect(container.textContent).toContain("External action is executing");
+    expect(container.textContent).toContain("do not issue the write again");
+    expect(executeAction).not.toHaveBeenCalled();
+  });
+
+  it("inspects a named deployment beside the graph and opens only the chosen run", async () => {
+    const workspace = targetWorkspace();
+    getWorkspace.mockResolvedValue({ ...workspace, work: [{ ...workspace.work[0], responsiblePrincipal: { principalType: "agent", principalId: "deployment-revision-1" } }], runs: runFixtures() });
+    await renderWorkbench();
+    const select = container.querySelector<HTMLSelectElement>('select[aria-label="Inspect a node"]')!;
+    await act(async () => { select.value = "node-1"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    const inspector = container.querySelector(".target-graph-inspector")!;
+    expect(inspector.textContent).toContain("Production");
+    expect(inspector.querySelector("dl")?.textContent).not.toContain("deployment-revision-1");
+    const run = Array.from(inspector.querySelectorAll("button")).find((button) => button.textContent?.includes("View run"))!;
+    await act(async () => run.click());
+    const runSection = container.querySelector('section[aria-label="View run"]')!;
+    expect(runSection.textContent).toContain("adapter crashed");
+    expect(runSection.textContent).not.toContain("agent-2");
+    expect(container.querySelector(".target-graph-inspector")).toBeNull();
+    expect(createRunAttempt).not.toHaveBeenCalled();
+  });
+
+  it("explains active execution without an empty command catalog", async () => {
+    getWorkspace.mockResolvedValue({ ...targetWorkspace(), runs: [runFixtures()[1]] });
+    await renderWorkbench();
+    const actions = container.querySelector('section[aria-labelledby="target-commands-title"]')!;
+    expect(actions.textContent).toContain("Execution is in progress");
+    expect(actions.querySelectorAll("[data-command-id]")).toHaveLength(0);
+  });
+
+  it("withholds commands when a refresh fails instead of treating cached facts as current", async () => {
+    const workspace = targetWorkspace();
+    getWorkspace.mockResolvedValueOnce({ ...workspace, availableCommands: [{ id: "create_run", state: "available", reason: null, resourceId: "node-1" }] }).mockRejectedValue(new Error("offline"));
+    await renderWorkbench();
+    expect(container.querySelector('[data-command-id="create_run"] button')).not.toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Refresh authoritative facts"]')!.click());
+    await flushReact();
+    expect(container.textContent).toContain("These facts may be outdated");
+    expect(container.querySelector('[data-command-id="create_run"] button')).toBeNull();
+    expect(createRun).not.toHaveBeenCalled();
+  });
+
+  it("closes the node inspector with Escape and returns keyboard focus to the selector", async () => {
+    await renderWorkbench();
+    const select = container.querySelector<HTMLSelectElement>('select[aria-label="Inspect a node"]')!;
+    await act(async () => { select.value = "node-1"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(container.querySelector(".target-graph-inspector")).not.toBeNull();
+    await act(async () => select.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(container.querySelector(".target-graph-inspector")).toBeNull();
+    expect(document.activeElement).toBe(select);
+  });
+
+  it("inspects historical graph versions without offering current run actions", async () => {
+    const workspace = targetWorkspace();
+    getWorkspace.mockResolvedValue({ ...workspace, graphVersions: [
+      { id: workspace.graph!.activeGraphRevisionId!, revisionNumber: 2, status: "active", targetRevisionId: workspace.targetRevisionId, createdAt: workspace.generatedAt, work: workspace.work },
+      { id: "old-graph", revisionNumber: 1, status: "superseded", targetRevisionId: workspace.targetRevisionId, createdAt: workspace.generatedAt, work: [{ ...workspace.work[0], id: "old-node", graphRevisionId: "old-graph", title: "Historical work" }] },
+    ] });
+    await renderWorkbench();
+    expect(container.querySelector(".target-node-grid")).toBeNull();
+    const versions = container.querySelector<HTMLSelectElement>('select[aria-label="Graph version"]')!;
+    await act(async () => { versions.value = "old-graph"; versions.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(container.textContent).toContain("Read-only version");
+    const nodes = container.querySelector<HTMLSelectElement>('select[aria-label="Inspect a node"]')!;
+    await act(async () => { nodes.value = "old-node"; nodes.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(container.querySelector(".target-graph-inspector")?.textContent).toContain("Historical work");
+    expect(container.querySelector(".target-graph-inspector")?.textContent).not.toContain("View run");
+    expect(createRun).not.toHaveBeenCalled();
+  });
+
+  it("keeps version and node inspection available in the expanded graph", async () => {
+    await renderWorkbench();
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Full screen"]')!.click());
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.querySelector(".target-work-graph")).not.toBeNull();
+    const selector = dialog.querySelector<HTMLSelectElement>('select[aria-label="Inspect a node"]')!;
+    await act(async () => { selector.value = "node-1"; selector.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(dialog.querySelector(".target-graph-inspector")).not.toBeNull();
+    await act(async () => dialog.querySelector<HTMLButtonElement>('button[aria-label="Exit full screen"]')!.click());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector(".target-graph-inspector")).not.toBeNull();
+  });
+
+  it("keeps candidate-only commands visible without offering board impersonation", async () => {
+    getWorkspace.mockResolvedValue({
+      ...targetWorkspace(),
+      availableCommands: targetWorkspace().availableCommands.map((command) =>
+        command.id === "create_submission" || command.id === "request_pull_request"
+          ? { ...command, state: "available", reason: null, resourceId: SUBMISSION_ID_A }
+          : command),
+    });
+
+    await renderWorkbench();
+
+    expect(container.textContent).toContain("An authorized Agent or Service must issue this candidate command");
+    expect(Array.from(container.querySelectorAll("button")).some(
+      (button) => button.textContent?.includes("Create submission") || button.textContent?.includes("Request pull request"),
+    )).toBe(false);
+  });
+
+  it("creates separate normal IntegrationTasks for all four compound criteria", async () => {
+    const model = targetModel();
+    const criteria = [
+      { id: "feishu", title: "Feishu intake", proofContract: { schemaVersion: 1, allOf: [{ id: "intake", kind: "independent_verification", phase: "pre_acceptance", assertions: ["intake is bound"] }] } },
+      { id: "execution", title: "Codex and CI", proofContract: { schemaVersion: 1, allOf: [{ id: "ci", kind: "independent_verification", phase: "pre_acceptance", assertions: ["execution passes", "independent CI passes"] }] } },
+      { id: "governance", title: "Human decisions", proofContract: { schemaVersion: 1, allOf: [{ id: "human", kind: "human_governance", phase: "post_governance" }] } },
+      { id: "effect", title: "PR and recovery", proofContract: { schemaVersion: 1, allOf: [{ id: "pr", kind: "pull_request_effect", phase: "post_effect" }, { id: "recovery", kind: "independent_verification", phase: "post_effect", assertions: ["recovery passes", "secrets are not persisted"] }] } },
+    ];
+    get.mockResolvedValue({ ...model, definition: { ...model.definition, acceptanceCriteria: criteria } });
+    createGraphRevision.mockResolvedValue({ graphRevisionId: "new-graph" });
+    await renderWorkbench();
+    await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    const completion = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Delivery task completion"]');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")!.set!.call(completion, "Produce the governed candidate");
+      completion!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const create = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("Create revision"));
+    await act(async () => create?.click());
+    await flushReact();
+    const input = createGraphRevision.mock.calls[0][2];
+    expect(input.nodes).toHaveLength(6);
+    expect(input.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ nodeKey: "verify-0-intake", dependencyNodeKeys: ["deliver"] }),
+      expect.objectContaining({ nodeKey: "verify-1-ci", dependencyNodeKeys: ["deliver"] }),
+      expect.objectContaining({ nodeKey: "verify-3-recovery", dependencyNodeKeys: ["accept"], completionDefinition: JSON.stringify({ criterionKey: "effect", requirementId: "recovery", assertions: ["recovery passes", "secrets are not persisted"] }) }),
+      expect.objectContaining({ nodeKey: "review", dependencyNodeKeys: ["verify-0-intake", "verify-1-ci"] }),
+    ]));
+  });
+
+  it("creates and activates a graph revision, then starts its bound Agent Run", async () => {
+    getWorkspace.mockResolvedValue({
+      ...targetWorkspace(),
+      repositorySourceRequired: true,
+      work: [{ ...targetWorkspace().work[0], status: "ready" }],
+      availableCommands: targetWorkspace().availableCommands.map((command) => {
+        if (command.id === "activate_graph_revision") return { ...command, state: "available", resourceId: "graph-revision-2" };
+        if (command.id === "create_run") return { ...command, state: "available", reason: null, resourceId: "node-1" };
+        return command;
+      }),
+    });
+    createGraphRevision.mockResolvedValue({ schemaVersion: 1, targetId: "target-1", targetRevisionId: "revision-1", workGraphId: "graph-1", graphRevisionId: "graph-revision-2", revisionNumber: 2, replayed: false });
+    activateGraphRevision.mockResolvedValue({ schemaVersion: 1, targetId: "target-1", targetRevisionId: "revision-1", workGraphId: "graph-1", graphRevisionId: "graph-revision-2", revisionNumber: 2, activatedAt: new Date().toISOString(), replayed: false });
+    createRun.mockResolvedValue({ schemaVersion: 1, runId: "run-3", targetId: "target-1", targetRevisionId: "revision-1", graphRevisionId: "graph-revision-1", workNodeId: "node-1", deploymentRevisionId: null, agentVersionId: null, status: "queued", replayed: false });
+
+    await renderWorkbench();
+
+    await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    const deploymentSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Delivery deployment revision"]');
+    expect(deploymentSelect?.value).toBe("deployment-revision-1");
+    const completion = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Delivery task completion"]');
+    expect(completion).not.toBeNull();
+    expect(completion?.maxLength).toBe(4000);
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")!.set!.call(completion, "  Produce a local code snapshot; do not publish.  ");
+      completion!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const createButton = Array.from(container.querySelectorAll("button"))
+      .find((candidate) => candidate.textContent?.includes("Create revision"));
+    await act(async () => createButton?.click());
+    await flushReact();
+
+    expect(createGraphRevision).toHaveBeenCalledWith("workspace-1", "target-1", expect.objectContaining({
+      expectedTargetRevisionId: "revision-1",
+      nodes: expect.arrayContaining([
+        expect.objectContaining({ nodeKey: "deliver", completionDefinition: "Produce a local code snapshot; do not publish.", responsiblePrincipal: { principalType: "agent", principalId: "deployment-revision-1" } }),
+        expect.objectContaining({ nodeKey: "verify", dependencyNodeKeys: ["deliver"] }),
+        expect.objectContaining({ nodeKey: "review", dependencyNodeKeys: ["verify"] }),
+        expect.objectContaining({ nodeKey: "accept", dependencyNodeKeys: ["review"] }),
+      ]),
+    }), expect.any(String));
+
+    const activateButton = Array.from(container.querySelectorAll("button"))
+      .find((candidate) => candidate.textContent === "Activate");
+    await act(async () => activateButton?.click());
+    await flushReact();
+    expect(activateGraphRevision).toHaveBeenCalledWith("workspace-1", "target-1", "graph-revision-2", expect.any(String));
+
+    const unboundStart = Array.from(container.querySelectorAll("button")).find(button => button.textContent?.includes("Start run"));
+    expect(unboundStart?.disabled).toBe(true);
+    await act(async () => unboundStart?.click());
+    expect(createRun).not.toHaveBeenCalled();
+    prepareRepositorySource.mockResolvedValue({ workspaceId: "workspace-1", targetId: "target-1",
+      targetRevisionId: "revision-1", graphRevisionId: "graph-revision-1", repository: "owner/repo",
+      baseCommit: "a".repeat(40), provenanceArtifact: { artifactRevisionId: "source-revision-1" } });
+    const refInput = Array.from(container.querySelectorAll("label")).find(label => label.textContent?.includes("GitHub branch or commit"))?.querySelector("input");
+    expect(refInput).toBeTruthy();
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(refInput, "main");
+      refInput!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => Array.from(container.querySelectorAll("button")).find(button => button.textContent === "Pin source")?.click());
+    await flushReact();
+    expect(prepareRepositorySource).toHaveBeenCalledWith("workspace-1", "target-1", {
+      targetRevisionId: "revision-1", graphRevisionId: "graph-revision-1", ref: "main",
+    }, expect.any(AbortSignal));
+
+    const startButton = Array.from(container.querySelectorAll("button"))
+      .find((candidate) => candidate.textContent?.includes("Start run"));
+    expect(startButton?.disabled).toBe(false);
+    await act(async () => startButton?.click());
+    await flushReact();
+    expect(createRun).toHaveBeenCalledWith(
+      "workspace-1",
+      "target-1",
+      "graph-revision-1",
+      "node-1",
+      { kind: "agent_run", actor: { principalType: "agent", principalId: "agent-1" }, repositorySourceRevisionId: "source-revision-1" },
+      expect.any(String),
+    );
+  });
+
+  it("blocks blank or overlong delivery conditions without issuing a graph command", async () => {
+    await renderWorkbench();
+    await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    const completion = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Delivery task completion"]')!;
+    const button = Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.includes("Create revision"))!;
+    expect(button.disabled).toBe(false);
+    for (const value of ["   ", "x".repeat(4001)]) {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")!.set!.call(completion, value);
+        completion.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      expect(button.disabled).toBe(true);
+      await act(async () => button.click());
+    }
+    expect(createGraphRevision).not.toHaveBeenCalled();
+  });
+
+  it("issues review, acceptance, approval, and execution as separate bound human commands", async () => {
+    route.tab = "delivery";
+    const adjudication = adjudicationFacts();
+    const action = actionFact();
+    getWorkspace.mockResolvedValue({
+      ...targetWorkspace(),
+      ...adjudication,
+      actionRequests: [action],
+      availableCommands: targetWorkspace().availableCommands.map((command) => {
+        if (command.id === "record_review") return { ...command, state: "available", reason: null, resourceId: SUBMISSION_ID_A };
+        if (command.id === "accept_submission") return { ...command, state: "available", reason: null, resourceId: REVIEW_ID_A };
+        if (command.id === "approve_action" || command.id === "execute_action") return { ...command, state: "available", reason: null, resourceId: ACTION_ID };
+        return command;
+      }),
+    });
+    recordDeliveryReview.mockResolvedValue({ schemaVersion: 1, resourceType: "delivery_review", resourceId: REVIEW_ID_A, replayed: false });
+    acceptSubmission.mockResolvedValue({ schemaVersion: 1, resourceType: "acceptance", resourceId: ACCEPTANCE_ID_A, replayed: false });
+    approveAction.mockResolvedValue({ schemaVersion: 1, resourceType: "action_approval", resourceId: action.approvals.latest.id, replayed: false });
+    executeAction.mockResolvedValue({ schemaVersion: 1, resourceType: "effect_receipt", resourceId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", replayed: false });
+
+    await renderWorkbench();
+
+    expect(container.querySelector(`[title="${SUBMISSION_HASH_A}"]`)).not.toBeNull();
+    expect(container.querySelector(`[title="${REVIEW_HASH_A}"]`)).not.toBeNull();
+    expect(container.querySelector(`[title="${ACTION_PARAMS_HASH}"]`)).toBeNull();
+
+    const clickCommand = async (label: string) => {
+      const button = Array.from(container.querySelectorAll("button"))
+        .find((candidate) => candidate.textContent?.includes(label));
+      expect(button, label).toBeDefined();
+      await act(async () => button?.click());
+      await flushReact();
+    };
+
+    await clickCommand("Record review");
+    expect(recordDeliveryReview).toHaveBeenCalledWith("workspace-1", expect.objectContaining({
+      submissionId: SUBMISSION_ID_A,
+      reviewerPrincipalId: "owner-1",
+      verdict: "approved",
+    }), expect.any(String));
+
+    await clickCommand("Accept");
+    expect(acceptSubmission).toHaveBeenCalledWith("workspace-1", {
+      submissionId: SUBMISSION_ID_A,
+      reviewId: REVIEW_ID_A,
+    }, expect.any(String));
+
+    route.tab = "overview";
+    await renderWorkbench();
+    expect(container.querySelector(`[title="${ACTION_PARAMS_HASH}"]`)).not.toBeNull();
+    await clickCommand("Approve");
+    expect(approveAction).toHaveBeenCalledWith("workspace-1", ACTION_ID, expect.objectContaining({
+      approverPrincipalId: "owner-1",
+      paramsHash: ACTION_PARAMS_HASH,
+    }), expect.any(String));
+
+    await clickCommand("Create pull request");
+    expect(executeAction).toHaveBeenCalledWith("workspace-1", ACTION_ID, { actionRequestId: ACTION_ID }, expect.any(String));
+  });
+
+  it("shows a rejected command code and retries the identical command intent", async () => {
+    route.tab = "delivery";
+    const { ApiError } = await import("../api/client");
+    getWorkspace.mockResolvedValue({
+      ...targetWorkspace(),
+      ...adjudicationFacts(),
+      availableCommands: targetWorkspace().availableCommands.map((command) =>
+        command.id === "record_review"
+          ? { ...command, state: "available", reason: null, resourceId: SUBMISSION_ID_A }
+          : command),
+    });
+    recordDeliveryReview
+      .mockRejectedValueOnce(new ApiError("Stale submission", 409, { code: "ADJUDICATION_SUBMISSION_STALE" }))
+      .mockResolvedValueOnce({ schemaVersion: 1, resourceType: "delivery_review", resourceId: REVIEW_ID_A, replayed: false });
+
+    await renderWorkbench();
+    const recordButton = Array.from(container.querySelectorAll("button"))
+      .find((candidate) => candidate.textContent?.includes("Record review"));
+    await act(async () => recordButton?.click());
+    await flushReact();
+
+    expect(container.textContent).toContain("ADJUDICATION_SUBMISSION_STALE");
+    const retryButton = Array.from(container.querySelectorAll("button"))
+      .find((candidate) => candidate.textContent === "Retry");
+    await act(async () => retryButton?.click());
+    await flushReact();
+
+    expect(recordDeliveryReview).toHaveBeenCalledTimes(2);
+    expect(recordDeliveryReview.mock.calls[1]?.[2]).toBe(recordDeliveryReview.mock.calls[0]?.[2]);
+    expect(container.textContent).toContain("authoritative facts were refreshed");
+  });
+
+  it("retries the exact failed event without creating an Attempt and reuses the command key after uncertainty", async () => {
+    route.tab = "runs";
+    getWorkspace.mockResolvedValue({ ...targetWorkspace(), runs: runFixtures() });
+    runOutboxFailures.mockResolvedValue([{ eventId: "event-1", runId: "run-1", eventType: "verrail.run.cancellation_requested.v1", attemptCount: 3, lastError: "unsupported Run event type", createdAt: "2026-09-05T00:00:00Z" }]);
+    retryRunOutbox.mockRejectedValue(new Error("connection lost"));
+    await renderWorkbench();
+    expect(runOutboxFailures).toHaveBeenCalledWith("workspace-1", "target-1");
+    expect(container.textContent).toContain("unsupported Run event type");
+    const button = Array.from(container.querySelectorAll("button")).find((item) => item.textContent === "Retry event delivery");
+    expect(button).toBeDefined();
+    await act(async () => button?.click());
+    await flushReact();
+    await act(async () => button?.click());
+    await flushReact();
+    expect(retryRunOutbox).toHaveBeenCalledTimes(2);
+    expect(retryRunOutbox.mock.calls[0]).toEqual(["workspace-1", "run-1", { eventId: "event-1", expectedAttemptCount: 3 }, expect.any(String)]);
+    expect(retryRunOutbox.mock.calls[1]).toEqual(retryRunOutbox.mock.calls[0]);
+    expect(createRunAttempt).not.toHaveBeenCalled();
+    expect(requestRunCancellation).not.toHaveBeenCalled();
+  });
+
+  it("refreshes asynchronous recovery facts on the Runs tab without allocating another Attempt", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    route.tab = "runs";
+    getWorkspace.mockResolvedValue({ ...targetWorkspace(), runs: [{ ...runFixtures()[0], status: "queued" }] });
+    await renderWorkbench();
+    expect(container.textContent).toContain("Queued");
+    const initialReads = getWorkspace.mock.calls.length;
+
+    getWorkspace.mockResolvedValue({ ...targetWorkspace(), runs: [runFixtures()[0]] });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    await flushReact();
+
+    expect(getWorkspace.mock.calls.length).toBeGreaterThan(initialReads);
+    expect(container.textContent).not.toContain("Queued");
+    expect(Array.from(container.querySelectorAll("button")).some((button) => button.textContent === "Retry")).toBe(true);
+    expect(createRunAttempt).not.toHaveBeenCalled();
+  });
+
+  it("does not poll the full workspace on the Delivery tab", async () => {
+    route.tab = "delivery";
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    await renderWorkbench();
+    const initialReads = getWorkspace.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(getWorkspace).toHaveBeenCalledTimes(initialReads);
+  });
+
+  it("shows outbox read failure rather than treating it as an empty recovery list", async () => {
+    route.tab = "runs";
+    runOutboxFailures.mockRejectedValue(new Error("unavailable"));
+    await renderWorkbench();
+    expect(container.textContent).toContain("Failed to load Run event delivery failures.");
   });
 
   it("runs tab shows attempt fencing, cursor, lease evidence and drives retry and cancel", async () => {
@@ -553,7 +1120,7 @@ describe("TargetWorkbench", () => {
       "workspace-1",
       "run-1",
       expect.objectContaining({
-        executor: expect.objectContaining({ principalType: "service", principalId: "host-trusted-local" }),
+        executor: expect.objectContaining({ principalType: "service", principalId: "verrail-host-runner" }),
       }),
       expect.any(String),
     );
@@ -616,10 +1183,21 @@ describe("TargetWorkbench", () => {
     expect(container.textContent).toContain("Revision 1");
     expect(container.textContent).toContain("Revision 2");
     expect(container.textContent).toContain(CONTENT_HASH_A.slice(0, 12));
-    expect(container.textContent).not.toContain(CONTENT_HASH_A);
+    expect(container.textContent).toContain(`verrail://objects/${CONTENT_HASH_A}`);
     expect(container.querySelector(`[title="${CONTENT_HASH_A}"]`)).not.toBeNull();
     expect(container.querySelector(`[title="${CONTENT_HASH_B}"]`)).not.toBeNull();
     expect(container.textContent).toContain("Run run-1");
+  });
+
+  it("offers downloads only for same-workspace content-addressed artifact revisions", async () => {
+    route.tab = "artifacts";
+    const facts = assuranceFacts();
+    facts.artifacts[0].revisions[0].contentRef = `storage:workspace-1/verrail/run-artifacts/sha256/${CONTENT_HASH_A}`;
+    getWorkspace.mockResolvedValue({ ...targetWorkspace(), ...facts });
+    await renderWorkbench();
+    const downloads = container.querySelectorAll('a[aria-label="Download artifact"]');
+    expect(downloads).toHaveLength(1);
+    expect(downloads[0].getAttribute("href")).toBe("/api/workspaces/workspace-1/artifact-revisions/revision-a1/content");
   });
 
   it("groups verification results and evidence under their claims on the evidence tab", async () => {
@@ -665,8 +1243,7 @@ describe("TargetWorkbench", () => {
     expect(container.textContent).toContain(SUBMISSION_HASH_A.slice(0, 12));
     expect(container.textContent).not.toContain(SUBMISSION_HASH_A);
     expect(container.querySelector(`[title="${SUBMISSION_HASH_A}"]`)).not.toBeNull();
-    expect(container.textContent.indexOf(SUBMISSION_HASH_A.slice(0, 12)))
-      .toBeLessThan(container.textContent.indexOf(SUBMISSION_HASH_B.slice(0, 12)));
+    expect(container.textContent).not.toContain(SUBMISSION_HASH_B.slice(0, 12));
     expect(container.textContent).toContain("agent-1");
     expect(container.textContent).toContain("e07fc1f90ae7");
     expect(container.textContent).toContain("staging · all checks green");
@@ -686,13 +1263,15 @@ describe("TargetWorkbench", () => {
     getWorkspace.mockResolvedValue({ ...targetWorkspace(), ...adjudicationFacts() });
 
     await renderWorkbench();
+    const version = Array.from(container.querySelectorAll("select")).find((select) => Array.from(select.options).some((option) => option.value === SUBMISSION_ID_B))!;
+    await act(async () => { version.value = SUBMISSION_ID_B; version.dispatchEvent(new Event("change", { bubbles: true })); });
 
     expect(container.textContent).toContain("Superseded by a newer submission");
-    expect(container.textContent).toContain("Accepted");
+    expect(container.textContent).not.toContain("Evidence chain is complete");
     expect(container.textContent).toContain(`Submission ${SUBMISSION_HASH_B.slice(0, 12)}`);
     expect(container.querySelector(`[title="${SUBMISSION_HASH_B}"]`)).not.toBeNull();
-    expect(container.textContent).toContain(`Review ${REVIEW_ID_A.slice(0, 12)}`);
-    expect(container.querySelector(`[title="${REVIEW_ID_A}"]`)).not.toBeNull();
+    expect(container.textContent).toContain(`Review ${REVIEW_ID_B.slice(0, 12)}`);
+    expect(container.querySelector(`[title="${REVIEW_ID_B}"]`)).not.toBeNull();
     expect(container.textContent).toContain("Outcome owner");
     expect(container.textContent).toContain("owner-1");
     expect(container.textContent).not.toContain(ACCEPTANCE_HASH_B);
@@ -701,10 +1280,30 @@ describe("TargetWorkbench", () => {
   it("keeps honest empty states for the adjudication tabs without server facts", async () => {
     route.tab = "submission";
     await renderWorkbench();
-    expect(container.textContent).toContain("No immutable submission exists for this target.");
+    expect(container.textContent).toContain("Working artifacts have not been bound to a submission.");
 
     route.tab = "acceptance";
     await renderWorkbench();
-    expect(container.textContent).toContain("No version-bound acceptance has been recorded.");
+    expect(container.textContent).toContain("Working artifacts have not been bound to a submission.");
+  });
+
+  it("binds candidate artifacts and evidence without mixing current or historical decisions", async () => {
+    route.tab = "delivery";
+    getWorkspace.mockResolvedValue({ ...targetWorkspace(), ...assuranceFacts(), ...adjudicationFacts() });
+    await renderWorkbench();
+    expect(container.textContent).toContain("Revision 1");
+    expect(container.textContent).not.toContain("Revision 2");
+    expect(container.textContent).toContain("Verifier verifier.v1");
+    expect(container.textContent).not.toContain("Supported");
+    const version = Array.from(container.querySelectorAll("select")).find((select) => Array.from(select.options).some((option) => option.value === SUBMISSION_ID_B))!;
+    await act(async () => { version.value = SUBMISSION_ID_B; version.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(container.textContent).not.toContain("Revision 1");
+    expect(container.textContent).toContain("Revision 2");
+    expect(container.textContent).not.toContain("Verifier verifier.v1");
+    expect(container.textContent).not.toContain("Evidence chain is complete");
+    await act(async () => { version.value = ""; version.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(container.textContent).toContain("Revision 1");
+    expect(container.textContent).toContain("Revision 2");
+    expect(container.textContent).not.toContain("Superseded by a newer submission");
   });
 });

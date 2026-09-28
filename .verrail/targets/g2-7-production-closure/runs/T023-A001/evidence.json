@@ -1,0 +1,67 @@
+{
+  "task_id": "T023",
+  "attempt_id": "T023-A001",
+  "status": "technical_checks_passed_live_acceptance_pending",
+  "date": "2026-09-05",
+  "scope": "Feishu official SDK long connection with current-configuration host authorization",
+  "red": [
+    "Host ingress tests initially failed because channel-connector-ingress.ts did not exist.",
+    "Long-connection tests initially failed because long-connection.ts did not exist; existing five connector tests passed."
+  ],
+  "green": [
+    { "command": "pnpm --filter @verrail/channel-connector-feishu test", "result": "11 passed" },
+    { "command": "pnpm --filter @paperclipai/plugin-sdk exec vitest run --config vitest.config.ts", "result": "70 passed in 8 files" },
+    { "command": "pnpm exec vitest run server/src/__tests__/channel-connector-host.test.ts server/src/__tests__/channel-connector-ingress.test.ts", "result": "14 passed in 2 files, including real isolated PostgreSQL membership/idempotency checks" },
+    { "command": "pnpm exec vitest run server/src/__tests__/channel-connector-config.test.ts", "result": "2 passed; picker reference accepted, raw credentials and incomplete webhook settings rejected" },
+    { "command": "pnpm --filter @paperclipai/plugin-sdk typecheck", "result": "passed" },
+    { "command": "pnpm --filter @paperclipai/server typecheck", "result": "passed" },
+    { "command": "pnpm --filter @verrail/channel-connector-feishu build", "result": "passed" },
+    { "command": "pnpm -r typecheck", "result": "passed for all 35 workspace projects" },
+    { "command": "go test ./...", "cwd": "services/domain-api", "result": "all packages passed" },
+    { "command": "pnpm check:token-gates", "result": "all gates clean; 817 files scanned" },
+    { "command": "pnpm build", "result": "passed for all workspace projects; CSS highlight, font resolution, mixed imports and large-chunk warnings remain" },
+    { "command": "pnpm --filter @paperclipai/plugin-sdk build", "result": "passed after exporting the two ingress contract types" },
+    { "command": "git diff --check", "result": "passed" }
+  ],
+  "engineering_review": {
+    "status": "self-reviewed, not independent final acceptance",
+    "checks": [
+      "Capability gating and invalid/mismatched invocation scopes tested.",
+      "Background channel RPC drops the expired configuration invocation; scoped secret calls retain it.",
+      "Host checks ready-plugin declaration, active Workspace, current canonical configuration fingerprint and authorized direct-chat sender.",
+      "Long-connection messages, including ordinary messages, require active mapped membership before database writes.",
+      "One app is reserved before asynchronous secret resolution; concurrent setup, replacement, stale callbacks and shutdown are tested.",
+      "SDK errors do not log authenticated request objects; failed host processing rejects the provider callback rather than acknowledging data loss.",
+      "Existing webhook transport keeps its signed encrypted callback requirements."
+    ]
+  },
+  "live_setup": {
+    "base_url": "http://127.0.0.1:3270",
+    "workspace_id": "86679997-3f3a-4477-a2fa-d4da812140ae",
+    "plugin_id": "76346699-baa4-42af-b169-6a7911658b83",
+    "application_id": "cli_a94a4cb0bafadcd4",
+    "application_name": "息壤",
+    "secret_reference_id": "9288895a-65cc-4476-ba7e-31ed5cef9a95",
+    "secret_storage": "Created through the local Secret UI with the local encrypted provider. The existing app credential was copied through transient CUA memory, hidden again in the provider UI and never emitted or recorded.",
+    "direct_chat": "The native Feishu client visibly shows the 息壤 robot direct chat and its dedicated message input.",
+    "connection_saved": false,
+    "test_message_sent": false,
+    "provider_receipts": [],
+    "activation": "User approved transport and test destination. At-action confirmation requested before binding the stored credential and enabling event reception; no response recorded yet."
+  },
+  "pending": [
+    "The Mac locked during browser verification; manual unlock is required before further UI actions.",
+    "Full Vitest is not green: general-server observed two workspace-runtime failures before the run was interrupted to perform focused diagnosis (exit 130). Both named tests passed in the focused replay; no runtime code or tests were changed, and this does not substitute for a green full run.",
+    "Verify the updated configuration picker in the live UI, activate after confirmation, map the observed direct sender to the real active human, and collect real ingress/draft/reply receipts.",
+    "T010 native execution, CI, provider effect and explicit human governance remain open."
+  ],
+  "broad_test_diagnosis": {
+    "failed_suite": "server/src/__tests__/workspace-runtime.test.ts",
+    "initial_result": "154 tests: 2 failed and 10 skipped; suite duration 448.258 seconds, while workspace typecheck/build activity overlapped",
+    "failures": ["persists provisioning before starting and excludes provision time from readiness timeout", "retries a bind race on the next bounded port and persists the selected URL"],
+    "focused_command": "env TMPDIR=/private/tmp pnpm exec vitest run server/src/__tests__/workspace-runtime.test.ts -t 'persists provisioning before|retries a bind race on the next'",
+    "focused_result": "2 passed, 152 skipped, 51.07 seconds",
+    "interpretation": "Failure was not reproduced by the focused run. Timing sensitivity is a hypothesis, not an established root cause.",
+    "cleanup": "The interrupted general-server Vitest process exited and its per-run temporary-process paths were no longer present in the process table."
+  }
+}

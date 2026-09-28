@@ -716,6 +716,18 @@ describe("startServer PAPERCLIP_API_URL handling", () => {
     expect(process.env.PAPERCLIP_RUNTIME_API_URL).toBe("http://my-host.ts.net:3100");
   });
 
+  it("preserves a Docker-published loopback auth port", async () => {
+    loadConfigMock.mockReturnValueOnce(buildTestConfig({
+      port: 3100,
+      authBaseUrlMode: "explicit",
+      authPublicBaseUrl: "http://127.0.0.1:3271",
+    }));
+    detectPortMock.mockResolvedValueOnce(3100);
+    const started = await startServer();
+    expect(started.listenPort).toBe(3100);
+    expect(started.apiUrl).toBe("http://127.0.0.1:3271");
+  });
+
   it("keeps no-port auth public URLs stable when detect-port selects a new port", async () => {
     loadConfigMock.mockReturnValueOnce(buildTestConfig({
       port: 3100,

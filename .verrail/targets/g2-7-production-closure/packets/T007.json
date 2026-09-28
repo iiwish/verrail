@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T007",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T007",
+  "status": "accepted_for_dependency_progression",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T08:24:24Z",
+  "governance_inputs": [
+    ".verrail/targets/g2-7-production-closure/spec.md",
+    ".verrail/targets/g2-7-production-closure/plan.md",
+    ".verrail/targets/g2-7-production-closure/tasks.md",
+    ".verrail/targets/g2-7-production-closure/runs/T006-A001/evidence.json",
+    "docs/operational-ontology.md",
+    "docs/product-design.md"
+  ],
+  "approval_gates": {
+    "intermediate_plan_authority": "delegated_to_codex",
+    "dependency_T006": "accepted_for_dependency_progression",
+    "analysis": "no_critical_or_high_findings"
+  },
+  "work_unit": {
+    "title": "收口 Target 状态、命令、Timeline、Outcome 与 Attention",
+    "goal": "只从 Workspace-scoped PostgreSQL 原生事实重建 Target 状态、Outcome、可用命令、Timeline 和 Attention；任何新 revision、submission 或内容变化都让旧裁决失效，Home 不再借用 Issue 或 Heartbeat 充当 Target 真相源。",
+    "epic": "E003",
+    "requirements": ["AC-06", "AC-07", "AC-08", "AC-09"],
+    "depends_on": ["T006"],
+    "blocks": ["T008", "T010"],
+    "parallel": false
+  },
+  "codebase_context": {
+    "current_gap": "Target status is persisted as draft and copied directly into the read model. Native adjudication and connector facts are visible in the workspace, but they do not yet drive Outcome, invalidation Attention, available commands, or a complete subordinate-fact Timeline. The Home attention feed is still inherited Issue/Heartbeat-centric.",
+    "existing_guards": "TargetRevision, GraphRevision, work results, Artifact/Evidence/Verification, Submission/Review/Acceptance, ActionApproval and EffectReceipt are immutable or explicitly constrained Workspace facts. T006 closes external-effect reconciliation.",
+    "ownership": "PostgreSQL facts remain authoritative. The TypeScript read model derives rebuildable projections and supplies the UI command contract; Go command services keep mutation and authority checks. Projection fields are not command entry points."
+  },
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "allowed_files": [
+      "packages/db/src/schema/verrail_targets.ts",
+      "packages/db/src/schema/verrail_adjudication.ts",
+      "packages/db/src/schema/verrail_connector.ts",
+      "packages/db/src/migrations/**",
+      "packages/shared/src/types/target.ts",
+      "packages/shared/src/types/attention.ts",
+      "packages/shared/src/validators/target.ts",
+      "packages/shared/src/validators/target.test.ts",
+      "packages/shared/src/index.ts",
+      "packages/shared/src/types/index.ts",
+      "services/domain-api/internal/target/model.go",
+      "services/domain-api/internal/target/store.go",
+      "services/domain-api/internal/httpapi/server.go",
+      "server/src/services/target-read-model.ts",
+      "server/src/services/attention.ts",
+      "server/src/services/decision-queues.ts",
+      "server/src/routes/targets.ts",
+      "server/src/routes/attention.ts",
+      "server/src/routes/openapi.ts",
+      "server/src/__tests__/target-read-model.test.ts",
+      "server/src/__tests__/target-routes.test.ts",
+      "server/src/__tests__/attention*.test.ts",
+      "cli/src/__tests__/company-import-export-e2e.test.ts",
+      "ui/src/lib/attention.ts",
+      ".verrail/targets/g2-7-production-closure/runs/T007-A001/**",
+      ".verrail/targets/g2-7-production-closure/timeline.jsonl"
+    ],
+    "authority_rules": [
+      "accepted is derived only when the latest Submission targets the active TargetRevision, all criteria have current passed verification, an approved Review targets that Submission, and a valid outcome-owner Acceptance targets that Review and Submission.",
+      "A later TargetRevision or Submission, changed artifact revision/content binding, failed or inconclusive verification, missing receipt for a requested external action, or unknown effect cannot retain accepted green state.",
+      "Timeline, Attention, stages, Outcome and available commands are rebuildable projections and cannot mutate authoritative facts.",
+      "Every projection query remains Workspace-scoped and the Home feed consumes Target facts directly rather than translating Issue or Heartbeat state."
+    ]
+  },
+  "tdd_plan": {
+    "required": true,
+    "red": "Add projection tests for accepted, blocked, awaiting review/acceptance, newer revision/submission and changed artifact content invalidation, unknown effect, subordinate Timeline events, available commands, and Home native Target attention.",
+    "green": "Add the minimum validity evaluator, Outcome/command contracts, complete native Timeline reconstruction and Target-backed Attention integration.",
+    "refactor": "Centralize active-fact selection and validity predicates so list, workspace and Home use the same deterministic projection."
+  },
+  "validation_loop": {
+    "commands": [
+      "focused shared/server target read-model and attention tests",
+      "pnpm test:domain-api",
+      "pnpm -r typecheck",
+      "pnpm check:token-gates",
+      "pnpm test:run",
+      "pnpm build",
+      "git diff --check"
+    ],
+    "retry_budget": 4
+  },
+  "evidence_contract": {
+    "run_id": "T007-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T007-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T007-A001/evidence.json",
+    "logs": ".verrail/targets/g2-7-production-closure/runs/T007-A001/logs/",
+    "required_items": [
+      "derived state and Outcome matrix",
+      "revision, submission and content invalidation proof",
+      "native-only rebuild query and Home attention proof",
+      "available command and OpenAPI parity",
+      "full verification and residual compatibility risks"
+    ]
+  },
+  "review_contract": {
+    "required": true,
+    "checks": [
+      "accepted cannot be written or projected from stale or partial facts",
+      "invalidations are visible and actionable",
+      "unknown effect blocks closure",
+      "all projections are deterministic and Workspace-scoped",
+      "Home has no Issue/Heartbeat dependency for Target Outcome",
+      "command availability never bypasses command-side authorization"
+    ]
+  },
+  "stop_conditions": [
+    "Accepted state requires trusting mutable UI or inherited Issue/Heartbeat facts.",
+    "Current schema cannot distinguish a current proof from one bound to superseded content without a destructive migration.",
+    "A command availability projection would become an authorization decision rather than an advisory UI contract.",
+    "The projection cannot be rebuilt from scoped PostgreSQL facts."
+  ]
+}

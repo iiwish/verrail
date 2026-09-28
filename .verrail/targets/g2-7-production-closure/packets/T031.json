@@ -1,0 +1,12 @@
+{
+  "task_id": "T031",
+  "status": "needs_review",
+  "technical_checks": "16 项清理与分片测试通过；扩展已核实的 Claude/Codex fixture 类型及路径规范化后，2 项清理测试再次通过。累计 575 个旧测试孤儿 supervisor 经 SIGTERM 清理；没有终止当前原生 Run。全量测试重放仍未通过，不扩大超时。",
+  "goal": "清理已结束测试遗留的 ACP supervisor，并防止稳定测试运行器再次遗留相同进程。",
+  "authority": "G2.7 技术验证与本机测试资源维护；仅限可核实的测试临时根目录。",
+  "allowed_files": ["scripts/cleanup-vitest-processes.mjs", "scripts/__tests__/cleanup-vitest-processes.test.mjs", "scripts/run-vitest-stable.mjs", ".verrail/targets/g2-7-production-closure/**"],
+  "validation": ["路径与进程筛选负例", "真实隔离测试进程清理", "现有稳定分片测试", "超时项复测"],
+  "observations": {"staleFixtureSupervisorsTerminated": 415, "signal": "SIGTERM", "evidence": "runs/T010-A002/stale-test-process-cleanup.json"},
+  "non_goals": ["终止用户应用或当前原生 Run", "扩大测试超时掩盖问题", "清理其他项目进程"],
+  "parallel": false
+}

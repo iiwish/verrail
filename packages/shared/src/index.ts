@@ -1,4 +1,15 @@
 export { agentAdapterTypeSchema, optionalAgentAdapterTypeSchema } from "./adapter-type.js";
+export {
+  DIRECTOR_INSTRUCTIONS_CONFIG_KEY,
+  directorRolePromptSchema,
+  previewDirectorInstructionsSchema,
+  applyDirectorInstructionsSchema,
+  directorInstructionsSnapshotSchema,
+  isWorkspaceDirector,
+  type DirectorInstructionsSnapshot,
+  type ApplyDirectorInstructionsInput,
+  type DirectorInstructionsView,
+} from "./director-instructions.js";
 export { type Collection, type CreateCollectionInput } from "./types/collection.js";
 export { createCollectionSchema } from "./validators/collection.js";
 export {
@@ -13,8 +24,12 @@ export {
   type CreateRunAttemptInputV1,
   type CreateRunAttemptResponseV1,
   type ReportRunEventInputV1,
+  type RunArtifactInputV1,
   type ReportRunEventResponseV1,
   type RequestRunCancellationResponseV1,
+  type RetryRunOutboxInputV1,
+  type RetryRunOutboxResponseV1,
+  type RunOutboxFailureV1,
 } from "./types/execution.js";
 export {
   runtimeProfileV1Schema,
@@ -23,6 +38,7 @@ export {
   reportRunEventSchema,
   requestRunCancellationSchema,
   type CreateRunAttemptInput,
+  retryRunOutboxSchema,
   type ReportRunEventInput,
 } from "./validators/execution.js";
 export {
@@ -32,9 +48,17 @@ export {
   TARGET_STATUSES,
   TARGET_STAGE_KEYS,
   TARGET_RISK_LEVELS,
+  TARGET_OUTCOME_CONTROL_KEYS,
+  TARGET_COMMAND_IDS,
   type TargetStatus,
   type TargetStageKey,
   type TargetRiskLevel,
+  type TargetOutcomeControlKey,
+  type TargetCommandId,
+  type TargetControlState,
+  type TargetOutcomeControlV1,
+  type TargetOutcomeV1,
+  type TargetAvailableCommandV1,
   type TargetAcceptanceCriterionV1,
   type TargetResourceRefV1,
   type CreateTargetInputV1,
@@ -60,6 +84,8 @@ export {
 } from "./types/target.js";
 export {
   targetListQuerySchema,
+  prepareTargetRepositorySourceSchema,
+  type PrepareTargetRepositorySourceInput,
   createTargetSchema,
   createGraphRevisionSchema,
   createRunSchema,
@@ -78,6 +104,7 @@ export {
   TARGET_CREATION_DRAFT_STATUSES,
   type Conversation,
   type ConversationDetail,
+  type SwitchConversationContextResult,
   type ConversationMessage,
   type ConversationMessageRole,
   type ConversationStatus,
@@ -97,6 +124,8 @@ export {
   conversationListQuerySchema,
   createConversationSchema,
   updateConversationSchema,
+  switchConversationContextSchema,
+  type SwitchConversationContextInput,
   sendConversationMessageSchema,
   targetCreationDraftStatusSchema,
   targetDraftResourceRefSchema,
@@ -2677,4 +2706,15 @@ export * from "./validators/assurance.js";
 export * from "./types/adjudication.js";
 export * from "./validators/adjudication.js";
 export * from "./types/connector.js";
+export * from "./types/github-ci-observation.js";
 export * from "./validators/connector.js";
+export * from "./validators/github-fixed-ci-proof.js";
+export * from "./validators/delivery-proof.js";
+export * from "./types/channel.js";
+export * from "./validators/channel.js";
+export * from "./types/criterion-proof.js";
+export * from "./validators/criterion-proof.js";
+export * from "./validators/director.js";
+export * from "./conversation-invocation.js";
+export * from "./execution-gateway.js";
+export * from "./repository-execution.js";

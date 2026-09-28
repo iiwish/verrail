@@ -11,6 +11,21 @@ import (
 
 const ExecutionSchemaVersion = 1
 
+type RunRecoverySnapshot struct {
+	SchemaVersion int       `json:"schemaVersion"`
+	WorkspaceID   string    `json:"workspaceId"`
+	RunID         string    `json:"runId"`
+	TargetID      string    `json:"targetId"`
+	RunStatus     string    `json:"runStatus"`
+	RunAttemptID  string    `json:"runAttemptId"`
+	AttemptNumber int       `json:"attemptNumber"`
+	LeaseID       string    `json:"leaseId"`
+	LeaseStatus   string    `json:"leaseStatus"`
+	FencingToken  int64     `json:"fencingToken"`
+	RecoverAfter  time.Time `json:"recoverAfter"`
+	PendingEvents bool      `json:"pendingEvents"`
+}
+
 type ExecutorPrincipal struct {
 	PrincipalType string `json:"principalType"`
 	PrincipalID   string `json:"principalId"`
@@ -21,6 +36,7 @@ type CreateRunAttemptInput struct {
 	Executor             ExecutorPrincipal `json:"executor"`
 	LeaseDurationSeconds int               `json:"leaseDurationSeconds,omitempty"`
 	GraceDurationSeconds int               `json:"graceDurationSeconds,omitempty"`
+	MaxAttempts          int               `json:"maxAttempts,omitempty"`
 }
 
 type CreateRunAttemptCommand struct {
@@ -30,26 +46,35 @@ type CreateRunAttemptCommand struct {
 }
 
 type CreateRunAttemptResult struct {
-	SchemaVersion int    `json:"schemaVersion"`
-	RunID         string `json:"runId"`
-	RunAttemptID  string `json:"runAttemptId"`
-	LeaseID       string `json:"leaseId"`
-	AttemptNumber int    `json:"attemptNumber"`
-	FencingToken  int64  `json:"fencingToken"`
-	Status        string `json:"status"`
-	LeaseStatus   string `json:"leaseStatus"`
-	ExpiresAt     string `json:"expiresAt"`
-	Replayed      bool   `json:"replayed"`
+	SchemaVersion  int    `json:"schemaVersion"`
+	RunID          string `json:"runId"`
+	RunAttemptID   string `json:"runAttemptId"`
+	LeaseID        string `json:"leaseId"`
+	AttemptNumber  int    `json:"attemptNumber"`
+	FencingToken   int64  `json:"fencingToken"`
+	Status         string `json:"status"`
+	LeaseStatus    string `json:"leaseStatus"`
+	ExpiresAt      string `json:"expiresAt"`
+	GraceExpiresAt string `json:"graceExpiresAt"`
+	Replayed       bool   `json:"replayed"`
+}
+
+type RunArtifactInput struct {
+	Title       string `json:"title"`
+	Kind        string `json:"kind"`
+	ContentHash string `json:"contentHash"`
+	ContentRef  string `json:"contentRef"`
 }
 
 type ReportRunEventInput struct {
-	LeaseID            string         `json:"leaseId"`
-	FencingToken       int64          `json:"fencingToken"`
-	Cursor             int64          `json:"cursor"`
-	EventType          string         `json:"eventType"`
-	EmittedAt          time.Time      `json:"emittedAt"`
-	Payload            map[string]any `json:"payload,omitempty"`
-	ExtendLeaseSeconds int            `json:"extendLeaseSeconds,omitempty"`
+	LeaseID            string             `json:"leaseId"`
+	FencingToken       int64              `json:"fencingToken"`
+	Cursor             int64              `json:"cursor"`
+	EventType          string             `json:"eventType"`
+	EmittedAt          time.Time          `json:"emittedAt"`
+	Payload            map[string]any     `json:"payload,omitempty"`
+	Artifacts          []RunArtifactInput `json:"artifacts,omitempty"`
+	ExtendLeaseSeconds int                `json:"extendLeaseSeconds,omitempty"`
 }
 
 type ReportRunEventCommand struct {
@@ -86,6 +111,43 @@ type RequestRunCancellationResult struct {
 	Replayed      bool   `json:"replayed"`
 }
 
+type RetryRunOutboxInput struct {
+	EventID              string `json:"eventId"`
+	ExpectedAttemptCount int    `json:"expectedAttemptCount"`
+}
+
+type RetryRunOutboxCommand struct {
+	WorkspaceID, RunID, IdempotencyKey, RequestHash string
+	Principal                                       Principal
+	Input                                           RetryRunOutboxInput
+}
+
+type RetryRunOutboxResult struct {
+	SchemaVersion int    `json:"schemaVersion"`
+	RunID         string `json:"runId"`
+	EventID       string `json:"eventId"`
+	Status        string `json:"status"`
+	Replayed      bool   `json:"replayed"`
+}
+
+func ValidateRetryRunOutboxCommand(command *RetryRunOutboxCommand) error {
+	if err := validateSchedulingCommandIdentity(command.WorkspaceID, command.RunID, command.Principal, command.IdempotencyKey); err != nil {
+		return err
+	}
+	if command.Principal.Type != "user" {
+		return forbidden("OUTBOX_RECOVERY_FORBIDDEN", "A Workspace member must explicitly request outbox recovery")
+	}
+	if !uuidPattern.MatchString(command.Input.EventID) || command.Input.ExpectedAttemptCount < 1 {
+		return validation("eventId and a positive expectedAttemptCount are required")
+	}
+	hash, err := hashExecutionInput(struct {
+		RunID string              `json:"runId"`
+		Input RetryRunOutboxInput `json:"input"`
+	}{command.RunID, command.Input})
+	command.RequestHash = hash
+	return err
+}
+
 func hashExecutionInput(input any) (string, error) {
 	payload, err := json.Marshal(input)
 	if err != nil {
@@ -95,20 +157,30 @@ func hashExecutionInput(input any) (string, error) {
 	return hex.EncodeToString(digest[:]), nil
 }
 
+func ValidateExecutorRuntimeProfile(profile, executorID string) error {
+	if profile != "host_trusted" && profile != "repository_sandbox" {
+		return validation("Unsupported RuntimeProfile")
+	}
+	if (profile == "repository_sandbox") != (executorID == "verrail-repository-runner") {
+		return validation("Repository execution requires its dedicated executor and runtime profile")
+	}
+	return nil
+}
+
 func ValidateCreateRunAttemptCommand(command *CreateRunAttemptCommand) error {
 	command.WorkspaceID, command.RunID = strings.TrimSpace(command.WorkspaceID), strings.TrimSpace(command.RunID)
 	command.Principal.Type, command.Principal.ID = strings.TrimSpace(command.Principal.Type), strings.TrimSpace(command.Principal.ID)
 	command.IdempotencyKey = strings.TrimSpace(command.IdempotencyKey)
-	if err := validateCommandIdentity(command.WorkspaceID, command.RunID, command.Principal, command.IdempotencyKey); err != nil {
+	if err := validateSchedulingCommandIdentity(command.WorkspaceID, command.RunID, command.Principal, command.IdempotencyKey); err != nil {
 		return err
-	}
-	if command.Input.RuntimeProfile != "host_trusted" {
-		return validation("G2.2 supports only the host_trusted RuntimeProfile")
 	}
 	command.Input.Executor.PrincipalType = strings.TrimSpace(command.Input.Executor.PrincipalType)
 	command.Input.Executor.PrincipalID = strings.TrimSpace(command.Input.Executor.PrincipalID)
 	if command.Input.Executor.PrincipalType != "service" || command.Input.Executor.PrincipalID == "" || len(command.Input.Executor.PrincipalID) > 200 {
 		return validation("executor must be a bounded service Principal")
+	}
+	if err := ValidateExecutorRuntimeProfile(command.Input.RuntimeProfile, command.Input.Executor.PrincipalID); err != nil {
+		return err
 	}
 	if command.Input.LeaseDurationSeconds == 0 {
 		command.Input.LeaseDurationSeconds = 120
@@ -118,6 +190,9 @@ func ValidateCreateRunAttemptCommand(command *CreateRunAttemptCommand) error {
 	}
 	if command.Input.LeaseDurationSeconds < 15 || command.Input.LeaseDurationSeconds > 3600 || command.Input.GraceDurationSeconds < 0 || command.Input.GraceDurationSeconds > 600 {
 		return validation("lease or grace duration is outside the allowed range")
+	}
+	if command.Input.MaxAttempts < 0 || command.Input.MaxAttempts > 100 {
+		return validation("maxAttempts must be between 1 and 100 when provided")
 	}
 	hash, err := hashExecutionInput(command.Input)
 	command.RequestHash = hash
@@ -147,6 +222,20 @@ func ValidateReportRunEventCommand(command *ReportRunEventCommand) error {
 	if command.Input.Payload == nil {
 		command.Input.Payload = map[string]any{}
 	}
+	if len(command.Input.Artifacts) > 10 || (len(command.Input.Artifacts) > 0 && command.Input.EventType != "succeeded") {
+		return validation("At most 10 Artifacts can be attached to a succeeded event")
+	}
+	for i := range command.Input.Artifacts {
+		artifact := &command.Input.Artifacts[i]
+		input := CreateArtifactInput{TargetID: command.RunID, Title: artifact.Title, Kind: artifact.Kind}
+		if err := ValidateCreateArtifactInput(&input); err != nil {
+			return err
+		}
+		artifact.Title, artifact.Kind = input.Title, input.Kind
+		if artifact.Kind == "external_reference" || !assuranceHashPattern.MatchString(artifact.ContentHash) || artifact.ContentRef != "storage:"+command.WorkspaceID+"/verrail/run-artifacts/sha256/"+artifact.ContentHash {
+			return validation("Run Artifact requires a same-Workspace content-addressed storage reference")
+		}
+	}
 	hash, err := hashExecutionInput(command.Input)
 	command.RequestHash = hash
 	return err
@@ -156,7 +245,7 @@ func ValidateRequestRunCancellationCommand(command *RequestRunCancellationComman
 	command.WorkspaceID, command.RunID = strings.TrimSpace(command.WorkspaceID), strings.TrimSpace(command.RunID)
 	command.Principal.Type, command.Principal.ID = strings.TrimSpace(command.Principal.Type), strings.TrimSpace(command.Principal.ID)
 	command.IdempotencyKey = strings.TrimSpace(command.IdempotencyKey)
-	if err := validateCommandIdentity(command.WorkspaceID, command.RunID, command.Principal, command.IdempotencyKey); err != nil {
+	if err := validateSchedulingCommandIdentity(command.WorkspaceID, command.RunID, command.Principal, command.IdempotencyKey); err != nil {
 		return err
 	}
 	hash, err := hashExecutionInput(map[string]string{"runId": command.RunID})

@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   createGraphRevisionSchema,
+  createRunSchema,
   createTargetSchema,
   targetIdempotencyKeySchema,
   targetListQuerySchema,
   targetReadModelV1Schema,
+  targetWorkspaceV1Schema,
 } from "./target.js";
 
 const nativeReadModel = {
@@ -17,6 +19,16 @@ const nativeReadModel = {
   title: "Ship a governed Target",
   summary: null,
   status: "draft",
+  outcome: {
+    state: "open",
+    latestSubmissionId: null,
+    latestReviewId: null,
+    validAcceptanceId: null,
+    effectReceiptIds: [],
+    controls: [
+      { key: "graph_complete", state: "required", reason: "Activate the graph.", resourceId: null },
+    ],
+  },
   outcomeOwner: { principalType: "user", principalId: "user-1", displayName: "Owner" },
   currentStage: { key: "define", label: "Define" },
   risk: { level: "high" },
@@ -38,6 +50,17 @@ const nativeReadModel = {
 } as const;
 
 describe("native Target validators", () => {
+  it("accepts repository source admission policy while preserving old workspace responses", () => {
+    const workspace = { schemaVersion: 1, targetId: nativeReadModel.targetId,
+      targetRevisionId: nativeReadModel.activeTargetRevisionId, workspaceId: nativeReadModel.workspaceId,
+      generatedAt: nativeReadModel.projectedAt, graph: null, outcome: nativeReadModel.outcome,
+      availableCommands: [], stages: [], work: [], attention: [], submissions: [], artifacts: [], evidence: [], runs: [], timeline: [] };
+    for (const policy of [{}, { repositorySourceRequired: false }, { repositorySourceRequired: true }]) {
+      expect(targetWorkspaceV1Schema.parse({ ...workspace, ...policy })).toEqual({ ...workspace, ...policy });
+    }
+    expect(targetWorkspaceV1Schema.safeParse({ ...workspace, repositorySourceRequired: "false" }).success).toBe(false);
+  });
+
   it("bounds list pagination and rejects unsupported sorting", () => {
     expect(targetListQuerySchema.parse({ limit: "100" }).limit).toBe(100);
     expect(targetListQuerySchema.safeParse({ limit: "101" }).success).toBe(false);
@@ -73,6 +96,15 @@ describe("native Target validators", () => {
   it("bounds Target command idempotency keys", () => {
     expect(targetIdempotencyKeySchema.parse("target:create:1234")).toBe("target:create:1234");
     expect(targetIdempotencyKeySchema.safeParse("short").success).toBe(false);
+  });
+
+  it("does not let IntegrationTask execution masquerade as an Agent Run", () => {
+    expect(createRunSchema.parse({ kind: "agent_run", actor: { principalType: "agent", principalId: "deployment-revision-1" } })).toMatchObject({ kind: "agent_run" });
+    expect(createRunSchema.parse({ kind: "agent_run", actor: { principalType: "agent", principalId: "deployment-revision-1" },
+      repositorySourceRevisionId: "11111111-1111-4111-8111-111111111111" })).toMatchObject({ repositorySourceRevisionId: "11111111-1111-4111-8111-111111111111" });
+    expect(createRunSchema.safeParse({ kind: "agent_run", actor: { principalType: "agent", principalId: "deployment-revision-1" },
+      repositorySourceRevisionId: "latest" }).success).toBe(false);
+    expect(createRunSchema.safeParse({ kind: "integration_run", actor: { principalType: "service", principalId: "connector-1" } }).success).toBe(false);
   });
 
   it("accepts only the native Target read model", () => {

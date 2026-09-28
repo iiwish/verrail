@@ -33,6 +33,36 @@ describe("plugin capability constants", () => {
 });
 
 describe("plugin manifest validators", () => {
+  it("requires Channel Connector V1 to bind a declared webhook and capability", () => {
+    const valid = {
+      id: "verrail.channel-feishu",
+      apiVersion: 1,
+      version: "0.1.0",
+      displayName: "Feishu",
+      description: "Feishu Channel Connector",
+      author: "Verrail",
+      categories: ["connector"],
+      capabilities: ["webhooks.receive"],
+      entrypoints: { worker: "./dist/worker.js" },
+      webhooks: [{ endpointKey: "events", displayName: "Events" }],
+      channelConnectors: [{
+        contractVersion: 1,
+        connectorKey: "feishu",
+        providerKey: "feishu",
+        webhookEndpointKey: "events",
+      }],
+    };
+    expect(pluginManifestV1Schema.parse(valid).channelConnectors).toHaveLength(1);
+    expect(pluginManifestV1Schema.safeParse({
+      ...valid,
+      webhooks: [],
+    }).success).toBe(false);
+    expect(pluginManifestV1Schema.safeParse({
+      ...valid,
+      capabilities: ["events.subscribe"],
+    }).success).toBe(false);
+  });
+
   it("accepts existing-style plugins that do not request access or authorization capabilities", () => {
     const parsed = pluginManifestV1Schema.parse({
       id: "paperclip.compat-dashboard",

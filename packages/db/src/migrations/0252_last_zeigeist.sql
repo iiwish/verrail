@@ -1,0 +1,4 @@
+ALTER TABLE "verrail_criterion_proofs" ADD COLUMN "source_identity_hash" text;--> statement-breakpoint
+ALTER TABLE "verrail_criterion_proofs" ADD COLUMN "source_payload_hash" text;--> statement-breakpoint
+ALTER TABLE "verrail_criterion_proofs" ADD CONSTRAINT "verrail_criterion_proofs_source_uq" UNIQUE("source_identity_hash");--> statement-breakpoint
+ALTER TABLE "verrail_criterion_proofs" ADD CONSTRAINT "verrail_criterion_proofs_source_hash_check" CHECK (("verrail_criterion_proofs"."source_identity_hash" is null and "verrail_criterion_proofs"."source_payload_hash" is null) or ("verrail_criterion_proofs"."source_identity_hash" is not null and "verrail_criterion_proofs"."source_payload_hash" is not null and "verrail_criterion_proofs"."source_identity_hash" ~ '^[0-9a-f]{64}$' and "verrail_criterion_proofs"."source_payload_hash" ~ '^[0-9a-f]{64}$'));

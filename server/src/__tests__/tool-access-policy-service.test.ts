@@ -1515,7 +1515,7 @@ describeEmbeddedPostgres("tool access policy service", () => {
       allowed: false,
       decision: "require_approval",
       reasonCode: "requires_review_changed_tool",
-      matchedPolicyIds: [trustRule.id],
+      matchedPolicyIds: [trustRule.id, ...first.invocation.matchedPolicyIds],
     });
   });
 

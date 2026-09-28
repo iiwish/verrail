@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /Users/iiwish/self/verrail
+
+
+ Test Files  2 passed (2)
+      Tests  17 passed (17)
+   Start at  19:27:09
+   Duration  9.17s (transform 5.15s, setup 242ms, import 4.99s, tests 3.50s, environment 0ms)
+

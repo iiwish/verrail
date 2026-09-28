@@ -1,0 +1,92 @@
+{
+  "id": "g2-7-production-closure",
+  "runtime_target_id": "6164560c-b3bc-4ebe-a9b1-0054433b8d1b",
+  "runtime_target_revision_id": "2d187608-8dcf-4cda-887c-2405bf1d1cfe",
+  "runtime_workspace_id": "c641493c-081c-4607-84ba-0818cd97981a",
+  "title": "G2 Production Closure",
+  "intent": "Close the production G2 exit gate with one real, UI-operable, recoverable GitHub-to-Acceptance delivery loop and reconcile the inherited G1/G2 delivery truth before claiming the milestone complete.",
+  "scope": "Complete the remaining G2 domain, orchestration, product UI, connector, recovery, and evidence obligations needed to demonstrate the signature delivery loop with authenticated principals and a real GitHub effect. One human Outcome Owner may perform the separately recorded review, action-approval, and acceptance decisions when the Submission and ActionRequest are authored by authorized agent or service principals. The target also closes prerequisite G1 creation-entry gaps that prevent an honest G2 production claim.",
+  "depends_on": [
+    "g2-6-loop-verification"
+  ],
+  "non_goals": [
+    "Broad G3 Go replatforming or mechanical translation of mature TypeScript compatibility services",
+    "Production admission of CubeSandbox, Private Runner, Cloud fleet, SSO, SCIM, billing, or regional control cells",
+    "Support for more than one enterprise channel or more than the GitHub SCM connector",
+    "Destructive contract migration before legacy-path usage is measured at zero and rollback is rehearsed",
+    "Merge, deploy, release, or create a ship record without independent review and explicit Outcome Owner acceptance"
+  ],
+  "acceptance_criteria": [
+    "Delivery truth reconciled: G1 and G2 delivery records, reviews, evidence links, and statuses agree with repository and runtime facts; missing evidence is explicit",
+    "Real creation entry points: Web Chat and one enterprise channel connector preserve ordinary conversation and complete explicit Draft confirmation into the same versioned Target contract",
+    "Pinned agent execution: a real Codex execution binds AgentVersion, DeploymentRevision, GraphRevision, TargetRevision, RunAttempt, environment identity, logs, cost, and permissions, and produces a content-addressed code artifact",
+    "Durable graph orchestration: TargetWorkflow actively coordinates ready-node activation, child RunWorkflows, activities, timers, retry, cancellation, gates, and Continue-As-New while PostgreSQL remains authoritative",
+    "Complete work result contracts: IntegrationAttempt and HumanWorkResult are persisted and version-bound; IntegrationRun binds connector version, connection, graph revision, commit, criterion, and provider receipt",
+    "Independent assurance and acceptance: independent CI produces Evidence and VerificationResult for the fixed commit and criteria; a distinct reviewer approves the immutable Submission and the Outcome Owner records Acceptance",
+    "Safe real GitHub effect: short-lived GitHub credentials are resolved without disclosure; an approved pull-request action is created exactly once and records an EffectReceipt, including timeout and UnknownEffect reconciliation",
+    "Invalidation enforced: changing TargetRevision, Submission, artifact content, verification inputs, or action parameters invalidates prior decisions and prevents stale external effects",
+    "Product UI closes the loop: Target Workbench and Attention expose required create, retry, cancel, submit, review, accept, approve, execute, error, and recovery states without manual API or database intervention",
+    "Failure recovery proven: API, Temporal worker, runner, and provider fault demonstrations converge without manual database repair, stale attempts cannot overwrite newer attempts, and external effects are not duplicated",
+    "Release gate green: targeted tests, Go tests, workspace typecheck, full Vitest, production build, replay and rollback checks, browser acceptance, independent review, and Outcome Owner acceptance pass with inspectable evidence"
+  ],
+  "risk_level": "high",
+  "decisions": {
+    "github_test_effect": {
+      "status": "approved",
+      "value": "iiwish/verrail dedicated test branch and one test pull request",
+      "constraint": "No merge or release. Product Review, ActionApproval and Acceptance remain explicit human commands."
+    },
+    "github_credential_boundary": {
+      "status": "approved",
+      "value": "typescript_facade_ephemeral_credential_to_go",
+      "constraint": "The short-lived credential may cross only the authenticated internal request boundary and must never be persisted or logged"
+    },
+    "enterprise_channel": {
+      "status": "approved",
+      "value": "feishu",
+      "constraint": "G2.7 implements one Feishu group or direct-message creation path through the shared channel connector contract"
+    },
+    "human_identity_model": {
+      "status": "resolved",
+      "value": "one_human_with_agent_or_service_submitter_and_requester",
+      "constraint": "Review, action approval, and acceptance remain separate commands and authorities; no fake human accounts or impersonation satisfy production evidence"
+    }
+  },
+  "status": "in_progress",
+  "spec_status": "confirmed",
+  "plan_status": "confirmed",
+  "execution_policy": "intermediate_plan_gates_delegated_to_codex_final_human_acceptance_required",
+  "current_task": "T010",
+  "created_at": "2026-09-04T02:54:34Z",
+  "updated_at": "2026-09-05T11:29:17Z",
+  "blockers": [
+    "Technical work owned by Codex under explicit user delegation: Director v2 has genuine bounded machine EvaluationRun b706d06e-5080-4c92-b0c9-c8b0441a53f9 (8/8 fixed governance smoke cases, cost unknown). T029 pins local cwd to immutable DeploymentRevision and validates trusted native wake binding. New graph/run proof remains outstanding. No human technical configuration is required; final Review, ActionApproval and Acceptance remain human decisions.",
+    "Full Vitest failed: general-server (4753 tests) and UI (4449 tests) passed; two CLI large-archive tests exceeded 5000 ms. The 16-test CLI fixture passed focused replay. Workspaces-b and 146 serialized server suites were not reached. No broad green result is claimed.",
+    "T023 and T024 real Feishu ingress, reply and same-draft Web confirmation passed; these are creation-flow evidence, not final G2 Acceptance.",
+    "T010 still requires real provider receipts, native delivery facts, independent review, and explicit human decisions."
+  ],
+  "runtime_observations": [
+    {
+      "observed_at": "2026-09-05T02:25:00Z",
+      "instance": "verrail-dev",
+      "base_url": "http://127.0.0.1:3270",
+      "workspace_id": "86679997-3f3a-4477-a2fa-d4da812140ae",
+      "target_id": "44cc7194-d8ce-46d3-8626-3da36785eced",
+      "target_revision_id": "674b26ff-7f52-47b2-9c01-a6964c20333f",
+      "graph_revision_id": "af4108ab-8821-4228-9786-5b51117a47a7",
+      "run_id": "52d7048a-37b3-4c01-88fa-ad4251c519d0",
+      "status": "blocked",
+      "note": "Two historical lease-expired attempts remain visible. No native retry, provider mutation, Review, ActionApproval, or Acceptance was performed during T022. Historical runtime IDs above are preserved, not treated as IDs in this instance."
+    },
+    {
+      "observed_at": "2026-09-05T11:29:17Z",
+      "instance": "verrail-dev",
+      "base_url": "http://127.0.0.1:3270",
+      "workspace_id": "86679997-3f3a-4477-a2fa-d4da812140ae",
+      "target_id": "44cc7194-d8ce-46d3-8626-3da36785eced",
+      "run_id": "52d7048a-37b3-4c01-88fa-ad4251c519d0",
+      "status": "blocked",
+      "note": "Audited UI requeue recovered Workflow 7b167f61-ab0d-44bd-a21c-295f3c8005e3. All ten Run outbox events are delivered. One normal retry created attempt 4 (3129468e-fb75-4763-9d90-a778670a2fcf), fence 4, cursor 2, failed with NATIVE_EXECUTION_IDENTITY_INVALID and lease released. No native Codex heartbeat or artifact was produced. No GitHub write, evaluation verdict, Review, ActionApproval or Acceptance was recorded by Codex."
+    }
+  ]
+}

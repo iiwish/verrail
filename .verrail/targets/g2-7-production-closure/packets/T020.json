@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T020",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T020",
+  "status": "accepted_for_dependency_progression",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T17:11:38Z",
+  "work_unit": {
+    "title": "同步 GitHub PR 正文归一化路由测试契约",
+    "goal": "让 Connector 路由测试区分省略正文的外部请求和共享 schema 生成的规范化 Domain API 命令。",
+    "requirements": ["AC-07", "AC-11"],
+    "depends_on": ["T014", "T019"],
+    "blocks": ["T010"]
+  },
+  "reason": "The full Vitest gate stopped because the route test expected the raw body-less payload even though T014 intentionally normalizes an omitted pull-request body to the canonical empty string before Domain API dispatch.",
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "allowed_files": [
+      "server/src/__tests__/connector-routes.test.ts",
+      ".verrail/targets/g2-7-production-closure/**"
+    ],
+    "rules": [
+      "Preserve omission of params.body on the HTTP wire fixture.",
+      "Assert the normalized body passed to the Domain API.",
+      "Do not change product code or validator behavior."
+    ]
+  },
+  "validation_loop": {
+    "commands": [
+      "pnpm --filter @paperclipai/server exec vitest run src/__tests__/connector-routes.test.ts",
+      "pnpm --filter @paperclipai/server typecheck",
+      "git diff --check"
+    ],
+    "retry_budget": 3
+  },
+  "evidence_contract": {
+    "run_id": "T020-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T020-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T020-A001/evidence.json"
+  }
+}

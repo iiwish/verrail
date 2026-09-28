@@ -93,7 +93,10 @@ export function createStorageService(provider: StorageProvider): StorageService 
 
     async putFile(input: PutFileInput): Promise<PutFileResult> {
       assertPutFileInput(input);
-      const objectKey = buildObjectKey(input.companyId, input.namespace, input.originalFilename);
+      const sha256 = hashBuffer(input.body);
+      const objectKey = input.contentAddressed
+        ? `${input.companyId}/${normalizeNamespace(input.namespace)}/sha256/${sha256}`
+        : buildObjectKey(input.companyId, input.namespace, input.originalFilename);
       const byteSize = input.body.length;
       const contentType = input.contentType.trim().toLowerCase();
       await provider.putObject({
@@ -108,7 +111,7 @@ export function createStorageService(provider: StorageProvider): StorageService 
         objectKey,
         contentType,
         byteSize,
-        sha256: hashBuffer(input.body),
+        sha256,
         originalFilename: input.originalFilename,
       };
     },

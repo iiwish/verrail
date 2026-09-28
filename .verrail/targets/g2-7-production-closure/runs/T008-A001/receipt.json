@@ -1,0 +1,52 @@
+{
+  "id": "T008-A001",
+  "target_id": "g2-7-production-closure",
+  "task_id": "T008",
+  "agent": "codex",
+  "runner": "local_direct_execute",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "output_commit": null,
+  "branch": "codex/g2-7-production-closure",
+  "changed_files": [
+    "server/src/services/target-read-model.ts",
+    "server/src/__tests__/target-read-model.test.ts",
+    "ui/src/api/targets.ts",
+    "ui/src/pages/TargetWorkbench.tsx",
+    "ui/src/pages/TargetWorkbench.test.tsx",
+    "ui/src/i18n/locales/en.json",
+    "ui/src/i18n/locales/zh-CN.json",
+    "tests/verrail-acceptance/project-target-work.spec.ts",
+    "tests/verrail-acceptance/screenshots/desktop-1440-target-workbench.png",
+    "tests/verrail-acceptance/screenshots/narrow-desktop-1024-target-workbench.png"
+  ],
+  "commands": [
+    {
+      "command": "focused Target Workbench, Home, Dialog, Attention and authoritative projection tests",
+      "status": "passed",
+      "summary": "5 files and 67 tests passed, including immutable command binding, authoritative refresh, rejection detail and same-key retry."
+    },
+    {
+      "command": "English and Simplified Chinese recursive locale parity",
+      "status": "passed",
+      "summary": "3,389 keys matched in each locale with no missing keys."
+    },
+    {
+      "command": "pnpm -r typecheck; pnpm check:token-gates; pnpm --filter @paperclipai/db check:migrations; pnpm build; git diff --check",
+      "status": "passed",
+      "summary": "All workspaces typechecked; token, migration, production build and whitespace gates passed."
+    },
+    {
+      "command": "VERRAIL_ACCEPTANCE_PORT=3244 pnpm test:e2e:verrail-acceptance",
+      "status": "passed",
+      "summary": "6 browser journeys passed at 1440x900 and 1024x768, with zero captured page errors, console errors, failed network responses or horizontal document overflow."
+    }
+  ],
+  "logs": [
+    ".verrail/targets/g2-7-production-closure/runs/T008-A001/logs/tdd.md",
+    ".verrail/targets/g2-7-production-closure/runs/T008-A001/logs/review.md"
+  ],
+  "errors": [],
+  "summary": "Completed the authority-aware Target Workbench command surface, kept candidate-only commands outside board authority, exposed immutable bindings and recoverable command state, repaired two authoritative projection defects, and proved responsive Home-to-Workbench journeys."
+}

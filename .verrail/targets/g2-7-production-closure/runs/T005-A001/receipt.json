@@ -1,0 +1,56 @@
+{
+  "id": "T005-A001",
+  "target_id": "g2-7-production-closure",
+  "task_id": "T005",
+  "agent": "codex",
+  "runner": "local_direct_execute",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "output_commit": null,
+  "branch": "codex/g2-7-production-closure",
+  "changed_files": [
+    "docs/temporal-target-workflow.md",
+    "services/domain-api/cmd/orchestration-worker/main.go",
+    "services/domain-api/internal/orchestration/activities.go",
+    "services/domain-api/internal/orchestration/config.go",
+    "services/domain-api/internal/orchestration/config_test.go",
+    "services/domain-api/internal/orchestration/contracts.go",
+    "services/domain-api/internal/orchestration/restart_integration_test.go",
+    "services/domain-api/internal/orchestration/store_integration_test.go",
+    "services/domain-api/internal/orchestration/workflow.go",
+    "services/domain-api/internal/orchestration/workflow_test.go",
+    "services/domain-api/internal/target/execution.go",
+    "services/domain-api/internal/target/execution_store.go",
+    "services/domain-api/internal/target/graph.go",
+    "services/domain-api/internal/target/graph_store.go",
+    "services/domain-api/internal/target/graph_test.go"
+  ],
+  "commands": [
+    {
+      "command": "VERRAIL_TEST_DATABASE_URL=<fresh-postgres> go test -count=1 ./...",
+      "status": "passed",
+      "summary": "All Domain API packages passed with PostgreSQL graph, run, lease, fencing, and idempotency integration enabled."
+    },
+    {
+      "command": "VERRAIL_TEST_TEMPORAL_ADDRESS=<local-temporal> go test -count=1 ./internal/orchestration -run 'Test(Target|Run)WorkflowSurvivesWorkerRestartAndReplaysLiveHistory' -v",
+      "status": "passed",
+      "summary": "TargetWorkflow and RunWorkflow resumed after a real worker stop/start and their server histories replayed successfully."
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "34 of 35 workspace projects passed."
+    },
+    {
+      "command": "go vet ./...; git diff --check",
+      "status": "passed"
+    }
+  ],
+  "logs": [
+    ".verrail/targets/g2-7-production-closure/runs/T005-A001/logs/tdd.md",
+    ".verrail/targets/g2-7-production-closure/runs/T005-A001/logs/review.md"
+  ],
+  "errors": [],
+  "summary": "Implemented active Graph reconciliation, deterministic Temporal Activities and child RunWorkflows, recoverable RunAttempt and lease handling, observable cancellation, bounded Continue-As-New state, legacy history version gates, and PostgreSQL-backed duplicate protection."
+}

@@ -39,16 +39,20 @@ export function rewriteUrlPort(rawUrl: string | undefined, port: number): string
  * :8443) must survive untouched: rewriting its port to the internal listen port
  * yields an unreachable URL (scheme/port mismatch) that then propagates to spawned
  * agents as a dead PAPERCLIP_API_URL. (BRO-1558)
+ * When an expected previous port is supplied, only follow that listener's port
+ * change. A different advertised port can belong to Docker or a local proxy.
  */
 export function rewriteLoopbackUrlPort(
   rawUrl: string | undefined,
   port: number,
+  previousPort?: number,
 ): string | undefined {
   if (!rawUrl) return undefined;
   try {
     const parsed = new URL(rawUrl);
     if (!parsed.port) return rawUrl;
     if (!isLoopbackHost(parsed.hostname)) return rawUrl;
+    if (previousPort !== undefined && (parsed.port !== String(previousPort) || port === previousPort)) return rawUrl;
     parsed.port = String(port);
     return parsed.toString();
   } catch {

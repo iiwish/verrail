@@ -1592,7 +1592,12 @@ describeEmbeddedPostgres("tool access service", () => {
       .from(toolActionRequests)
       .where(eq(toolActionRequests.companyId, company.id));
     expect(requests).toHaveLength(2);
-    expect(requests.map((row) => row.status).sort()).toEqual(["approved", "pending"]);
+    expect(requests.map((row) => row.status).sort()).toEqual(["executed", "pending"]);
+    expect(requests.find((row) => row.id === first.body.actionRequestId)).toMatchObject({
+      status: "executed",
+      decidedByUserId: userId,
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
   it("reports a denied ask-first test call as denied without running the tool", async () => {

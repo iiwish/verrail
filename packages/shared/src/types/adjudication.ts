@@ -9,6 +9,7 @@ export const ADJUDICATION_ACCEPTANCE_VALIDITIES = ["valid", "invalid"] as const;
 export const ADJUDICATION_ACCEPTANCE_INVALID_REASONS = [
   "superseded_submission",
   "target_revision_changed",
+  "candidate_changed",
 ] as const;
 
 export type AdjudicationReviewVerdict = (typeof ADJUDICATION_REVIEW_VERDICTS)[number];
@@ -31,6 +32,8 @@ export interface AdjudicationSubmissionV1 {
   id: string;
   targetId: string;
   targetRevisionId: string;
+  /** Missing/null identifies a historical candidate without an explicit Graph binding. */
+  graphRevisionId?: string | null;
   artifactRevisionIds: string[];
   verificationResultIds: string[];
   commitRef: string | null;
@@ -58,8 +61,8 @@ export interface AdjudicationDeliveryReviewV1 {
 /**
  * Outcome-owner settlement of one Submission through one approved
  * DeliveryReview (ontology 153). `validity` is derived, never stored: an
- * acceptance is valid iff its submission is the latest submission for the
- * target and its target revision is still the target's active revision.
+ * acceptance also requires current graph, artifact, verification and Review
+ * bindings. Valid candidate Acceptance alone does not settle the Target Outcome.
  */
 export interface AdjudicationAcceptanceV1 {
   id: string;

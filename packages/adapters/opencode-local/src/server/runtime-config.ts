@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { ControlPlaneCredentialEnvError, isControlPlaneCredentialEnvKey } from "@paperclipai/adapter-utils/control-plane-env";
 import os from "node:os";
 import path from "node:path";
 import { asBoolean } from "@paperclipai/adapter-utils/server-utils";
@@ -129,6 +130,19 @@ export async function prepareOpenCodeRuntimeConfig(input: {
     };
   }
 
+  const notes = [
+    "Injected runtime OpenCode config with permission.external_directory=allow to avoid headless approval prompts.",
+  ];
+  const resolveEnv = (name: string): string | undefined => {
+    if (isControlPlaneCredentialEnvKey(name)) throw new ControlPlaneCredentialEnvError();
+    return input.env[name] ?? process.env[name];
+  };
+  const gatewayProviders = parseProviderConfig(
+    input.env.PAPERCLIP_OPENCODE_PROVIDERS ?? process.env.PAPERCLIP_OPENCODE_PROVIDERS,
+    resolveEnv,
+    notes,
+  );
+
   const sourceConfigDir = path.join(resolveXdgConfigHome(input.env), "opencode");
   const runtimeConfigHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-opencode-config-"));
   const runtimeConfigDir = path.join(runtimeConfigHome, "opencode");
@@ -152,9 +166,6 @@ export async function prepareOpenCodeRuntimeConfig(input: {
   const existingPermission = isPlainObject(existingConfig.permission)
     ? existingConfig.permission
     : {};
-  const notes = [
-    "Injected runtime OpenCode config with permission.external_directory=allow to avoid headless approval prompts.",
-  ];
 
   // Merge gateway/custom provider definitions supplied via PAPERCLIP_OPENCODE_PROVIDERS
   // (a JSON object in OpenCode's `provider` shape). OpenCode resolves a `--model
@@ -163,12 +174,6 @@ export async function prepareOpenCodeRuntimeConfig(input: {
   // gateway model (e.g. an EU LLM gateway exposing OpenAI-compatible /v1) requires a
   // custom provider with an explicit models map. We accept it as config (not
   // hard-coded) so the gateway URL, key env, and model list stay declarative.
-  const resolveEnv = (name: string): string | undefined => input.env[name] ?? process.env[name];
-  const gatewayProviders = parseProviderConfig(
-    input.env.PAPERCLIP_OPENCODE_PROVIDERS ?? process.env.PAPERCLIP_OPENCODE_PROVIDERS,
-    resolveEnv,
-    notes,
-  );
   const existingProvider = isPlainObject(existingConfig.provider) ? existingConfig.provider : {};
   let nextProvider = gatewayProviders
     ? { ...existingProvider, ...gatewayProviders }

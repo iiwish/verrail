@@ -115,6 +115,7 @@ export const verrailDeployments = pgTable(
     name: text("name").notNull(),
     status: text("status").notNull().default("active"),
     isDefault: boolean("is_default").notNull().default(false),
+    isPrimary: boolean("is_primary").notNull().default(false),
     createdByPrincipalType: text("created_by_principal_type").notNull(),
     createdByPrincipalId: text("created_by_principal_id").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -124,6 +125,7 @@ export const verrailDeployments = pgTable(
     idWorkspaceUq: unique("verrail_deployments_id_workspace_uq").on(table.id, table.workspaceId),
     workspaceNameUq: uniqueIndex("verrail_deployments_workspace_name_uq").on(table.workspaceId, table.name),
     workspaceDefaultUq: uniqueIndex("verrail_deployments_workspace_default_uq").on(table.workspaceId).where(sql`${table.isDefault}`),
+    definitionPrimaryUq: uniqueIndex("verrail_deployments_definition_primary_uq").on(table.agentDefinitionId).where(sql`${table.isPrimary}`),
     definitionWorkspaceFk: foreignKey({
       columns: [table.agentDefinitionId, table.workspaceId],
       foreignColumns: [verrailAgentDefinitions.id, verrailAgentDefinitions.workspaceId],
@@ -151,6 +153,7 @@ export const verrailDeploymentRevisions = pgTable(
   },
   (table) => ({
     idWorkspaceUq: unique("verrail_deployment_revisions_id_workspace_uq").on(table.id, table.workspaceId),
+    idVersionWorkspaceUq: unique("verrail_deploy_revisions_id_version_workspace_uq").on(table.id, table.agentVersionId, table.workspaceId),
     deploymentRevisionUq: uniqueIndex("verrail_deployment_revisions_deployment_number_uq").on(table.deploymentId, table.revisionNumber),
     deploymentWorkspaceFk: foreignKey({
       columns: [table.deploymentId, table.workspaceId],

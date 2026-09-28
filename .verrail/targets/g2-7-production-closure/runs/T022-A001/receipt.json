@@ -1,0 +1,35 @@
+{
+  "id": "T022-A001",
+  "target_id": "g2-7-production-closure",
+  "task_id": "T022",
+  "agent": "codex",
+  "runner": "direct_execute",
+  "model": "not exposed by runtime",
+  "status": "blocked_environment",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "output_commit": null,
+  "branch": "codex/g2-7-production-closure",
+  "changed_files": [
+    "server/src/app.ts",
+    "server/src/__tests__/app-vite-dev-routing.test.ts",
+    "doc/DEVELOPING.md",
+    ".verrail/targets/g2-7-production-closure/packets/T022.json",
+    ".verrail/targets/g2-7-production-closure/runs/T022-A001/",
+    ".verrail/targets/g2-7-production-closure/target.json",
+    ".verrail/targets/g2-7-production-closure/tasks.md",
+    ".verrail/targets/g2-7-production-closure/timeline.jsonl"
+  ],
+  "commands": [
+    {"command": "pnpm --filter @paperclipai/server exec vitest run src/__tests__/app-vite-dev-routing.test.ts", "phase": "red", "result": "2 new tests failed because resolveViteCacheDir did not exist; 3 existing tests passed"},
+    {"command": "pnpm --filter @paperclipai/server exec vitest run src/__tests__/app-vite-dev-routing.test.ts src/__tests__/app-hmr-port.test.ts", "phase": "green", "result": "12 tests passed in 2 files"},
+    {"command": "pnpm --filter @paperclipai/server typecheck", "result": "passed before and after the final cache-path refinement"},
+    {"command": "pnpm test:e2e:verrail-acceptance", "attempt": 1, "result": "startup exceeded the 120-second WebServer deadline during initial database setup; no test assertions ran"},
+    {"command": "pnpm test:e2e:verrail-acceptance", "attempt": 2, "result": "5 of 6 passed; first desktop case exceeded its 90-second deadline during cold dependency compilation"},
+    {"command": "pnpm --filter @paperclipai/server exec vitest run src/__tests__/app-vite-dev-routing.test.ts", "phase": "path refinement", "result": "could not import tests: ENOSPC in the Vitest temporary module cache; not a RED assertion result"},
+    {"command": "pnpm --filter @paperclipai/server exec vitest run src/__tests__/app-vite-dev-routing.test.ts src/__tests__/app-hmr-port.test.ts", "phase": "final path refinement", "result": "12 tests passed in 2 files; duration 39.10 seconds"},
+    {"command": "git diff --check", "result": "passed"}
+  ],
+  "logs": ["observations.md"],
+  "errors": ["Browser acceptance is not fully green.", "Host data volume has less than 1 GiB free and produced ENOSPC.", "OrbStack Docker socket is unavailable."],
+  "summary": "Embedded Vite dependency caches are isolated by instance, checkout, and listening endpoint. A nested node_modules/.vite segment preserves source-transform exclusions for optimized dependencies. Existing dirty changes are preserved, including the unrelated connectorRoutes change in app.ts. The restored stack supervisor was stopped after infrastructure became unavailable, without deleting volumes. No output commit, dependency acceptance, or final acceptance is claimed."
+}

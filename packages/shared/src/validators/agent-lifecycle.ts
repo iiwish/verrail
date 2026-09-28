@@ -3,6 +3,10 @@ import { z } from "zod";
 const nullableText = (max: number) => z.string().trim().max(max).nullable().optional();
 const stringList = z.array(z.string().trim().min(1).max(200)).max(200).default([]);
 
+export const publishSavedAgentVersionSchema = z.object({
+  sourceHash: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict();
+
 export const createAgentDefinitionSchema = z.object({
   name: z.string().trim().min(1).max(200),
   description: nullableText(4_000),
@@ -50,14 +54,19 @@ export const createDeploymentSchema = z.object({
 }).strict();
 
 export const reviseDeploymentSchema = z.object({
-  action: z.enum(["pause", "resume", "upgrade", "rollback", "retire", "set_default"]),
+  action: z.enum(["pause", "resume", "upgrade", "rollback", "retire", "set_default", "activate"]),
+  expectedDeploymentRevisionId: z.string().uuid().optional(),
+  expectedPrimaryDeploymentId: z.union([z.string().uuid(), z.literal("none")]).optional(),
   agentVersionId: z.string().uuid().optional(),
   evaluationRunId: z.string().uuid().optional(),
   sourceDeploymentRevisionId: z.string().uuid().optional(),
   runtimeConfig: z.record(z.string(), z.unknown()).optional(),
 }).strict().superRefine((value, context) => {
-  if (value.action === "upgrade" && (!value.agentVersionId || !value.evaluationRunId)) {
+  if (["upgrade", "activate"].includes(value.action) && (!value.agentVersionId || !value.evaluationRunId)) {
     context.addIssue({ code: "custom", message: "Upgrade requires agentVersionId and evaluationRunId" });
+  }
+  if (value.action === "activate" && (!value.expectedDeploymentRevisionId || !value.expectedPrimaryDeploymentId)) {
+    context.addIssue({ code: "custom", message: "Activation requires the observed deployment revision and primary binding" });
   }
   if (value.action === "rollback" && !value.sourceDeploymentRevisionId) {
     context.addIssue({ code: "custom", message: "Rollback requires sourceDeploymentRevisionId" });

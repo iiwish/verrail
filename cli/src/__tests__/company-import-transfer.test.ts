@@ -193,21 +193,25 @@ describe("resolveChunkedImportZip", () => {
   it("takes the chunked path for a binary-heavy folder whose inline body outgrows the threshold", async () => {
     const dir = await makeTempDir();
     const packageDir = path.join(dir, "binary-package");
+    const thresholdBytes = 2 * 1024 * 1024;
+    const blobBytes = Buffer.alloc(1600 * 1024, 3);
     await mkdir(path.join(packageDir, "blobs"), { recursive: true });
     await writeFile(path.join(packageDir, "COMPANY.md"), "# Company\n");
-    // 40 MB of raw blob bytes: under the 48 MB raw threshold, but the inline
-    // JSON body would carry them base64-inflated (~53 MB) — past the
-    // threshold on the estimated request size, so the zip travels chunked.
-    await writeFile(
-      path.join(packageDir, "blobs", "9a1b2c3d"),
-      Buffer.alloc(40 * 1024 * 1024, 3),
-    );
+    // Scale the injectable threshold, keeping raw content below it and
+    // base64 content above it while exercising real archive creation.
+    await writeFile(path.join(packageDir, "blobs", "9a1b2c3d"), blobBytes);
+    expect(blobBytes.length + Buffer.byteLength("# Company\n")).toBeLessThan(thresholdBytes);
+    expect(Buffer.byteLength(blobBytes.toString("base64"))).toBeGreaterThan(thresholdBytes);
 
-    const resolved = await resolveChunkedImportZip(packageDir);
+    const resolved = await resolveChunkedImportZip(packageDir, thresholdBytes);
     expect(resolved).not.toBeNull();
     expect(resolved!.rootPath).toBe("binary-package");
     const archive = await readZipArchive(resolved!.zipBytes);
     expect(Object.keys(archive.files).sort()).toEqual(["COMPANY.md", "blobs/9a1b2c3d"]);
+    expect(archive.files["blobs/9a1b2c3d"]).toMatchObject({
+      encoding: "base64",
+      data: blobBytes.toString("base64"),
+    });
   });
 
   it("keeps a text folder under both the raw and estimated measures inline", async () => {
@@ -226,17 +230,17 @@ describe("resolveChunkedImportZip", () => {
   it("zips an oversized folder in memory with the same walk filters as the inline path", async () => {
     const dir = await makeTempDir();
     const packageDir = path.join(dir, "big-package");
+    const thresholdBytes = 1024 * 1024;
+    const blobBytes = Buffer.alloc(thresholdBytes + 1024, 9);
     await mkdir(path.join(packageDir, "blobs"), { recursive: true });
     await mkdir(path.join(packageDir, ".git"), { recursive: true });
     await writeFile(path.join(packageDir, "COMPANY.md"), "# Company\n");
     await writeFile(path.join(packageDir, "notes.txt"), "not portable\n");
     await writeFile(path.join(packageDir, ".git", "HEAD"), "ref: refs/heads/main\n");
-    await writeFile(
-      path.join(packageDir, "blobs", "4f2d1c9a"),
-      Buffer.alloc(CHUNKED_IMPORT_THRESHOLD_BYTES + 1024, 9),
-    );
+    await writeFile(path.join(packageDir, "blobs", "4f2d1c9a"), blobBytes);
+    expect(blobBytes.length).toBeGreaterThan(thresholdBytes);
 
-    const resolved = await resolveChunkedImportZip(packageDir);
+    const resolved = await resolveChunkedImportZip(packageDir, thresholdBytes);
     expect(resolved).not.toBeNull();
     expect(resolved!.rootPath).toBe("big-package");
 
@@ -245,6 +249,10 @@ describe("resolveChunkedImportZip", () => {
     expect(archive.rootPath).toBe("big-package");
     expect(Object.keys(archive.files).sort()).toEqual(["COMPANY.md", "blobs/4f2d1c9a"]);
     expect(archive.files["COMPANY.md"]).toBe("# Company\n");
+    expect(archive.files["blobs/4f2d1c9a"]).toMatchObject({
+      encoding: "base64",
+      data: blobBytes.toString("base64"),
+    });
   });
 });
 

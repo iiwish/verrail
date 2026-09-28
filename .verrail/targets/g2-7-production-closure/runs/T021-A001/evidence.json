@@ -1,0 +1,38 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T021-A001",
+  "task_id": "T021",
+  "status": "passed_for_dependency_progression",
+  "failure_reproduction": {
+    "command": "pnpm test:e2e:verrail-acceptance",
+    "failure": "A long-lived Domain API owned port 3203. The CLI selected 3211 but Playwright retained 3203 for its health URL, causing a 120-second startup timeout with zero browser tests executed."
+  },
+  "fix": {
+    "default_port": "The runner binds an ephemeral IPv4 loopback socket, captures the assigned available port, closes the probe and propagates that value through VERRAIL_ACCEPTANCE_PORT.",
+    "explicit_override": "A caller-provided VERRAIL_ACCEPTANCE_PORT remains authoritative.",
+    "service_ownership": "No existing process is stopped or reused.",
+    "cleanup": "The isolated PAPERCLIP_HOME is still removed after the Playwright child exits."
+  },
+  "verification": [
+    {
+      "command": "runner contract tests",
+      "status": "passed",
+      "result": "2/2"
+    },
+    {
+      "command": "Verrail Playwright acceptance",
+      "status": "passed",
+      "result": "6/6 in 45.1s"
+    },
+    {
+      "command": "diff gate",
+      "status": "passed"
+    }
+  ],
+  "review": {
+    "critical_or_high_findings": 0,
+    "scope_drift": false,
+    "recommendation": "accept_for_dependency_progression",
+    "reference": ".verrail/targets/g2-7-production-closure/runs/T021-A001/logs/review.md"
+  }
+}

@@ -41,7 +41,7 @@ export function VerrailSidebar() {
   return (
     <aside className="flex h-full min-h-0 w-full flex-col border-r border-border bg-background">
       <div className="flex h-12 shrink-0 items-center gap-2 px-3">
-        <Link to="/home" className="flex min-w-0 flex-1 items-center px-2" aria-label={t("nav.home")}>
+        <Link to="/home" className={`flex min-w-0 flex-1 items-center ${rail ? "justify-center" : "px-2"}`} aria-label={t("nav.home")}>
           <VerrailBrand variant={rail ? "mark" : "lockup"} decorative className="h-5 max-w-full" />
         </Link>
         {!rail && !isMobile && !collapseLocked ? (

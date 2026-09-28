@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadShardDurations, selectGeneralServerShard } from "./general-server-shard.mjs";
+import { cleanupVitestProcessSessions } from "./cleanup-vitest-processes.mjs";
 
 const repoRoot = process.cwd();
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
@@ -16,7 +17,6 @@ const serializedShardDurations = loadShardDurations(
 );
 const serverRoot = path.join(repoRoot, "server");
 const serverSrcDir = path.join(repoRoot, "server", "src");
-const serverTestsDir = path.join(repoRoot, "server", "src", "__tests__");
 const nonServerProjects = [
   "@paperclipai/shared",
   "@paperclipai/skills-catalog",
@@ -24,8 +24,14 @@ const nonServerProjects = [
   "@paperclipai/adapter-utils",
   "@paperclipai/adapter-claude-local",
   "@paperclipai/adapter-codex-local",
+  "@paperclipai/adapter-cursor-cloud",
+  "@paperclipai/adapter-cursor-local",
+  "@paperclipai/adapter-gemini-local",
+  "@paperclipai/adapter-grok-local",
+  "@paperclipai/adapter-kimi-local",
   "@paperclipai/adapter-openclaw-gateway",
   "@paperclipai/adapter-opencode-local",
+  "@paperclipai/adapter-pi-local",
   "@paperclipai/plugin-sdk",
   "@paperclipai/create-paperclip-plugin",
   "@paperclipai/ui",
@@ -289,11 +295,18 @@ function runVitest(args, label) {
   };
   mkdirSync(env.PAPERCLIP_HOME, { recursive: true });
   mkdirSync(env.TMPDIR, { recursive: true });
-  const result = spawnSync("pnpm", ["exec", "vitest", "run", ...sourceOnlyVitestArgs, ...args], {
-    cwd: repoRoot,
-    env,
-    stdio: "inherit",
-  });
+  let result;
+  try {
+    result = spawnSync("pnpm", ["exec", "vitest", "run", ...sourceOnlyVitestArgs, ...args], {
+      cwd: repoRoot,
+      env,
+      stdio: "inherit",
+    });
+  } finally {
+    const signaled = cleanupVitestProcessSessions(testRoot);
+    if (signaled.length > 0) console.log(`[test:run] stopped ${signaled.length} isolated fixture supervisors`);
+    rmSync(testRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  }
   if (result.error) {
     console.error(`[test:run] Failed to start Vitest: ${result.error.message}`);
     process.exit(1);
@@ -400,7 +413,7 @@ function runSerializedSuites(routeTests, shardIndex, shardCount) {
   }
 }
 
-const routeTests = walk(serverTestsDir)
+const routeTests = walk(serverSrcDir)
   .filter((file) => isRouteOrAuthzTest(toRepoPath(file)))
   .map((file) => ({
     repoPath: toRepoPath(file),

@@ -1,0 +1,29 @@
+# syntax=docker/dockerfile:1
+ARG NODE_IMAGE
+FROM ${NODE_IMAGE} AS build
+WORKDIR /src
+RUN corepack enable
+COPY . .
+RUN --mount=type=cache,id=verrail-pnpm-linux-amd64,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+ARG PAPERCLIP_BUILD_COMMIT
+RUN pnpm --filter @paperclipai/server... build \
+    && pnpm --filter @paperclipai/ui build \
+    && cp -a /src /out \
+    && node scripts/prune-maco-runtime.mjs /out
+
+FROM ${NODE_IMAGE}
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates python3 git \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /var/lib/verrail && chown 1000:1000 /var/lib/verrail
+WORKDIR /app
+COPY --from=build /out/ /app/
+COPY docker/maco/runtime_env.py /usr/local/lib/verrail/runtime_env.py
+COPY docker/maco/migrate.mjs /app/server/maco-migrate.mjs
+ENV NODE_ENV=production HOME=/var/lib/verrail PAPERCLIP_HOME=/var/lib/verrail \
+    HOST=0.0.0.0 PORT=3100 SERVE_UI=true VERRAIL_REQUIRE_POSTGRES=true \
+    PAPERCLIP_DEPLOYMENT_MODE=authenticated PAPERCLIP_DEPLOYMENT_EXPOSURE=private \
+    PAPERCLIP_MIGRATION_AUTO_APPLY=false PAPERCLIP_MIGRATION_PROMPT=never
+USER 1000:1000
+ENTRYPOINT ["python3", "/usr/local/lib/verrail/runtime_env.py"]
+CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]

@@ -14,7 +14,7 @@ type executionCommandMeta struct {
 	Principal                                             Principal
 }
 
-func beginExecutionCommand[T any](ctx context.Context, store *Store, meta executionCommandMeta, requireHuman bool) (pgx.Tx, *T, error) {
+func beginExecutionCommand[T any](ctx context.Context, store *Store, meta executionCommandMeta, requireSchedulingScope bool) (pgx.Tx, *T, error) {
 	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return nil, nil, err
@@ -54,8 +54,8 @@ func beginExecutionCommand[T any](ctx context.Context, store *Store, meta execut
 		_ = tx.Rollback(ctx)
 		return nil, nil, err
 	}
-	if requireHuman {
-		if err := assertCreateScope(ctx, tx, CreateCommand{WorkspaceID: meta.WorkspaceID, Principal: meta.Principal}); err != nil {
+	if requireSchedulingScope {
+		if err := assertSchedulingScope(ctx, tx, meta.WorkspaceID, meta.Principal); err != nil {
 			_ = tx.Rollback(ctx)
 			return nil, nil, err
 		}
@@ -110,14 +110,37 @@ func (store *Store) CreateRunAttempt(ctx context.Context, command CreateRunAttem
 		return CreateRunAttemptResult{}, &Error{Status: 409, Code: "RUN_TERMINAL_OR_CANCELING", Message: "Run cannot create another Attempt"}
 	}
 	now := time.Now().UTC()
-	var latestAttemptID, latestAttemptStatus, latestLeaseID, latestLeaseStatus string
-	var latestGraceExpiresAt time.Time
-	err = tx.QueryRow(ctx, `select attempt.id,attempt.status,lease.id,lease.status,lease.grace_expires_at from verrail_run_attempts attempt join verrail_execution_leases lease on lease.run_attempt_id=attempt.id and lease.workspace_id=attempt.workspace_id where attempt.run_id=$1 and attempt.workspace_id=$2 order by attempt.attempt_number desc limit 1 for update of attempt,lease`, command.RunID, command.WorkspaceID).Scan(&latestAttemptID, &latestAttemptStatus, &latestLeaseID, &latestLeaseStatus, &latestGraceExpiresAt)
+	var latestAttemptID, latestAttemptStatus, latestExecutorID, latestRuntimeProfile string
+	var latestLeaseID, latestLeaseStatus string
+	var latestAttemptNumber int
+	var latestFencingToken int64
+	var latestExpiresAt, latestGraceExpiresAt time.Time
+	err = tx.QueryRow(ctx, `select attempt.id,attempt.status,attempt.attempt_number,attempt.fencing_token,attempt.executor_principal_id,attempt.runtime_profile,lease.id,lease.status,lease.expires_at,lease.grace_expires_at from verrail_run_attempts attempt join verrail_execution_leases lease on lease.run_attempt_id=attempt.id and lease.workspace_id=attempt.workspace_id where attempt.run_id=$1 and attempt.workspace_id=$2 order by attempt.attempt_number desc limit 1 for update of attempt,lease`, command.RunID, command.WorkspaceID).Scan(&latestAttemptID, &latestAttemptStatus, &latestAttemptNumber, &latestFencingToken, &latestExecutorID, &latestRuntimeProfile, &latestLeaseID, &latestLeaseStatus, &latestExpiresAt, &latestGraceExpiresAt)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return CreateRunAttemptResult{}, err
 	}
 	if err == nil && latestAttemptStatus != "succeeded" && latestAttemptStatus != "failed" && latestAttemptStatus != "canceled" && latestAttemptStatus != "superseded" {
-		if latestGraceExpiresAt.After(now) {
+		leaseRecoverable := latestLeaseStatus == "offered" || latestLeaseStatus == "active" || latestLeaseStatus == "suspect"
+		if leaseRecoverable && latestGraceExpiresAt.After(now) {
+			if command.Principal.Type == "service" && latestExecutorID == command.Input.Executor.PrincipalID && latestRuntimeProfile == command.Input.RuntimeProfile {
+				result := CreateRunAttemptResult{
+					SchemaVersion:  ExecutionSchemaVersion,
+					RunID:          command.RunID,
+					RunAttemptID:   latestAttemptID,
+					LeaseID:        latestLeaseID,
+					AttemptNumber:  latestAttemptNumber,
+					FencingToken:   latestFencingToken,
+					Status:         latestAttemptStatus,
+					LeaseStatus:    latestLeaseStatus,
+					ExpiresAt:      latestExpiresAt.Format(time.RFC3339Nano),
+					GraceExpiresAt: latestGraceExpiresAt.Format(time.RFC3339Nano),
+					Replayed:       true,
+				}
+				if err := tx.Commit(ctx); err != nil {
+					return result, err
+				}
+				return result, nil
+			}
 			return CreateRunAttemptResult{}, &Error{Status: 409, Code: "ACTIVE_RUN_ATTEMPT_EXISTS", Message: "The current RunAttempt still owns an execution lease"}
 		}
 		if _, err := tx.Exec(ctx, `update verrail_execution_leases set status='expired',released_at=$1,updated_at=$1 where id=$2`, now, latestLeaseID); err != nil {
@@ -126,6 +149,9 @@ func (store *Store) CreateRunAttempt(ctx context.Context, command CreateRunAttem
 		if _, err := tx.Exec(ctx, `update verrail_run_attempts set status='superseded',error_code='LEASE_EXPIRED',error_message='Execution lease expired before recovery',finished_at=$1,updated_at=$1 where id=$2`, now, latestAttemptID); err != nil {
 			return CreateRunAttemptResult{}, err
 		}
+	}
+	if command.Input.MaxAttempts > 0 && attemptCount >= command.Input.MaxAttempts {
+		return CreateRunAttemptResult{}, &Error{Status: 409, Code: "RUN_ATTEMPTS_EXHAUSTED", Message: "Run has exhausted its configured Attempt limit"}
 	}
 	var attemptNumber int
 	var fencingToken int64
@@ -148,7 +174,7 @@ func (store *Store) CreateRunAttempt(ctx context.Context, command CreateRunAttem
 	if _, err := tx.Exec(ctx, `update verrail_work_nodes set status='running',updated_at=$1 where id=$2`, now, workNodeID); err != nil {
 		return CreateRunAttemptResult{}, err
 	}
-	result := CreateRunAttemptResult{SchemaVersion: ExecutionSchemaVersion, RunID: command.RunID, RunAttemptID: attemptID, LeaseID: leaseID, AttemptNumber: attemptNumber, FencingToken: fencingToken, Status: "pending", LeaseStatus: "offered", ExpiresAt: expiresAt.Format(time.RFC3339Nano)}
+	result := CreateRunAttemptResult{SchemaVersion: ExecutionSchemaVersion, RunID: command.RunID, RunAttemptID: attemptID, LeaseID: leaseID, AttemptNumber: attemptNumber, FencingToken: fencingToken, Status: "pending", LeaseStatus: "offered", ExpiresAt: expiresAt.Format(time.RFC3339Nano), GraceExpiresAt: graceExpiresAt.Format(time.RFC3339Nano)}
 	if err := finishExecutionCommand(ctx, tx, meta, result, targetID, command.RunID, attemptID, "run.attempt_created", "verrail.run.attempt_changed.v1"); err != nil {
 		return result, err
 	}
@@ -192,8 +218,8 @@ func (store *Store) ReportRunEvent(ctx context.Context, command ReportRunEventCo
 		}
 		return baseResult, nil
 	}
-	err = tx.QueryRow(ctx, `select content_hash from verrail_run_events where run_attempt_id=$1 and cursor=$2`, command.RunAttemptID, command.Input.Cursor).Scan(&existingHash)
-	if err == nil {
+	lookupErr := tx.QueryRow(ctx, `select content_hash from verrail_run_events where run_attempt_id=$1 and cursor=$2`, command.RunAttemptID, command.Input.Cursor).Scan(&existingHash)
+	if lookupErr == nil {
 		if existingHash != command.RequestHash {
 			return ReportRunEventResult{}, &Error{Status: 409, Code: "RUN_EVENT_CURSOR_CONFLICT", Message: "Cursor already contains a different event"}
 		}
@@ -203,8 +229,8 @@ func (store *Store) ReportRunEvent(ctx context.Context, command ReportRunEventCo
 		}
 		return baseResult, nil
 	}
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return ReportRunEventResult{}, err
+	if lookupErr != nil && !errors.Is(lookupErr, pgx.ErrNoRows) {
+		return ReportRunEventResult{}, lookupErr
 	}
 	if command.Input.Cursor != lastCursor+1 {
 		baseResult.RejectionCode = rejection("EVENT_CURSOR_GAP")
@@ -256,7 +282,14 @@ func (store *Store) ReportRunEvent(ctx context.Context, command ReportRunEventCo
 		}
 		return baseResult, nil
 	}
-	payload, _ := json.Marshal(command.Input.Payload)
+	storedPayload := make(map[string]any, len(command.Input.Payload)+1)
+	for key, value := range command.Input.Payload {
+		storedPayload[key] = value
+	}
+	if len(command.Input.Artifacts) > 0 {
+		storedPayload["artifacts"] = command.Input.Artifacts
+	}
+	payload, _ := json.Marshal(storedPayload)
 	eventID, _ := NewUUID()
 	if _, err := tx.Exec(ctx, `insert into verrail_run_events(id,workspace_id,run_id,run_attempt_id,cursor,fencing_token,event_type,payload,content_hash,emitted_at) values($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)`, eventID, command.WorkspaceID, command.RunID, command.RunAttemptID, command.Input.Cursor, command.Input.FencingToken, command.Input.EventType, payload, command.RequestHash, command.Input.EmittedAt); err != nil {
 		return ReportRunEventResult{}, err
@@ -299,6 +332,9 @@ func (store *Store) ReportRunEvent(ctx context.Context, command ReportRunEventCo
 	case "succeeded":
 		if leaseStatus != "active" || attemptStatus != "running" {
 			return ReportRunEventResult{}, &Error{Status: 409, Code: "INVALID_ATTEMPT_TRANSITION", Message: "Success requires a running Attempt"}
+		}
+		if err := insertRunArtifacts(ctx, tx, command, targetID, workNodeID); err != nil {
+			return ReportRunEventResult{}, err
 		}
 		attemptStatus, runStatus, leaseStatus = "succeeded", "succeeded", "released"
 		_, err = tx.Exec(ctx, `update verrail_run_attempts set status='succeeded',result=$1::jsonb,finished_at=$2,updated_at=$2 where id=$3`, payload, now, command.RunAttemptID)

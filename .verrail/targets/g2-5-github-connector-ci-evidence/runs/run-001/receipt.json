@@ -1,0 +1,46 @@
+{
+  "id": "run-001",
+  "target_id": "g2-5-github-connector-ci-evidence",
+  "agent": "sisyphus",
+  "runner": "historical_local_execution",
+  "model": "unknown",
+  "status": "completed_reconstructed_from_existing_evidence",
+  "retrospective": true,
+  "reconstructed_at": "2026-09-04T03:34:10Z",
+  "base_commit": "5162c89a17c3580b3522ddf98fd0e164f96290ae",
+  "output_commit": null,
+  "landed_commit": "f387757e46af936a4cdd710fbb804b3c0843a01e",
+  "branch": "historical_pr_12_branch_unknown",
+  "changed_files": [
+    "packages/db/src/schema/verrail_connector.ts",
+    "packages/db/src/migrations/0241_easy_may_parker.sql",
+    "packages/shared/src/types/connector.ts",
+    "packages/shared/src/validators/connector.ts",
+    "services/domain-api/internal/target/connector.go",
+    "services/domain-api/internal/target/connector_store.go",
+    "services/domain-api/internal/target/connector_test.go",
+    "server/src/routes/connector.ts",
+    "server/src/services/target-read-model.ts"
+  ],
+  "commands": [
+    {
+      "command": "schema, Go fake-connector, shared, facade, read-model, and repository verification recorded in evidence/review",
+      "status": "passed_as_recorded"
+    },
+    {
+      "command": "browser acceptance with seeded connector facts",
+      "status": "passed_as_recorded",
+      "summary": "The action remained pending and no real GitHub EffectReceipt was created, consistent with this slice's explicit non-goal."
+    }
+  ],
+  "logs": [],
+  "errors": [],
+  "reconstruction_sources": [
+    ".verrail/targets/g2-5-github-connector-ci-evidence/runs/run-001/evidence.json",
+    ".verrail/targets/g2-5-github-connector-ci-evidence/timeline.jsonl",
+    ".verrail/targets/g2-5-github-connector-ci-evidence/reviews/independent-review.md",
+    "git commit f387757e46af936a4cdd710fbb804b3c0843a01e"
+  ],
+  "uncertainty": "The exact attempt output commit, branch name, and original model were not recorded; the landed merge commit is known.",
+  "summary": "Retrospective receipt for the GitHub connector interface, CI evidence, governed PR action, and review fixes."
+}

@@ -1,0 +1,33 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T016-A001",
+  "task_id": "T016",
+  "status": "passed_for_dependency_progression",
+  "failure_reproduction": {
+    "observed_run_id": "52d7048a-37b3-4c01-88fa-ad4251c519d0",
+    "cause": "Temporal created native RunAttempts and offered HostTrusted leases, but no process consumed them; leases expired without starting Codex."
+  },
+  "implementation": {
+    "claim_boundary": "verrail-host-runner submits claimed through the authenticated Go Domain API before heartbeat dispatch.",
+    "identity_checks": "Workspace, active Deployment and DeploymentRevision, Run/Attempt/Version bindings, AgentDefinition compatibility Agent and runtime adapter must agree.",
+    "durable_correlation": "heartbeat_runs.context_snapshot stores verrailRunAttemptId and the runner reuses it after restart.",
+    "lifecycle": "Queued work renews without claiming execution started; running work emits started and renewals; success, failure and cancellation are mapped to authoritative native events.",
+    "prompt": "Native Target goal, constraints, acceptance criteria and WorkNode completion definition survive heartbeat preparation without a legacy Issue."
+  },
+  "verification": [
+    {"command": "native runner focused suite", "status": "passed", "result": "8/8"},
+    {"command": "server typecheck", "status": "passed"},
+    {"command": "Go Domain API suite", "status": "passed"},
+    {"command": "integrated server startup", "status": "passed"},
+    {"command": "git diff and JSON gates", "status": "passed"}
+  ],
+  "review": {
+    "critical_or_high_findings": 0,
+    "recommendation": "accept_for_dependency_progression",
+    "reference": ".verrail/targets/g2-7-production-closure/runs/T016-A001/logs/review.md"
+  },
+  "residual_risks": [
+    "A real Codex native run is intentionally deferred until deployment resume admission rejects inconclusive evaluations.",
+    "T010 must rerun the three unrelated adapter-utils failures from the latest full Vitest attempt before release closure."
+  ]
+}

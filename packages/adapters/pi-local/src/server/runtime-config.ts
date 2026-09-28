@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { ControlPlaneCredentialEnvError, isControlPlaneCredentialEnvKey } from "@paperclipai/adapter-utils/control-plane-env";
 import os from "node:os";
 import path from "node:path";
 
@@ -79,7 +80,8 @@ function parseProviderConfig(
         ? `PAPERCLIP_PI_PROVIDERS: skipped provider(s) with non-object values: ${skipped.join(", ")}.`
         : null,
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof ControlPlaneCredentialEnvError) throw error;
     return {
       providers: null,
       warning: "PAPERCLIP_PI_PROVIDERS contains invalid JSON; custom providers ignored.",
@@ -107,7 +109,10 @@ function parseProviderConfig(
 export async function preparePiRuntimeConfig(input: {
   env: Record<string, string>;
 }): Promise<PreparedPiRuntimeConfig> {
-  const resolveEnv = (name: string): string | undefined => input.env[name] ?? process.env[name];
+  const resolveEnv = (name: string): string | undefined => {
+    if (isControlPlaneCredentialEnvKey(name)) throw new ControlPlaneCredentialEnvError();
+    return input.env[name] ?? process.env[name];
+  };
   const { providers, warning } = parseProviderConfig(
     input.env.PAPERCLIP_PI_PROVIDERS ?? process.env.PAPERCLIP_PI_PROVIDERS,
     resolveEnv,

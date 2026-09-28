@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TargetReadModelV1 } from "@paperclipai/shared";
-import { AlertTriangle, FolderKanban, Network, Plus, Target } from "lucide-react";
+import { AlertTriangle, Archive, FolderKanban, Network, Plus, Target } from "lucide-react";
 import { EmptyState } from "../components/EmptyState";
 import { EntityRow } from "../components/EntityRow";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -17,7 +17,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { formatDateTime } from "../lib/utils";
 import { Link, useSearchParams } from "../lib/router";
 
-type TargetView = "all" | "open" | "attention";
+type TargetView = "all" | "open" | "attention" | "archived";
 
 function isOpenTarget(target: TargetReadModelV1) {
   return target.status !== "accepted" && target.status !== "canceled";
@@ -36,14 +36,26 @@ export function Targets() {
     queryFn: () => targetsApi.list(selectedCompanyId!, { limit: 100, collectionId }),
     enabled: Boolean(selectedCompanyId),
   });
+  const isSpecialView = view === "archived" || view === "attention";
+  const specialOptions = view === "archived"
+    ? { limit: 100, archiveState: "archived" as const, collectionId }
+    : { limit: 100, archiveState: "all" as const, attention: true, collectionId };
+  const specialQuery = useQuery({
+    queryKey: queryKeys.targets.list(selectedCompanyId ?? "__none__", collectionId, specialOptions),
+    queryFn: () => targetsApi.list(selectedCompanyId!, specialOptions),
+    enabled: Boolean(selectedCompanyId) && isSpecialView,
+  });
+  const currentQuery = isSpecialView ? specialQuery : targetsQuery;
 
   useEffect(() => {
     setBreadcrumbs([{ label: t("nav.targets") }]);
   }, [setBreadcrumbs, t]);
 
-  const targets = targetsQuery.data?.items ?? [];
+  const targets = currentQuery.data?.items ?? [];
   const visibleTargets = useMemo(() => targets.filter((target) => {
     if (view === "attention") return target.attentionSummary.total > 0;
+    if (view === "archived") return Boolean(target.archivedAt);
+    if (target.archivedAt) return false;
     if (view === "open") return isOpenTarget(target);
     return true;
   }), [targets, view]);
@@ -81,18 +93,19 @@ export function Targets() {
 
       <Tabs value={view} onValueChange={(value) => setView(value as TargetView)}>
         <TabsList aria-label={t("targets.list.filterLabel")}>
-          {(["open", "attention", "all"] as const).map((value) => (
+          {(["open", "attention", "all", "archived"] as const).map((value) => (
             <TabsTrigger key={value} value={value}>
               {t(`targets.list.${value}`)}
-              <span className="text-xs text-muted-foreground tabular-nums">{counts[value]}</span>
+              {value === "open" || value === "all" ? <span className="text-xs text-muted-foreground tabular-nums">{counts[value]}</span> : null}
             </TabsTrigger>
           ))}
         </TabsList>
       </Tabs>
 
-      {targetsQuery.error ? <p className="text-sm text-destructive">{t("targets.loadFailed")}</p> : null}
+      {currentQuery.error ? <p className="text-sm text-destructive">{t("targets.loadFailed")}</p> : null}
+      {isSpecialView && specialQuery.isLoading ? <PageSkeleton variant="list" /> : null}
 
-      {!targetsQuery.error && visibleTargets.length === 0 ? (
+      {!currentQuery.error && !currentQuery.isLoading && visibleTargets.length === 0 ? (
         <EmptyState
           icon={Target}
           message={targets.length === 0 ? t("targets.emptyDetail") : t("targets.list.noMatches")}
@@ -126,6 +139,7 @@ export function Targets() {
               }
               trailing={
                 <div className="flex items-center gap-3">
+                  {target.archivedAt ? <Archive className="h-4 w-4 text-muted-foreground" aria-label={t("targets.list.archived")} /> : null}
                   {target.attentionSummary.total > 0 ? (
                     <span className="inline-flex items-center gap-1 text-xs text-destructive">
                       <AlertTriangle className="h-3.5 w-3.5" />

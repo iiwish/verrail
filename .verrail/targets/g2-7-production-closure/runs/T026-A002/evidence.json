@@ -1,0 +1,63 @@
+{
+  "task_id": "T026",
+  "attempt_id": "T026-A002",
+  "status": "technical_recovery_verified_human_lifecycle_gate",
+  "date": "2026-09-05",
+  "red": [
+    "Recovery policy regression rejected expected failed-only reuse and exposed reopening of completed/canceled/terminated workflows.",
+    "Isolated database expiry regression observed queued instead of failed.",
+    "Recovery-mode regression attempted an unregistered EnsureAttempt activity instead of observing authoritative state."
+  ],
+  "green": [
+    "Go target, orchestration and HTTP packages passed with isolated VERRAIL_TEST_DATABASE_URL and live VERRAIL_TEST_TEMPORAL_ADDRESS enabled.",
+    "Live Temporal test reopened a deliberately failed test Workflow only with explicit recovery metadata and replayed the recovered history.",
+    "Recovery-mode tests cover late cancellation, no Attempt allocation, expiry observation, outbox drain and Continue-As-New state retention.",
+    "go test ./... -count=1 passed with isolated PostgreSQL and real Temporal integration enabled; go build ./... passed.",
+    "TargetWorkbench: 22 tests passed, including asynchronous Runs-only polling with no implicit Attempt allocation.",
+    "Native executor and target routes: 17 tests passed, including fail-closed model and prompt mismatch.",
+    "UI typecheck passed; UI production build passed in 24.05 seconds with chunk-size warnings; token gates passed across 818 files; git diff --check passed."
+  ],
+  "authority": "Only test fixtures were used for failure injection. User authorized a dedicated iiwish/verrail test branch and one PR, with no merge/release; product human Review, ActionApproval and Acceptance remain reserved.",
+  "live": {
+    "workspace_id": "86679997-3f3a-4477-a2fa-d4da812140ae",
+    "target_id": "44cc7194-d8ce-46d3-8626-3da36785eced",
+    "run_id": "52d7048a-37b3-4c01-88fa-ad4251c519d0",
+    "requeue_audit_id": "8169993c-f1c6-43c7-a846-c410782c4f1c",
+    "requeue_at": "2026-09-05T11:19:22.985425Z",
+    "dead_letter_id": "90209717-9920-4198-95fd-abae0403d7a4",
+    "dead_letter_status": "delivered",
+    "dead_letter_cumulative_attempts": 2,
+    "blocked_successors_delivered": 3,
+    "recovery_workflow_run_id": "7b167f61-ab0d-44bd-a21c-295f3c8005e3",
+    "expiry_audit_id": "ab2b05a8-d6bc-4f60-926a-d5f48f5cb382",
+    "expiry_at": "2026-09-05T11:19:23.170663Z",
+    "recovery_allocated_attempts": 0,
+    "normal_retry_audit_id": "75b05103-9cd3-43e4-bb43-0af9e5b4fd6e",
+    "normal_retry_at": "2026-09-05T11:23:53.958375Z",
+    "attempt_id": "3129468e-fb75-4763-9d90-a778670a2fcf",
+    "attempt_number": 4,
+    "fencing_token": 4,
+    "cursor": 2,
+    "claimed_event_id": "72ebea5a-6a16-44e5-a7b5-e0f68f01fd64",
+    "failed_event_id": "7288bdca-9a30-4da0-93f1-307ff5ee5232",
+    "executor": "verrail-host-runner",
+    "lease_status": "released",
+    "error_code": "NATIVE_EXECUTION_IDENTITY_INVALID",
+    "pinned_model": "unconfigured",
+    "executor_model": "gpt-5.6-sol",
+    "native_heartbeat_count": 0,
+    "target_artifact_count": 0,
+    "total_outbox_events": 10,
+    "delivered_outbox_events": 10,
+    "workflow_status": "running observer waiting for explicit authority; no pending Activity",
+    "ui": "Chrome Runs page displays failed attempt 4, fence 4, cursor 2, released lease and the exact model mismatch. Screenshot visually inspected without overlap.",
+    "mutations": "Only normal product UI requeue and retry. Database inspection was read-only; no repair SQL."
+  },
+  "cleanup": "Disposable schema-only database verrail_g27_recovery_20260905 dropped after tests. User runtime and dev stack retained.",
+  "remaining": [
+    "Director v2 already exists and matches the configured runtime/model/prompt but has no EvaluationRun; a real human evaluation and deployment decision is required.",
+    "No native Codex completion, code artifact, fixed commit, provider receipt, independent review or human Acceptance is claimed.",
+    "Full repository Vitest remains failed on two CLI timeouts in the prior run; workspaces-b and serialized server groups were not reached. Workspace-wide typecheck/build and browser acceptance were not rerun for this focused recovery check.",
+    "Technical self-verification is not independent review or final G2 acceptance."
+  ]
+}

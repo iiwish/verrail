@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const runtimeProfileV1Schema = z.enum(["host_trusted"]);
+export const runtimeProfileV1Schema = z.enum(["host_trusted", "repository_sandbox"]);
 export const runEventTypeV1Schema = z.enum([
   "claimed",
   "heartbeat",
@@ -20,7 +20,12 @@ export const createRunAttemptSchema = z.object({
   }).strict(),
   leaseDurationSeconds: z.number().int().min(15).max(3_600).default(120),
   graceDurationSeconds: z.number().int().min(0).max(600).default(30),
-}).strict();
+}).strict().refine(input => input.runtimeProfile === "repository_sandbox"
+  ? input.executor.principalId === "verrail-repository-runner"
+  : input.executor.principalId !== "verrail-repository-runner", {
+  message: "Repository execution requires its dedicated executor and runtime profile",
+  path: ["executor", "principalId"],
+});
 
 export const reportRunEventSchema = z.object({
   leaseId: z.string().uuid(),
@@ -29,10 +34,23 @@ export const reportRunEventSchema = z.object({
   eventType: runEventTypeV1Schema,
   emittedAt: z.iso.datetime({ offset: true }),
   payload: z.record(z.string(), z.unknown()).default({}),
+  artifacts: z.array(z.object({
+    title: z.string().trim().min(1).max(200),
+    kind: z.enum(["code_change", "document", "report"]),
+    contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+    contentRef: z.string().regex(/^storage:[a-f0-9-]{36}\/verrail\/run-artifacts\/sha256\/[a-f0-9]{64}$/),
+  }).strict()).max(10).optional(),
   extendLeaseSeconds: z.number().int().min(15).max(3_600).optional(),
-}).strict();
+}).strict().refine((input) => !input.artifacts?.length || input.eventType === "succeeded", {
+  message: "Artifacts require a succeeded event", path: ["artifacts"],
+});
 
 export const requestRunCancellationSchema = z.object({}).strict();
+
+export const retryRunOutboxSchema = z.object({
+  eventId: z.string().uuid(),
+  expectedAttemptCount: z.number().int().positive().max(2_147_483_647),
+}).strict();
 
 export type CreateRunAttemptInput = z.infer<typeof createRunAttemptSchema>;
 export type ReportRunEventInput = z.infer<typeof reportRunEventSchema>;

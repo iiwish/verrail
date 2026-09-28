@@ -1,0 +1,1 @@
+{"mode":"direct","scope":["source consolidation","verification blocker fixes","local Git commit"],"checks":["pnpm typecheck","pnpm test:run","pnpm build","pnpm test:domain-api","pnpm build:domain-api","pnpm check:token-gates"],"forbidden":["deploy","push","live model execution","production data mutation"]}

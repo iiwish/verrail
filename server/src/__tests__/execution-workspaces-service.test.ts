@@ -243,6 +243,7 @@ async function fingerprintWorkspaceBranchIncoherenceForTest(input: {
 describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   let db!: ReturnType<typeof createDb>;
   let svc!: ReturnType<typeof executionWorkspaceService>;
+  let sweepNow: Date | undefined;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
   const tempDirs = new Set<string>();
   const pullRequestDetailsByKey = new Map<string, {
@@ -255,6 +256,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-execution-workspaces-service-");
     db = createDb(tempDb.connectionString);
     svc = executionWorkspaceService(db, {
+      now: () => sweepNow ?? new Date(),
       resolvePullRequestDetails: vi.fn(async (companyId, reference) =>
         pullRequestDetailsByKey.get(`${companyId}:${reference.number}`)
         ?? { state: "unknown", headRef: null, headSha: null }
@@ -267,6 +269,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   }, 20_000);
 
   afterEach(async () => {
+    sweepNow = undefined;
     await db.delete(workspaceRuntimeServices);
     await db.delete(activityLog);
     await db.delete(issueRecoveryActions);
@@ -339,6 +342,8 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       repoUrl: "https://github.com/paperclipai/paperclip.git",
       baseRef: "main",
       branchName: "PAP-16015-delivery",
+      // Match the injected JS clock precision instead of PostgreSQL's microseconds.
+      updatedAt: new Date(),
     });
     await db.insert(issues).values({
       id: sourceIssueId,
@@ -1815,11 +1820,31 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     expect(parentWorkspace?.status).toBe("active");
   });
 
+  it("defers sub-millisecond updates beyond the frozen boundary to the next rotation", async () => {
+    const seeded = await seedTerminalWorkspace();
+    sweepNow = new Date("2026-01-01T00:00:00.000Z");
+    await db.update(executionWorkspaces)
+      .set({ updatedAt: sql`${sweepNow.toISOString()}::timestamptz + interval '0.0005 seconds'` })
+      .where(eq(executionWorkspaces.id, seeded.executionWorkspaceId));
+
+    expect(await svc.sweepTerminalWorkspaces()).toMatchObject({ checked: 0, archived: 0 });
+
+    sweepNow = new Date(sweepNow.getTime() + 1);
+    expect(await svc.sweepTerminalWorkspaces()).toMatchObject({ checked: 1, skippedUndelivered: 1, archived: 0 });
+  });
+
   it("reaps only fully-terminal delivered workspaces without active checkout runs", async () => {
     const eligible = await seedTerminalWorkspace({ mergedPr: true, childStatus: "done" });
     const activeRun = await seedTerminalWorkspace({ mergedPr: true, activeRun: true });
     const openDescendant = await seedTerminalWorkspace({ mergedPr: true, childStatus: "todo" });
     const undelivered = await seedTerminalWorkspace();
+
+    // Freeze at the newest fixture's millisecond timestamp, without relying on
+    // the wall-clock delay between setup and the first sweep.
+    const [latestWorkspace] = await db.select({ updatedAt: executionWorkspaces.updatedAt })
+      .from(executionWorkspaces)
+      .where(eq(executionWorkspaces.id, undelivered.executionWorkspaceId));
+    sweepNow = latestWorkspace!.updatedAt;
 
     const result = await svc.sweepTerminalWorkspaces();
     const rows = await db

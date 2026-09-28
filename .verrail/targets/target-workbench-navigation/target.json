@@ -1,0 +1,17 @@
+{
+  "id": "target-workbench-navigation",
+  "title": "Three-view Target workbench",
+  "intent": "Make execution, version-bound delivery, and activity inspectable without nine competing tabs.",
+  "scope": "Target workbench UI, locale strings, navigation contract, and focused tests.",
+  "non_goals": ["Change backend authority or mutations", "Deploy or restart existing services", "Approve a delivery or external action"],
+  "acceptance_criteria": [
+    "Three primary views retain legacy tab links and immutable revisions.",
+    "Graph inspection connects work to runs and artifacts while preserving execution controls.",
+    "Candidate artifacts, verification results, evidence, reviews, and acceptance stay version-bound.",
+    "Activity is newest-first; routine records remain recoverable and unknown or failed events remain visible.",
+    "Text previews remain bounded and cannot execute markup."
+  ],
+  "status": "in_review",
+  "created_at": "2026-09-11T02:54:08Z",
+  "updated_at": "2026-09-11T02:54:08Z"
+}

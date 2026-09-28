@@ -15,6 +15,7 @@ import {
   issueThreadInteractions,
   issueWorkProducts,
   issues,
+  verrailTargets,
   joinRequests,
 } from "@paperclipai/db";
 import type {
@@ -276,6 +277,13 @@ async function sourceIssueId(
       const row = await db.select({ id: budgetIncidents.id })
         .from(budgetIncidents)
         .where(and(eq(budgetIncidents.companyId, companyId), eq(budgetIncidents.id, sourceId)))
+        .then((rows) => rows[0] ?? null);
+      return { exists: Boolean(row), issueId: null };
+    }
+    case "target": {
+      const row = await db.select({ id: verrailTargets.id })
+        .from(verrailTargets)
+        .where(and(eq(verrailTargets.workspaceId, companyId), eq(verrailTargets.id, sourceId)))
         .then((rows) => rows[0] ?? null);
       return { exists: Boolean(row), issueId: null };
     }

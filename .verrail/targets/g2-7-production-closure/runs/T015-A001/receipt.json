@@ -1,0 +1,50 @@
+{
+  "id": "T015-A001",
+  "target_id": "g2-7-production-closure",
+  "task_id": "T015",
+  "agent": "codex",
+  "runner": "local_direct_execute",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "output_commit": null,
+  "branch": "codex/g2-7-production-closure",
+  "changed_files": [
+    "ui/src/pages/TargetWorkbench.tsx",
+    "ui/src/pages/TargetWorkbench.test.tsx",
+    "ui/src/i18n/locales/en.json",
+    "ui/src/i18n/locales/zh-CN.json"
+  ],
+  "commands": [
+    {
+      "command": "pnpm --filter @paperclipai/ui exec vitest run src/pages/TargetWorkbench.test.tsx",
+      "status": "passed",
+      "summary": "18 tests passed."
+    },
+    {
+      "command": "pnpm --filter @paperclipai/ui typecheck",
+      "status": "passed"
+    },
+    {
+      "command": "pnpm check:token-gates",
+      "status": "passed",
+      "summary": "817 files scanned; all four gates clean."
+    },
+    {
+      "command": "real browser GraphRevision create and activate",
+      "status": "passed",
+      "summary": "GraphRevision af4108ab-8821-4228-9786-5b51117a47a7 binds active DeploymentRevision 0c72a87d-9956-4cae-97c7-98f6f4ae8e47."
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    }
+  ],
+  "logs": [
+    ".verrail/targets/g2-7-production-closure/runs/T015-A001/logs/tdd.md",
+    ".verrail/targets/g2-7-production-closure/runs/T015-A001/logs/review.md",
+    ".verrail/targets/g2-7-production-closure/runs/T015-A001/logs/browser-overview.png"
+  ],
+  "errors": [],
+  "summary": "The Workbench now selects an active, same-Workspace DeploymentRevision and uses that immutable version identity for Graph and Run commands."
+}

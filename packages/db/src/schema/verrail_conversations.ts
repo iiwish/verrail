@@ -13,6 +13,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
+import { verrailTargets } from "./verrail_targets.js";
 
 export const verrailConversations = pgTable(
   "verrail_conversations",
@@ -22,6 +23,8 @@ export const verrailConversations = pgTable(
     title: text("title").notNull().default("New conversation"),
     status: text("status").notNull().default("active"),
     pinnedAt: timestamp("pinned_at", { withTimezone: true }),
+    currentTargetId: uuid("current_target_id"),
+    contextVersion: integer("context_version").notNull().default(0),
     createdByPrincipalType: text("created_by_principal_type").notNull(),
     createdByPrincipalId: text("created_by_principal_id").notNull(),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
@@ -46,6 +49,12 @@ export const verrailConversations = pgTable(
       "verrail_conversations_status_check",
       sql`${table.status} in ('active', 'archived')`,
     ),
+    currentTargetWorkspaceFk: foreignKey({
+      columns: [table.currentTargetId, table.workspaceId],
+      foreignColumns: [verrailTargets.id, verrailTargets.workspaceId],
+      name: "verrail_conversations_current_target_workspace_fk",
+    }),
+    contextVersionCheck: check("verrail_conversations_context_version_check", sql`${table.contextVersion} >= 0`),
   }),
 );
 
@@ -65,6 +74,7 @@ export const verrailConversationMessages = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
+    idConversationWorkspaceUq: unique("verrail_messages_id_conversation_workspace_uq").on(table.id, table.conversationId, table.workspaceId),
     idWorkspaceUq: unique("verrail_conversation_messages_id_workspace_uq").on(
       table.id,
       table.workspaceId,
@@ -125,6 +135,29 @@ export const verrailConversationContextBindings = pgTable(
       "verrail_conversation_context_bindings_type_check",
       sql`${table.contextType} in ('collection', 'target', 'target_revision', 'stage', 'artifact_revision', 'review', 'run', 'action_request')`,
     ),
+  }),
+);
+
+export const verrailConversationContextChanges = pgTable(
+  "verrail_conversation_context_changes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull(),
+    conversationId: uuid("conversation_id").notNull(),
+    principalId: text("principal_id").notNull(),
+    sourceMessageId: uuid("source_message_id"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestHash: text("request_hash").notNull(),
+    response: jsonb("response").$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    commandUq: uniqueIndex("verrail_conversation_context_changes_command_uq").on(table.conversationId, table.principalId, table.idempotencyKey),
+    conversationWorkspaceFk: foreignKey({
+      columns: [table.conversationId, table.workspaceId],
+      foreignColumns: [verrailConversations.id, verrailConversations.workspaceId],
+      name: "verrail_conversation_context_changes_conversation_workspace_fk",
+    }).onDelete("cascade"),
   }),
 );
 
@@ -197,6 +230,7 @@ export const verrailTargetCreationDrafts = pgTable(
     confirmedByPrincipalId: text("confirmed_by_principal_id"),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
     conversionIdempotencyKey: text("conversion_idempotency_key"),
+    confirmationContextVersion: integer("confirmation_context_version"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

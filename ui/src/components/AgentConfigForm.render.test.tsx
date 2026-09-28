@@ -239,6 +239,7 @@ async function renderForm(
   environments: Environment[],
   agentOverrides: Partial<Agent> = {},
   options: {
+    visibleSection?: "identity" | "runtime" | "schedule" | "permissions";
     showAdapterTestEnvironmentButton?: boolean;
     content?: "configuration" | "secrets";
   } = {},
@@ -266,6 +267,7 @@ async function renderForm(
               onSave={vi.fn()}
               hidePromptTemplate
               content={options.content}
+              visibleSection={options.visibleSection}
               showAdapterTypeField={false}
               showAdapterTestEnvironmentButton={options.showAdapterTestEnvironmentButton ?? false}
             />
@@ -578,6 +580,15 @@ async function flushUntil(check: () => boolean, timeoutMs = 4000) {
 
 describe("AgentConfigForm environment selector", () => {
   let roots: Root[] = [];
+
+  it("keeps identity fields mounted but hidden when editing runtime settings", async () => {
+    const { container, root } = await renderForm([], {}, { visibleSection: "runtime" });
+    roots.push(root);
+    const name = Array.from(container.querySelectorAll("input")).find((input) => input.value === "Cody");
+    expect(name).toBeTruthy();
+    expect(name?.closest("[hidden]")).not.toBeNull();
+    expect(container.textContent).toContain("Model and execution options");
+  });
 
   beforeEach(() => {
     mockAgentsApi.adapterModelProfiles.mockResolvedValue([]);

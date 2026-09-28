@@ -1,0 +1,48 @@
+{
+  "id": "T021-A001",
+  "target_id": "g2-7-production-closure",
+  "task_id": "T021",
+  "agent": "codex",
+  "runner": "local_direct_execute",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "output_commit": null,
+  "branch": "codex/g2-7-production-closure",
+  "changed_files": [
+    "scripts/run-verrail-acceptance.mjs",
+    "scripts/__tests__/run-verrail-acceptance.test.mjs"
+  ],
+  "commands": [
+    {
+      "command": "pnpm test:e2e:verrail-acceptance",
+      "status": "failed_before_fix",
+      "summary": "Playwright polled occupied port 3203 while the CLI silently moved the server to 3211; startup timed out before any browser test ran."
+    },
+    {
+      "command": "node --test scripts/__tests__/run-verrail-acceptance.test.mjs",
+      "status": "failed_red",
+      "summary": "The default-path test proved that the runner did not propagate an allocated acceptance port; the explicit override contract already passed."
+    },
+    {
+      "command": "node --test scripts/__tests__/run-verrail-acceptance.test.mjs",
+      "status": "passed",
+      "summary": "2 tests passed, covering dynamic port propagation, explicit override preservation and temporary-home cleanup."
+    },
+    {
+      "command": "pnpm test:e2e:verrail-acceptance",
+      "status": "passed",
+      "summary": "6 Playwright journeys passed in 45.1 seconds on the dynamically propagated port 49784."
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    }
+  ],
+  "logs": [
+    ".verrail/targets/g2-7-production-closure/runs/T021-A001/logs/tdd.md",
+    ".verrail/targets/g2-7-production-closure/runs/T021-A001/logs/review.md"
+  ],
+  "errors": [],
+  "summary": "The acceptance runner now selects and propagates one available IPv4 loopback port unless the caller explicitly supplies one."
+}

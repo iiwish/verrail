@@ -40,6 +40,24 @@ let embeddedPostgresSupportPromise: Promise<EmbeddedPostgresTestSupport> | null 
 
 const DEFAULT_PAPERCLIP_EMBEDDED_POSTGRES_PORT = 54329;
 
+async function measureTestDatabasePhase<T>(phase: string, action: () => Promise<T>): Promise<T> {
+  if (process.env.PAPERCLIP_TEST_POSTGRES_TIMING !== "1") return action();
+  const started = performance.now();
+  const report = (state: string) => console.error(JSON.stringify({
+    event: "test_postgres_phase", pid: process.pid, phase, state,
+    elapsedMs: Math.round(performance.now() - started),
+  }));
+  report("started");
+  try {
+    const result = await action();
+    report("completed");
+    return result;
+  } catch (error) {
+    report("failed");
+    throw error;
+  }
+}
+
 function getReservedTestPorts(): Set<number> {
   const configuredPorts = [
     DEFAULT_PAPERCLIP_EMBEDDED_POSTGRES_PORT,
@@ -206,10 +224,10 @@ async function startEmbeddedPostgresWithRetry(tempDirPrefix: string): Promise<{
   let lastError = new Error("embedded Postgres startup failed");
 
   for (let attempt = 1; attempt <= EMBEDDED_POSTGRES_START_MAX_ATTEMPTS; attempt += 1) {
-    const created = await createEmbeddedPostgresTestInstance(tempDirPrefix);
+    const created = await measureTestDatabasePhase("prepare", () => createEmbeddedPostgresTestInstance(tempDirPrefix));
     try {
-      await created.instance.initialise();
-      await created.instance.start();
+      await measureTestDatabasePhase("initdb", () => created.instance.initialise());
+      await measureTestDatabasePhase("start", () => created.instance.start());
       return { port: created.port, dataDir: created.dataDir, instance: created.instance };
     } catch (error) {
       lastError = formatEmbeddedPostgresError(error, {
@@ -272,9 +290,9 @@ export async function startEmbeddedPostgresTestDatabase(
 
   try {
     const adminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`;
-    await ensurePostgresDatabase(adminConnectionString, "paperclip");
+    await measureTestDatabasePhase("create_database", () => ensurePostgresDatabase(adminConnectionString, "paperclip"));
     const connectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`;
-    await applyPendingMigrations(connectionString);
+    await measureTestDatabasePhase("migrations", () => applyPendingMigrations(connectionString));
 
     return {
       connectionString,

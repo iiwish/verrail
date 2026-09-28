@@ -30,6 +30,8 @@ import type {
 import type { CreateIssueThreadInteraction, InviteJoinType, IssueDocumentSummary, PermissionKey, PrincipalType } from "@paperclipai/shared";
 import { pluginOperationIssueOriginKind } from "@paperclipai/shared";
 import { companyService } from "./companies.js";
+import { channelConnectorHostService } from "./channel-connector-host.js";
+import { createChannelConnectorIngress } from "./channel-connector-ingress.js";
 import { agentService } from "./agents.js";
 import { projectService } from "./projects.js";
 import { executionWorkspaceService } from "./execution-workspaces.js";
@@ -1424,6 +1426,22 @@ export function buildHostServices(
         const configRow = await registry.getConfig(pluginId, companyId);
         return configRow?.configJson ?? {};
       },
+    },
+
+    channels: {
+      ingest: createChannelConnectorIngress({
+        getPlugin: () => registry.getById(pluginId),
+        getConfig: async (workspaceId) => {
+          const workspace = await companies.getById(workspaceId);
+          if (workspace?.status !== "active") throw new Error("Channel workspace is inactive");
+          return (await registry.getConfig(pluginId, workspaceId))?.configJson ?? {};
+        },
+        ...channelConnectorHostService(db),
+        sendReply: async (input) => {
+          if (!options.pluginWorkerManager) throw new Error("Channel reply worker unavailable");
+          return options.pluginWorkerManager.call(pluginId, "handleChannelReply", input);
+        },
+      }),
     },
 
     localFolders: {

@@ -272,11 +272,13 @@ printf '%s\\n' '{"type":"result","subtype":"success","session_id":"cursor-sessio
       execute: async (input: { command: string; args?: string[]; env?: Record<string, string> }) => {
         runnerState.commands.push(input.command);
         if (input.command === "sh") {
+          // Preserve the chunked restore protocol with a valid empty tar archive.
           return {
             exitCode: 0,
           signal: null,
           timedOut: false,
-          stdout: "",
+          stdout: input.args?.some((arg) => arg.startsWith("wc -c < ")) ? "1024"
+            : input.args?.some((arg) => arg.startsWith("dd if=")) ? Buffer.alloc(1024).toString("base64") : "",
           stderr: "",
           pid: 555,
           startedAt: new Date().toISOString(),

@@ -1,0 +1,24 @@
+✔ matches only Node supervisors inside the exact isolated test root (5.251416ms)
+✔ terminates a real fixture supervisor without touching an unrelated child (1659.064583ms)
+✔ successful invocations remove their isolated test roots (9037.74075ms)
+✔ the serialized shards form a complete, non-overlapping partition (6108.721708ms)
+✔ the general-server shards form a complete, non-overlapping partition (5611.687792ms)
+✔ a route/authz suite never leaks into the general-server shards (1104.289125ms)
+✔ shard flags are rejected for the workspaces-b group (863.956709ms)
+✔ workspaces-a shards map to Vitest native --shard slices over a stable project list (3510.866ms)
+✔ duration-aware partition balances skewed weights better than round-robin (13.663666ms)
+✔ the partition is deterministic for identical inputs (0.708083ms)
+✔ suites missing from the manifest get the median weight (0.203542ms)
+✔ a missing or malformed manifest degrades to uniform weights (0.568834ms)
+✔ the checked-in manifest loads and covers most of the current suite set (1069.498583ms)
+✔ the checked-in serialized manifest loads and covers most of the current suite set (835.41875ms)
+✔ the real serialized shard partition is duration-balanced (5025.401417ms)
+✔ the real shard partition is duration-balanced (5288.858167ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 39673.263542

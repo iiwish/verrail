@@ -1,0 +1,25 @@
+{
+  "date": "2026-09-05",
+  "status": "full_suite_failed_focused_replay_green",
+  "broad_command": "pnpm test:run",
+  "log": "logs/full-vitest-20260905.txt",
+  "exit_code": 1,
+  "completed_groups": [
+    { "group": "general-server", "files_passed": 416, "files_skipped": 1, "tests_passed": 4753, "tests_skipped": 19 },
+    { "group": "general-workspaces-a UI", "files_passed": 490, "tests_passed": 4449 },
+    { "group": "general-workspaces-a CLI", "files_passed": 57, "files_failed": 1, "tests_passed": 413, "tests_failed": 2 }
+  ],
+  "failures": [
+    "company-import-transfer.test.ts: binary-heavy folder estimated-size path exceeded the 5000 ms test timeout",
+    "company-import-transfer.test.ts: oversized folder zip round trip exceeded the 5000 ms test timeout"
+  ],
+  "focused_replay": {
+    "command": "pnpm exec vitest run --project paperclipai cli/src/__tests__/company-import-transfer.test.ts --maxWorkers=1",
+    "exit_code": 0,
+    "tests_passed": 16,
+    "duration_seconds": 3.71,
+    "production_or_test_timeout_change": false
+  },
+  "not_reached": ["general-workspaces-b", "146 serialized server suites"],
+  "qualification": "Focused replay does not turn the broad run green. The broad run predates the T026 API/UI requeue implementation; its touched surfaces have separate focused verification. No full-suite completion is claimed."
+}

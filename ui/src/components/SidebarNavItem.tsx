@@ -123,11 +123,8 @@ export function SidebarNavItem({
       onClick={() => { if (isMobile) setSidebarOpen(false); }}
       className={({ isActive }) =>
         cn(
-          // One rhythm and one inset pill highlight: mx-2 floats the row off
-          // the sidebar edges, rounded-lg matches the card anchor, px-2 gives
-          // the icon breathing room inside the pill. Rows with hover menus
-          // (agents/projects) reserve extra right padding via className.
-          "flex items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium transition-colors",
+          "flex items-center rounded-lg py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium transition-colors",
+          rail ? "mx-auto w-8 justify-center gap-0 px-0" : "mx-2 gap-2.5 px-2",
           (active ?? isActive)
             ? "bg-accent text-foreground"
             : "text-foreground/80 hover:bg-accent/50 hover:text-foreground",

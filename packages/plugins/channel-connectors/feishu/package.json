@@ -1,0 +1,31 @@
+{
+  "name": "@verrail/channel-connector-feishu",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Feishu vertical slice for the Verrail Channel Connector V1 contract",
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "prebuild": "pnpm --filter @paperclipai/plugin-sdk ensure-build-deps",
+    "build": "tsc",
+    "typecheck": "pnpm --filter @paperclipai/plugin-sdk ensure-build-deps && tsc --noEmit",
+    "test": "vitest run --config ./vitest.config.ts"
+  },
+  "paperclipPlugin": {
+    "manifest": "./dist/manifest.js",
+    "worker": "./dist/worker.js"
+  },
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "1.73.3",
+    "@paperclipai/plugin-sdk": "workspace:*",
+    "@paperclipai/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=24.11.0"
+  }
+}

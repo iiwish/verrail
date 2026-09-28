@@ -3,6 +3,16 @@
   "runtime_target_id": "b6cb0501-a421-4544-b099-97f970f431e4",
   "runtime_target_revision_id": "3b646903-67ac-4412-ac04-4284b4136eda",
   "runtime_workspace_id": "c641493c-081c-4607-84ba-0818cd97981a",
+  "status_scope": "repository_feature_slice",
+  "current_runtime_observation": {
+    "status": "draft",
+    "observed_at": "2026-09-04T03:22:33Z",
+    "runtime_acceptance_criteria": 4,
+    "recorded_acceptance_criteria": 5,
+    "acceptance_criteria_match": false,
+    "independent_review_file": "missing",
+    "effect_receipts": 0
+  },
   "title": "G2.6 - Loop fault demonstrations and operational verification",
   "intent": "Formalize the four fault demonstrations (failure, retry, rejection, invalidation) on the live stack, gather orchestration-worker kill-restart recovery evidence, and add the governed repo-binding provisioning command, completing the G2 exit-gate verification.",
   "scope": "Prove the G2 exit gate: failures, retries, rejections and invalidation demonstrated on the live loop with inspectable evidence; a worker restart converges without human repair; repo bindings are provisionable through governance. The GitHub token-resolution design decision is surfaced to the Outcome Owner.",
@@ -19,7 +29,7 @@
     "Credential wiring decision surfaced: the design options for GitHub token resolution are documented for the Outcome Owner; no unilateral secret-transit decision",
     "G2 exit gate verified: the signature-loop facts (target version, artifact revisions, criterion coverage, evidence, submission, review, acceptance, invalidation) render on the live stack with honest states"
   ],
-  "status": "in_progress",
+  "status": "needs_review",
   "created_at": "2026-09-03T13:40:00Z",
-  "updated_at": "2026-09-03T13:40:00Z"
+  "updated_at": "2026-09-04T03:34:10Z"
 }

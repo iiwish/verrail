@@ -1,0 +1,302 @@
+
+[test:run] general-workspaces-b project @paperclipai/shared
+
+ RUN  v4.1.10 /Users/iiwish/self/verrail
+
+
+ Test Files  70 passed (70)
+      Tests  600 passed (600)
+   Start at  20:48:59
+   Duration  19.11s (transform 20.21s, setup 0ms, import 52.84s, tests 14.52s, environment 25ms)
+
+
+[test:run] general-workspaces-b project @paperclipai/skills-catalog
+
+ RUN  v4.1.10 /Users/iiwish/self/verrail
+
+
+ Test Files  5 passed (5)
+      Tests  22 passed (22)
+   Start at  20:49:20
+   Duration  4.65s (transform 3.52s, setup 0ms, import 5.76s, tests 4.29s, environment 2ms)
+
+
+[test:run] general-workspaces-b project @paperclipai/db
+
+ RUN  v4.1.10 /Users/iiwish/self/verrail
+
+ ❯ |@paperclipai/db| src/pipelines-schema.test.ts (1 test | 1 skipped) 20019ms
+ ❯ |@paperclipai/db| src/nested-skill-folders-migration.test.ts (1 test | 1 failed) 30039ms
+     × backfills existing folders, bundled skills, and project scan skills 30036ms
+ ❯ |@paperclipai/db| src/issue-comment-on-behalf-migration.test.ts (1 test | 1 failed) 30072ms
+     × reapplies the migration and round-trips the nullable user attribution FK 30031ms
+ ❯ |@paperclipai/db| src/inbox-archive-agent-policies-migration.test.ts (1 test | 1 failed) 30023ms
+     × upgrades legacy archives and round-trips attribution and unique policies 30021ms
+ ❯ |@paperclipai/db| src/decision-queue-migrations.test.ts (1 test | 1 failed) 30016ms
+     × can be reapplied without changing schema or existing data 30013ms
+ ❯ |@paperclipai/db| src/connections-v3-schema-core-migration.test.ts (1 test | 1 failed) 30017ms
+     × backfills a workspace grant and rolls back without losing the connection 30015ms
+ ❯ |@paperclipai/db| src/issue-comment-derived-attribution-migration.test.ts (3 tests | 3 failed) 68659ms
+     × fresh installs include the relocated schema and no deleted 0126 migration 20025ms
+     × is idempotent for a database that already has 0126 schema and data 22887ms
+     × completes a partially backfilled pre-0131 database 25742ms
+ ❯ |@paperclipai/db| src/company-secret-proposals-migration.test.ts (1 test | 1 failed) 30151ms
+     × can be reapplied after its migration journal entry is removed 30144ms
+ ❯ |@paperclipai/db| src/built-in-agent-unique-marker-migration.test.ts (1 test | 1 failed) 30070ms
+     × resolves pre-existing duplicates and enforces uniqueness going forward 30067ms
+ ❯ |@paperclipai/db| src/status-card-migrations.test.ts (1 test | 1 failed) 30014ms
+     × can be reapplied after the schema already exists 30011ms
+ ❯ |@paperclipai/db| src/backup-lib.test.ts (7 tests | 2 failed) 168096ms
+     × keeps the newest backup for each retained calendar month 30040ms
+     × backs up and restores large table payloads without materializing one giant string 67744ms
+ ❯ |@paperclipai/db| src/client.test.ts (14 tests | 4 failed) 214760ms
+     × recreates an existing database so stale tables are removed 30014ms
+     × applies an inserted earlier migration without replaying later legacy migrations 21523ms
+     × replays migration 0044 safely when its schema changes already exist 25733ms
+     × enforces a unique board_api_keys.key_hash after migration 0044 20033ms
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |@paperclipai/db| src/pipelines-schema.test.ts > pipeline schema
+Error: Hook timed out in 20000ms.
+If this is a long-running hook, pass a timeout value as the last argument or configure it globally with "hookTimeout".
+ ❯ src/pipelines-schema.test.ts:41:3
+     39|   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatab…
+     40|
+     41|   beforeAll(async () => {
+       |   ^
+     42|     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-pipeli…
+     43|     db = createDb(tempDb.connectionString);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/18]⎯
+
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 17 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |@paperclipai/db| src/backup-lib.test.ts > runDatabaseBackup > keeps the newest backup for each retained calendar month
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/backup-lib.test.ts:78:3
+     76|
+     77| describeEmbeddedPostgres("runDatabaseBackup", () => {
+     78|   it(
+       |   ^
+     79|     "keeps the newest backup for each retained calendar month",
+     80|     async () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/18]⎯
+
+ FAIL  |@paperclipai/db| src/backup-lib.test.ts > runDatabaseBackup > backs up and restores large table payloads without materializing one giant string
+Error: Test timed out in 60000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/backup-lib.test.ts:117:3
+    115|   );
+    116|
+    117|   it(
+       |   ^
+    118|     "backs up and restores large table payloads without materializing …
+    119|     async () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/18]⎯
+
+ FAIL  |@paperclipai/db| src/built-in-agent-unique-marker-migration.test.ts > built-in agent unique marker migration > resolves pre-existing duplicates and enforces uniqueness going forward
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/built-in-agent-unique-marker-migration.test.ts:33:3
+     31|   });
+     32|
+     33|   it("resolves pre-existing duplicates and enforces uniqueness going f…
+       |   ^
+     34|     const database = await startEmbeddedPostgresTestDatabase("papercli…
+     35|     cleanups.push(database.cleanup);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/18]⎯
+
+ FAIL  |@paperclipai/db| src/client.test.ts > resetPostgresDatabase > recreates an existing database so stale tables are removed
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/client.test.ts:93:3
+     91|
+     92| describeEmbeddedPostgres("resetPostgresDatabase", () => {
+     93|   it("recreates an existing database so stale tables are removed", asy…
+       |   ^
+     94|     const connectionString = await createTempDatabase();
+     95|     const adminUrl = new URL(connectionString);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/18]⎯
+
+ FAIL  |@paperclipai/db| src/client.test.ts > applyPendingMigrations > applies an inserted earlier migration without replaying later legacy migrations
+Error: Test timed out in 20000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/client.test.ts:150:3
+    148|   });
+    149|
+    150|   it(
+       |   ^
+    151|     "applies an inserted earlier migration without replaying later leg…
+    152|     async () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/18]⎯
+
+ FAIL  |@paperclipai/db| src/client.test.ts > applyPendingMigrations > replays migration 0044 safely when its schema changes already exist
+Error: Test timed out in 20000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/client.test.ts:203:3
+    201|   );
+    202|
+    203|   it(
+       |   ^
+    204|     "replays migration 0044 safely when its schema changes already exi…
+    205|     async () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/18]⎯
+
+ FAIL  |@paperclipai/db| src/client.test.ts > applyPendingMigrations > enforces a unique board_api_keys.key_hash after migration 0044
+Error: Test timed out in 20000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/client.test.ts:247:3
+    245|   );
+    246|
+    247|   it(
+       |   ^
+    248|     "enforces a unique board_api_keys.key_hash after migration 0044",
+    249|     async () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/18]⎯
+
+ FAIL  |@paperclipai/db| src/company-secret-proposals-migration.test.ts > company secret proposals migration > can be reapplied after its migration journal entry is removed
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/company-secret-proposals-migration.test.ts:32:3
+     30|   // explicit timeout for that reason; this one did not, so it failed …
+     31|   // runner that was not unusually fast.
+     32|   it("can be reapplied after its migration journal entry is removed", …
+       |   ^
+     33|     const database = await startEmbeddedPostgresTestDatabase("papercli…
+     34|     cleanups.push(database.cleanup);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/18]⎯
+
+ FAIL  |@paperclipai/db| src/connections-v3-schema-core-migration.test.ts > connections v3 schema core migration > backfills a workspace grant and rolls back without losing the connection
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/connections-v3-schema-core-migration.test.ts:21:3
+     19|   afterEach(async () => Promise.all(cleanups.splice(0).map((cleanup) =…
+     20|
+     21|   it("backfills a workspace grant and rolls back without losing the co…
+       |   ^
+     22|     const database = await startEmbeddedPostgresTestDatabase("papercli…
+     23|     cleanups.push(database.cleanup);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/18]⎯
+
+ FAIL  |@paperclipai/db| src/decision-queue-migrations.test.ts > decision queue migrations > can be reapplied without changing schema or existing data
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/decision-queue-migrations.test.ts:43:3
+     41|
+     42| describeEmbeddedPostgres("decision queue migrations", () => {
+     43|   it(
+       |   ^
+     44|     "can be reapplied without changing schema or existing data",
+     45|     async () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/18]⎯
+
+ FAIL  |@paperclipai/db| src/inbox-archive-agent-policies-migration.test.ts > inbox archive agent policy migration > upgrades legacy archives and round-trips attribution and unique policies
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/inbox-archive-agent-policies-migration.test.ts:45:3
+     43|
+     44| describeEmbeddedPostgres("inbox archive agent policy migration", () =>…
+     45|   it(
+       |   ^
+     46|     "upgrades legacy archives and round-trips attribution and unique p…
+     47|     async () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/18]⎯
+
+ FAIL  |@paperclipai/db| src/issue-comment-derived-attribution-migration.test.ts > issue comment derived attribution migration > fresh installs include the relocated schema and no deleted 0126 migration
+Error: Test timed out in 20000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/issue-comment-derived-attribution-migration.test.ts:137:3
+    135|
+    136| describeEmbeddedPostgres("issue comment derived attribution migration"…
+    137|   it(
+       |   ^
+    138|     "fresh installs include the relocated schema and no deleted 0126 m…
+    139|     async () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/18]⎯
+
+ FAIL  |@paperclipai/db| src/issue-comment-derived-attribution-migration.test.ts > issue comment derived attribution migration > is idempotent for a database that already has 0126 schema and data
+Error: Test timed out in 20000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/issue-comment-derived-attribution-migration.test.ts:164:3
+    162|   );
+    163|
+    164|   it(
+       |   ^
+    165|     "is idempotent for a database that already has 0126 schema and dat…
+    166|     async () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/18]⎯
+
+ FAIL  |@paperclipai/db| src/issue-comment-derived-attribution-migration.test.ts > issue comment derived attribution migration > completes a partially backfilled pre-0131 database
+Error: Test timed out in 20000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/issue-comment-derived-attribution-migration.test.ts:257:3
+    255|   );
+    256|
+    257|   it(
+       |   ^
+    258|     "completes a partially backfilled pre-0131 database",
+    259|     async () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/18]⎯
+
+ FAIL  |@paperclipai/db| src/issue-comment-on-behalf-migration.test.ts > issue comment on-behalf attribution migration > reapplies the migration and round-trips the nullable user attribution FK
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/issue-comment-on-behalf-migration.test.ts:26:3
+     24|
+     25| describeEmbeddedPostgres("issue comment on-behalf attribution migratio…
+     26|   it("reapplies the migration and round-trips the nullable user attrib…
+       |   ^
+     27|     const database = await startEmbeddedPostgresTestDatabase("papercli…
+     28|     cleanups.push(database.cleanup);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[16/18]⎯
+
+ FAIL  |@paperclipai/db| src/nested-skill-folders-migration.test.ts > nested skill folders migration > backfills existing folders, bundled skills, and project scan skills
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/nested-skill-folders-migration.test.ts:26:3
+     24|   });
+     25|
+     26|   it("backfills existing folders, bundled skills, and project scan ski…
+       |   ^
+     27|     const database = await startEmbeddedPostgresTestDatabase("papercli…
+     28|     cleanups.push(database.cleanup);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[17/18]⎯
+
+ FAIL  |@paperclipai/db| src/status-card-migrations.test.ts > status card migrations > can be reapplied after the schema already exists
+Error: Test timed out in 30000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/status-card-migrations.test.ts:29:3
+     27|   // default. This suite has not tripped yet only because it replays f…
+     28|   // statements than its neighbours — it is the same latent failure.
+     29|   it("can be reapplied after the schema already exists", async () => {
+       |   ^
+     30|     const database = await startEmbeddedPostgresTestDatabase("papercli…
+     31|     cleanups.push(database.cleanup);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[18/18]⎯
+
+
+ Test Files  12 failed | 14 passed (26)
+      Tests  17 failed | 81 passed | 1 skipped (99)
+   Start at  20:49:27
+   Duration  230.36s (transform 15.06s, setup 0ms, import 271.18s, tests 814.47s, environment 5ms)
+

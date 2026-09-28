@@ -20,6 +20,8 @@ describe("agent detail tabs", () => {
   it("exposes Secrets as its own route-backed tab", () => {
     expect(AGENT_DETAIL_TABS.map((tab) => tab.label)).toContain("Secrets");
     expect(parseAgentDetailView("secrets")).toBe("secrets");
+    expect(parseAgentDetailView("versions")).toBe("versions");
+    expect(AGENT_DETAIL_TABS.map((tab) => tab.value)).toContain("versions");
   });
 
   it("requires confirmation before navigation can discard unsaved configuration", () => {

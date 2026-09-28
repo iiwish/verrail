@@ -2494,7 +2494,7 @@ rl.on("line", (line) => {
         .where(eq(toolActionRequests.id, actionRequest.id));
       expect(afterReplayAttempt).toMatchObject({
         issueId: issue.id,
-        status: "approved",
+        status: "failed",
       });
     } finally {
       await fake.close();
@@ -2809,7 +2809,7 @@ rl.on("line", (line) => {
         .where(eq(toolActionRequests.id, actionRequest.id));
       expect(afterReplayAttempt).toMatchObject({
         issueId: issue.id,
-        status: "approved",
+        status: "failed",
       });
       const persisted = JSON.stringify({
         actionRequests: await db.select().from(toolActionRequests),

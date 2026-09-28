@@ -5,6 +5,7 @@ import {
   createGithubRepoBindingSchema,
   executeActionSchema,
   pullRequestParamsSchema,
+  recordHumanWorkResultSchema,
   recordIntegrationRunSchema,
   requestPullRequestActionSchema,
 } from "./connector.js";
@@ -22,20 +23,23 @@ describe("connector validators", () => {
   it("validates integration run recording", () => {
     const base = {
       targetId: uuid,
+      targetRevisionId: "33333333-3333-4333-8333-333333333333",
+      graphRevisionId: "44444444-4444-4444-8444-444444444444",
       claimId: otherUuid,
+      workNodeId: "55555555-5555-4555-8555-555555555555",
+      connectorVersion: "github-actions.v1",
+      connectionId: "66666666-6666-4666-8666-666666666666",
       provider: "github",
       externalRef: "run/1234",
+      commitRef: "abc123",
+      criterionKey: "ac-1",
+      environmentRef: "github-actions:ubuntu-24.04",
       conclusion: "success",
       objectHash: hash,
       reference: "ci/build/1234",
+      providerReceipt: { runId: 1234, conclusion: "success" },
     };
     expect(recordIntegrationRunSchema.parse(base)).toMatchObject({ conclusion: "success" });
-    expect(
-      recordIntegrationRunSchema.parse({ ...base, workNodeId: uuid }),
-    ).toMatchObject({ workNodeId: uuid });
-    expect(recordIntegrationRunSchema.parse({ ...base, workNodeId: null })).toMatchObject({
-      workNodeId: null,
-    });
     expect(recordIntegrationRunSchema.parse({ ...base, conclusion: "neutral" })).toMatchObject({
       conclusion: "neutral",
     });
@@ -48,17 +52,40 @@ describe("connector validators", () => {
     expect(() => recordIntegrationRunSchema.parse({ ...base, objectHash: hash.slice(1) })).toThrow();
     expect(() => recordIntegrationRunSchema.parse({ ...base, reference: "x".repeat(501) })).toThrow();
     expect(() => recordIntegrationRunSchema.parse({ ...base, workNodeId: "not-a-uuid" })).toThrow();
+    expect(() => recordIntegrationRunSchema.parse({ ...base, workNodeId: null })).toThrow();
+    expect(() => recordIntegrationRunSchema.parse({ ...base, connectorVersion: "" })).toThrow();
+    expect(() => recordIntegrationRunSchema.parse({ ...base, providerReceipt: { accessToken: "secret" } })).toThrow();
     expect(() => recordIntegrationRunSchema.parse({ ...base, extra: 1 })).toThrow();
+  });
+
+  it("validates immutable human work results", () => {
+    const base = {
+      targetId: uuid,
+      targetRevisionId: "33333333-3333-4333-8333-333333333333",
+      graphRevisionId: "44444444-4444-4444-8444-444444444444",
+      workNodeId: "55555555-5555-4555-8555-555555555555",
+      inputHash: hash,
+      result: { decision: "ready" },
+      artifactRevisionId: "66666666-6666-4666-8666-666666666666",
+      attachmentHashes: ["2".repeat(64)],
+    };
+
+    expect(recordHumanWorkResultSchema.parse(base)).toMatchObject({ result: { decision: "ready" } });
+    expect(recordHumanWorkResultSchema.parse({ ...base, artifactRevisionId: null })).toMatchObject({ artifactRevisionId: null });
+    expect(() => recordHumanWorkResultSchema.parse({ ...base, inputHash: "bad" })).toThrow();
+    expect(() => recordHumanWorkResultSchema.parse({ ...base, attachmentHashes: ["bad"] })).toThrow();
+    expect(() => recordHumanWorkResultSchema.parse({ ...base, result: { nested: { secret: "do-not-store" } } })).toThrow();
+    expect(() => recordHumanWorkResultSchema.parse({ ...base, extra: true })).toThrow();
   });
 
   it("validates pull request action requests with strict params", () => {
     const base = {
       targetId: uuid,
       submissionId: otherUuid,
-      params: { title: "Merge feature", head: "feat/x", base: "main" },
+      params: { title: "Merge feature", head: "feat/x", base: "main", body: "## Verification\n\n- Passed" },
     };
     expect(requestPullRequestActionSchema.parse(base)).toMatchObject({
-      params: { head: "feat/x", base: "main" },
+      params: { head: "feat/x", base: "main", body: "## Verification\n\n- Passed" },
     });
 
     expect(() => requestPullRequestActionSchema.parse({ ...base, params: { title: "x", head: "h" } })).toThrow();
@@ -69,11 +96,14 @@ describe("connector validators", () => {
     expect(() =>
       requestPullRequestActionSchema.parse({ ...base, params: { ...base.params, head: "x".repeat(201) } }),
     ).toThrow();
+    expect(() =>
+      requestPullRequestActionSchema.parse({ ...base, params: { ...base.params, body: "x".repeat(65_537) } }),
+    ).toThrow();
     expect(() => requestPullRequestActionSchema.parse({ ...base, extra: 1 })).toThrow();
   });
 
   it("validates pull request params standalone", () => {
-    expect(pullRequestParamsSchema.parse({ title: "t", head: "h", base: "b" })).toMatchObject({ base: "b" });
+    expect(pullRequestParamsSchema.parse({ title: "t", head: "h", base: "b" })).toMatchObject({ base: "b", body: "" });
     expect(() => pullRequestParamsSchema.parse({ title: "t", head: "h", base: "" })).toThrow();
     expect(() => pullRequestParamsSchema.parse({ title: "t", head: "h", base: "b", extra: true })).toThrow();
   });

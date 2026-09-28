@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T013",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T013",
+  "status": "accepted_for_dependency_progression",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T14:16:00Z",
+  "trigger": {
+    "command": "pnpm test:run and isolated opencode-local-adapter-environment suite",
+    "result": "The same model-unavailable test timed out at 10 seconds in both runs.",
+    "failure": "The fixture inherited XDG_CONFIG_HOME and copied the host's 554 MB OpenCode configuration tree before it could exercise the fake command."
+  },
+  "work_unit": {
+    "title": "隔离 OpenCode 环境诊断测试的主机配置",
+    "goal": "Keep the diagnostic behavior assertion while making its filesystem fixture deterministic and independent of host OpenCode configuration size.",
+    "requirements": ["AC-11"],
+    "depends_on": ["T012"],
+    "blocks": ["T010"],
+    "parallel": false
+  },
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "allowed_files": [
+      "server/src/__tests__/opencode-local-adapter-environment.test.ts",
+      ".verrail/targets/g2-7-production-closure/packets/T013.json",
+      ".verrail/targets/g2-7-production-closure/runs/T013-A001/**",
+      ".verrail/targets/g2-7-production-closure/tasks.md",
+      ".verrail/targets/g2-7-production-closure/target.json",
+      ".verrail/targets/g2-7-production-closure/timeline.jsonl"
+    ],
+    "invariants": [
+      "The test must still execute the fake opencode command and assert model-unavailable classification.",
+      "Production OpenCode runtime config behavior is not changed by this task.",
+      "The fixture must not read or copy the executing user's real OpenCode config tree."
+    ]
+  },
+  "tdd_plan": {
+    "required": true,
+    "red": "Retain the reproducible isolated 10-second timeout on a host with a large OpenCode XDG tree.",
+    "green": "Set the fixture's XDG_CONFIG_HOME to its own empty temporary working directory.",
+    "refactor": "Reuse the existing fixture cleanup rather than adding lifecycle hooks."
+  },
+  "validation_loop": {
+    "commands": [
+      "focused model-unavailable case repeated five times",
+      "pnpm exec vitest run server/src/__tests__/opencode-local-adapter-environment.test.ts",
+      "pnpm --filter @paperclipai/server typecheck",
+      "git diff --check"
+    ],
+    "retry_budget": 3
+  },
+  "evidence_contract": {
+    "run_id": "T013-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T013-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T013-A001/evidence.json",
+    "logs": ".verrail/targets/g2-7-production-closure/runs/T013-A001/logs/"
+  },
+  "stop_conditions": [
+    "The assertion stops invoking the fake command.",
+    "Production adapter behavior changes.",
+    "The fixture still depends on host OpenCode configuration."
+  ]
+}

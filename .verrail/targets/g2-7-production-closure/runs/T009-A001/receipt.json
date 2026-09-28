@@ -1,0 +1,59 @@
+{
+  "id": "T009-A001",
+  "target_id": "g2-7-production-closure",
+  "task_id": "T009",
+  "agent": "codex",
+  "runner": "local_direct_execute",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "output_commit": null,
+  "branch": "codex/g2-7-production-closure",
+  "changed_files": [
+    "packages/shared/src/types/channel.ts",
+    "packages/shared/src/validators/channel.ts",
+    "packages/shared/src/validators/channel.test.ts",
+    "packages/shared/src/types/plugin.ts",
+    "packages/shared/src/validators/plugin.ts",
+    "packages/shared/src/validators/plugin.test.ts",
+    "packages/shared/src/index.ts",
+    "packages/plugins/sdk/src/define-plugin.ts",
+    "packages/plugins/sdk/src/index.ts",
+    "packages/plugins/sdk/src/protocol.ts",
+    "packages/plugins/sdk/src/worker-rpc-host.ts",
+    "packages/plugins/channel-connectors/feishu",
+    "packages/db/src/schema/verrail_channel.ts",
+    "packages/db/src/schema/index.ts",
+    "packages/db/src/migrations/0246_fantastic_mindworm.sql",
+    "packages/db/src/migrations/0247_happy_bug.sql",
+    "server/src/services/channel-connector-host.ts",
+    "server/src/routes/plugins.ts",
+    "server/src/__tests__/channel-connector-host.test.ts",
+    "server/src/__tests__/plugin-channel-webhook.test.ts",
+    "pnpm-workspace.yaml",
+    "pnpm-lock.yaml"
+  ],
+  "commands": [
+    {
+      "command": "focused shared, plugin, host and route Channel Connector tests",
+      "status": "passed",
+      "summary": "43 focused tests passed, including five Feishu adapter tests, four real-PostgreSQL host tests, four public webhook route tests and 30 shared/plugin contract tests."
+    },
+    {
+      "command": "pnpm -r typecheck; pnpm check:token-gates; pnpm --filter @paperclipai/db check:migrations; pnpm build; git diff --check",
+      "status": "passed",
+      "summary": "All workspaces typechecked; token, migration, production build and whitespace gates passed."
+    },
+    {
+      "command": "pnpm test:run",
+      "status": "failed_environment_then_isolated_passed",
+      "summary": "306 files and 2,894 assertions passed. Vitest reported one unhandled startup rejection because @embedded-postgres/darwin-arm64@18.1.0-beta.16 is not published; after locally supplying the compatible beta.15 native payload, server/src/shutdown.test.ts passed 10/10. Final closure reruns the complete suite."
+    }
+  ],
+  "logs": [
+    ".verrail/targets/g2-7-production-closure/runs/T009-A001/logs/tdd.md",
+    ".verrail/targets/g2-7-production-closure/runs/T009-A001/logs/review.md"
+  ],
+  "errors": [],
+  "summary": "Added the versioned Channel Connector V1 contract and a Feishu plugin whose authenticated normalized events enter a Workspace-scoped durable inbox, bind group or direct conversations exactly once, and create drafts only for explicit commands from mapped active human users."
+}

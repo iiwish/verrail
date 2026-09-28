@@ -1,0 +1,52 @@
+{
+  "id": "T007-A001",
+  "target_id": "g2-7-production-closure",
+  "task_id": "T007",
+  "agent": "codex",
+  "runner": "local_direct_execute",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "output_commit": null,
+  "branch": "codex/g2-7-production-closure",
+  "changed_files": [
+    "packages/db/src/schema/verrail_targets.ts",
+    "packages/db/src/migrations/0245_stale_squadron_supreme.sql",
+    "packages/shared/src/types/target.ts",
+    "packages/shared/src/types/attention.ts",
+    "packages/shared/src/validators/target.ts",
+    "packages/shared/src/validators/target.test.ts",
+    "packages/shared/src/index.ts",
+    "server/src/services/target-read-model.ts",
+    "server/src/services/attention.ts",
+    "server/src/services/decision-queues.ts",
+    "server/src/__tests__/target-read-model.test.ts",
+    "server/src/__tests__/target-routes.test.ts",
+    "server/src/__tests__/native-target-attention.test.ts",
+    "ui/src/lib/attention.ts",
+    "cli/src/__tests__/company-import-export-e2e.test.ts"
+  ],
+  "commands": [
+    {
+      "command": "focused shared/server Target projection and Attention tests",
+      "status": "passed",
+      "summary": "46 focused tests passed, including accepted reconstruction, revision/content invalidation, unknown effect, subordinate Timeline and native Home attention."
+    },
+    {
+      "command": "pnpm test:domain-api; pnpm -r typecheck; pnpm check:token-gates; pnpm --filter @paperclipai/db check:migrations; pnpm build; git diff --check",
+      "status": "passed",
+      "summary": "Go domain packages, all typed workspaces, token gate, migration safety, production build and whitespace validation passed."
+    },
+    {
+      "command": "pnpm test:run",
+      "status": "failed_environment_then_isolated_passed",
+      "summary": "Server 4,717 and UI 4,440 tests passed. The CLI e2e could not launch because its isolated HOME hid the installed Corepack cache; the harness now preserves COREPACK_HOME and the isolated real-server rerun passed."
+    }
+  ],
+  "logs": [
+    ".verrail/targets/g2-7-production-closure/runs/T007-A001/logs/tdd.md",
+    ".verrail/targets/g2-7-production-closure/runs/T007-A001/logs/review.md"
+  ],
+  "errors": [],
+  "summary": "Replaced stored-label Target status with a deterministic Workspace-scoped projection over active graph, immutable submission/content bindings, verification, review, acceptance and effect facts; exposed Outcome, available commands, native Timeline and Home Attention."
+}

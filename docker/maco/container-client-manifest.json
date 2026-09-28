@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "target": "maco",
+  "app": "verrail",
+  "environment": "test",
+  "compose_project": "verrail-test",
+  "database": null,
+  "redis": null,
+  "ingress": {"visibility": "private", "hostname": null},
+  "rollback": {"application": "Remove only the one-shot container-client-check job and its private container-check network.", "database": "No database access or schema changes."},
+  "persistent_data": ["/opt/maco-apps/verrail/test/data/repository/workspaces"],
+  "services": {"container-client-check": {"kind": "job"}}
+}

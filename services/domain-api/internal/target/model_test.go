@@ -93,4 +93,7 @@ func TestValidateCommandAllowsWorkspaceScopedTargetWithoutCollection(t *testing.
 	if err := ValidateCommand(&command); err != nil {
 		t.Fatalf("Target without collectionId should be valid: %v", err)
 	}
+	if command.Input.Constraints == nil || command.Input.ResourceRefs == nil {
+		t.Fatal("omitted optional arrays must persist as JSON arrays, not JSON null")
+	}
 }

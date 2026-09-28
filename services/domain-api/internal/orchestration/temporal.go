@@ -3,9 +3,12 @@ package orchestration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
 )
 
@@ -120,6 +123,10 @@ func (deliverer *TemporalDeliverer) deliverRun(ctx context.Context, event Outbox
 	if payload.EventType != "" {
 		eventType = payload.EventType
 	}
+	// The execution store persists the audit name inside the versioned envelope.
+	if event.EventType == RunCancellationRequestedEventType && eventType == "run.cancellation_requested" {
+		eventType = RunCancellationRequestedEventType
+	}
 	if !isRunEventType(eventType) {
 		return DeliveryResult{}, Permanent(fmt.Errorf("unsupported Run event type: %s", eventType))
 	}
@@ -135,6 +142,28 @@ func (deliverer *TemporalDeliverer) deliverRun(ctx context.Context, event Outbox
 		OccurredAt:    event.CreatedAt,
 	}
 	input := RunWorkflowInput{SchemaVersion: SchemaVersion, WorkspaceID: event.WorkspaceID, RunID: event.AggregateID}
+	reusePolicy := enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE
+	if event.RecoveryRequested {
+		inspector, ok := deliverer.client.(interface {
+			DescribeWorkflowExecution(context.Context, string, string) (*workflowservice.DescribeWorkflowExecutionResponse, error)
+		})
+		if !ok {
+			return DeliveryResult{}, Permanent(fmt.Errorf("Run recovery requires Workflow inspection"))
+		}
+		description, err := inspector.DescribeWorkflowExecution(ctx, workflowID, "")
+		var notFound *serviceerror.NotFound
+		if err != nil && !errors.As(err, &notFound) {
+			return DeliveryResult{}, fmt.Errorf("inspect Run recovery: %w", err)
+		}
+		if err == nil {
+			status := description.GetWorkflowExecutionInfo().GetStatus()
+			if status != enumspb.WORKFLOW_EXECUTION_STATUS_FAILED && status != enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING {
+				return DeliveryResult{}, Permanent(fmt.Errorf("Run recovery cannot reopen Workflow status %s", status))
+			}
+		}
+		input.Recovery = true
+		reusePolicy = enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY
+	}
 	run, err := deliverer.client.SignalWithStartWorkflow(
 		ctx,
 		workflowID,
@@ -144,7 +173,7 @@ func (deliverer *TemporalDeliverer) deliverRun(ctx context.Context, event Outbox
 			ID:                       workflowID,
 			TaskQueue:                deliverer.taskQueue,
 			WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
-			WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
+			WorkflowIDReusePolicy:    reusePolicy,
 			Memo: map[string]interface{}{
 				"schemaVersion": SchemaVersion,
 				"workspaceId":   event.WorkspaceID,

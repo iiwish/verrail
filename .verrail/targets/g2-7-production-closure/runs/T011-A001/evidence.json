@@ -1,0 +1,27 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T011-A001",
+  "task_id": "T011",
+  "status": "passed_for_dependency_progression",
+  "failure_reproduction": {
+    "full_suite": "1 failed, 4,726 passed, 19 skipped",
+    "isolated_before_fix": "failed on first run",
+    "observed_reason": "The second caller could evaluate the issue lock after the first caller transferred it to the matching continuation, then return issue_execution_lock_changed before the transaction could deduplicate."
+  },
+  "fix": {
+    "preflight": "Continues to enforce budget, agent, issue state, ownership, pause and dependency gates without treating an already-transferred lock as authoritative before deduplication.",
+    "transaction": "Locks the issue, finds an exact live continuation first, and otherwise enforces that the source Run still owns the issue lock before inserting.",
+    "promotion": "Unchanged and continues to enforce that each due retry Run owns the issue lock."
+  },
+  "verification": [
+    { "command": "two focused cases x five fresh runs", "status": "passed", "result": "10/10" },
+    { "command": "complete heartbeat-retry-scheduling suite", "status": "passed", "result": "31/31" },
+    { "command": "server typecheck", "status": "passed" },
+    { "command": "git diff --check", "status": "passed" }
+  ],
+  "review": {
+    "critical_or_high_findings": 0,
+    "recommendation": "accept_for_dependency_progression",
+    "reference": ".verrail/targets/g2-7-production-closure/runs/T011-A001/logs/review.md"
+  }
+}

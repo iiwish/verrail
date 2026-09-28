@@ -127,7 +127,7 @@ function fakePluginDispatcher(): PluginToolDispatcher {
     executeTool: async (_name, parameters) => ({
       pluginId: "fixture-plugin",
       toolName: "delete_everything",
-      result: { content: "deleted", data: parameters },
+      result: { content: "deleted", data: parameters, isError: true },
     }),
     registerPluginTools: () => {},
     unregisterPluginTools: () => {},
@@ -768,6 +768,7 @@ describeEmbeddedPostgres("tool gateway service", () => {
     });
     expect(result.status).toBe("completed");
     expect((result.result as { result?: { data?: { target?: string } } }).result?.data?.target).toBe("repo");
+    expect((result.result as { result?: { isError?: boolean } }).result?.isError).toBe(true);
   });
 
   it("maps remote MCP elicitation to a durable issue interaction", async () => {

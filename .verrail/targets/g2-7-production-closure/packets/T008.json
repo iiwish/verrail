@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T008",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T008",
+  "status": "accepted_for_dependency_progression",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T11:03:07Z",
+  "governance_inputs": [
+    ".verrail/targets/g2-7-production-closure/spec.md",
+    ".verrail/targets/g2-7-production-closure/plan.md",
+    ".verrail/targets/g2-7-production-closure/tasks.md",
+    ".verrail/targets/g2-7-production-closure/runs/T009-A001/evidence.json",
+    "DESIGN.md",
+    "docs/product-design.md",
+    "docs/operational-ontology.md"
+  ],
+  "approval_gates": {
+    "dependency_T009": "accepted_for_dependency_progression",
+    "intermediate_plan_authority": "delegated_to_codex",
+    "candidate_authority": "agent_or_service_only",
+    "human_authority": "one_real_human_may_issue_separate_review_approval_acceptance_commands"
+  },
+  "work_unit": {
+    "title": "完成 Target Workbench 和 Home 操作闭环",
+    "goal": "让操作员在 Web Chat、Target Workbench 和 Home 看见权威投影并完成其有权限的创建、运行、重试、取消、评审、验收、动作批准、执行和恢复操作；候选提交与外部动作请求保持 Agent/Service 权限边界。",
+    "epic": "E004",
+    "requirements": ["AC-06", "AC-07", "AC-08", "AC-09"],
+    "depends_on": ["T009"],
+    "blocks": ["T010"],
+    "parallel": false
+  },
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "allowed_files": [
+      "ui/src/pages/VerrailChat.tsx",
+      "ui/src/pages/TargetWorkbench.tsx",
+      "ui/src/pages/VerrailHome.tsx",
+      "ui/src/pages/Targets.tsx",
+      "ui/src/components/NewTargetDialog.tsx",
+      "ui/src/components/AttentionQueueRow.tsx",
+      "ui/src/components/VerrailConversationSidebar.tsx",
+      "ui/src/api/conversations.ts",
+      "ui/src/api/targets.ts",
+      "ui/src/api/attention.ts",
+      "ui/src/lib/queryKeys.ts",
+      "ui/src/i18n/locales/**",
+      "ui/src/pages/TargetWorkbench.test.tsx",
+      "ui/src/pages/VerrailHome.test.tsx",
+      "ui/src/components/NewTargetDialog.test.tsx",
+      "ui/src/components/AttentionQueueRow.test.tsx",
+      "server/src/services/target-read-model.ts",
+      "server/src/__tests__/target-read-model.test.ts",
+      "tests/verrail-acceptance/**",
+      ".verrail/targets/g2-7-production-closure/runs/T008-A001/**",
+      ".verrail/targets/g2-7-production-closure/timeline.jsonl"
+    ],
+    "authority_rules": [
+      "UI renders server-projected command state and never invents completion optimistically.",
+      "Candidate-only Submission and ActionRequest remain Agent/Service operations; the board may inspect their state but cannot impersonate a candidate.",
+      "Review, action approval and Acceptance are separate human commands with immutable Submission, review, parameter-hash and revision bindings visible before execution.",
+      "Every mutation exposes pending, success, rejection/error and retry behavior, then refetches authoritative facts.",
+      "All copy has English and Simplified Chinese parity and every visual status has text or an icon in addition to color."
+    ]
+  },
+  "tdd_plan": {
+    "required": true,
+    "red": "Add component/API tests for authority-aware command availability, immutable bindings, pending isolation, success refetch, server rejection detail and retry.",
+    "green": "Wire the existing native Target, adjudication and connector routes into a compact operational command surface and actionable Attention/Home links.",
+    "refactor": "Centralize command feedback and binding presentation while preserving flat workbench sections and existing design tokens."
+  },
+  "validation_loop": {
+    "commands": [
+      "focused Target Workbench, Home, Dialog and Attention tests",
+      "i18n locale key parity check",
+      "pnpm -r typecheck",
+      "pnpm check:token-gates",
+      "pnpm build",
+      "pnpm test:e2e:verrail-acceptance",
+      "desktop Playwright screenshots and console/network inspection",
+      "git diff --check"
+    ],
+    "retry_budget": 5
+  },
+  "evidence_contract": {
+    "run_id": "T008-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T008-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T008-A001/evidence.json",
+    "logs": ".verrail/targets/g2-7-production-closure/runs/T008-A001/logs/",
+    "required_items": [
+      "command state and authority matrix",
+      "review, approval and acceptance binding proof",
+      "pending, error, rejection and retry component proof",
+      "English and Chinese parity result",
+      "desktop screenshots and browser journey",
+      "console and failed-network inspection"
+    ]
+  },
+  "stop_conditions": [
+    "The UI marks a command complete before the authoritative refetch returns.",
+    "The board fabricates an Agent or Service identity to create a Submission or ActionRequest.",
+    "Review, approval or Acceptance can be issued without showing the immutable object/hash it binds.",
+    "An actionable failure is hidden, translated into success or has no retry path."
+  ]
+}

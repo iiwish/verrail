@@ -1,0 +1,67 @@
+{
+  "id": "T004-A001",
+  "target_id": "g2-7-production-closure",
+  "task_id": "T004",
+  "agent": "codex",
+  "runner": "local_direct_execute",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "output_commit": null,
+  "branch": "codex/g2-7-production-closure",
+  "changed_files": [
+    "packages/db/src/schema/verrail_connector.ts",
+    "packages/db/src/schema/verrail_work_results.ts",
+    "packages/db/src/schema/index.ts",
+    "packages/db/src/migrations/0242_bizarre_meggan.sql",
+    "packages/db/src/migrations/meta/0242_snapshot.json",
+    "packages/db/src/migrations/meta/_journal.json",
+    "packages/shared/src/types/connector.ts",
+    "packages/shared/src/types/target.ts",
+    "packages/shared/src/validators/connector.ts",
+    "packages/shared/src/validators/connector.test.ts",
+    "packages/shared/src/validators/target.ts",
+    "packages/shared/src/validators/target.test.ts",
+    "services/domain-api/internal/target/connector.go",
+    "services/domain-api/internal/target/connector_store.go",
+    "services/domain-api/internal/target/connector_test.go",
+    "services/domain-api/internal/target/graph.go",
+    "services/domain-api/internal/target/graph_store.go",
+    "services/domain-api/internal/httpapi/server.go",
+    "services/domain-api/internal/httpapi/candidate_principal_test.go",
+    "server/src/services/verrail-domain-api-client.ts",
+    "server/src/services/verrail-domain-api-client.test.ts",
+    "server/src/services/target-read-model.ts",
+    "server/src/routes/connector.ts",
+    "server/src/routes/openapi.ts",
+    "server/src/__tests__/connector-routes.test.ts",
+    "server/src/__tests__/target-read-model.test.ts"
+  ],
+  "commands": [
+    {
+      "command": "pnpm db:generate and database migration validation",
+      "status": "passed",
+      "summary": "Generated and applied expand-only migration 0242."
+    },
+    {
+      "command": "VERRAIL_TEST_DATABASE_URL=<fresh-postgres> go test -count=1 ./...",
+      "status": "passed",
+      "summary": "All Go packages passed with PostgreSQL integration enabled."
+    },
+    {
+      "command": "focused shared/server Vitest suite",
+      "status": "red_then_passed",
+      "summary": "RED proved absent contracts; GREEN passed 5 files and 38 tests."
+    },
+    {
+      "command": "pnpm -r typecheck; git diff --check",
+      "status": "passed"
+    }
+  ],
+  "logs": [
+    ".verrail/targets/g2-7-production-closure/runs/T004-A001/logs/tdd.md",
+    ".verrail/targets/g2-7-production-closure/runs/T004-A001/logs/review.md"
+  ],
+  "errors": [],
+  "summary": "Separated Agent Run, IntegrationRun/IntegrationAttempt, and HumanWorkResult contracts and added complete active revision, node, principal, connector, connection, commit, criterion, environment, receipt, idempotency, and hash bindings."
+}

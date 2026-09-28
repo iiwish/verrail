@@ -1,0 +1,29 @@
+{
+  "task_id": "T026",
+  "attempt_id": "T026-A002",
+  "agent": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "output_commit": null,
+  "branch": "codex/g2-7-production-closure",
+  "output_state": "Uncommitted working diff; pre-existing G2 work preserved",
+  "implementation": [
+    "Receipt-authorized failed RunWorkflow recovery with authoritative, non-allocating observer Activity",
+    "Scoped current-lease expiry and idempotent audit",
+    "Real Temporal restart/history replay plus isolated database regressions",
+    "Runs-only workspace refresh for asynchronous recovery facts",
+    "ADR 0006 and canonical Temporal recovery contract"
+  ],
+  "evidence": "evidence.json",
+  "logs": ["go-tests.log", "server-tests.log", "ui-typecheck.log", "ui-build.log"],
+  "status": "needs_review",
+  "handoff": "human-handoff-snapshot.md",
+  "artifact_sha256": {
+    "human-handoff-snapshot.md": "c89a33b8b5b61c2beb316301cbd3c6bec57b7d061fe19b2aa5185d2f7b33840d",
+    "go-tests.log": "8986959bcc98cb0a2307fd97cf0c2a6a8e03605abe9eff1fa1d1cbf450da38be",
+    "server-tests.log": "bc8012f5a0c8e2ece5804f1b2ab7ab2ed474f8854d19dc774a824537bcf9018f",
+    "ui-typecheck.log": "b64c460fd700d0dd8fc2c237b86d493f56de8c52e77494d5b2fb89380a720008",
+    "ui-build.log": "eb930ca3f9592d482b0135cfd19d1d2d50cdf26721501e30223e7e89a3e223d5"
+  },
+  "forbidden_actions_performed": false,
+  "external_writes_performed": false
+}

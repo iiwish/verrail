@@ -1,0 +1,50 @@
+{
+  "id": "T016-A001",
+  "target_id": "g2-7-production-closure",
+  "task_id": "T016",
+  "agent": "codex",
+  "runner": "local_direct_execute",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "output_commit": null,
+  "branch": "codex/g2-7-production-closure",
+  "changed_files": [
+    "server/src/services/verrail-run-executor.ts",
+    "server/src/services/verrail-run-executor.test.ts",
+    "server/src/services/heartbeat.ts",
+    "server/src/services/index.ts",
+    "server/src/index.ts",
+    "docs/temporal-target-workflow.md"
+  ],
+  "commands": [
+    {
+      "command": "pnpm --filter @paperclipai/server exec vitest run src/services/verrail-run-executor.test.ts",
+      "status": "passed",
+      "summary": "8 tests passed."
+    },
+    {
+      "command": "pnpm --filter @paperclipai/server typecheck",
+      "status": "passed"
+    },
+    {
+      "command": "pnpm test:domain-api",
+      "status": "passed"
+    },
+    {
+      "command": "integrated dev-server startup and scheduler smoke",
+      "status": "passed",
+      "summary": "Server and Domain API restarted on the production-closure stack; expired leases were excluded and no live lease was mutated directly."
+    },
+    {
+      "command": "git diff --check and governed JSON parse",
+      "status": "passed"
+    }
+  ],
+  "logs": [
+    ".verrail/targets/g2-7-production-closure/runs/T016-A001/logs/tdd.md",
+    ".verrail/targets/g2-7-production-closure/runs/T016-A001/logs/review.md"
+  ],
+  "errors": [],
+  "summary": "Native version-bound RunAttempts now execute through the existing trusted heartbeat/Codex path with durable correlation, renewal, cancellation and authoritative terminal reporting."
+}

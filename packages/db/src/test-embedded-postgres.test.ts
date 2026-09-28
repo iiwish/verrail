@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   __embeddedPostgresStartMaxAttemptsForTests as MAX_ATTEMPTS,
   __setEmbeddedPostgresCtorProviderForTests,
@@ -53,6 +53,30 @@ function makeFakeCtor(failFirst: number) {
 describe("startEmbeddedPostgresWithRetry", () => {
   afterEach(() => {
     __setEmbeddedPostgresCtorProviderForTests(null);
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("reports opt-in phase boundaries without paths, credentials or error text", async () => {
+    vi.stubEnv("PAPERCLIP_TEST_POSTGRES_TIMING", "1");
+    const output = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { ctor } = makeFakeCtor(1);
+    __setEmbeddedPostgresCtorProviderForTests(async () => ctor);
+    const started = await startWithRetry("paperclip-timing-private-");
+    try {
+      const events = output.mock.calls.map(([line]) => JSON.parse(String(line)));
+      expect(events).toContainEqual(expect.objectContaining({ phase: "start", state: "failed" }));
+      expect(events.at(-1)).toMatchObject({ phase: "start", state: "completed" });
+      for (const event of events) {
+        expect(Object.keys(event).sort()).toEqual(["elapsedMs", "event", "phase", "pid", "state"]);
+        expect(event.elapsedMs).toBeGreaterThanOrEqual(0);
+      }
+      expect(JSON.stringify(events)).not.toContain("private");
+      expect(JSON.stringify(events)).not.toContain(BIND_CONFLICT_LOG);
+    } finally {
+      await started.instance.stop();
+      fs.rmSync(started.dataDir, { recursive: true, force: true });
+    }
   });
 
   it("recovers from a transient port conflict and returns on a later attempt", async () => {

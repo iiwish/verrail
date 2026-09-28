@@ -1,0 +1,27 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T012-A001",
+  "task_id": "T012",
+  "status": "passed_for_dependency_progression",
+  "failure_reproduction": {
+    "command": "pnpm test:run",
+    "observed": "Exact route coverage reported the mounted POST channel-connectors callback in missingInSpec."
+  },
+  "fix": {
+    "path": "POST /api/plugins/{pluginId}/channel-connectors/{connectorKey}/{workspaceId}/{connectionId}/webhook",
+    "parameters": ["pluginId", "connectorKey", "workspaceId", "connectionId"],
+    "authentication_boundary": "No board or agent authentication is declared; provider authentication remains the connector worker's responsibility before persistence.",
+    "request": "Opaque JSON provider payload.",
+    "responses": [200, 400, 401, 404, 500, 501]
+  },
+  "verification": [
+    {"command":"OpenAPI route suite","status":"passed","result":"5/5"},
+    {"command":"server typecheck","status":"passed"},
+    {"command":"git diff --check","status":"passed"}
+  ],
+  "review": {
+    "critical_or_high_findings": 0,
+    "recommendation": "accept_for_dependency_progression",
+    "reference": ".verrail/targets/g2-7-production-closure/runs/T012-A001/logs/review.md"
+  }
+}

@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import { eq } from "drizzle-orm";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   agents,
@@ -20,6 +21,7 @@ import {
   projectWorkspaces,
   instanceUserRoles,
   projects,
+  resetPostgresDatabase,
   routines,
   routineTriggers,
   workspaceRuntimeServices,
@@ -1628,14 +1630,29 @@ describe("worktree helpers", () => {
       const sourceDb = await startEmbeddedPostgresTestDatabase("paperclip-worktree-auth-source-");
 
       try {
+        // Build a genuinely preceding schema, not just a journal missing its latest row.
+        const migrationsFolder = path.join(tempRoot, "migrations");
+        fs.cpSync(new URL("../../../packages/db/src/migrations/", import.meta.url), migrationsFolder, {
+          recursive: true,
+          filter: (source) => !source.endsWith("_snapshot.json"),
+        });
+        const journalPath = path.join(migrationsFolder, "meta", "_journal.json");
+        const journal = JSON.parse(fs.readFileSync(journalPath, "utf8"));
+        journal.entries = journal.entries.slice(0, -1);
+        fs.writeFileSync(journalPath, JSON.stringify(journal), "utf8");
+        const adminUrl = new URL(sourceDb.connectionString);
+        const databaseName = adminUrl.pathname.slice(1);
+        adminUrl.pathname = "/postgres";
+        await resetPostgresDatabase(adminUrl.toString(), databaseName);
+        const migrationDb = createDb(sourceDb.connectionString);
+        try {
+          await migrate(migrationDb, { migrationsFolder });
+        } finally {
+          await migrationDb.$client.end({ timeout: 5 });
+        }
         await seedValidWorktreeSource(sourceDb.connectionString);
         const sourceDbClient = createDb(sourceDb.connectionString);
         await sourceDbClient.$client.unsafe(`
-          DELETE FROM "drizzle"."__drizzle_migrations"
-          WHERE "id" = (
-            SELECT max("id") FROM "drizzle"."__drizzle_migrations"
-          );
-
           WITH pair AS (
             SELECT
               array_agg("id" ORDER BY "id" DESC) AS ids,

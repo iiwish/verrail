@@ -8,29 +8,33 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 )
 
 const (
-	connectorResourceIntegrationRun      = "integration_run"
-	connectorResourceActionRequest       = "action_request"
-	connectorResourceActionApproval      = "action_approval"
-	connectorResourceEffectReceipt       = "effect_receipt"
-	connectorIntegrationRunRecordedEvent = "connector.integration_run_recorded.v1"
-	connectorActionRequestCreatedEvent   = "connector.action_request_created.v1"
-	connectorActionApprovedEvent         = "connector.action_approved.v1"
-	connectorActionExecutedEvent         = "connector.action_executed.v1"
-	ConnectorIntegrationRunRecordCommand = "connector.integration_run.record.v1"
-	ConnectorActionRequestCreateCommand  = "connector.action_request.create.v1"
-	ConnectorActionApproveCommand        = "connector.action.approve.v1"
-	ConnectorActionExecuteCommand        = "connector.action.execute.v1"
+	connectorResourceIntegrationRun       = "integration_run"
+	connectorResourceHumanWorkResult      = "human_work_result"
+	connectorResourceActionRequest        = "action_request"
+	connectorResourceActionApproval       = "action_approval"
+	connectorResourceEffectReceipt        = "effect_receipt"
+	connectorIntegrationRunRecordedEvent  = "connector.integration_run_recorded.v1"
+	connectorHumanWorkResultRecordedEvent = "connector.human_work_result_recorded.v1"
+	connectorActionRequestCreatedEvent    = "connector.action_request_created.v1"
+	connectorActionApprovedEvent          = "connector.action_approved.v1"
+	connectorActionExecutedEvent          = "connector.action_executed.v1"
+	ConnectorIntegrationRunRecordCommand  = "connector.integration_run.record.v1"
+	ConnectorHumanWorkResultRecordCommand = "connector.human_work_result.record.v1"
+	ConnectorActionRequestCreateCommand   = "connector.action_request.create.v1"
+	ConnectorActionApproveCommand         = "connector.action.approve.v1"
+	ConnectorActionExecuteCommand         = "connector.action.execute.v1"
 )
 
-// The connector producer identity for CI evidence recorded by integration
-// runs: service principals are recorded by human members (spec.md product
-// contract item 1).
+// Stable producer identity for CI evidence recorded by integration runs.
 const connectorProducerPrincipalID = "integration-run"
 
 const connectorVerifierVersion = "integration-run.v1"
@@ -39,17 +43,38 @@ type PullRequestParams struct {
 	Title string `json:"title"`
 	Head  string `json:"head"`
 	Base  string `json:"base"`
+	Body  string `json:"body"`
 }
 
 type RecordIntegrationRunInput struct {
-	TargetID    string  `json:"targetId"`
-	ClaimID     string  `json:"claimId"`
-	WorkNodeID  *string `json:"workNodeId,omitempty"`
-	Provider    string  `json:"provider"`
-	ExternalRef string  `json:"externalRef"`
-	Conclusion  string  `json:"conclusion"`
-	ObjectHash  string  `json:"objectHash"`
-	Reference   string  `json:"reference"`
+	TargetID         string                 `json:"targetId"`
+	TargetRevisionID string                 `json:"targetRevisionId"`
+	GraphRevisionID  string                 `json:"graphRevisionId"`
+	ClaimID          string                 `json:"claimId"`
+	WorkNodeID       string                 `json:"workNodeId"`
+	ConnectorVersion string                 `json:"connectorVersion"`
+	ConnectionID     string                 `json:"connectionId"`
+	Provider         string                 `json:"provider"`
+	ExternalRef      string                 `json:"externalRef"`
+	CommitRef        string                 `json:"commitRef"`
+	CriterionKey     string                 `json:"criterionKey"`
+	EnvironmentRef   string                 `json:"environmentRef"`
+	Conclusion       string                 `json:"conclusion"`
+	ObjectHash       string                 `json:"objectHash"`
+	Reference        string                 `json:"reference"`
+	ProviderReceipt  map[string]any         `json:"providerReceipt"`
+	ProofContext     *CriterionProofContext `json:"proofContext,omitempty"`
+}
+
+type RecordHumanWorkResultInput struct {
+	TargetID           string         `json:"targetId"`
+	TargetRevisionID   string         `json:"targetRevisionId"`
+	GraphRevisionID    string         `json:"graphRevisionId"`
+	WorkNodeID         string         `json:"workNodeId"`
+	InputHash          string         `json:"inputHash"`
+	Result             map[string]any `json:"result"`
+	ArtifactRevisionID *string        `json:"artifactRevisionId,omitempty"`
+	AttachmentHashes   []string       `json:"attachmentHashes"`
 }
 
 type RequestPullRequestActionInput struct {
@@ -88,16 +113,23 @@ func connectorUpstreamError(message string) error {
 	return &Error{Status: 502, Code: "CONNECTOR_UPSTREAM_ERROR", Message: message, Retryable: true}
 }
 
-func ValidateRecordIntegrationRunInput(input *RecordIntegrationRunInput) error {
-	if !uuidPattern.MatchString(input.TargetID) || !uuidPattern.MatchString(input.ClaimID) {
-		return validation("targetId and claimId must be UUIDs")
+func connectorUnknownEffect(message string) error {
+	if strings.TrimSpace(message) == "" {
+		message = "GitHub effect outcome is unknown; retry will reconcile before creating"
 	}
-	if input.WorkNodeID != nil {
-		value := strings.TrimSpace(*input.WorkNodeID)
-		if !uuidPattern.MatchString(value) {
-			return validation("workNodeId must be a UUID")
-		}
-		input.WorkNodeID = &value
+	return &Error{Status: 502, Code: "CONNECTOR_EFFECT_UNKNOWN", Message: message, Retryable: true}
+}
+
+func ValidateRecordIntegrationRunInput(input *RecordIntegrationRunInput) error {
+	if err := ValidateCriterionProofContext(input.ProofContext); err != nil {
+		return err
+	}
+	if !uuidPattern.MatchString(input.TargetID) || !uuidPattern.MatchString(input.TargetRevisionID) || !uuidPattern.MatchString(input.GraphRevisionID) || !uuidPattern.MatchString(input.ClaimID) || !uuidPattern.MatchString(input.WorkNodeID) || !uuidPattern.MatchString(input.ConnectionID) {
+		return validation("Integration run binding IDs must be UUIDs")
+	}
+	input.ConnectorVersion = strings.TrimSpace(input.ConnectorVersion)
+	if input.ConnectorVersion == "" || utf8.RuneCountInString(input.ConnectorVersion) > 200 {
+		return validation("connectorVersion must contain 1 to 200 characters")
 	}
 	input.Provider = strings.TrimSpace(input.Provider)
 	if input.Provider != "github" {
@@ -117,7 +149,107 @@ func ValidateRecordIntegrationRunInput(input *RecordIntegrationRunInput) error {
 	if input.Reference == "" || utf8.RuneCountInString(input.Reference) > 500 {
 		return validation("reference must contain 1 to 500 characters")
 	}
+	for _, field := range []struct {
+		value string
+		name  string
+		max   int
+	}{
+		{input.CommitRef, "commitRef", 500},
+		{input.CriterionKey, "criterionKey", 100},
+		{input.EnvironmentRef, "environmentRef", 500},
+	} {
+		trimmed := strings.TrimSpace(field.value)
+		if trimmed == "" || utf8.RuneCountInString(trimmed) > field.max {
+			return validation(field.name + " is required and bounded")
+		}
+		switch field.name {
+		case "commitRef":
+			input.CommitRef = trimmed
+		case "criterionKey":
+			input.CriterionKey = trimmed
+		case "environmentRef":
+			input.EnvironmentRef = trimmed
+		}
+	}
+	if input.ProviderReceipt == nil || containsSensitiveProviderField(input.ProviderReceipt) {
+		return validation("providerReceipt is required and must not contain credentials")
+	}
 	return nil
+}
+
+func ValidateResultLifecycleCommand[T any](command *AgentLifecycleCommand[T]) error {
+	return validateLifecycleCommand(
+		command,
+		func(principalType string) bool { return principalType == "user" || principalType == "service" },
+		"WORK_RESULT_COMMAND_FORBIDDEN",
+		"An authenticated user or service Principal is required",
+		"Invalid work result command",
+	)
+}
+
+func containsSensitiveProviderField(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, item := range typed {
+			lower := strings.ToLower(key)
+			if strings.Contains(lower, "authorization") || strings.Contains(lower, "credential") || strings.Contains(lower, "password") || strings.Contains(lower, "secret") || strings.Contains(lower, "token") {
+				return true
+			}
+			if containsSensitiveProviderField(item) {
+				return true
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if containsSensitiveProviderField(item) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func ValidateRecordHumanWorkResultInput(input *RecordHumanWorkResultInput) error {
+	if !uuidPattern.MatchString(input.TargetID) || !uuidPattern.MatchString(input.TargetRevisionID) || !uuidPattern.MatchString(input.GraphRevisionID) || !uuidPattern.MatchString(input.WorkNodeID) {
+		return validation("Human work result binding IDs must be UUIDs")
+	}
+	if err := validateAssuranceHash(&input.InputHash, "inputHash"); err != nil {
+		return err
+	}
+	if input.Result == nil {
+		return validation("result is required")
+	}
+	if containsSensitiveProviderField(input.Result) {
+		return validation("result must not contain credentials")
+	}
+	if input.ArtifactRevisionID != nil {
+		value := strings.TrimSpace(*input.ArtifactRevisionID)
+		if !uuidPattern.MatchString(value) {
+			return validation("artifactRevisionId must be a UUID")
+		}
+		input.ArtifactRevisionID = &value
+	}
+	if len(input.AttachmentHashes) > 100 {
+		return validation("attachmentHashes may contain at most 100 entries")
+	}
+	if input.AttachmentHashes == nil {
+		input.AttachmentHashes = []string{}
+	}
+	for index := range input.AttachmentHashes {
+		if err := validateAssuranceHash(&input.AttachmentHashes[index], "attachmentHashes"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func humanWorkResultHash(input RecordHumanWorkResultInput) (string, error) {
+	payload, err := json.Marshal(input)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(payload)
+	return hex.EncodeToString(digest[:]), nil
 }
 
 func ValidatePullRequestParams(params *PullRequestParams) error {
@@ -132,6 +264,9 @@ func ValidatePullRequestParams(params *PullRequestParams) error {
 	}
 	if params.Base == "" || utf8.RuneCountInString(params.Base) > 200 {
 		return validation("params.base must contain 1 to 200 characters")
+	}
+	if utf8.RuneCountInString(params.Body) > 65536 {
+		return validation("params.body must contain at most 65536 characters")
 	}
 	return nil
 }
@@ -170,13 +305,29 @@ func ValidateExecuteActionInput(input *ExecuteActionInput) error {
 	return nil
 }
 
+func ValidateGitHubCredentialTransport(connectionID, authorization string) error {
+	if !uuidPattern.MatchString(strings.TrimSpace(connectionID)) {
+		return validation("X-Verrail-GitHub-Connection-Id must be a UUID")
+	}
+	authorization = strings.TrimSpace(authorization)
+	if len(authorization) > 8192 || strings.ContainsAny(authorization, "\r\n\x00") {
+		return connectorCredentialsNotConfigured()
+	}
+	lower := strings.ToLower(authorization)
+	if (!strings.HasPrefix(lower, "bearer ") && !strings.HasPrefix(lower, "token ")) || len(strings.Fields(authorization)) != 2 {
+		return connectorCredentialsNotConfigured()
+	}
+	return nil
+}
+
 // pullRequestParamsHash derives the sha256 over the canonical JSON payload of
-// {title, head, base}. The approval is parameter-bound to this digest.
+// {title, head, base, body}. The approval is parameter-bound to this digest.
 func pullRequestParamsHash(params PullRequestParams) (string, error) {
 	payload := map[string]any{
 		"title": params.Title,
 		"head":  params.Head,
 		"base":  params.Base,
+		"body":  params.Body,
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
@@ -203,65 +354,274 @@ func effectHash(actionRequestID, paramsHash, externalObjectID string) (string, e
 	return hex.EncodeToString(digest[:]), nil
 }
 
+func providerMarker(actionRequestID, paramsHash string) string {
+	digest := sha256.Sum256([]byte("github:create_pull_request:" + actionRequestID + ":" + paramsHash))
+	return hex.EncodeToString(digest[:])
+}
+
+func githubMarkerComment(marker string) string {
+	return "<!-- verrail-effect:" + marker + " -->"
+}
+
+func githubPullRequestBody(body, marker string) string {
+	comment := githubMarkerComment(marker)
+	content := strings.TrimSpace(strings.ReplaceAll(body, comment, ""))
+	if content == "" {
+		return comment
+	}
+	return content + "\n\n" + comment
+}
+
+type PullRequestLookupStatus string
+
+const (
+	PullRequestFound        PullRequestLookupStatus = "found"
+	PullRequestAbsent       PullRequestLookupStatus = "absent"
+	PullRequestInconclusive PullRequestLookupStatus = "inconclusive"
+)
+
+type PullRequestLookup struct {
+	Status           PullRequestLookupStatus
+	ExternalObjectID string
+	ExternalURL      string
+	HeadSHA          string
+	HeadRef          string
+	HeadRepository   string
+	BaseRef          string
+	BaseRepository   string
+}
+
+var githubCommitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
+func githubHeadBranch(repo string, params PullRequestParams) (string, error) {
+	head := params.Head
+	if owner, branch, qualified := strings.Cut(head, ":"); qualified {
+		repoOwner, _, _ := strings.Cut(repo, "/")
+		if !strings.EqualFold(owner, repoOwner) {
+			return "", &Error{Status: 409, Code: "CONNECTOR_HEAD_REPOSITORY_MISMATCH", Message: "Governed pull requests require a branch in the bound repository"}
+		}
+		head = branch
+	}
+	return head, nil
+}
+
+type githubPullRequest struct {
+	Number  int    `json:"number"`
+	HTMLURL string `json:"html_url"`
+	Body    string `json:"body"`
+	Head    struct {
+		SHA  string `json:"sha"`
+		Ref  string `json:"ref"`
+		Repo struct {
+			FullName string `json:"full_name"`
+		} `json:"repo"`
+	} `json:"head"`
+	Base struct {
+		Ref  string `json:"ref"`
+		Repo struct {
+			FullName string `json:"full_name"`
+		} `json:"repo"`
+	} `json:"base"`
+}
+
+func (pull githubPullRequest) observation() PullRequestLookup {
+	return PullRequestLookup{Status: PullRequestFound, ExternalObjectID: strconv.Itoa(pull.Number), ExternalURL: pull.HTMLURL,
+		HeadSHA: pull.Head.SHA, HeadRef: pull.Head.Ref, HeadRepository: pull.Head.Repo.FullName,
+		BaseRef: pull.Base.Ref, BaseRepository: pull.Base.Repo.FullName}
+}
+
+type GitHubProviderError struct {
+	Message   string
+	Uncertain bool
+}
+
+func (err *GitHubProviderError) Error() string { return err.Message }
+
 // GitHubClient abstracts the external GitHub API behind a single governed
 // effect (spec.md product contract item 3). Tests use a fake; production uses
 // the thin REST wrapper below.
 type GitHubClient interface {
-	CreatePullRequest(ctx context.Context, repo string, params PullRequestParams) (externalObjectID string, externalURL string, err error)
+	LookupPullRequest(ctx context.Context, repo string, params PullRequestParams, marker string) (PullRequestLookup, error)
+	GetPullRequest(ctx context.Context, repo, objectID string) (PullRequestLookup, error)
+	HeadCommit(ctx context.Context, repo string, params PullRequestParams) (string, error)
+	CreatePullRequest(ctx context.Context, repo string, params PullRequestParams, marker string) (PullRequestLookup, error)
 }
 
-// GitHubRESTClient is the real thin REST wrapper against api.github.com. The
-// token is injected at construction time by the control plane once workspace
-// connection credentials can be resolved outside the Node secret provider;
-// until then an empty token fails fast with a clear error and every test runs
-// against a fake (documented deviation).
+func (client *GitHubRESTClient) GetPullRequest(ctx context.Context, repo, objectID string) (PullRequestLookup, error) {
+	number, err := strconv.ParseUint(objectID, 10, 64)
+	if err != nil || number == 0 || strconv.FormatUint(number, 10) != objectID {
+		return PullRequestLookup{}, connectorUpstreamError("invalid stored GitHub pull request number")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, client.apiBase+"/repos/"+repo+"/pulls/"+objectID, nil)
+	if err != nil {
+		return PullRequestLookup{}, connectorUpstreamError("build GitHub pull request read")
+	}
+	if err := client.setHeaders(request); err != nil {
+		return PullRequestLookup{}, err
+	}
+	response, err := client.httpClient.Do(request)
+	if err != nil {
+		return PullRequestLookup{}, connectorUpstreamError("read known GitHub pull request")
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return PullRequestLookup{}, connectorUpstreamError(fmt.Sprintf("GitHub pull request read returned %d", response.StatusCode))
+	}
+	var pull githubPullRequest
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&pull); err != nil || strconv.Itoa(pull.Number) != objectID {
+		return PullRequestLookup{}, connectorUpstreamError("GitHub response did not identify the recorded pull request")
+	}
+	return pull.observation(), nil
+}
+
+// GitHubRESTClient receives an ephemeral credential resolved by the control plane
+// from the workspace-bound connection. Empty credentials fail closed.
 type GitHubRESTClient struct {
-	apiBase    string
-	token      string
-	httpClient *http.Client
+	apiBase       string
+	authorization string
+	httpClient    *http.Client
 }
 
-func NewGitHubRESTClient(apiBase, token string) *GitHubRESTClient {
+func NewGitHubRESTClient(apiBase, authorization string) *GitHubRESTClient {
 	if apiBase == "" {
 		apiBase = "https://api.github.com"
 	}
-	return &GitHubRESTClient{apiBase: strings.TrimRight(apiBase, "/"), token: token, httpClient: &http.Client{Timeout: 30 * time.Second}}
+	trimmed := strings.TrimSpace(authorization)
+	if trimmed != "" && !strings.Contains(trimmed, " ") {
+		trimmed = "Bearer " + trimmed
+	}
+	return &GitHubRESTClient{apiBase: strings.TrimRight(apiBase, "/"), authorization: trimmed, httpClient: &http.Client{Timeout: 30 * time.Second}}
 }
 
-func (client *GitHubRESTClient) CreatePullRequest(ctx context.Context, repo string, params PullRequestParams) (string, string, error) {
-	if strings.TrimSpace(client.token) == "" {
-		return "", "", connectorCredentialsNotConfigured()
+func (client *GitHubRESTClient) setHeaders(request *http.Request) error {
+	if strings.TrimSpace(client.authorization) == "" {
+		return connectorCredentialsNotConfigured()
 	}
-	body, err := json.Marshal(map[string]string{"title": params.Title, "head": params.Head, "base": params.Base})
-	if err != nil {
-		return "", "", connectorUpstreamError("encode pull request payload")
+	if !strings.HasPrefix(strings.ToLower(client.authorization), "bearer ") && !strings.HasPrefix(strings.ToLower(client.authorization), "token ") {
+		return connectorCredentialsNotConfigured()
 	}
-	request, err := http.NewRequest(http.MethodPost, client.apiBase+"/repos/"+repo+"/pulls", strings.NewReader(string(body)))
-	if err != nil {
-		return "", "", connectorUpstreamError("build GitHub request")
-	}
-	request.Header.Set("Authorization", "Bearer "+client.token)
+	request.Header.Set("Authorization", client.authorization)
 	request.Header.Set("Accept", "application/vnd.github+json")
 	request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	return nil
+}
+
+func (client *GitHubRESTClient) LookupPullRequest(ctx context.Context, repo string, params PullRequestParams, marker string) (PullRequestLookup, error) {
+	if strings.TrimSpace(client.authorization) == "" {
+		return PullRequestLookup{}, connectorCredentialsNotConfigured()
+	}
+	repoOwner, _, ok := strings.Cut(repo, "/")
+	if !ok || repoOwner == "" {
+		return PullRequestLookup{Status: PullRequestInconclusive}, connectorUpstreamError("invalid GitHub repository binding")
+	}
+	// Head/base can be changed on GitHub after an uncertain create. Search by
+	// marker across the repository, then validate the observed branches.
+	for page := 1; page <= 100; page++ {
+		query := url.Values{
+			"state":    {"all"},
+			"per_page": {"100"},
+			"page":     {strconv.Itoa(page)},
+		}
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, client.apiBase+"/repos/"+repo+"/pulls?"+query.Encode(), nil)
+		if err != nil {
+			return PullRequestLookup{Status: PullRequestInconclusive}, connectorUpstreamError("build GitHub lookup request")
+		}
+		if err := client.setHeaders(request); err != nil {
+			return PullRequestLookup{}, err
+		}
+		response, err := client.httpClient.Do(request)
+		if err != nil {
+			return PullRequestLookup{Status: PullRequestInconclusive}, &GitHubProviderError{Message: err.Error(), Uncertain: true}
+		}
+		payload, readErr := io.ReadAll(io.LimitReader(response.Body, 2<<20))
+		_ = response.Body.Close()
+		if readErr != nil {
+			return PullRequestLookup{Status: PullRequestInconclusive}, &GitHubProviderError{Message: "read GitHub lookup response", Uncertain: true}
+		}
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			return PullRequestLookup{Status: PullRequestInconclusive}, &GitHubProviderError{Message: fmt.Sprintf("GitHub lookup returned %d", response.StatusCode), Uncertain: response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500}
+		}
+		var pulls []githubPullRequest
+		if err := json.Unmarshal(payload, &pulls); err != nil {
+			return PullRequestLookup{Status: PullRequestInconclusive}, &GitHubProviderError{Message: "decode GitHub lookup response", Uncertain: true}
+		}
+		comment := githubMarkerComment(marker)
+		for _, pull := range pulls {
+			if pull.Number > 0 && strings.Contains(pull.Body, comment) {
+				return pull.observation(), nil
+			}
+		}
+		if len(pulls) < 100 {
+			return PullRequestLookup{Status: PullRequestAbsent}, nil
+		}
+	}
+	return PullRequestLookup{Status: PullRequestInconclusive}, &GitHubProviderError{Message: "GitHub lookup exceeded the bounded page limit", Uncertain: true}
+}
+
+func (client *GitHubRESTClient) HeadCommit(ctx context.Context, repo string, params PullRequestParams) (string, error) {
+	branch, err := githubHeadBranch(repo, params)
+	if err != nil {
+		return "", err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, client.apiBase+"/repos/"+repo+"/git/ref/heads/"+url.PathEscape(branch), nil)
+	if err != nil {
+		return "", connectorUpstreamError("build GitHub branch request")
+	}
+	if err := client.setHeaders(request); err != nil {
+		return "", err
+	}
+	response, err := client.httpClient.Do(request)
+	if err != nil {
+		return "", connectorUpstreamError("read GitHub branch")
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return "", connectorUpstreamError(fmt.Sprintf("GitHub branch returned %d", response.StatusCode))
+	}
+	var ref struct {
+		Ref    string `json:"ref"`
+		Object struct {
+			Type string `json:"type"`
+			SHA  string `json:"sha"`
+		} `json:"object"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&ref); err != nil || ref.Ref != "refs/heads/"+branch || ref.Object.Type != "commit" || !githubCommitPattern.MatchString(ref.Object.SHA) {
+		return "", connectorUpstreamError("GitHub response did not identify the requested branch commit")
+	}
+	return ref.Object.SHA, nil
+}
+
+func (client *GitHubRESTClient) CreatePullRequest(ctx context.Context, repo string, params PullRequestParams, marker string) (PullRequestLookup, error) {
+	if strings.TrimSpace(client.authorization) == "" {
+		return PullRequestLookup{}, connectorCredentialsNotConfigured()
+	}
+	body, err := json.Marshal(map[string]string{"title": params.Title, "head": params.Head, "base": params.Base, "body": githubPullRequestBody(params.Body, marker)})
+	if err != nil {
+		return PullRequestLookup{}, connectorUpstreamError("encode pull request payload")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, client.apiBase+"/repos/"+repo+"/pulls", strings.NewReader(string(body)))
+	if err != nil {
+		return PullRequestLookup{}, connectorUpstreamError("build GitHub request")
+	}
+	if err := client.setHeaders(request); err != nil {
+		return PullRequestLookup{}, err
+	}
 	request.Header.Set("Content-Type", "application/json")
 	response, err := client.httpClient.Do(request)
 	if err != nil {
-		return "", "", connectorUpstreamError(err.Error())
+		return PullRequestLookup{}, &GitHubProviderError{Message: err.Error(), Uncertain: true}
 	}
 	defer func() { _ = response.Body.Close() }()
 	payload, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if err != nil {
-		return "", "", connectorUpstreamError("read GitHub response")
+		return PullRequestLookup{}, &GitHubProviderError{Message: "read GitHub response", Uncertain: true}
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", "", connectorUpstreamError(fmt.Sprintf("GitHub returned %d: %s", response.StatusCode, strings.TrimSpace(string(payload))))
+		return PullRequestLookup{}, &GitHubProviderError{Message: fmt.Sprintf("GitHub returned %d", response.StatusCode), Uncertain: response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500}
 	}
-	var created struct {
-		Number  int    `json:"number"`
-		HTMLURL string `json:"html_url"`
-	}
+	var created githubPullRequest
 	if err := json.Unmarshal(payload, &created); err != nil || created.Number == 0 {
-		return "", "", connectorUpstreamError("GitHub response did not contain a pull request number")
+		return PullRequestLookup{}, &GitHubProviderError{Message: "GitHub response did not contain a pull request number", Uncertain: true}
 	}
-	return fmt.Sprintf("%d", created.Number), created.HTMLURL, nil
+	return created.observation(), nil
 }

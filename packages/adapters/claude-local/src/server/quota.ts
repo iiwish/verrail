@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { sanitizeControlPlaneEnv } from "@paperclipai/adapter-utils/control-plane-env";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -28,7 +29,7 @@ function createClaudeQuotaEnv(): Record<string, string> {
     if (key.startsWith("ANTHROPIC_")) continue;
     env[key] = value;
   }
-  return env;
+  return sanitizeControlPlaneEnv(env);
 }
 
 function stripBackspaces(text: string): string {
@@ -115,7 +116,7 @@ interface ClaudeAuthStatus {
 export async function readClaudeAuthStatus(): Promise<ClaudeAuthStatus | null> {
   try {
     const { stdout } = await execFileAsync("claude", ["auth", "status"], {
-      env: process.env,
+      env: sanitizeControlPlaneEnv(process.env),
       timeout: 5_000,
       maxBuffer: 1024 * 1024,
     });

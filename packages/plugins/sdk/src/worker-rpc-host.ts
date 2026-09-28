@@ -46,6 +46,9 @@ import type {
   RequestCheckboxConfirmationInteraction,
   RequestConfirmationInteraction,
   SuggestTasksInteraction,
+  ChannelReplyRequestV1,
+  ChannelReplyReadRequestV1,
+  ChannelWebhookRequestV1,
 } from "@paperclipai/shared";
 
 import type { PaperclipPlugin } from "./define-plugin.js";
@@ -460,6 +463,11 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
 
   function buildContext(): PluginContext {
     return {
+      channels: {
+        ingest(input) {
+          return invocationContextStorage.exit(() => callHost("channels.ingest", input));
+        },
+      },
       get manifest() {
         if (!manifest) throw new Error("Plugin context accessed before initialization");
         return manifest;
@@ -1589,6 +1597,14 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       case "handleWebhook":
         return handleWebhook(params as PluginWebhookInput);
 
+      case "handleChannelWebhook":
+        return handleChannelWebhook(params as ChannelWebhookRequestV1);
+
+      case "handleChannelReply":
+        return handleChannelReply(params as ChannelReplyRequestV1);
+      case "handleChannelReplyRead":
+        return handleChannelReplyRead(params as ChannelReplyReadRequestV1);
+
       case "handleApiRequest":
         return handleApiRequest(params as PluginApiRequestInput);
 
@@ -1876,6 +1892,33 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       );
     }
     await plugin.definition.onWebhook(params);
+  }
+
+  async function handleChannelWebhook(params: ChannelWebhookRequestV1) {
+    if (!plugin.definition.onChannelWebhook) {
+      throw Object.assign(
+        new Error("handleChannelWebhook is not implemented by this plugin"),
+        { code: PLUGIN_RPC_ERROR_CODES.METHOD_NOT_IMPLEMENTED },
+      );
+    }
+    return plugin.definition.onChannelWebhook(params);
+  }
+
+  async function handleChannelReply(params: ChannelReplyRequestV1) {
+    if (!plugin.definition.onChannelReply) {
+      throw Object.assign(
+        new Error("handleChannelReply is not implemented by this plugin"),
+        { code: PLUGIN_RPC_ERROR_CODES.METHOD_NOT_IMPLEMENTED },
+      );
+    }
+    return plugin.definition.onChannelReply(params);
+  }
+
+  async function handleChannelReplyRead(params: ChannelReplyReadRequestV1) {
+    if (!plugin.definition.onChannelReplyRead) {
+      throw Object.assign(new Error("handleChannelReplyRead is not implemented by this plugin"), { code: PLUGIN_RPC_ERROR_CODES.METHOD_NOT_IMPLEMENTED });
+    }
+    return plugin.definition.onChannelReplyRead(params);
   }
 
   async function handleApiRequest(params: PluginApiRequestInput): Promise<unknown> {

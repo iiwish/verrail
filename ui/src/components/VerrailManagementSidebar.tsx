@@ -9,7 +9,6 @@ import {
   MonitorCog,
   Plus,
   Puzzle,
-  Rocket,
   ServerCog,
   ShieldCheck,
 } from "lucide-react";
@@ -85,24 +84,7 @@ export function VerrailManagementSidebar({ section }: ManagementSidebarProps) {
       <nav className="min-h-0 flex-1 overflow-y-auto px-3 py-2 scrollbar-auto-hide" aria-label={title}>
         <div className="flex flex-col gap-0.5">
           {agents ? (
-            <>
-              <SidebarNavItem
-                to="/agents/definitions"
-                label={t("agentNav.all")}
-                icon={Bot}
-                end
-              />
-              <SidebarNavItem
-                to="/agents/deployments"
-                label={t("agentNav.deployments")}
-                icon={Rocket}
-                end
-              />
-              <div className="mt-4">
-                <p className="px-4 pb-1 text-xs font-medium text-muted-foreground">{t("agentNav.yours")}</p>
-                <SidebarAgents appearance="list" />
-              </div>
-            </>
+            <SidebarAgents appearance="list" />
           ) : infrastructure ? (
             <>
               <SidebarNavItem

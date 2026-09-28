@@ -5,6 +5,8 @@ export const queryKeys = {
       ["conversations", workspaceId, "list", status, q] as const,
     detail: (workspaceId: string, conversationId: string) =>
       ["conversations", workspaceId, "detail", conversationId] as const,
+    drafts: (workspaceId: string, conversationId: string) =>
+      ["conversations", workspaceId, "drafts", conversationId] as const,
   },
   targets: {
     list: (
@@ -166,6 +168,7 @@ export const queryKeys = {
     taskSessions: (id: string) => ["agents", "task-sessions", id] as const,
     skills: (id: string) => ["agents", "skills", id] as const,
     instructionsBundle: (id: string) => ["agents", "instructions-bundle", id] as const,
+    directorInstructions: (id: string, companyId?: string) => ["agents", "director-instructions", companyId, id] as const,
     instructionsFile: (id: string, relativePath: string) =>
       ["agents", "instructions-bundle", id, "file", relativePath] as const,
     keys: (agentId: string) => ["agents", "keys", agentId] as const,

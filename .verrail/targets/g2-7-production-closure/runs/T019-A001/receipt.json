@@ -1,0 +1,42 @@
+{
+  "id": "T019-A001",
+  "target_id": "g2-7-production-closure",
+  "task_id": "T019",
+  "agent": "codex",
+  "runner": "local_direct_execute",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "output_commit": null,
+  "branch": "codex/g2-7-production-closure",
+  "changed_files": [
+    "packages/adapters/codex-local/src/server/acp.ts",
+    "packages/adapters/codex-local/src/server/acp.test.ts"
+  ],
+  "commands": [
+    {
+      "command": "pnpm --filter @paperclipai/adapter-codex-local exec vitest run src/server/acp.test.ts",
+      "status": "passed",
+      "summary": "29 tests passed after one expected RED failure."
+    },
+    {
+      "command": "pnpm --filter @paperclipai/adapter-codex-local typecheck",
+      "status": "passed"
+    },
+    {
+      "command": "real MYW-1 retry",
+      "status": "passed",
+      "summary": "Heartbeat run 7ee30b95-3216-425a-b7c5-ca902c569a2b executed gpt-5.6-sol and succeeded with recorded token usage."
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    }
+  ],
+  "logs": [
+    ".verrail/targets/g2-7-production-closure/runs/T019-A001/logs/tdd.md",
+    ".verrail/targets/g2-7-production-closure/runs/T019-A001/logs/review.md"
+  ],
+  "errors": [],
+  "summary": "Local Codex ACP now binds to the managed runtime command and a real run passed the package-local optional-binary failure point."
+}

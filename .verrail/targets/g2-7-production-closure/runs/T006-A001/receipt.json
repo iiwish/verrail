@@ -1,0 +1,65 @@
+{
+  "id": "T006-A001",
+  "target_id": "g2-7-production-closure",
+  "task_id": "T006",
+  "agent": "codex",
+  "runner": "local_direct_execute",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "output_commit": null,
+  "branch": "codex/g2-7-production-closure",
+  "changed_files": [
+    "docs/github-connector.md",
+    "packages/db/src/schema/verrail_connector.ts",
+    "packages/db/src/migrations/0243_hesitant_mimic.sql",
+    "packages/db/src/migrations/0244_busy_logan.sql",
+    "packages/shared/src/types/connector.ts",
+    "packages/shared/src/validators/connector.ts",
+    "packages/shared/src/validators/connector.test.ts",
+    "server/src/app.ts",
+    "server/src/routes/connector.ts",
+    "server/src/services/secrets.ts",
+    "server/src/services/github-connector-credential.test.ts",
+    "server/src/services/verrail-domain-api-client.ts",
+    "server/src/services/verrail-domain-api-client.test.ts",
+    "server/src/services/target-read-model.ts",
+    "server/src/__tests__/connector-routes.test.ts",
+    "server/src/__tests__/target-read-model.test.ts",
+    "services/domain-api/internal/httpapi/server.go",
+    "services/domain-api/internal/target/connector.go",
+    "services/domain-api/internal/target/connector_store.go",
+    "services/domain-api/internal/target/connector_test.go",
+    "services/domain-api/internal/orchestration/dispatcher.go",
+    "services/domain-api/internal/orchestration/store.go",
+    "services/domain-api/internal/orchestration/store_integration_test.go"
+  ],
+  "commands": [
+    {
+      "command": "focused server/shared connector and credential tests",
+      "status": "passed",
+      "summary": "5 test files and 37 tests passed; credential resolution used a real encrypted local secret and verified durable rows exclude the random sentinel."
+    },
+    {
+      "command": "VERRAIL_TEST_DATABASE_URL=<fresh-postgres> go test -count=1 ./internal/target ./internal/httpapi ./internal/orchestration",
+      "status": "passed",
+      "summary": "Provider lookup/create fault, approval invalidation, Workspace binding, receipt failure and HTTP credential boundary tests passed."
+    },
+    {
+      "command": "go vet ./...; pnpm --filter @paperclipai/db check:migrations; pnpm -r typecheck; pnpm build; git diff --check",
+      "status": "passed",
+      "summary": "Go vet, migration safety, all 34 typed workspaces, production build and whitespace validation passed."
+    },
+    {
+      "command": "pnpm test:run",
+      "status": "failed_unrelated_flake",
+      "summary": "General server shard passed 4,713 tests; UI shard had one timing failure in untouched IssueDocumentAnnotations.test.tsx. Its isolated rerun passed all 18 tests."
+    }
+  ],
+  "logs": [
+    ".verrail/targets/g2-7-production-closure/runs/T006-A001/logs/tdd.md",
+    ".verrail/targets/g2-7-production-closure/runs/T006-A001/logs/review.md"
+  ],
+  "errors": [],
+  "summary": "Implemented an ephemeral TypeScript-to-Go GitHub credential boundary, explicit executing and unknown-effect states, stable provider markers, lookup-before-retry reconciliation, and unique immutable effect receipts without holding a database transaction across provider calls."
+}

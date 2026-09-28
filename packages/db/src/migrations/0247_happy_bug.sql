@@ -1,0 +1,1 @@
+ALTER TABLE "verrail_channel_events" ADD COLUMN "reply_provider_message_id" text;

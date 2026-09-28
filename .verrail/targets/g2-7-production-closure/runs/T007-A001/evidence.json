@@ -1,0 +1,62 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T007-A001",
+  "task_id": "T007",
+  "status": "passed",
+  "projection_authority": {
+    "source": "Workspace-scoped PostgreSQL Target, Graph, Artifact, Evidence, Verification, Submission, Review, Acceptance, ActionRequest, ActionApproval and EffectReceipt facts",
+    "stored_status_rule": "A stored accepted label cannot produce an accepted read model; canceled is retained only as the explicit terminal override.",
+    "accepted_controls": [
+      "graph_complete",
+      "latest_submission",
+      "artifact_revisions_current",
+      "criteria_verified",
+      "review_approved",
+      "acceptance_valid",
+      "external_effects_settled"
+    ],
+    "command_rule": "availableCommands is advisory presentation data; every mutation keeps its command-side identity, scope and authority checks."
+  },
+  "invalidation_proof": [
+    "A new TargetRevision makes prior Submission, Review and Acceptance non-current.",
+    "A new ArtifactRevision makes the immutable Submission artifact binding stale.",
+    "A newer Submission makes an earlier Acceptance stale.",
+    "Failed or inconclusive current verification blocks accepted.",
+    "An executing action without receipt or unknown effect blocks accepted and emits Attention."
+  ],
+  "native_home_proof": {
+    "service": "targetReadModelService.attentionItems",
+    "fact_path": "Target facts are projected directly into attentionService with sourceKind=target.",
+    "legacy_independence": "The dedicated test creates no Issue or Heartbeat and still observes the Target attention item."
+  },
+  "timeline": {
+    "scope": "Target plus every subordinate native aggregate id",
+    "fallback": "Unrecognized audited fact types remain visible as domain_event rather than being discarded.",
+    "ordering": "Deterministic newest-first projection."
+  },
+  "database_guards": [
+    "verrail_targets_status_check limits durable labels to the declared Target status vocabulary",
+    "existing composite Workspace foreign keys and immutable adjudication/content bindings remain authoritative"
+  ],
+  "verification": [
+    { "command": "focused validators and server suites", "status": "passed", "result": "46 tests passed" },
+    { "command": "pnpm test:domain-api", "status": "passed" },
+    { "command": "pnpm -r typecheck", "status": "passed" },
+    { "command": "pnpm check:token-gates", "status": "passed" },
+    { "command": "pnpm --filter @paperclipai/db check:migrations", "status": "passed" },
+    { "command": "pnpm build", "status": "passed" },
+    { "command": "pnpm test:run", "status": "partial_environment_failure", "result": "4,717 server and 4,440 UI tests passed; CLI e2e alone failed before server startup because isolated HOME triggered a blocked Corepack download" },
+    { "command": "pnpm --filter paperclipai exec vitest run src/__tests__/company-import-export-e2e.test.ts", "status": "passed", "result": "1 real-server CLI e2e passed after preserving the preinstalled COREPACK_HOME" },
+    { "command": "git diff --check", "status": "passed" }
+  ],
+  "review": {
+    "critical_or_high_findings": 0,
+    "recommendation": "accept_for_dependency_progression",
+    "final_product_authority": "not_granted",
+    "reference": ".verrail/targets/g2-7-production-closure/runs/T007-A001/logs/review.md"
+  },
+  "residual_risks": [
+    "The Graph Engine does not yet auto-complete human review or acceptance node types; T008 must present native adjudication commands without inventing UI completion state.",
+    "The full suite's only failure was an environment-dependent Corepack lookup in an isolated CLI test home; the corrected isolated test passed, and later closure verification must rerun the stable full suite."
+  ]
+}

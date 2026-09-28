@@ -1,0 +1,42 @@
+{
+  "id": "v1-candidate-20260927",
+  "target_id": "g2-7-production-closure",
+  "agent": "codex",
+  "model": "Exact assistant model ID and context size are not exposed by this session",
+  "status": "in_progress",
+  "base_commit": "5e3298418798bb46ee1ad72d06d9ba5ddce474a0",
+  "output_commit": "d16f1385deabd926768f6975a0e1020d91e9e742",
+  "branch": "codex/g2-7-candidate-v1-20260927",
+  "source_hash": "e640ed79b53e31717fbf86b33849d35c29cad7e555024619f5580ec43e0f8471",
+  "source_hash_method": "SHA-256 of compact JSON containing sorted selected source paths and their SHA-256 values; this is not a Git tree ID",
+  "source_files": 5394,
+  "summary": "OpenCode-first candidate with current-source full local verification and independent AI technical review; remote and human gates remain open",
+  "current_verification": {
+    "completed_at": "2026-09-27T12:18:15.836Z",
+    "typecheck": "passed",
+    "tests": { "command": "VERRAIL_TEST_CODEX_GO_BRIDGE=1 pnpm test:run", "passed": 15422, "skipped": 37, "failed": 0, "files_passed": 1448, "files_skipped": 5, "invocations": 169 },
+    "build": "passed",
+    "go_default_suite": "passed; optional integration environments were not set for this command",
+    "go_source_admission_real_postgres": { "passed": 1, "skipped": 0 },
+    "token_gate": "passed",
+    "compose_tests": { "passed": 26, "failed": 0 },
+    "ci_proof_helper_tests": { "passed": 29, "failed": 0 },
+    "source_drift": [],
+    "selected_source_matches_code_commit": true,
+    "source_file_count": 5394,
+    "earlier_attempts": ["An earlier snapshot failed two bridge tests because of JWT instance mismatch; fixed with a deterministic regression", "A subsequent full attempt was intentionally interrupted to correct archive/pause continuation before final verification"]
+  },
+  "prior_local_evidence": {
+    "source_hash": "1b1b4d28692d0b0439d908a4e295ac089895e338bb3c0f35e5be76e932e9e6ea",
+    "tests_passed": 15402,
+    "tests_skipped": 41,
+    "matrix_jobs_passed": 11,
+    "unchanged_full_shard_retries": 1,
+    "source_archive_sha256": "a6283717af374377b744b2016f85f8efce26e200efbe2a5e5066473f7b5e0f0c",
+    "image_archive_sha256": "b6452cd7af6ddbcf9fea04c0c60b56df8b1fca215419ca444b3e29282f878c32",
+    "applies_to_current_source": false
+  },
+  "external_effect_scope": "The requested developer Draft PR is an operator action. It is not a product-generated EffectReceipt or evidence of human Acceptance.",
+  "remaining_gates": ["Owner confirmation of aggregate PR and inherited lockfile/workflow exceptions", "Current-head GitHub CI", "Project-scoped GitHub connection", "Baseline product PR provider HEAD binding risk", "Current-source assembled runtime and native production architecture validation", "Named human governance decisions"],
+  "release_approved": false
+}

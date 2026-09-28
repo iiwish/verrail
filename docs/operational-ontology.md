@@ -70,6 +70,16 @@ Conversation 未显式绑定 Agent 时解析 Workspace 默认 Agent Deployment�
 
 TargetCreationDraft 是 Conversation 中由明确创建目标意图启动的结构化草稿，固定发起 Principal、来源 Message、字段来源和 Draft Version。Agent 可以通过多轮消息更新 Draft 建议，但只有具备权限的人类确认完整版本后，幂等 CreateTarget 命令才创建 Target 与首个 TargetRevision。普通消息不创建 Draft；Draft 也不拥有 Target 状态。详细状态与确认合同见 [`conversation-target-creation.md`](./conversation-target-creation.md)。
 
+Conversation 的当前目标是零或一个 Workspace 内 Target 引用，与多个 ContextBinding 关联关系分离。当前目标不授予权限，不改变 Target 所有权，也不固定未来领域操作的 TargetRevision。历史 TargetRevision 绑定表示来源或引用事实，不能被当作目标的实时版本。
+
+Target 关联与解除关联命令共享会话上下文版本、幂等收据和写入锁。关联不改变焦点；解除当前目标同时清空焦点。解除操作不删除来源 Draft、TargetRevision 或消息快照，不取消目标执行。迟到提案保留原请求归属，不能重新建立已被较新上下文操作移除的关联。目标侧来源会话标记读取已转换 Draft 的来源事实，不能由客户端标签声明，也不是访问授权。
+
+上下文切换命令记录预期上下文版本、前后 Target 引用、发起 Principal、来源 Message 或界面操作及幂等键，原子更新当前目标和单调递增的上下文版本并写入审计。清除也是版本化切换；重复回执不再次执行，过期版本不覆盖其他人的选择。目标必须存在于同一 Workspace 且发起人有权访问。切换由 Human 或受限 Agent 工具发起，不赋予 Agent 人工决定权限。
+
+每条请求消息固定发送时的当前目标与上下文版本；Invocation 及领域提案固定本次实际解析的对象和所需领域版本。切换不修改已固定的请求、提案、Run 或历史。ContextBinding 的引用关系、Conversation 的当前目标与请求的对象快照分别回答“讨论涉及什么”“之后默认讨论什么”和“这一操作实际作用于什么”。
+
+Conversation 是系统操作入口而非授权主体。每次调用以当次发起人的有效权限、Deployment 能力、Grant、ResourceScope 和 Policy 共同裁决；共享会话不共享人类授权，关联关系不能扩展可见性。低风险上下文切换可直接执行，领域变更及独立审批仍遵守各自命令合同。
+
 ### Principal 与 RoleBinding
 
 Principal 是 Human、Group、ServiceAccount、Agent Deployment 或 Runner Identity。RoleBinding 把 Principal 绑定到 Workspace 或明确 ResourceScope 下的角色。身份、工作责任和授权分别计算。
@@ -79,6 +89,8 @@ Principal 是 Human、Group、ServiceAccount、Agent Deployment 或 Runner Ident
 Workspace 内的轻量可选 Target 分组，用于聚合、筛选和保存视图。Collection 不拥有 Target，不承载成员、资源、权限或策略，也不是 Target 创建前置。
 
 ### Target 与 TargetRevision
+
+Target 的 `archivedAt` 与执行状态正交；`archiveVersion` 是归档元数据的并发控制版本。任何状态的 Target 都可以归档或恢复，命令校验预期归档版本并产生幂等回执和审计，不创建 TargetRevision，不改变工作图、Run、Evidence 或 Acceptance。归档默认隐藏常规列表条目，但详情与待处理事项仍可访问；恢复不启动执行。
 
 Target 是 Workspace 内可被验收结果的稳定身份，可以不关联任何 Collection。TargetRevision 是不可变的责任合同，固定 Goal、Constraints、AcceptanceCriteria、RiskLevel、Deadline、OutcomeOwner、ResourceRefs 和适用策略摘要。目标、约束、验收条件、资源或责任边界变化必须创建新 Revision。
 
@@ -100,6 +112,8 @@ Stage 是面向人的稳定交付阶段和导航投影。StageTemplate 定义顺
 ### WorkGraph 与 GraphRevision
 
 WorkGraph 是 Target 的计划容器。GraphRevision 是不可变节点与边快照，必须绑定一个 TargetRevision，并记录输入、角色解析、预算、策略注入和来源提案。重规划创建新 Revision，不原地修改已激活版本。
+
+工作台的关系图版本选择器区分当前生效、草稿和历史版本。TargetWorkspace 的 graphVersions 提供同 Workspace、Target 的版本标识、序号、状态、目标版本、创建时间和各版本节点投影；节点状态是该版本的当前事实，不是创建时状态快照。切换查看版本不改变活动图。运行列表保留并展示 Run 原始 GraphRevision 绑定；停止运行不删除图版本，后续重规划生成新版本。
 
 ### WorkNode
 
@@ -130,6 +144,8 @@ AgentSession 是 Agent 的逻辑上下文边界，不等于 Channel Thread、Tem
 
 AgentDefinition 是可编辑设计容器。AgentVersion 是不可变发布快照，固定 Runtime、模型、Prompt、Skill、工具、输出 Schema、Capability 上限和供应链信息。Deployment 是生产调用身份，固定一个 AgentVersion 和版本化运行配置。WorkNode 指派最终绑定到 Deployment Revision，而不是可变 Agent 草稿。
 
+当前单服务器产品中，一个 AgentDefinition 最多拥有一个主 Deployment（`isPrimary`）。更新与回滚追加该入口的 DeploymentRevision，不创建平行运行身份。历史非主 Deployment 仅保留追溯，不接受新图绑定或新 Run。Director 回复固定并记录 AgentVersion 与 DeploymentRevision；草稿保存不形成运行状态变化。启用需要版本绑定验证和人工命令，暂停阻止新请求，进行中的请求保持固定版本。
+
 ### EvaluationRun 与 ImprovementProposal
 
 EvaluationRun 在版本化评测集上比较 AgentVersion 的质量、成本、延迟和安全结果。ImprovementProposal 引用来源 Run、Submission 或 Evidence，提出对 AgentDefinition、Skill 或配置的修改；未经人类批准不得发布新 AgentVersion。
@@ -137,6 +153,12 @@ EvaluationRun 在版本化评测集上比较 AgentVersion 的质量、成本、�
 ### AcceptanceCriterion、Claim、Evidence 与 VerificationResult
 
 AcceptanceCriterion 属于 TargetRevision，定义可判定的验收要求和允许的证明方式。Submission 针对每个适用 Criterion 提出 Claim。Evidence 是支持或反驳 Claim 的不可变来源记录，包含类型、生产主体、对象 Hash、时间、有效期、信任等级和原始引用。
+
+Criterion 可以固定 `proofContract` v1，其中 `allOf` 的每项要求均为最终 Outcome 的强制条件。独立验证要求明确列出全部 assertions，并固定 `pre_acceptance` 或 `post_effect` 阶段；`human_governance` 固定在 `post_governance` 阶段，要求同一候选的三个独立真人决定记录（DeliveryReview、ActionApproval、Acceptance）以及 Agent/Service 提交者和动作请求者；`pull_request_effect` 固定在 `post_effect` 阶段，要求同一候选和参数绑定动作的真实 EffectReceipt。Receipt 不替代故障恢复、秘密不落盘等独立验证义务。缺省合同保持原有验收前独立验证语义，不从条件文本推断阶段，不回填或重算历史 Hash。
+
+CriterionProof 是独立 VerificationResult 的不可变上下文绑定，固定 TargetRevision、GraphRevision、Criterion、requirement、完整合同 Hash，以及后置证明适用的 Submission 和 EffectReceipt。它与来源验证事务原子登记，不复制 CI VerificationResult，也不以人工补填 assertion 名称代替验证器的真实覆盖。后置证明可以在 Submission 后追加；其失败或缺失阻止最终 Outcome，但不混入候选原有的验收前验证选择器。新候选、图、目标版本或不匹配动作的证明不能复用。
+
+封闭复合证明的 Provider 为 `verrail`，表示操作员授信的独立本地 verifier，而非 GitHub 对飞书或 Codex 运行作出的认证。其 VerificationResult 同时引用本地验证的 `scan_result` 和独立读取的 GitHub `ci_result`，并保存签名观察与来源绑定。`feishu_target` 和 `codex_execution` 各自覆盖固定的完整前置断言组；只读上下文、版本字符串、调用方声明及普通 IntegrationRun 写入不产生该准入能力。该证明不代表 Human Acceptance 或后置外部动作完成。
 
 VerificationResult 绑定 Criterion、Claim、Evidence 集合和验证器版本，结果为 `passed`、`failed`、`inconclusive` 或 `waived`。`waived` 必须引用具备权限的人类例外决定及有效范围。Agent 自述只能作为低信任 Observation，不能冒充 CI、扫描器或人工核验结果。
 
@@ -148,9 +170,21 @@ ArtifactContract 定义交付类型、结构、必需字段、渲染方式和证
 
 Submission 是一次不可变的待评审交付候选，固定 TargetRevision、ArtifactRevision 集合、VerificationResult 集合、Commit 或外部对象快照、EnvironmentManifest 摘要和提交主体。Artifact、Evidence、目标条件或外部对象发生实质变化时必须创建新 Submission，不能静默修改已评审候选。
 
+活动 Work Graph 下创建的 Submission 同时固定 GraphRevision，并将其纳入内容 Hash；历史未绑定 GraphRevision 的候选保留原始事实，不推断或回填其图版本，也不能满足活动图的治理 Gate。候选准备只等待治理 Gate 之前的工作，不等待 Review、Acceptance 或其下游工作预先完成。缺少证明的候选可供 Reviewer 检查并记录未证明事项，但不能据此完成 Acceptance。
+
 ### DeliveryReview 与 Acceptance
 
 DeliveryReview 绑定一个 Submission，记录风险、未证明事项、评论和 Reviewer 结论。Acceptance 绑定 DeliveryReview、Submission、TargetRevision 和 AcceptanceAuthority。新 Submission 或新 TargetRevision 不继承旧 Acceptance。
+
+Acceptance 要求当前候选绑定全部验收前独立验证要求的当前通过结果及最新独立批准 Review。没有显式证明合同的 Criterion 全部按验收前要求计算。Graph Engine 在依赖满足后，以同一活动 GraphRevision 的当前 Submission、ArtifactRevision、VerificationResult 和 Review/Acceptance 事实结算治理 Gate；版本失效时撤销派生的 Gate 完成状态，不修改历史决定，也不覆盖显式阻塞或取消。
+
+每个 Submission/Review 对最多有一个 Acceptance。同一候选产生新的独立 Review 后，Outcome Owner 可以通过新命令为最新批准 Review 追加 Acceptance；旧 Acceptance 保持不可变，并且不适用于新 Review。重复接受同一个 Submission/Review 对保持幂等。存储与恢复合同见 [ADR-0008](adrs/0008-review-bound-acceptance.md)。
+
+候选的通过验证必须能沿 VerificationResult 的 Evidence 引用解析到同 Workspace、Target 和 Claim 的独立证据，Evidence 对象 Hash 必须匹配候选 ArtifactRevision。CI 证明还必须绑定对应 IntegrationRun 的 TargetRevision、GraphRevision、Commit、Criterion、Evidence 与 VerificationResult，且运行结论为成功。缺失绑定或旧内容/旧图上的结果不能因重新提交候选而成为有效证明；Agent Observation 不满足独立证明门禁。
+
+候选 Acceptance 与最终 Outcome 分离：Acceptance 是既定 GitHub 外部动作的执行前置，不能反向等待该动作的 EffectReceipt；Target 的 `accepted` 仍要求完整活动图、全部必需 Criterion、有效 Acceptance 和全部强制外部 Effect 收口。自由文本 Criterion 不自动获得阶段分类或替代证明方式；后置治理与 Effect 要求的证明合同必须由具备权限的人明确确认，不能伪造预先通过的 VerificationResult。
+
+证明合同的修改使用真人授权、expected TargetRevision 和幂等键保护的版本命令。命令只替换明确提交的证明结构，保留 Criterion ID、文本及其余责任合同，追加新 TargetRevision；Graph Engine 在同一事务解除旧活动图关联，新图通过正常创建和激活命令绑定新版本。旧 Revision、节点、Run、证据和决定保持历史身份，不重新标记版本。不存在活动新图时不得派生完成。
 
 ### RuntimePool、Runner 与 Lease
 
@@ -294,3 +328,11 @@ TargetRevision + ArtifactRevisions + VerificationResults
 | `agent` / `agent_config_revision` | AgentDefinition 草稿历史，不等于已发布 AgentVersion |
 
 兼容映射必须版本化、可观测、可回滚，并明确终止条件。Verrail 新功能不得继续扩大 CEO、组织图、单指派 Issue 或通用 Board Approval 语义。任何一次迁移都不能同时改变存储、API、权限和 UI 语义而缺少独立验证。
+
+## ConversationInvocation
+
+ConversationInvocation 表示一次由人类 Workspace 成员发起的会话执行，不是 Target Run，也不拥有 Graph 激活、验收或审批权限。它绑定 Conversation、源用户消息、发起人、AgentVersion 与 DeploymentRevision；源消息和固定版本必须属于同一个 Workspace。
+
+调用状态为 `queued`、`running`、`cancel_requested`、`succeeded`、`failed`、`canceled`。同一个 Conversation 至多有一次非终态调用；幂等键在 Workspace 与发起人范围内唯一，重复请求必须匹配原请求摘要。终态必须记录结束时间。
+
+调用事件持久化并使用单调 cursor，供断线重连回放。浏览器连接不拥有调用生命周期，断线不等于取消。取消请求与已确认停止是不同状态。Controller lease 与 fencing token 拒绝过期控制者的回传；恢复流程不得在执行结果未知时自动重放可能产生作用的调用。

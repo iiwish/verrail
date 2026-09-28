@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T017",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T017",
+  "status": "accepted_for_dependency_progression",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T16:12:49Z",
+  "work_unit": {
+    "title": "阻止未通过评估的 Deployment 被恢复",
+    "goal": "让 resume 与其他激活路径共享 passing quality 和 passing safety 评估门禁。",
+    "requirements": ["AC-03", "AC-11"],
+    "depends_on": ["T016"],
+    "blocks": ["T010"]
+  },
+  "reason": "真实预检发现 resume 未调用 assertPassingEvaluation，使 compatibility import 的 inconclusive/not_run Revision 被恢复为 active。",
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "allowed_files": [
+      "services/domain-api/internal/target/agent_lifecycle_store.go",
+      "services/domain-api/internal/target/agent_lifecycle_test.go",
+      ".verrail/targets/g2-7-production-closure/**"
+    ],
+    "rules": [
+      "Reuse the existing evaluation admission definition.",
+      "A rejected resume must be transactionally side-effect free.",
+      "Do not fabricate or mutate an EvaluationRun to make the production preflight pass."
+    ]
+  },
+  "validation_loop": {
+    "commands": [
+      "focused Go integration test with VERRAIL_TEST_DATABASE_URL",
+      "pnpm test:domain-api",
+      "git diff --check"
+    ],
+    "retry_budget": 3
+  },
+  "evidence_contract": {
+    "run_id": "T017-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T017-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T017-A001/evidence.json"
+  }
+}

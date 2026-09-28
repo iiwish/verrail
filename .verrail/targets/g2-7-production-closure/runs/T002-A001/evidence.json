@@ -1,0 +1,88 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T002-A001",
+  "task_id": "T002",
+  "status": "passed_with_executable_full_suite_isolation",
+  "record_reconciliation": {
+    "status": "passed",
+    "historical_decisions_rewritten": 0,
+    "retrospective_receipts_added": 5,
+    "status_scope_added": true,
+    "missing_evidence_preserved": true
+  },
+  "tdd": [
+    {
+      "case": "stable runner removes invocation roots",
+      "red": "13/14 passed; one leaked pcvt root observed",
+      "green": "14/14 passed; invocation roots removed in finally"
+    },
+    {
+      "case": "OpenCode remote test is independent of operator XDG state",
+      "red": "Timed out twice at the unchanged 5000 ms boundary while copying a 554 MiB operator config",
+      "green": "1/1 passed in 12 ms with per-test empty XDG_CONFIG_HOME; full project 7/7 files and 42/42 tests passed"
+    }
+  ],
+  "focused_tests": [
+    {
+      "name": "heartbeat stale queue invalidation",
+      "status": "passed",
+      "result": "four consecutive runs, 24/24 each",
+      "product_source_changed": false
+    },
+    {
+      "name": "previous full-run timeout isolates",
+      "status": "passed",
+      "result": "workspace-runtime and plugin-worker-manager cases each passed 1/1"
+    }
+  ],
+  "full_vitest": {
+    "status": "passed_by_stable_lane_and_project_isolation",
+    "monolithic_attempt_1": "failed: disk ENOSPC after generated temp-root accumulation",
+    "monolithic_attempt_2": "largest lanes passed; stopped at DB bootstrap on host SysV IPC exhaustion",
+    "general_server": "409 files passed; 4708 tests passed; 19 skipped",
+    "ui": "489 files passed; 4440 tests passed",
+    "cli": "58 files passed; 415 tests passed",
+    "db_after_ipc_cleanup": "26 files passed; 99 tests passed",
+    "serialized": "146/146 selected suites passed",
+    "remaining_workspace_projects": "all passed through stable-runner or exact project isolation",
+    "assertions_or_timeouts_relaxed": false
+  },
+  "typecheck": {
+    "status": "passed",
+    "command": "pnpm -r typecheck",
+    "result": "34 selected workspace projects passed"
+  },
+  "cleanup": {
+    "historical_pcvt_roots_removed": 251,
+    "historical_pcvt_bytes_reclaimed": "11.8 GiB",
+    "orphan_test_processes_terminated": 237,
+    "detached_postgres_shm_removed": 28,
+    "detached_postgres_semaphores_removed": 303,
+    "pcvt_roots_after": 0,
+    "detached_postgres_ipc_after": 0
+  },
+  "unchanged_user_decisions": [
+    "typescript_facade_ephemeral_credential_to_go",
+    "feishu",
+    "one_human_with_agent_or_service_submitter_and_requester"
+  ],
+  "links": [
+    ".verrail/targets/g2-7-production-closure/gap-matrix.md",
+    ".verrail/targets/g2-7-production-closure/runs/T002-A001/logs/reconciliation.md",
+    ".verrail/targets/g2-7-production-closure/runs/T002-A001/logs/validation.md"
+  ],
+  "missing": [
+    "Current runtime copies of retired G1/G2.0/G2.1/G2.2 workspaces",
+    "G2.4 browser screenshot named by its timeline",
+    "G2.6 independent review artifact named by its timeline",
+    "Accepted product-domain Target with immutable Review and Acceptance chain",
+    "Real GitHub EffectReceipt"
+  ],
+  "review": {
+    "spec_compliance": "passed",
+    "engineering_quality": "passed",
+    "scope_drift": "two evidence-backed packet amendments, both test lifecycle only",
+    "recommendation": "accept_for_dependency_progression",
+    "final_product_authority": "not_granted"
+  }
+}

@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -28,6 +30,40 @@ func main() {
 		logger.Error("DATABASE_URL and VERRAIL_DOMAIN_API_TOKEN are required")
 		os.Exit(1)
 	}
+	profile := strings.TrimSpace(os.Getenv("VERRAIL_EXECUTOR_RUNTIME_PROFILE"))
+	if profile != "" && profile != "host_trusted" && profile != "repository_sandbox" {
+		logger.Error("Invalid executor runtime profile")
+		os.Exit(1)
+	}
+	// Validate optional proof trust before connecting. No secret/config value is logged.
+	proofToken, proofProfile := os.Getenv("VERRAIL_GITHUB_CI_PROOF_TOKEN"), os.Getenv("VERRAIL_GITHUB_CI_PROOF_TRUST")
+	deliveryProfile := os.Getenv("VERRAIL_DELIVERY_PROOF_TRUST")
+	if filename := os.Getenv("VERRAIL_DELIVERY_PROOF_TRUST_FILE"); filename != "" {
+		if deliveryProfile != "" || !filepath.IsAbs(filename) {
+			logger.Error("DELIVERY_PROOF_CONFIG_INVALID")
+			os.Exit(1)
+		}
+		file, err := os.OpenFile(filename, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+		if err != nil {
+			logger.Error("DELIVERY_PROOF_CONFIG_INVALID")
+			os.Exit(1)
+		}
+		raw, err := io.ReadAll(io.LimitReader(file, 16385))
+		_ = file.Close()
+		if err != nil || len(raw) > 16384 {
+			logger.Error("DELIVERY_PROOF_CONFIG_INVALID")
+			os.Exit(1)
+		}
+		deliveryProfile = string(raw)
+	}
+	if _, err := httpapi.ConfigureDeliveryProof(deliveryProfile, nil); err != nil {
+		logger.Error("DELIVERY_PROOF_CONFIG_INVALID")
+		os.Exit(1)
+	}
+	if _, err := httpapi.ConfigureFixedCIProof(token, proofToken, proofProfile, nil); err != nil {
+		logger.Error("FIXED_CI_PROOF_CONFIG_INVALID")
+		os.Exit(1)
+	}
 
 	pool, err := pgxpool.New(context.Background(), databaseURL)
 	if err != nil {
@@ -42,10 +78,25 @@ func main() {
 		os.Exit(1)
 	}
 	cancel()
+	var storeOptions []target.StoreOption
+	if profile == "repository_sandbox" {
+		storeOptions = append(storeOptions, target.WithRequiredRepositorySource())
+	}
+	store := target.NewStore(pool, storeOptions...)
+	proof, err := httpapi.ConfigureFixedCIProof(token, proofToken, proofProfile, store)
+	if err != nil {
+		logger.Error("FIXED_CI_PROOF_CONFIG_INVALID")
+		os.Exit(1)
+	}
+	delivery, err := httpapi.ConfigureDeliveryProof(deliveryProfile, store)
+	if err != nil {
+		logger.Error("DELIVERY_PROOF_CONFIG_INVALID")
+		os.Exit(1)
+	}
 
 	server := &http.Server{
 		Addr:              address,
-		Handler:           httpapi.New(token, target.NewStore(pool), logger),
+		Handler:           httpapi.NewWithProofVerifiers(token, store, logger, proof, delivery),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,

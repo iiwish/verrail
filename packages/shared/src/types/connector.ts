@@ -4,14 +4,17 @@ export const CONNECTOR_PROVIDERS = ["github"] as const;
 
 export const CONNECTOR_ACTION_TYPES = ["create_pull_request"] as const;
 
-export const CONNECTOR_ACTION_STATUSES = ["pending_approval", "approved", "executed"] as const;
+export const CONNECTOR_ACTION_STATUSES = ["pending_approval", "approved", "executing", "unknown_effect", "executed"] as const;
 
 export const CONNECTOR_CONCLUSIONS = ["success", "failure", "neutral"] as const;
+export const CONNECTOR_ATTEMPT_STATUSES = ["succeeded", "failed", "neutral"] as const;
 
 export type ConnectorProvider = (typeof CONNECTOR_PROVIDERS)[number];
+export type IntegrationProvider = ConnectorProvider | "verrail";
 export type ConnectorActionType = (typeof CONNECTOR_ACTION_TYPES)[number];
 export type ConnectorActionStatus = (typeof CONNECTOR_ACTION_STATUSES)[number];
 export type ConnectorConclusion = (typeof CONNECTOR_CONCLUSIONS)[number];
+export type ConnectorAttemptStatus = (typeof CONNECTOR_ATTEMPT_STATUSES)[number];
 
 export interface ConnectorPrincipalV1 {
   principalType: string;
@@ -22,24 +25,62 @@ export interface ConnectorPullRequestParamsV1 {
   title: string;
   head: string;
   base: string;
+  body: string;
 }
 
 /**
- * Immutable integration run: one IntegrationTask result bound to the CI
+ * Immutable integration run: one IntegrationTask result bound to the verification
  * evidence it produced and the verification result it asserted (ontology
  * 111, 240; invariant 9). Neutral runs carry no verification result.
  */
 export interface ConnectorIntegrationRunV1 {
   id: string;
   targetId: string;
+  targetRevisionId: string | null;
+  graphRevisionId: string | null;
   claimId: string;
   workNodeId: string | null;
-  provider: ConnectorProvider;
+  connectorVersion: string | null;
+  connectionId: string | null;
+  provider: IntegrationProvider;
   externalRef: string;
+  commitRef: string | null;
+  criterionKey: string | null;
+  environmentRef: string | null;
   conclusion: ConnectorConclusion;
   evidenceId: string;
   verificationResultId: string | null;
+  providerReceipt: Record<string, unknown> | null;
+  attempts: ConnectorIntegrationAttemptV1[];
   createdBy: ConnectorPrincipalV1;
+  createdAt: string;
+}
+
+export interface ConnectorIntegrationAttemptV1 {
+  id: string;
+  integrationRunId: string;
+  attemptNumber: number;
+  connectorVersion: string;
+  connectionId: string;
+  providerRef: string;
+  idempotencyKey: string;
+  providerReceipt: Record<string, unknown>;
+  status: ConnectorAttemptStatus;
+  createdAt: string;
+}
+
+export interface HumanWorkResultV1 {
+  id: string;
+  targetId: string;
+  targetRevisionId: string;
+  graphRevisionId: string;
+  workNodeId: string;
+  submittedBy: ConnectorPrincipalV1;
+  inputHash: string;
+  result: Record<string, unknown>;
+  artifactRevisionId: string | null;
+  attachmentHashes: string[];
+  resultHash: string;
   createdAt: string;
 }
 
@@ -73,7 +114,12 @@ export interface ConnectorActionRequestV1 {
   actionType: ConnectorActionType;
   params: ConnectorPullRequestParamsV1;
   paramsHash: string;
+  expectedCommitRef: string | null;
   status: ConnectorActionStatus;
+  providerMarker: string | null;
+  executionAttemptCount: number;
+  executionStartedAt: string | null;
+  lastReconciledAt: string | null;
   requestedBy: ConnectorPrincipalV1;
   createdAt: string;
   updatedAt: string;
@@ -92,6 +138,7 @@ export interface ConnectorEffectReceiptV1 {
   actionRequestId: string;
   actionType: ConnectorActionType;
   provider: ConnectorProvider;
+  providerMarker: string;
   externalObjectId: string;
   externalUrl: string;
   effectHash: string;
@@ -103,6 +150,7 @@ export interface ConnectorEffectReceiptV1 {
 export interface ConnectorTargetFactsV1 {
   schemaVersion: typeof CONNECTOR_SCHEMA_VERSION;
   integrationRuns: ConnectorIntegrationRunV1[];
+  humanWorkResults: HumanWorkResultV1[];
   actionRequests: ConnectorActionRequestV1[];
   effectReceipts: ConnectorEffectReceiptV1[];
 }

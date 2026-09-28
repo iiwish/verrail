@@ -111,11 +111,27 @@ Target Workspace 暴露 Stages、Work、Attention、Submission、Artifacts、Evi
 
 Workspace 配置固定一个默认 Agent Deployment。未显式绑定 Agent 的 Conversation 和初始协调 Invocation 解析到该 Deployment；消息、Run 和审计记录实际执行身份，不能只记录“系统助手”。默认 Agent 可以通过受治理命令提出创建专业 Agent、新 Conversation、Target 或 GraphProposal，但不拥有隐式写权限。Target GraphRevision 显式选择其他 Director 或 Specialist Deployment 时，以版本绑定选择为准。
 
-当前 TypeScript Compatibility API 提供会话列表、创建、读取、重命名、置顶、归档、恢复和本地流式回复，并为每个 Workspace 幂等供给一个展示名为 `Director` 的兼容默认 Agent；内部 `ceo` role 仅用于存量授权兼容，不构成产品 CEO 或组织图语义。新建的普通兼容 Agent 在未显式声明根级身份时挂到该默认 Agent，已有 Workspace 在启动协调时补齐默认 Agent。消息与上下文绑定持久化到 PostgreSQL，兼容回复记录实际默认 Agent ID 与本地运行来源。仅 `local_trusted` 部署可调用本地 CLI 兼容运行时：默认使用临时会话、禁用工具、只读 Sandbox、受限环境变量和空工作目录中的 Codex CLI，可通过 `VERRAIL_CHAT_RUNTIME=claude` 切换到同样禁用工具的 Claude CLI，并通过 `VERRAIL_CHAT_MODEL` 固定模型。认证部署在配置受治理的模型执行路径前保持关闭。该兼容运行时不授予领域写入权限，也不继承数据库、Paperclip 或云厂商凭证；即使默认 Agent 具有创建 Agent 的兼容 Grant，当前只读 Chat 运行也不能绕过结构化 API、审批与审计执行写操作。后续模型调用接入版本化 Agent Runtime Adapter，并在需要长时执行、重试、取消、预算和审计时通过 Run/Temporal 编排，而不是把 SSE 连接作为流程事实。
+Conversation 的目标上下文合同区分持久的单一当前目标、多个关联引用与每次请求的不可变对象快照。上下文选择由版本化、幂等、可审计的专用命令处理，必须校验同 Workspace 和当次发起人的访问权限；切换不能重定向已保存的提案或正在执行的 Invocation。Director 可响应明确用户意图调用该低风险命令，无须领域变更审批。旧 ContextBinding 只保留关联和历史来源语义，迁移不得直接把第一条或最后一条绑定推断为当前目标。
+
+系统能力以逐项注册的领域工具接入会话，每项明确参数、身份、作用域、确认策略及结果回执。操作可覆盖当前目标之外的授权对象，但不能借用创建会话者的权限，不能通过任意 API 代理或通用 Shell 绕过命令门禁。完整系统操作入口是产品覆盖合同，不代表兼容运行时已经暴露全部系统能力。Compatibility API 持久化 `currentTargetId` 和 `contextVersion`，专用上下文变更表同时保存幂等回执和审计；`POST /api/workspaces/:workspaceId/conversations/:conversationId/context` 校验成员、目标归属和预期版本。Director 的 `get_conversation_context` 与 `switch_current_target` 只读取或改变当前会话的上下文。用户消息和回复记录请求快照，创建确认捕获上下文版本，回执重放不重新聚焦。目标侧相关会话按 ContextBinding 查询，沿用当前 Workspace Board 的全控制访问边界；下述受限运行时不暴露任意系统操作。
+
+当前 TypeScript Compatibility API 提供会话列表、创建、读取、重命名、置顶、归档、恢复和本地流式回复，并为每个 Workspace 幂等供给一个展示名为 `Director` 的兼容默认 Agent；内部 `ceo` role 仅用于存量授权兼容，不构成产品 CEO 或组织图语义。消息与上下文绑定持久化到 PostgreSQL，兼容回复记录实际默认 Agent ID 与本地运行来源。仅 `local_trusted` 部署可调用本地 CLI 兼容运行时：Codex 使用临时会话、只读 Sandbox、空工作目录和受限环境，禁用 Shell、浏览器、应用及计算机等通用工具，仅配置工作区范围的 Director MCP。Claude 使用无工具 CLI，并明确告知查询限制。`VERRAIL_CHAT_RUNTIME` 和 `VERRAIL_CHAT_MODEL` 提供发布时的 Director 运行配置来源；实际回复使用已启用 AgentVersion 的固定值，环境变量修改需要重新发布并启用。兼容运行时不继承数据库、Paperclip 或云厂商凭证；Target 长时执行、重试、预算和审计通过版本化 Agent Runtime Adapter 与 Run/Temporal 编排。
+
+独立会话执行路径以 `VERRAIL_EXECUTION_GATEWAY_URL`、`VERRAIL_GATEWAY_TOKEN_FILE` 和 `VERRAIL_DIRECTOR_SIGNING_KEY_FILE` 显式启用，缺少或非法配置不回退到本地 CLI。`/api/workspaces/:workspaceId/conversations/:conversationId/invocations` 创建绑定已启用 OpenCode Director 版本的持久调用，专用读取、事件回放与取消端点分离传输连接和执行生命周期。Controller 使用数据库租约恢复调用，并在远程提交前持久化调度意图；结果未知且网关无记录时报告失败，不自动重复执行。浏览器通过能力端点选择执行路径，用持久调用快照和 SSE 恢复输出，显式取消等待清理确认。发送前在会话存储中保存请求摘要和幂等键，响应丢失时复用该键；不在该存储中保存消息正文。OpenCode 发布要求 `VERRAIL_CHAT_RUNTIME=opencode` 和明确的 provider/model，角色、模型及运行时由已启用版本消费。真实认证会话与网关往返、Target 执行及完整容器部署验收仍是部署适配门禁。
+
+执行网关不持有应用数据库凭据。每次调用使用独立 OpenCode 进程、HOME/XDG、临时 HTTP 密码和短期 Director 令牌；进程目录不是授权边界。Director 回调验证签名、到期时间、持久调用状态和当前成员权限，并以持久审计限制每次调用最多 20 次工具授权。令牌只选择已保存的调用身份，不能指定其他 Workspace、用户、源消息或版本。工具提案仍由人类确认，不能执行审批或验收。详见 [ADR 0015](adrs/0015-isolated-conversation-execution.md)。
+
+Director MCP 每次调用使用最多 120 秒有效的随机能力令牌，绑定发起人、Workspace、Conversation、来源 Message 和 Director 身份，响应结束即撤销。工具仅允许分页查询目标、读取目标详情、创建待确认草稿和提出目标变更；每次重新校验成员与 Director 状态，禁止模型提交人工确认或启动执行。目标名称、摘要与描述的修改形成独立 TargetRevision；逻辑取消采用保留历史的 `canceled` 状态，不提供物理删除。修改及取消只支持没有激活工作图、Run 或 ActionRequest 的未终结目标。用户在提案中检查字段差异并点击确认后，Go `target.manage.v1` 命令校验成员、预期版本和幂等键，在事务内写入修订、命令回执及审计。取消后的目标不能创建或激活工作图。归档与恢复支持任何执行状态，独立校验 `archiveVersion`，仅更新归档元数据及审计，不改变 TargetRevision 或执行事实；列表按 `archiveState` 筛选，待处理视图包含已归档目标。具备执行历史的定义及执行状态变更必须使用独立的 Graph Engine 生命周期合同，不通过聊天绕过。
+
+本地 CLI 命令优先使用 `VERRAIL_CHAT_COMMAND` 或服务进程 PATH；macOS Codex 可回退发现已安装且可执行的桌面应用 bundle。命令选择不改变只读 Sandbox、通用工具禁用或用户配置排除策略。受限本地部署可经操作员授权，通过 `VERRAIL_CHAT_HTTPS_PROXY` 为聊天子进程配置独立代理；本机代理使用临时认证并只允许明确列出的模型与认证域名 HTTPS CONNECT，保持端到端 TLS，不记录提示词或凭证。Director MCP 使用本机 API 端口，不经模型出站代理；此授权不开放通用网络出站，不启动 Worker 或自动任务。
+
+本地兼容聊天使用同一个 Director 指令组合器提供实际运行输入和只读草稿预览。`adapterConfig.directorChatInstructions` 是角色草稿，GET 和预览接口不代表当前生效版本。PUT 限制为有权人类，校验预期配置 Hash，在 Agent 行锁内更新草稿、配置历史与审计；一般 Adapter 更新不得直接覆盖该字段。回复开始时从主 Deployment 的活动修订读取 AgentVersion 的 Prompt、Runtime 和 Model，再组合当前平台规则及工具权限。回复记录 AgentVersion ID/Hash、DeploymentRevision ID 和指令指纹。没有已启用版本，或 Director 暂停、终止、待批准时拒绝新回复，不回退到草稿或其他助手。
 
 Target Workbench 通过服务端命令创建绑定当前 Target 和活动 TargetRevision 的
 Conversation。ContextBinding 由服务端在 Target 读取授权后构造，客户端不能伪造资源归属；
 Target 存在可选 Collection 关联时可以附加对应 ContextBinding。Conversation 仍只拥有交互上下文，任何 Target 或交付状态变化必须调用结构化领域命令。
+
+智能体工作记录复用 Workspace-scoped Conversation 列表的可选 `agentId` 过滤。查询通过同 Workspace 的 `assistant` Message、`authorPrincipalType=agent` 和实际 `authorPrincipalId` 判断参与，不把当前默认身份回填到历史会话，不从用户消息中的名称或标识推断 Agent 作者。活动与归档会话分别查询，读取失败不呈现为空记录。该只读投影不产生 Invocation、Run 或 Acceptance。
 
 ### Graph Engine
 
@@ -129,9 +145,43 @@ Target 存在可选 Collection 关联时可以附加对应 ContextBinding。Conv
 
 负责 AgentDefinition、AgentVersion、Deployment、EvaluationRun、ImprovementProposal 和版本发布/回滚。Harness 私有配置通过 Adapter Manifest 固定，但不成为身份或权限事实。
 
+智能体详情顶部发布已保存配置，发布预览由 BFF 读取已保存行为与指令文件生成，确认请求只携带源快照 Hash；源内容不一致返回 409。BFF 不解析凭据，也不在预览中修复指令文件。不可变版本由 Go Domain API 写入并记录幂等回执与审计。`supplyChain.source = saved_agent_configuration.v2` 保存指令文件、行为选项与固定技能版本引用；权限、预算、凭据和执行目录不作为可恢复配置打包。版本页集中展示生效状态、更新、回滚和版本历史，人工录入验证结果与模型评测执行保持区别。
+
+数据库以部分唯一索引约束每个定义最多一个 `is_primary` Deployment。首次启用创建入口，并原子停用该定义的非主历史部署、清除其默认标记；更新与回滚追加主入口修订，不支持承接历史部署。激活命令固定观察到的主入口和最新修订，串行化竞争与过期确认返回 409。迁移默认不选主入口，历史 v1 版本需要重新发布。非主历史部署不能绑定新图或创建新 Run，既有图和 Run 的版本引用不改写。
+
+兼容执行器读取固定版本，在临时私有目录物化指令，将版本化行为选项覆盖到当前配置，并保留当前权限、凭据和主机设置。运行不合并草稿模型配置，也不复用其他版本的 Provider 会话。临时指令目录在运行结束时清理。Director 版本由聊天路径消费，不能作为交付执行器。专业智能体启用时从高级设置解析本地目录并固定到修订；同工作区注册目录 API 保持兼容。回滚恢复行为而不恢复历史授权和主机配置。远程工作区不在此路径的支持范围内。详见 [ADR 0014](adrs/0014-single-effective-agent-version.md)。
+
 ### Artifact and Evidence
 
 负责 AcceptanceCriterion、Claim、ArtifactContract、ArtifactRevision、内容 Hash、Materialization、IntegrationRun/IntegrationAttempt、Provider Receipt、Evidence、VerificationResult、Submission、DeliveryReview、ReviewComment 和 Acceptance。大对象写入 Object Store，关系、Hash 和生命周期写入 PostgreSQL。
+
+Submission 固定活动 GraphRevision，Acceptance 按 Submission/Review 对追加并保持唯一；所有读者按当前 Review 解析有效决定。CI 验证通过 Evidence 对象 Hash 和 IntegrationRun 的 GraphRevision/Commit 等绑定校验候选，重新提交不能复用不匹配的旧证明。变更与应用回滚边界见 [ADR-0008](adrs/0008-review-bound-acceptance.md)。
+
+Criterion 的可选 v1 proofContract 存于不可变 TargetRevision JSON。Go 通过版本检查和幂等命令创建修订，并由领域事务解除旧活动图关联；后续图创建/激活使用既有 Graph Engine 和 outbox。CriterionProof 作为追加式关联保存独立验证的完整合同与版本上下文，来源 IntegrationRun 和其 Evidence/VerificationResult 在同一事务绑定，保持 CI 结果身份不变。TypeScript 投影与 Go 门禁分别按验收前证明和最终 all-of 证明计算，后置结果不能污染前置验证最新值选择器。详见 [ADR-0009](adrs/0009-phased-criterion-proof.md)。
+
+通用 `RecordIntegrationRun` 不具备显式 proofContract 的证明准入权限。内部 bearer、service Principal、调用方填写的 assertion 列表和自洽 Provider receipt 都不能确立独立 verifier 身份或实际覆盖。该入口在历史命令重放之前拒绝显式证明，不追加事实或推进节点；未声明 proofContract 的兼容集成路径保持独立边界。固定 CI verifier 使用默认关闭的专用 bearer 与不可变启动授信，独立执行 Provider reader 和受验 Commit 到原生源码产物的映射，仅覆盖代码固定的四项前置 CI 断言。TypeScript 负责实际读取与用户授权，Go 使用独立 capability 入口在事务内重新校验精确版本和来源，再原子登记领域事实。固定 CI Observation 与其审计 ID 不能升级为授权。配置与 API 合同见 [GitHub Connector](github-connector.md)。
+
+HostTrusted 原生 Run 的文件产物由实际执行器 service Principal 通过成功事件登记：TypeScript Runner 验证不可变部署目录及有界输出 manifest，完成内容寻址 Storage 写入；Go Domain API 在当前 Attempt、租约、fencing 和游标校验后，将 ArtifactRevision、来源 Run/WorkNode、审计及执行终态原子提交。该通道不扩展人工 Review、ActionApproval 或 Acceptance 权限，详见 [ADR 0007](adrs/0007-native-run-artifact-ingress.md)。
+
+原生 HostTrusted Codex 在实际 Adapter 调用前重新校验 Run、Attempt、系统唤醒及部署目录绑定，并由服务端持久化 `NativeSourceObservation`；持久化失败不启动 Adapter。观察覆盖该工作树中 Git 跟踪文件和未被忽略的未跟踪文件。v2 源码范围排除根目录下 `.verrail` 及其所有内容，使交付记录和运行日志不参与产品源码摘要；v1 范围仅排除 `.verrail/run-artifacts/**`。调用前观察固定本次执行的版本，调用后两次观察使用同一版本；历史 v1 回执和哈希保持原样，不能按 v2 范围重算。普通文件记录实际字节哈希与 Git 内容模式（所有者执行位决定 `100644`/`100755`）；相对且不逃出仓库的符号链接只记录链接目标字节，不读取目标内容。完整状态摘要包含 HEAD、索引和删除项；独立内容摘要仅包含实际存在文件的路径、类型、内容模式和字节哈希，暂存或提交本身不改变该内容摘要。观察有文件数、字节数和时限约束，检测到变动或无法读取时明确为 `unavailable`，不返回部分成功。服务端通过可信系统唤醒关联读取已存观察，并随既有 fenced RunEvent 保存；历史运行不补造调用前观察。
+
+原生 Codex 在模型配置合并完成后、实际 Adapter 调用前核对最终 `model` 与 AgentVersion。`NativeDispatchConfiguration` 将选定的权限相关 Adapter 字段摘要、版本 Hash 和 Run 身份绑定到终态回执；DeploymentRevision 的可选 `runtimeConfig.permissionConfig` 只接受封闭字段集合，声明时要求所选字段完全匹配，缺少声明时明确标为 `compatibility_only`。产物采集前重新校验配置摘要。该清单不包含环境变量值，不认证凭证、CLI 环境默认值、实际 OS 权限或已加载的运行时二进制；`version_bound` 仅表示所选配置字段与版本一致。
+
+本地 HostTrusted Codex 的成功 Adapter 返回后，Runner 在 `workspace_finalize` 屏障前采集 `after_adapter_return` 输出回执：两次终端源码观察包围有界 manifest 和文件字节读取，随后仅上传内存中固定的字节。回执保留输出顺序、相对路径、实际大小、哈希和 Workspace 内容寻址引用；Storage 返回的大小、哈希及完整 key 必须与本地字节匹配。源码变化、无 manifest、源码不可用和不支持的执行模式保持独立语义。读取和上传时间分开记录；总采集期限为 60 秒，超时不表示底层上传已取消，迟到上传不形成产物事实。
+
+Board/Workspace 授权的只读 `GET /api/workspaces/:workspaceId/delivery-context/codex` 接收执行身份 UUID，并可成对接收 `artifactRevisionId`、`fixedCiProofId`。可选关联核对已入库固定 CI 的 CriterionProof、IntegrationRun/Attempt、Evidence、VerificationResult、命令回执、审计、当前合同和源产物，要求来源为同一 Run/Attempt/终态回执以及相同源码映射。日志读取前后复查关联摘要，缺项、错配或变化拒绝；响应只返回最小引用、白名单摘要与显式未验证项。`linked_existing_proof` 不重新读取 GitHub、不登记证明、不扩展固定 CI 四项断言；整体仍为 `execution_context_only`，实际权限及候选运行构建仍未验证。
+
+本机独立事实读取使用固定 Workspace 的 PostgreSQL 专用只读身份及 security-barrier 视图，固定版本的仓库外 CLI 只接收有界对象引用。普通检查配置不继承 Board、应用数据库管理员或证明写入能力。身份有效期为 24 小时，秘密配置不进入候选仓库或 Agent 环境。该通道信任数据库管理员及本机操作员，不声称隔离恶意同用户进程；读取结果也不等于独立验证通过。读取合同见 [ADR 0010](./adrs/0010-scoped-delivery-proof-reader.md)。
+
+封闭复合 verifier 的可选 `prove` 模式独立持有操作员配置的签名密钥，并组合 v2 只读事实、飞书 Provider 回读或 Codex 执行来源、固定 GitHub CI 与 launch-owned 运行时见证。它只覆盖代码固定的 `feishu_target`、`codex_execution` 完整断言组，不扩展 GitHub CI 的断言权限。Go 按不可变公开授信验证签名和来源，在同一事务内登记 Provider 为 `verrail` 的 IntegrationRun、`scan_result` 与关联 `ci_result`、VerificationResult 和 CriterionProof；普通 bearer、调用方 Principal 和普通 receipt 均不能进入该能力。Node 见证读取实际 V8 脚本，native 见证绑定冷启动的私有可执行文件副本；Harness 见证还绑定实际运行身份与终态。HostTrusted 限制、启动配置和重放边界见 [ADR 0011](./adrs/0011-closed-composite-delivery-proof.md)。
+
+v2 输出 manifest 可以显式请求 `source_snapshot`，由 Runner 从 v2 范围内固定的文件字节生成自包含 Git bundle。该产物不读取原仓库历史、refs 或 Git 配置，不执行源码 checkout；确定性根提交包含受覆盖的实际文件、执行位和符号链接目标字节，包括未提交和未跟踪内容。v2 输出回执保存导出器计算的内容摘要、快照 tree/commit、bundle Hash 与 Storage 引用。冻结源码输入上限为 256 MiB，单个 bundle 仍不超过 32 MiB，全部输出产物合计不超过 64 MiB；导出总时限为 30 秒，并受外层 60 秒采集期限约束。普通文件 manifest 和历史 v1 回执不获得源码等价属性；Agent 不能提供或覆盖导出器元数据。
+
+源码 bundle 是显式选择的数据导出，排除交付记录与忽略路径不等于秘密扫描或数据出境许可。快照根提交是独立的内容容器身份，不证明它等于 GitHub 受验 Commit、已加载的运行时构建或实际权限。固定 CI 映射读取精确受验 Commit 的非递归 root tree，通过隔离 Git plumbing 校验完整 tree 后排除根 `.verrail`，要求所得产品源码 tree 与权威 succeeded RunEvent 中已定稿快照的 tree 相等。这是 v2 产品源码范围的独立映射，不是完整 Commit 等价；`contentRef` 文本、来源 Run 非空或两个分别合法的 Hash 均不足以证明关联。
+
+Runner 在 Heartbeat 成功条件更新中原子保存回执、完成时间及已定稿的日志、用量、退出和部署环境事实。取消竞争、检测到租约失效、finalize 或持久化失败不能发布成功关联。该条件更新只对 Heartbeat 状态原子化，不是跨引擎租约授权事务；最后一次租约检查后失去租约可以留下未登记的本地观察，Go fenced 登记必须拒绝失效执行权。执行器只从可信系统唤醒关联读取已存回执，领域报告重试和进程重启重用相同事实、哈希、引用和时间，不重新读取工作目录；历史缺失保持缺失，无效回执不回退为文件重采集。ArtifactRevision 仍由 Go 的 fenced 成功事件原子登记。
+
+调用前和调用后观察描述源工作树与实际采集产物的有界关联，不证明运行中的 Server、Go 或 Plugin 构建来源、实际权限、任意 `code_change` 文件与完整代码树的等价关系或完整 CriterionProof。忽略文件、依赖、构建输出及符号链接所指内容不因链接记录而纳入覆盖；HostTrusted 的观察和复查不是对同权限恶意进程的隔离保证。
 
 ### Capability Gateway
 
@@ -211,6 +261,8 @@ Verrail Cloud Plane
 
 单机或小团队使用 Domain API、PostgreSQL、对象存储、Temporal 开发/自托管服务和一个或多个 Worker/Runner。`pnpm dev:verrail` 是当前完整本地集成入口，以一个共享 PostgreSQL 和 Task Queue 启动 TypeScript 兼容边界、Go Domain API、Temporal 开发服务与 Go Worker；聚焦组件开发仍可分别启动。即使组件同机，也使用不同身份和协议边界。生产级自托管 Temporal 的支持等级必须明确，不能把开发服务器包装成高可用承诺。
 
+maco 私有测试环境的候选部署声明位于 `deploy/maco.json` 与 `docker/maco/compose.yaml`。所有服务与迁移作业运行于 Docker，仅复用注册的 `pg-main`。应用业务表、Temporal 主存储与 visibility 存储位于同一项目数据库的独立 schema；迁移角色拥有 DDL，运行角色只有业务 DML 与迁移历史读取权。应用迁移先准备 schema 和默认授权，Temporal 迁移完成后启动服务并创建 namespace，Worker 随后启动。执行网关不持有数据库凭证、不加入共享数据库网络。该配置仍需完整镜像、认证闭环、连接总量、恢复与平台门禁验收，不代表已经部署或具备高可用保障。
+
 ### Managed Cloud
 
 Cloud Plane 管理账户、计费、配额、区域与租户单元生命周期。Tenant Control Cell 承担租户业务事实并绑定 Temporal Namespace。首发可以共享基础设施，但逻辑合同必须允许高价值或受监管租户独立 Cell；Temporal Payload 必须加密并遵守数据驻留策略。
@@ -227,6 +279,15 @@ Cloud Plane 管理账户、计费、配额、区域与租户单元生命周期�
 - `SecretProvider` 负责引用、租约和审计，不向 Agent 返回长期凭证；
 - Plugin 不得直连控制平面数据库、直接推进 Graph 或自行决定 Approval/Acceptance；
 - 所有扩展合同必须版本化并有 Contract Test。
+
+企业消息通过版本化 Channel Connector 合同归一化。飞书插件支持签名加密 Webhook
+与官方 SDK 长连接两种传输；长连接由插件 Worker 持有，后台 `channels.ingest` RPC
+要求 `webhooks.receive` Capability，并由 Host 重新验证 ready 插件的 Connector 声明、
+活跃 Workspace、当前连接配置指纹和已授权私聊身份。Secret 仅在 Workspace-scoped
+配置或回复调用中解析，后台事件不继承已结束的配置 Invocation 权限。
+配置替换或关闭会停止旧连接；同一 Worker 内一个飞书应用只绑定一个接收器。
+消息幂等、Conversation、Draft 和回复 Provider ID 由控制平面持久化；长连接只接收
+映射到活跃成员的私聊，普通消息不创建 Target，Draft 仍需显式人类确认。
 
 ## 9. 渐进式领域迁移
 
@@ -303,6 +364,66 @@ Go 重构遵守以下边界：
 - 强隔离调度必须匹配经过准入的 RuntimeProfile；
 - Adapter、Harness、镜像和 Plugin 固定版本、来源 Hash、许可证和 SBOM；
 - AuditEvent 追加保存，敏感字段按分类脱敏或仅保存 Hash。
+
+### Repository Run Profile
+
+`repository_sandbox` 使用专属执行身份 `verrail-repository-runner`，不能与
+`host_trusted` 执行身份互换。RunAttempt 与 ExecutionLease 在数据库及命令合同
+中同时约束这组绑定；本机执行器和本机证明读取路径仅接受 `host_trusted`。
+Profile 标识不是隔离证明：部署准入仍须验证运行平台的沙箱能力、取消后的
+进程清理、固定源码输入和带 fencing token 的产物登记。服务器仓库执行不授予
+远程 Git push、merge、交付批准或验收权限。
+
+服务器仓库执行采用可信控制器与短期命令容器分离：`repository-executor`
+保留模型访问、租约检查和领域报告；仓库命令仅在无应用凭据、无应用网络、
+仅挂载本次 checkout 的独立容器中执行。常驻服务不挂载 Docker socket，
+通过专用 SSH 身份调用只接受固定容器协议的受限运维网关。容器销毁确认
+先于清理回执与产物采集；模糊响应不授权重放或成功取消。该后端不依赖
+Landlock ABI 6，部署仍需真实隔离和故障验证。见
+[ADR 0017](./adrs/0017-disposable-repository-command-containers.md)。
+
+### Compatibility Tool Gateway 审批边界
+
+当前 TypeScript Tool Gateway 的立即审批执行、已审批恢复、显式
+`approvedActionRequestId` 和 Test 来源调用共用一次性数据库执行 claim。
+审批决定保留实际 User/Agent 身份；Test 的实际 User 与所选 Agent 分别记录，
+不构造代理人或默认 Board 身份。没有 execute-on-approve 标记的存量审批保持
+惰性，只能经原有显式审批 ID、原始 Run/Issue scope 路径执行。
+具名 Gateway 的持久身份用于重新检查当前状态、Scope 与 Profile/Policy 绑定。
+原始 Heartbeat Run 结束及短期 bearer 的例行撤销、过期不取消已记录的人类审批；
+当前 token 存储不区分例行清理与人工撤销意图，因此 bearer 撤销本身不构成对
+持久审批的撤销。禁用 Gateway、拒绝策略、暂停 Agent 或取消审批分别通过其
+持久控制边界阻止执行。
+
+执行前重新读取审批状态、有效期、正式审批、发起上下文与当前策略。
+未变化的 require-approval 策略由已记录的批准满足；新增审批要求、当前拒绝或
+撤销优先。普通未批准调用保持策略优先级；审批执行先检查所有适用的拒绝、限流与
+新增审批要求。创建审批请求时记录全部适用审批策略，并为适用限流策略预留一次
+请求配额，包括优先级在审批规则之后的限流器。限流预留 Hash 保存在现有 Invocation
+policyExplanation 中，绑定策略配置、Scope、bucket 与窗口；最终验证只认可本次
+请求已实际消费的同一预留，不重复增加计数。新增或变更限流器、窗口滚动及缺少
+预留证明的存量审批需重新创建请求和审阅，不借用空闲配额无计数执行。
+完整原始参数通过签名绑定，脱敏摘要 Hash
+仅用于检索，不作为参数相等或重放授权依据。MCP 目标快照覆盖连接配置、实际
+输入输出 Schema、风险、凭证版本与本地 stdio 命令模板；凭证解析的记账时间不
+作为凭证版本。远程凭证准备及本地初始化完成后，在 tools/call 发出前再次验证。
+该边界不跨 Provider IO 持有数据库锁；最终验证与外部执行之间仍存在不可消除的
+撤销竞态，也不提供 Provider 端 expected-parent、CAS 或分布式事务。
+
+远程及本地 MCP 的 `isError` 是失败信封，不是成功内容；普通 Builtin/Plugin
+返回值中的同名字段不采用该协议语义。已批准写操作一旦发出，传输、协议、结果
+验证或结果持久化失败按 `provider_effect_unknown` 保守处理：可持久化时，Action
+与 Invocation 原子落为 `failed` 并保留禁止重试诊断，现有结果 API 与交互投影展示
+失败，不伪装成执行中。无法持久化结果时，已提交的 `executing` claim 继续阻止
+重试。成功结果与 Action 消费状态原子提交，后续审计或交互投影失败不改写成功。
+
+同 Workspace、所选 Agent、Issue、工具和完整签名参数的未确定结果阻止新幂等键、
+新进程、另一实际 Test User 及已存在的另一审批再次发出相同写操作；普通结果重放
+与审批权限仍限定原始主体。历史核验逐行读取，最多扫描 32 个候选及累计 32 MiB
+签名载荷，达到界限或无法核验未结算签名时 fail closed，不忽略较早的未知结果。
+执行中的其他相同签名请求也阻止并发发出。该兼容边界只提供持久禁止重试，不提供
+自动 Provider 对账、人工解除流程或完整发布器；处理未知效果需要先独立核验外部
+事实，不能通过修改参数、换主体、清除状态或重发调用宣称成功。
 
 ## 12. 可靠性与运维
 

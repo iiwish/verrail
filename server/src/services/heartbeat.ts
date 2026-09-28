@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { materializeVersionInstructions, readManagedAgentVersion, readPinnedExecutionVersion, versionedAdapterConfig } from "./agent-effective-version.js";
 import path from "node:path";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
@@ -87,6 +88,9 @@ export { scrubGitCredentialText };
 import { publishLiveEvent } from "./live-events.js";
 import { normalizeResponsibleUserDenialCode } from "./responsible-user-denial-run-outcomes.js";
 import { getRunLogStore, type RunLogHandle } from "./run-log-store.js";
+import { resolveRunUsageProvenance } from "./run-usage-provenance.js";
+import { loadNativeDispatchConfiguration, NATIVE_DISPATCH_CONTEXT_KEY, type NativeDispatchConfiguration } from "./verrail-native-dispatch.js";
+import { observeNativePermissions, NATIVE_PERMISSION_CONTEXT_KEY, type NativePermissionObservation } from "./verrail-native-permission-observation.js";
 import { getServerAdapter, listAdapterModelProfiles, runningProcesses } from "../adapters/index.js";
 import type {
   AdapterExecutionResult,
@@ -182,6 +186,10 @@ import {
 } from "./issue-continuation-summary.js";
 import { buildDocumentReviewContext, buildPlanReviewContext } from "./plan-review-context.js";
 import { executionWorkspaceService, mergeExecutionWorkspaceConfig } from "./execution-workspaces.js";
+import { resolveNativeRunWorkspace } from "./verrail-native-workspace.js";
+import { captureNativeSource, NATIVE_SOURCE_CONTEXT_KEY, unavailableNativeSource } from "./verrail-native-source.js";
+import { captureNativeOutput, finalizeNativeOutputReceipt, NATIVE_OUTPUT_CONTEXT_KEY, type NativeOutputReceipt } from "./verrail-native-output.js";
+import type { StorageService } from "../storage/types.js";
 import {
   GIT_BRANCH_OWNERSHIP_METADATA_KEY,
   GIT_BRANCH_OWNERSHIP_METADATA_VERSION,
@@ -6364,6 +6372,14 @@ export function buildPaperclipTaskMarkdown(input: {
   return lines.join("\n");
 }
 
+export function resolveHeartbeatTaskMarkdown(
+  generatedTaskMarkdown: string | null,
+  nativeTargetTaskMarkdown: unknown,
+) {
+  if (generatedTaskMarkdown) return generatedTaskMarkdown;
+  return readNonEmptyString(nativeTargetTaskMarkdown) ?? null;
+}
+
 // A positive liveness check means some process currently owns the PID.
 // On Linux, PIDs can be recycled, so this is a best-effort signal rather
 // than proof that the original child is still alive.
@@ -6691,6 +6707,7 @@ export function resolveNextSessionState(input: {
 export type HeartbeatEnvironmentRuntime = ReturnType<typeof environmentRuntimeService>;
 
 export interface HeartbeatServiceOptions {
+  nativeOutputStorage?: Pick<StorageService, "putFile">;
   pluginWorkerManager?: PluginWorkerManager;
   environmentRuntime?: HeartbeatEnvironmentRuntime;
   runtimeEnv?: Record<string, string | undefined>;
@@ -8357,6 +8374,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     sessionId: string | null;
     rawUsage: UsageTotals | null;
     usageBasis?: "per_run" | "session_cumulative" | null;
+    freshSession: boolean;
   }) {
     const { agentId, runId, sessionId, rawUsage, usageBasis } = input;
     // Adapters that declare per-run usage (e.g. the ACPX lane reports each
@@ -8367,6 +8385,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         normalizedUsage: rawUsage,
         previousRawUsage: null as UsageTotals | null,
         derivedFromSessionTotals: false,
+        usageSource: resolveRunUsageProvenance({ ...input, usageBasis, previousRawUsage: null, previousUsageBasis: null, hasPreviousRun: false,
+          freshSession: input.freshSession && Boolean(sessionId) }),
       };
     }
 
@@ -8376,6 +8396,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       normalizedUsage: deriveNormalizedUsageDelta(rawUsage, previousRawUsage),
       previousRawUsage,
       derivedFromSessionTotals: previousRawUsage !== null,
+      usageSource: resolveRunUsageProvenance({ ...input, usageBasis, previousRawUsage, hasPreviousRun: previousRun != null,
+        previousUsageBasis: parseObject(previousRun?.usageJson).usageBasis as "per_run" | "session_cumulative" | undefined }),
     };
   }
 
@@ -11423,7 +11445,10 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         agent,
         contextSnapshot,
         retryReason,
-        enforceIssueExecutionLock: retryReason === MAX_TURN_CONTINUATION_RETRY_REASON,
+        // The serialized transaction checks for an existing matching continuation
+        // before enforcing the issue lock. A concurrent duplicate may observe the
+        // lock already transferred to that continuation and must coalesce to it.
+        enforceIssueExecutionLock: false,
       });
       if (!gate.allowed) {
         await appendRunEvent(run, await nextRunEventSeq(run.id), {
@@ -14142,6 +14167,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
 
     activeRunExecutions.add(run.id);
     let runScratch: HeartbeatRunScratch | null = null;
+    let versionInstructionsRoot: string | null = null;
 
     try {
     const agent = await getAgent(run.agentId);
@@ -14160,8 +14186,31 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       return;
     }
 
-    const runtime = await ensureRuntimeState(agent);
     const context = parseObject(run.contextSnapshot);
+    const nativeWorkspace = await resolveNativeRunWorkspace(db, {
+      heartbeatRunId: run.id, workspaceId: agent.companyId, agentId: agent.id, context,
+    });
+    const managedVersion = nativeWorkspace ? null : await readManagedAgentVersion(db, agent.companyId, agent.id);
+    const executionVersion = nativeWorkspace ? await readPinnedExecutionVersion(db, agent.companyId, nativeWorkspace.agentVersionId) : managedVersion?.version;
+    if (executionVersion?.supplyChain?.source === "saved_agent_configuration.v2") {
+      const version = executionVersion;
+      // Provider sessions must not retain system instructions from another version or draft.
+      context.forceFreshSession = true;
+      const pinnedConfig = versionedAdapterConfig(parseObject(agent.adapterConfig), version, agent.id);
+      const instructions = await materializeVersionInstructions(version);
+      versionInstructionsRoot = instructions.root;
+      agent.adapterConfig = { ...pinnedConfig, ...instructions.config };
+      agent.adapterType = version.runtime;
+      agent.capabilities = version.prompt;
+      if (managedVersion) {
+        agent.adapterConfig = { ...agent.adapterConfig, cwd: managedVersion.revision.runtimeConfig.cwd };
+        context.verrailEffectiveVersion = { agentVersionId: managedVersion.version.id, deploymentRevisionId: managedVersion.revision.id, contentHash: managedVersion.version.contentHash };
+        await db.update(heartbeatRuns).set({ contextSnapshot: context, updatedAt: new Date() }).where(eq(heartbeatRuns.id, run.id));
+      }
+    }
+    const runtime = await ensureRuntimeState(agent);
+    delete context[NATIVE_SOURCE_CONTEXT_KEY];
+    delete context[NATIVE_OUTPUT_CONTEXT_KEY];
     const taskKey = deriveTaskKeyWithHeartbeatFallback(context, null);
     const sessionCodec = getAdapterSessionCodec(agent.adapterType);
     const issueId = readNonEmptyString(context.issueId);
@@ -14339,7 +14388,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           }
         : null,
     });
-    const config = parseObject(agent.adapterConfig);
+    const config: Record<string, unknown> = { ...parseObject(agent.adapterConfig), ...(nativeWorkspace ? {cwd: nativeWorkspace.cwd} : {}) };
+    if (nativeWorkspace) context.verrailEnvironmentManifest = nativeWorkspace;
     const taskSession = taskKey
       ? await getTaskSession(agent.companyId, agent.id, agent.adapterType, taskKey)
       : null;
@@ -14463,7 +14513,10 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         readNonEmptyString(context.workspaceRefreshReason) === "accepted_plan_confirmation"
         && Object.keys(parseObject(context.acceptedPlanWakeRouting)).length === 0,
     };
-    const taskMarkdown = buildPaperclipTaskMarkdown(taskMarkdownInput);
+    const taskMarkdown = resolveHeartbeatTaskMarkdown(
+      buildPaperclipTaskMarkdown(taskMarkdownInput),
+      context.verrailTaskMarkdown,
+    );
     const taskMarkdownCompact = buildPaperclipTaskMarkdown({ ...taskMarkdownInput, includeDescription: false });
     if (issueRef) {
       context.paperclipIssue = {
@@ -14736,7 +14789,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     } else {
       delete context.paperclipModelProfile;
     }
-    const mergedConfig = mergeModelProfileAdapterConfig({
+    const mergedConfig = executionVersion?.supplyChain?.source === "saved_agent_configuration.v2" ? workspaceManagedConfig : mergeModelProfileAdapterConfig({
       baseConfig: workspaceManagedConfig,
       modelProfile: modelProfileApplication,
       issueAdapterConfig: issueAssigneeOverrides?.adapterConfig ?? null,
@@ -14787,16 +14840,23 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     } else {
       delete context.paperclipSecrets;
     }
-    const effectiveResolvedConfig = applyRunScopedMentionedSkillKeys(
+    const effectiveResolvedConfig = executionVersion?.supplyChain?.source === "saved_agent_configuration.v2" ? resolvedConfig : applyRunScopedMentionedSkillKeys(
       resolvedConfig,
       runScopedMentionedSkillKeys,
     );
     const runtimeSkillPreference = readPaperclipSkillSyncPreference(effectiveResolvedConfig);
     const runtimeSkillEntries = await companySkills.listRuntimeSkillEntries(agent.companyId, {
       versionSelections: skillVersionSelectionMap(runtimeSkillPreference.desiredSkillEntries, {
-        versionPinsEnabled: resolvedInstanceSettings.experimental.enableBetaSkills === true,
+        versionPinsEnabled: executionVersion?.supplyChain?.source === "saved_agent_configuration.v2" || resolvedInstanceSettings.experimental.enableBetaSkills === true,
       }),
     });
+    if (executionVersion?.supplyChain?.source === "saved_agent_configuration.v2") {
+      for (const skill of runtimeSkillPreference.desiredSkillEntries) {
+        if (!skill.versionId || !runtimeSkillEntries.some((entry) => entry.key === skill.key && entry.versionId === skill.versionId && entry.sourceStatus === "available")) {
+          throw new Error("PINNED_SKILL_UNAVAILABLE: published skill version cannot be materialized");
+        }
+      }
+    }
     let runtimeConfig: Record<string, unknown> = {
       ...effectiveResolvedConfig,
       paperclipRuntimeSkills: runtimeSkillEntries,
@@ -14887,7 +14947,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       );
     const {
       selectedEnvironmentDriver: lowTrustPreflightEnvironmentDriver,
-      workspace: resolvedWorkspace,
+      workspace: defaultResolvedWorkspace,
     } = await resolveWorkspaceAfterLowTrustPreflight({
       db,
       trustPreset,
@@ -14923,6 +14983,13 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           },
         ),
     });
+    if (nativeWorkspace && selectedEnvironmentForConfig?.driver !== "local") {
+      throw new Error("NATIVE_WORKSPACE_INVALID: a pinned host workspace requires a local environment");
+    }
+    // Preserve the compatibility source enum; the native manifest records actual ownership.
+    const resolvedWorkspace = nativeWorkspace
+      ? {...defaultResolvedWorkspace, cwd: nativeWorkspace.cwd, warnings: []}
+      : defaultResolvedWorkspace;
     const hostExecutionWorkspaceConfig = stripHostWorkspaceProvisionForLowTrustSandbox({
       config: mergedConfig,
       trustPreset,
@@ -15945,13 +16012,16 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           }
         }
         const modelProfileMetadata = modelProfileRunMetadata(modelProfileApplication);
+        const invocationMetadata = { ...(meta as unknown as Record<string, unknown>) };
+        delete invocationMetadata[NATIVE_SOURCE_CONTEXT_KEY];
+        delete invocationMetadata[NATIVE_OUTPUT_CONTEXT_KEY];
         await appendRunEvent(currentRun, seq++, {
           eventType: "adapter.invoke",
           stream: "system",
           level: "info",
           message: "adapter invocation",
           payload: {
-            ...(meta as unknown as Record<string, unknown>),
+            ...invocationMetadata,
             ...(modelProfileMetadata ? { modelProfile: modelProfileMetadata } : {}),
           },
         });
@@ -16175,6 +16245,11 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       };
 
       let adapterResult: Awaited<ReturnType<typeof adapter.execute>>;
+      let nativeOutputReceipt: NativeOutputReceipt | undefined;
+      let nativeSourceAtDispatch: Awaited<ReturnType<typeof captureNativeSource>> | undefined;
+      let nativeDispatchBinding: typeof nativeWorkspace = null;
+      let nativeDispatchConfiguration: NativeDispatchConfiguration | undefined;
+      let nativePermissionObservation: NativePermissionObservation | undefined;
       try {
         const adapterContext = { ...context };
         const runtimeMcpServers = await buildPaperclipRuntimeMcpServers({
@@ -16193,6 +16268,52 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         });
         if (managedMcpConfig) {
           adapterContext.paperclipManagedMcp = managedMcpConfig;
+        }
+        if (nativeWorkspace) {
+          const bindingInput = { heartbeatRunId: run.id, workspaceId: agent.companyId, agentId: agent.id, context };
+          const binding = await resolveNativeRunWorkspace(db, bindingInput);
+          if (!binding) throw new Error("NATIVE_SOURCE_BINDING_INVALID");
+          const identity = {
+            workspaceId: binding.workspaceId, heartbeatRunId: binding.heartbeatRunId, agentId: binding.agentId,
+            runId: binding.runId, attemptId: binding.attemptId,
+            deploymentRevisionId: binding.deploymentRevisionId, agentVersionId: binding.agentVersionId,
+          };
+          // Codex resolves in-place realization first, then workspace/config cwd.
+          // Other adapters and remote targets remain explicitly outside this observation.
+          const workspaceContext = parseObject(adapterContext.paperclipWorkspace);
+          const configuredCwd = readNonEmptyString(runtimeConfig.cwd);
+          const dispatchCwd = executionTarget?.workspaceRealization?.mode === "in_place"
+            ? executionTarget.workspaceRealization.authoritativeRoot
+            : workspaceContext.source === "agent_home" && configuredCwd
+              ? configuredCwd : readNonEmptyString(workspaceContext.cwd) ?? configuredCwd;
+          const observation = agent.adapterType !== "codex_local" || executionTarget?.kind === "remote" || remoteExecution
+            ? unavailableNativeSource(identity, "unsupported_execution")
+            : !dispatchCwd || await fs.realpath(dispatchCwd).catch(() => null) !== binding.cwd
+              ? unavailableNativeSource(identity, "cwd_mismatch")
+              : await captureNativeSource({ cwd: binding.cwd, identity });
+          const rechecked = await resolveNativeRunWorkspace(db, bindingInput);
+          if (!rechecked || rechecked.contentHash !== binding.contentHash) throw new Error("NATIVE_SOURCE_BINDING_CHANGED");
+          nativeDispatchBinding = binding;
+          if (agent.adapterType === "codex_local") {
+            nativeDispatchConfiguration = await loadNativeDispatchConfiguration(db, identity, runtimeConfig);
+            context[NATIVE_DISPATCH_CONTEXT_KEY] = nativeDispatchConfiguration;
+            const permissionOrigin = process.env.VERRAIL_NATIVE_PERMISSION_PROBE_ORIGIN;
+            if (permissionOrigin) {
+              if (!authToken || !process.env.PAPERCLIP_API_URL
+                || new URL(process.env.PAPERCLIP_API_URL).origin !== new URL(permissionOrigin).origin) {
+                throw new Error("NATIVE_PERMISSION_OBSERVATION_UNAVAILABLE");
+              }
+              nativePermissionObservation = await observeNativePermissions({ identity,
+                dispatchSha256: nativeDispatchConfiguration.sha256, apiOrigin: permissionOrigin, authToken });
+              context[NATIVE_PERMISSION_CONTEXT_KEY] = nativePermissionObservation;
+            }
+          }
+          nativeSourceAtDispatch = structuredClone(observation);
+          context[NATIVE_SOURCE_CONTEXT_KEY] = observation;
+          const persisted = await db.update(heartbeatRuns).set({ contextSnapshot: context, updatedAt: new Date() })
+            .where(and(eq(heartbeatRuns.id, run.id), eq(heartbeatRuns.companyId, agent.companyId), eq(heartbeatRuns.agentId, agent.id), eq(heartbeatRuns.status, "running")))
+            .returning({ id: heartbeatRuns.id });
+          if (persisted.length !== 1) throw new Error("NATIVE_SOURCE_PERSISTENCE_FAILED");
         }
         adapterResult = await adapter.execute({
           runId: run.id,
@@ -16229,6 +16350,27 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           },
           authToken: authToken ?? undefined,
         });
+        if (nativeWorkspace && nativeSourceAtDispatch && nativeDispatchBinding
+          && !adapterResult.timedOut && (adapterResult.exitCode ?? 0) === 0 && !adapterResult.errorMessage) {
+          const binding = nativeDispatchBinding;
+          const revalidate = async () => {
+            const current = await getRun(run.id);
+            if (current?.status !== "running") throw new Error("NATIVE_OUTPUT_RUN_NOT_RUNNING");
+            const checked = await resolveNativeRunWorkspace(db, {
+              heartbeatRunId: run.id, workspaceId: agent.companyId, agentId: agent.id,
+              context: { verrailRunId: binding.runId, verrailRunAttemptId: binding.attemptId },
+            });
+            if (!checked || checked.contentHash !== binding.contentHash) throw new Error("NATIVE_OUTPUT_BINDING_CHANGED");
+            if (nativeDispatchConfiguration) {
+              const dispatch = await loadNativeDispatchConfiguration(db, nativeSourceAtDispatch!.identity, runtimeConfig);
+              if (dispatch.configurationSha256 !== nativeDispatchConfiguration.configurationSha256
+                || dispatch.agentVersionContentHash !== nativeDispatchConfiguration.agentVersionContentHash
+                || dispatch.deploymentRevisionContentHash !== nativeDispatchConfiguration.deploymentRevisionContentHash) throw new Error("NATIVE_DISPATCH_CONFIGURATION_CHANGED");
+            }
+          };
+          nativeOutputReceipt = await captureNativeOutput({ cwd: binding.cwd, identity: nativeSourceAtDispatch.identity,
+            beforeSource: nativeSourceAtDispatch, storage: options.nativeOutputStorage, revalidate });
+        }
         // Adapter returned cleanly, which means its workspace-restore finally
         // block also ran without throwing. Record the workspace_finalize
         // barrier so dependents that share this executionWorkspace can wake.
@@ -16375,6 +16517,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         sessionId: nextSessionState.displayId ?? nextSessionState.legacySessionId,
         rawUsage,
         usageBasis: adapterResult.usageBasis ?? null,
+        freshSession: runtimeForAdapter.sessionId == null && runtimeForAdapter.sessionDisplayId == null
+          && Object.keys(runtimeForAdapter.sessionParams ?? {}).length === 0,
       });
       const normalizedUsage = sessionUsageResolution.normalizedUsage;
       const runErrorMessage =
@@ -16426,11 +16570,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                 rawCachedInputTokens: rawUsage.cachedInputTokens,
                 rawOutputTokens: rawUsage.outputTokens,
               } : {}),
-              ...(sessionUsageResolution.derivedFromSessionTotals
-                ? { usageSource: "session_delta" }
-                : adapterResult.usageBasis === "per_run"
-                  ? { usageSource: "per_run" }
-                  : {}),
+              ...(adapterResult.usageBasis ? { usageBasis: adapterResult.usageBasis } : {}),
+              ...(sessionUsageResolution.usageSource ? { usageSource: sessionUsageResolution.usageSource } : {}),
               ...((nextSessionState.displayId ?? nextSessionState.legacySessionId)
                 ? { persistedSessionId: nextSessionState.displayId ?? nextSessionState.legacySessionId }
                 : {}),
@@ -16473,9 +16614,31 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         }),
         adapterResult.summary ?? null,
       );
+      if (persistedResultJson) delete persistedResultJson[NATIVE_OUTPUT_CONTEXT_KEY];
+
+      let terminalContext: Record<string, unknown> | undefined;
+      const terminalFinishedAt = new Date();
+      if (status === "succeeded" && nativeOutputReceipt && nativeDispatchBinding) {
+        const checked = await resolveNativeRunWorkspace(db, {
+          heartbeatRunId: run.id, workspaceId: agent.companyId, agentId: agent.id,
+          context: { verrailRunId: nativeDispatchBinding.runId, verrailRunAttemptId: nativeDispatchBinding.attemptId },
+        });
+        if (!checked || checked.contentHash !== nativeDispatchBinding.contentHash) throw new Error("NATIVE_OUTPUT_BINDING_CHANGED");
+        const finalized = finalizeNativeOutputReceipt(nativeOutputReceipt, {
+          heartbeatRunId: run.id, heartbeatStatus: status, agentId: agent.id,
+          logStore: handle?.store ?? null, logRef: handle?.logRef ?? null,
+          logSha256: logSummary?.sha256 ?? null, logBytes: logSummary?.bytes ?? null,
+          usage: usageJson, exitCode: adapterResult.exitCode ?? null, errorCode: runErrorCode,
+          environmentManifest: nativeDispatchBinding,
+          ...(nativeDispatchConfiguration ? { dispatchConfiguration: nativeDispatchConfiguration } : {}),
+          ...(nativePermissionObservation ? { permissionObservation: nativePermissionObservation } : {}),
+        }, terminalFinishedAt.toISOString());
+        terminalContext = { ...context, [NATIVE_OUTPUT_CONTEXT_KEY]: finalized };
+      }
 
       const persistedRunWrite = await setRunStatusIfRunning(run.id, status, {
-        finishedAt: new Date(),
+        ...(terminalContext ? { contextSnapshot: terminalContext } : {}),
+        finishedAt: terminalFinishedAt,
         error: runErrorMessage,
         errorCode: runErrorCode,
         exitCode: adapterResult.exitCode,
@@ -17000,6 +17163,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
               });
             }
           }
+          if (versionInstructionsRoot) await fs.rm(versionInstructionsRoot, { recursive: true, force: true }).catch(() => undefined);
           activeRunExecutions.delete(run.id);
           await startNextQueuedRunForAgent(run.agentId);
         }
@@ -17780,6 +17944,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     const source = opts.source ?? "on_demand";
     const triggerDetail = opts.triggerDetail ?? null;
     const contextSnapshot: Record<string, unknown> = { ...(opts.contextSnapshot ?? {}) };
+    delete contextSnapshot[NATIVE_SOURCE_CONTEXT_KEY];
+    delete contextSnapshot[NATIVE_OUTPUT_CONTEXT_KEY];
     const reason = opts.reason ?? null;
     const payload = opts.payload ?? null;
     const {

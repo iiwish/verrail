@@ -95,6 +95,9 @@ describe("SidebarNavItem", () => {
     expect(label?.className).not.toContain("sr-only");
     expect(classTokens(label)).toContain("w-0");
     expect(classTokens(label)).toContain("overflow-hidden");
+    expect(classTokens(link())).toEqual(expect.arrayContaining(["mx-auto", "w-8", "justify-center", "gap-0", "px-0"]));
+    expect(classTokens(link())).not.toContain("mx-2");
+    expect(classTokens(link())).not.toContain("gap-2.5");
 
     // The numeric count is no longer rendered as text; it is a dot with an
     // accessible text equivalent on the link.

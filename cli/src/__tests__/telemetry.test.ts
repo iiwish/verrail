@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const ORIGINAL_ENV = { ...process.env };
 const CI_ENV_VARS = ["CI", "CONTINUOUS_INTEGRATION", "BUILD_NUMBER", "GITHUB_ACTIONS", "GITLAB_CI"];
+const OPT_OUT_ENV_VARS = ["DO_NOT_TRACK", "PAPERCLIP_TELEMETRY_DISABLED", ...CI_ENV_VARS];
 
 function makeConfigPath(root: string, enabled: boolean): string {
   const configPath = path.join(root, ".paperclip", "config.json");
@@ -71,10 +72,11 @@ function makeConfigPath(root: string, enabled: boolean): string {
 describe("cli telemetry", () => {
   beforeEach(() => {
     process.env = { ...ORIGINAL_ENV };
-    for (const key of CI_ENV_VARS) {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true })));
+    // Exercise explicit opt-in independently of the host's opt-out settings.
+    for (const key of OPT_OUT_ENV_VARS) {
       delete process.env[key];
     }
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true })));
   });
 
   afterEach(() => {
@@ -113,5 +115,21 @@ describe("cli telemetry", () => {
     expect(fs.existsSync(statePath)).toBe(true);
 
     await flushTelemetry();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(OPT_OUT_ENV_VARS)("respects %s=1 even with explicit opt-in", async (key) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-cli-telemetry-"));
+    process.env.PAPERCLIP_HOME = path.join(root, "home");
+    process.env.PAPERCLIP_INSTANCE_ID = "telemetry-test";
+    process.env[key] = "1";
+
+    const { initTelemetry, flushTelemetry } = await import("../telemetry.js");
+    const client = initTelemetry({ enabled: true });
+
+    expect(client).toBeNull();
+    expect(fs.existsSync(path.join(root, "home", "instances", "telemetry-test", "telemetry", "state.json"))).toBe(false);
+    await flushTelemetry();
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

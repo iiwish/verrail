@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T016",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T016",
+  "status": "accepted_for_dependency_progression",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T15:56:28Z",
+  "work_unit": {
+    "title": "将原生 RunAttempt 接入可信 Codex 执行器",
+    "goal": "认领 Go Domain API 创建的版本固定执行租约，复用现有可信 heartbeat/Codex 执行器，并把租约心跳、取消与终态回报给原生运行合同。",
+    "requirements": ["AC-03", "AC-04", "AC-10"],
+    "depends_on": ["T005", "T015"],
+    "blocks": ["T010"]
+  },
+  "reason": "真实 Workbench 激活 GraphRevision 后，Temporal 创建了 RunAttempt 和 offered lease，但没有主机执行器消费租约；尝试过期并重试，Codex 从未启动。",
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "allowed_files": [
+      "server/src/services/verrail-run-executor.ts",
+      "server/src/services/verrail-run-executor.test.ts",
+      "server/src/services/heartbeat.ts",
+      "server/src/services/index.ts",
+      "server/src/index.ts",
+      "docs/temporal-target-workflow.md",
+      ".verrail/targets/g2-7-production-closure/**"
+    ],
+    "rules": [
+      "Go Domain API remains the only writer of native Run, RunAttempt, Lease and RunEvent state.",
+      "Resolve and validate the same-workspace active DeploymentRevision and its compatibility agent before execution.",
+      "Persist durable correlation in heartbeat context and reuse it after restart.",
+      "Do not log secrets or place credentials in native event payloads."
+    ]
+  },
+  "validation_loop": {
+    "commands": [
+      "pnpm --filter @paperclipai/server exec vitest run src/services/verrail-run-executor.test.ts",
+      "focused heartbeat native-target prompt tests",
+      "pnpm --filter @paperclipai/server typecheck",
+      "pnpm test:domain-api",
+      "git diff --check"
+    ],
+    "retry_budget": 3
+  },
+  "evidence_contract": {
+    "run_id": "T016-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T016-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T016-A001/evidence.json"
+  }
+}

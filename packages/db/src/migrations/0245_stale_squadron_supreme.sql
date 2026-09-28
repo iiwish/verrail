@@ -1,0 +1,1 @@
+ALTER TABLE "verrail_targets" ADD CONSTRAINT "verrail_targets_status_check" CHECK ("verrail_targets"."status" in ('draft', 'ready', 'active', 'verifying', 'awaiting_acceptance', 'blocked', 'canceled', 'accepted'));

@@ -10,12 +10,12 @@ import (
 )
 
 const (
-	adjudicationResourceSubmission    = "submission"
-	adjudicationResourceDeliveryReview = "delivery_review"
-	adjudicationResourceAcceptance     = "acceptance"
-	adjudicationSubmissionCreatedEvent = "adjudication.submission_created.v1"
-	adjudicationReviewRecordedEvent    = "adjudication.review_recorded.v1"
-	adjudicationAcceptanceCreatedEvent = "adjudication.acceptance_created.v1"
+	adjudicationResourceSubmission      = "submission"
+	adjudicationResourceDeliveryReview  = "delivery_review"
+	adjudicationResourceAcceptance      = "acceptance"
+	adjudicationSubmissionCreatedEvent  = "adjudication.submission_created.v1"
+	adjudicationReviewRecordedEvent     = "adjudication.review_recorded.v1"
+	adjudicationAcceptanceCreatedEvent  = "adjudication.acceptance_created.v1"
 	AdjudicationSubmissionCreateCommand = "adjudication.submission.create.v1"
 	AdjudicationReviewRecordCommand     = "adjudication.review.record.v1"
 	AdjudicationAcceptanceCreateCommand = "adjudication.acceptance.create.v1"
@@ -36,13 +36,13 @@ type CreateSubmissionInput struct {
 }
 
 type RecordDeliveryReviewInput struct {
-	SubmissionID           string   `json:"submissionId"`
-	ReviewerPrincipalType  string   `json:"reviewerPrincipalType"`
-	ReviewerPrincipalID    string   `json:"reviewerPrincipalId"`
-	Verdict                string   `json:"verdict"`
-	Risks                  *string  `json:"risks,omitempty"`
-	UnprovenItems          []string `json:"unprovenItems"`
-	Comments               *string  `json:"comments,omitempty"`
+	SubmissionID          string   `json:"submissionId"`
+	ReviewerPrincipalType string   `json:"reviewerPrincipalType"`
+	ReviewerPrincipalID   string   `json:"reviewerPrincipalId"`
+	Verdict               string   `json:"verdict"`
+	Risks                 *string  `json:"risks,omitempty"`
+	UnprovenItems         []string `json:"unprovenItems"`
+	Comments              *string  `json:"comments,omitempty"`
 }
 
 type AcceptSubmissionInput struct {
@@ -52,6 +52,22 @@ type AcceptSubmissionInput struct {
 
 func adjudicationNotFound(resource string) error {
 	return &Error{Status: 404, Code: "ASSURANCE_RESOURCE_NOT_FOUND", Message: resource + " not found in this Workspace"}
+}
+
+// ValidateCandidateLifecycleCommand is the narrow candidate-authoring
+// boundary. Submission and ActionRequest may be proposed by an authenticated
+// user, agent, or trusted service; governance commands continue to use
+// ValidateAgentLifecycleCommand and therefore remain human-only.
+func ValidateCandidateLifecycleCommand[T any](command *AgentLifecycleCommand[T]) error {
+	return validateLifecycleCommand(
+		command,
+		func(principalType string) bool {
+			return principalType == "user" || principalType == "agent" || principalType == "service"
+		},
+		"CANDIDATE_COMMAND_FORBIDDEN",
+		"An authenticated user, agent, or service Principal is required",
+		"Invalid candidate command",
+	)
 }
 
 func ValidateCreateSubmissionInput(input *CreateSubmissionInput) error {
@@ -173,7 +189,7 @@ func ValidateAcceptSubmissionInput(input *AcceptSubmissionInput) error {
 // canonical JSON payload of the binding facts, with the artifact revision and
 // verification result sets sorted so logically identical submissions hash
 // identically regardless of list order.
-func submissionHash(targetRevisionID string, artifactRevisionIDs, verificationResultIDs []string, commitRef, environmentSummary *string) (string, error) {
+func submissionHash(targetRevisionID string, artifactRevisionIDs, verificationResultIDs []string, commitRef, environmentSummary *string, graphRevisionIDs ...*string) (string, error) {
 	sortedArtifacts := make([]string, len(artifactRevisionIDs))
 	copy(sortedArtifacts, artifactRevisionIDs)
 	sort.Strings(sortedArtifacts)
@@ -186,6 +202,9 @@ func submissionHash(targetRevisionID string, artifactRevisionIDs, verificationRe
 		"verificationResultIds": sortedResults,
 		"commitRef":             commitRef,
 		"environmentSummary":    environmentSummary,
+	}
+	if len(graphRevisionIDs) > 0 && graphRevisionIDs[0] != nil {
+		payload["graphRevisionId"] = *graphRevisionIDs[0]
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
@@ -225,10 +244,10 @@ func deliveryReviewHash(submissionID, reviewerPrincipalType, reviewerPrincipalID
 // AcceptanceAuthority.
 func acceptanceHash(submissionID, reviewID, targetRevisionID, authority string) (string, error) {
 	payload := map[string]any{
-		"submissionId":      submissionID,
-		"reviewId":          reviewID,
-		"targetRevisionId":  targetRevisionID,
-		"authority":         authority,
+		"submissionId":     submissionID,
+		"reviewId":         reviewID,
+		"targetRevisionId": targetRevisionID,
+		"authority":        authority,
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {

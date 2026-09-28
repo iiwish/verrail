@@ -100,15 +100,13 @@ describe("VerrailManagementSidebar", () => {
     root.unmount();
   });
 
-  it("organizes agents by definitions and deployment operations", async () => {
+  it("keeps the agent roster without a redundant deployment navigation entry", async () => {
     const root = await renderSidebar(container, "agents");
 
     expect(container.querySelector('[data-testid="verrail-agents-sidebar"]')).not.toBeNull();
     expect(container.querySelector('a[href="/agents"]')).not.toBeNull();
-    expect(sidebarNavItemMock.mock.calls.map(([props]) => props.to)).toEqual([
-      "/agents/definitions",
-      "/agents/deployments",
-    ]);
+    expect(sidebarNavItemMock.mock.calls).toHaveLength(0);
+    expect(container.textContent).not.toContain("agentNav.yours");
     expect(container.querySelector('[data-testid="agent-list"]')?.textContent).toContain("list");
 
     root.unmount();

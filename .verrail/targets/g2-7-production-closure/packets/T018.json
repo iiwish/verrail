@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T018",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T018",
+  "status": "accepted_for_dependency_progression",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T16:20:08Z",
+  "work_unit": {
+    "title": "校验版本模型与提示词执行快照",
+    "goal": "确保 HostTrusted compatibility execution 的 runtime、model 和 prompt 与 AgentVersion 固定事实一致。",
+    "requirements": ["AC-03", "AC-10"],
+    "depends_on": ["T016", "T017"],
+    "blocks": ["T010"]
+  },
+  "reason": "Production preflight showed the native Run binds AgentVersion but the heartbeat adapter reads mutable compatibility Agent config; without an equality gate, a recorded version can differ from executed model or prompt.",
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "allowed_files": [
+      "server/src/services/verrail-run-executor.ts",
+      "server/src/services/verrail-run-executor.test.ts",
+      "ui/src/pages/VerrailAgents.tsx",
+      "ui/src/pages/VerrailAgents.test.tsx",
+      ".verrail/targets/g2-7-production-closure/**"
+    ],
+    "rules": [
+      "Fail before heartbeat dispatch on snapshot mismatch.",
+      "Do not mutate compatibility Agent configuration from the background runner.",
+      "Use the existing codex_local adapter identifier in the publishing UI."
+    ]
+  },
+  "validation_loop": {
+    "commands": [
+      "native runner focused suite",
+      "VerrailAgents focused suite",
+      "server and UI typecheck",
+      "pnpm check:token-gates",
+      "git diff --check"
+    ],
+    "retry_budget": 3
+  },
+  "evidence_contract": {
+    "run_id": "T018-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T018-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T018-A001/evidence.json"
+  }
+}

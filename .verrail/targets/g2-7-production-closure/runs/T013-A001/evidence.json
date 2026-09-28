@@ -1,0 +1,27 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T013-A001",
+  "task_id": "T013",
+  "status": "passed_for_dependency_progression",
+  "failure_reproduction": {
+    "full_suite": "ProviderModelNotFoundError diagnostic timed out at 10 seconds.",
+    "isolated": "Failed identically at 10 seconds.",
+    "host_fact": "The inherited ~/.config/opencode tree was 554 MB with 7,016 files."
+  },
+  "fix": {
+    "scope": "test fixture only",
+    "behavior": "Each test sets XDG_CONFIG_HOME to a fixture-owned temporary path already covered by cleanup.",
+    "production_change": false
+  },
+  "verification": [
+    {"command":"focused model-unavailable case x five","status":"passed","result":"5/5"},
+    {"command":"complete OpenCode environment diagnostic suite","status":"passed","result":"3/3"},
+    {"command":"server typecheck","status":"passed"},
+    {"command":"git diff --check","status":"passed"}
+  ],
+  "review": {
+    "critical_or_high_findings": 0,
+    "recommendation": "accept_for_dependency_progression",
+    "reference": ".verrail/targets/g2-7-production-closure/runs/T013-A001/logs/review.md"
+  }
+}
