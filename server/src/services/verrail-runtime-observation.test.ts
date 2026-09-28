@@ -91,8 +91,13 @@ describe("externally observed Node runtime bytes (synthetic processes)", () => {
   });
   it("exposes only fixed diagnostic codes, never source paths or arbitrary causes", () => {
     expect(runtimeObservationFailureCode(new Error('private source', { cause: 'source_hash' }))).toBe('source_hash');
+    for (const suffix of ['enable', 'start', 'source', 'pause', 'resume']) {
+      const cause = `command_timeout_${suffix}`;
+      expect(runtimeObservationFailureCode(new Error('private source', { cause }))).toBe(cause);
+    }
     for (const error of [new Error('private source'), new Error('failed', { cause: '/private/secret' }),
-      new Error('failed', { cause: new Error('private token') }), { cause: 'source_hash' }]) {
+      new Error('failed', { cause: new Error('private token') }), { cause: 'source_hash' },
+      new Error('failed', { cause: 'command_timeout_arbitrary' })]) {
       expect(runtimeObservationFailureCode(error)).toBe('unknown');
     }
   });

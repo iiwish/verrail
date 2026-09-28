@@ -24,9 +24,16 @@ export type ObservedNodeRuntimeConfiguration = z.infer<typeof configurationSchem
 type RuntimeTransport = { stdin?: Readable; stdout?: Writable; stderr?: Writable;
   onMessage?: (value: unknown) => void; onExit?: () => void };
 const digest = (value: unknown) => createHash("sha256").update(canonicalJson(value)).digest("hex");
+const inspectorTimeoutCodes = {
+  "Debugger.enable": "command_timeout_enable",
+  "Runtime.runIfWaitingForDebugger": "command_timeout_start",
+  "Debugger.getScriptSource": "command_timeout_source",
+  "Debugger.pause": "command_timeout_pause",
+  "Debugger.resume": "command_timeout_resume",
+} as const;
 const failureCodes = ["unknown", "stdin", "ipc", "child_exit", "child_error", "command_timeout", "command_rejected",
   "protocol", "script_metadata", "generated_script", "script_url", "source_hash", "source_queue", "socket",
-  "checkpoint_state", "pause_timeout", "entrypoint_missing", "executable_identity"] as const;
+  "checkpoint_state", "pause_timeout", "entrypoint_missing", "executable_identity", ...Object.values(inspectorTimeoutCodes)] as const;
 type RuntimeFailureCode = typeof failureCodes[number];
 const unavailable = (cause: RuntimeFailureCode = "unknown") => new Error("RUNTIME_OBSERVATION_UNAVAILABLE", { cause });
 
@@ -130,11 +137,15 @@ export async function launchObservedNodeRuntime(raw: ObservedNodeRuntimeConfigur
     });
     socket = new WebSocket(endpoint, { maxPayload: 20 * 1024 * 1024, followRedirects: false });
     let nextId = 0;
-    function post(method: string, params: Record<string, unknown> = {}): Promise<any> {
+    function post(method: keyof typeof inspectorTimeoutCodes, params: Record<string, unknown> = {}): Promise<any> {
       if (stopped || socket!.readyState !== WebSocket.OPEN || pending.size >= 256) return Promise.reject(unavailable());
       return new Promise((resolve, reject) => {
         const id = ++nextId;
-        const timer = setTimeout(() => { pending.delete(id); fail("command_timeout"); reject(unavailable("command_timeout")); }, 10_000);
+        const timer = setTimeout(() => {
+          pending.delete(id);
+          const code = inspectorTimeoutCodes[method];
+          fail(code); reject(unavailable(code));
+        }, 10_000);
         pending.set(id, { resolve, reject, timer }); socket!.send(JSON.stringify({ id, method, params }));
       });
     }
