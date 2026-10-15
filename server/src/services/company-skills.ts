@@ -2895,7 +2895,38 @@ async function listLastEditorsBySkillId(
   return editors;
 }
 
+function isInventoryCompanyForeignKeyViolation(error: unknown): boolean {
+  const constraints = new Set([
+    "company_skills_company_id_companies_id_fk",
+    "company_skill_versions_company_id_companies_id_fk",
+    "folders_company_id_companies_id_fk",
+  ]);
+  const visited = new Set<unknown>();
+  let current = error;
+  while (current && typeof current === "object" && !visited.has(current)) {
+    visited.add(current);
+    const node = current as { code?: unknown; constraint?: unknown; constraint_name?: unknown; cause?: unknown };
+    const constraint = node.constraint ?? node.constraint_name;
+    if (node.code === "23503" && typeof constraint === "string" && constraints.has(constraint)) return true;
+    current = node.cause;
+  }
+  return false;
+}
+
 export function companySkillService(db: Db) {
+  async function persistWithCompanyLock<T>(
+    companyId: string,
+    persist: (tx: Parameters<Parameters<Db["transaction"]>[0]>[0]) => Promise<T>,
+  ): Promise<T> {
+    return db.transaction(async (tx) => {
+      // Only SQL runs under this lock; filesystem and folder preparation stay outside.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended('paperclip:company-skills-lifecycle:' || ${companyId}::uuid::text, 0))`);
+      const companyExists = await tx.select({ id: companies.id }).from(companies)
+        .where(eq(companies.id, companyId)).then((rows) => rows.length > 0);
+      if (!companyExists) throw notFound("Company not found");
+      return persist(tx);
+    });
+  }
   const folderSvc = folderService(db);
   const agents = agentService(db);
   const projects = projectService(db);
@@ -3162,7 +3193,19 @@ export function companySkillService(db: Db) {
       await ensureBundledSkillReleases(companyId, bundledSkills);
       await reconcilePaperclipSkillFolders(companyId);
       await reconcileLocalPathSkillSources(companyId);
-    })();
+    })().catch(async (error: unknown) => {
+      if (isInventoryCompanyForeignKeyViolation(error)) {
+        let companyMissing = false;
+        try {
+          companyMissing = await db.select({ id: companies.id }).from(companies)
+            .where(eq(companies.id, companyId)).then((rows) => rows.length === 0);
+        } catch {
+          // A failed recheck does not establish deletion; preserve the original failure.
+        }
+        if (companyMissing) throw notFound("Company not found");
+      }
+      throw error;
+    });
 
     skillInventoryRefreshPromises.set(companyId, refreshPromise);
     try {
@@ -5618,18 +5661,18 @@ export function companySkillService(db: Db) {
       updatedAt: new Date(),
     };
 
-    const row = existingByKey
-      ? await db
+    const row = await persistWithCompanyLock(companyId, async (tx) => existingByKey
+      ? await tx
         .update(companySkills)
         .set(values)
         .where(eq(companySkills.id, existingByKey.id))
         .returning()
         .then((rows) => rows[0] ?? null)
-      : await db
+      : await tx
         .insert(companySkills)
         .values(values)
         .returning()
-        .then((rows) => rows[0] ?? null);
+        .then((rows) => rows[0] ?? null));
 
     if (!row) throw notFound("Failed to persist company skill");
     const installed = toCompanySkill(row);
@@ -5976,23 +6019,11 @@ export function companySkillService(db: Db) {
     for (const skill of imported) {
       assertImportedSkillKeyAllowed(skill);
       assertImportedSkillSourceAllowed(skill);
-      const existing = await getByKey(companyId, skill.key);
-      const existingMeta = existing ? getSkillMeta(existing) : {};
+      const initialExisting = await getByKey(companyId, skill.key);
       const incomingMeta = skill.metadata && isPlainRecord(skill.metadata) ? skill.metadata : {};
       const incomingOwner = asString(incomingMeta.owner);
       const incomingRepo = asString(incomingMeta.repo);
       const incomingKind = asString(incomingMeta.sourceKind);
-      if (
-        existing
-        && existingMeta.sourceKind === "paperclip_bundled"
-        && incomingKind === "github"
-        && incomingOwner === "paperclipai"
-        && incomingRepo === "paperclip"
-      ) {
-        out.push(existing);
-        continue;
-      }
-
       const metadata = {
         ...(skill.metadata ?? {}),
         skillKey: skill.key,
@@ -6005,52 +6036,64 @@ export function companySkillService(db: Db) {
         : null;
       const projectId = asString(incomingMeta.projectId);
       const projectName = asString(incomingMeta.projectName);
-      const projectFolder = !existing && incomingKind === "project_scan" && projectId && projectName
+      const projectFolder = !initialExisting && incomingKind === "project_scan" && projectId && projectName
         ? await folderSvc.ensureProjectFolder(companyId, projectId, projectName)
         : null;
-      const values: ImportedSkillPersistValues = {
-        companyId,
-        folderId: bundledFolder?.id ?? projectFolder?.id ?? existing?.folderId ?? null,
-        key: skill.key,
-        slug: skill.slug,
-        name: skill.name,
-        description: skill.description,
-        markdown: skill.markdown,
-        sourceType: skill.sourceType,
-        sourceLocator: skill.sourceLocator,
-        sourceRef: skill.sourceRef,
-        trustLevel: skill.trustLevel,
-        compatibility: skill.compatibility,
-        fileInventory: serializeFileInventory(skill.fileInventory),
-        iconUrl: storeMetadata.iconUrl ?? existing?.iconUrl ?? null,
-        color: storeMetadata.color ?? existing?.color ?? null,
-        tagline: storeMetadata.tagline ?? existing?.tagline ?? null,
-        authorName: storeMetadata.authorName ?? existing?.authorName ?? null,
-        homepageUrl: storeMetadata.homepageUrl ?? existing?.homepageUrl ?? null,
-        categories: storeMetadata.categories.length > 0 ? storeMetadata.categories : existing?.categories ?? [],
-        sharingScope: existing?.sharingScope ?? "company",
-        installCount: existing?.installCount ?? 1,
-        metadata,
-        updatedAt: new Date(),
-      };
-      if (existing && importedSkillPersistValuesMatchExisting(existing, values)) {
-        out.push(existing);
-        continue;
-      }
-      const row = existing
-        ? await db
-          .update(companySkills)
-          .set(values)
-          .where(eq(companySkills.id, existing.id))
-          .returning()
-          .then((rows) => rows[0] ?? null)
-        : await db
-          .insert(companySkills)
-          .values(values)
-          .returning()
+      const persisted = await persistWithCompanyLock(companyId, async (tx) => {
+        const existingRow = await tx.select().from(companySkills)
+          .where(and(eq(companySkills.companyId, companyId), eq(companySkills.key, skill.key)))
           .then((rows) => rows[0] ?? null);
-      if (!row) throw notFound("Failed to persist company skill");
-      out.push(toCompanySkill(row));
+        const existing = existingRow ? toCompanySkill(existingRow) : null;
+        const existingMeta = existing ? getSkillMeta(existing) : {};
+        if (
+          existing
+          && existingMeta.sourceKind === "paperclip_bundled"
+          && incomingKind === "github"
+          && incomingOwner === "paperclipai"
+          && incomingRepo === "paperclip"
+        ) return existing;
+        const values: ImportedSkillPersistValues = {
+          companyId,
+          folderId: bundledFolder?.id ?? projectFolder?.id ?? existing?.folderId ?? null,
+          key: skill.key,
+          slug: skill.slug,
+          name: skill.name,
+          description: skill.description,
+          markdown: skill.markdown,
+          sourceType: skill.sourceType,
+          sourceLocator: skill.sourceLocator,
+          sourceRef: skill.sourceRef,
+          trustLevel: skill.trustLevel,
+          compatibility: skill.compatibility,
+          fileInventory: serializeFileInventory(skill.fileInventory),
+          iconUrl: storeMetadata.iconUrl ?? existing?.iconUrl ?? null,
+          color: storeMetadata.color ?? existing?.color ?? null,
+          tagline: storeMetadata.tagline ?? existing?.tagline ?? null,
+          authorName: storeMetadata.authorName ?? existing?.authorName ?? null,
+          homepageUrl: storeMetadata.homepageUrl ?? existing?.homepageUrl ?? null,
+          categories: storeMetadata.categories.length > 0 ? storeMetadata.categories : existing?.categories ?? [],
+          sharingScope: existing?.sharingScope ?? "company",
+          installCount: existing?.installCount ?? 1,
+          metadata,
+          updatedAt: new Date(),
+        };
+        if (existing && importedSkillPersistValuesMatchExisting(existing, values)) return existing;
+        const row = existing
+          ? await tx
+            .update(companySkills)
+            .set(values)
+            .where(eq(companySkills.id, existing.id))
+            .returning()
+            .then((rows) => rows[0] ?? null)
+          : await tx
+            .insert(companySkills)
+            .values(values)
+            .returning()
+            .then((rows) => rows[0] ?? null);
+        if (!row) throw notFound("Failed to persist company skill");
+        return toCompanySkill(row);
+      });
+      out.push(persisted);
     }
     return out;
   }
