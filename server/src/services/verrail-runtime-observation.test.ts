@@ -4,6 +4,7 @@ import { once } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import WebSocket from "ws";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { launchObservedNodeRuntime, runtimeObservationFailureCode } from "./verrail-runtime-observation.js";
 import { buildDeliveryProofRuntime } from "./delivery-proof-reader-build.js";
@@ -14,8 +15,25 @@ describe("externally observed Node runtime bytes (synthetic processes)", () => {
   const children: Awaited<ReturnType<typeof launchObservedNodeRuntime>>[] = [];
   afterEach(async () => {
     for (const child of children.splice(0)) await child.stop();
+    vi.restoreAllMocks();
     for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true });
   });
+  function holdPausedEvents() {
+    const emit = WebSocket.prototype.emit;
+    const releases: Array<() => void> = [];
+    let resolvePaused: () => void;
+    const paused = new Promise<void>(resolve => { resolvePaused = resolve; });
+    const sends = vi.spyOn(WebSocket.prototype, "send");
+    const events = vi.spyOn(WebSocket.prototype, "emit").mockImplementation(function (this: WebSocket, event, ...args) {
+      if (event === "message" && JSON.parse(args[0].toString()).method === "Debugger.paused") {
+        releases.push(() => { emit.call(this, event, ...args); });
+        resolvePaused();
+        return true;
+      }
+      return emit.call(this, event, ...args);
+    });
+    return { paused, releases, sends, release() { events.mockRestore(); for (const release of releases.splice(0)) release(); } };
+  }
   async function fixture(extra = "") {
     const root = await mkdtemp(path.join(os.tmpdir(), "verrail-runtime-observer-")); directories.push(root);
     const dependency = "export const value = 42;\n";
@@ -37,6 +55,95 @@ describe("externally observed Node runtime bytes (synthetic processes)", () => {
     expect(observation.scripts).toEqual([...f.configuration.files].sort((a, b) => a.path.localeCompare(b.path)));
     expect(JSON.stringify(observation)).not.toContain(f.root);
     expect(JSON.stringify(observation)).not.toContain("export const");
+  });
+  it("does not request script source before receiving an actual pause", async () => {
+    const f = await fixture(), gate = holdPausedEvents();
+    const child = await launchObservedNodeRuntime(f.configuration); children.push(child);
+    try {
+      // Hold a real pause notification, rather than making test success depend
+      // on a particular host's pre-pause interval exceeding ten seconds.
+      await gate.paused;
+      expect(gate.releases).toHaveLength(1);
+      expect(gate.sends.mock.calls.map(([data]) => JSON.parse(String(data)).method)).not.toContain("Debugger.getScriptSource");
+    } finally { gate.release(); }
+    await child.waitForMessage("ready");
+    expect((await child.checkpoint()).scripts).toEqual([...f.configuration.files].sort((a, b) => a.path.localeCompare(b.path)));
+  });
+  it("lets a checkpoint take over an initial pause while its sources are draining", async () => {
+    const f = await fixture(), send = WebSocket.prototype.send, gate = holdPausedEvents();
+    const child = await launchObservedNodeRuntime(f.configuration); children.push(child);
+    let checkpoint: ReturnType<typeof child.checkpoint> | undefined;
+    gate.sends.mockImplementation(function (this: WebSocket, data, ...args) {
+      if (!checkpoint && JSON.parse(String(data)).method === "Debugger.getScriptSource") checkpoint = child.checkpoint();
+      return send.call(this, data, ...args);
+    });
+    await gate.paused;
+    gate.release();
+    await vi.waitFor(() => expect(checkpoint).toBeDefined());
+    expect((await checkpoint!).scripts).toEqual([...f.configuration.files].sort((a, b) => a.path.localeCompare(b.path)));
+    const methods = gate.sends.mock.calls.map(([data]) => JSON.parse(String(data)).method);
+    expect(methods).not.toContain("Debugger.pause");
+    expect(methods.filter(method => method === "Debugger.resume")).toHaveLength(1);
+    await child.waitForMessage("ready");
+  });
+  it("collects scripts dynamically imported after startup at the next real pause", async () => {
+    const f = await fixture(`process.on('message', async () => {
+      await import('./late.mjs'); process.send({ kind: 'imported' });
+    });`);
+    const source = "export const late = 7;\n";
+    await writeFile(path.join(f.root, "late.mjs"), source);
+    f.configuration.files.push({ path: "late.mjs", sha256: sha256(source) });
+    const child = await start(f.configuration), sends = vi.spyOn(WebSocket.prototype, "send");
+    child.send({ kind: "import" });
+    await child.waitForMessage("imported");
+    expect(sends.mock.calls.map(([data]) => JSON.parse(String(data)).method)).not.toContain("Debugger.getScriptSource");
+    expect((await child.checkpoint()).scripts).toEqual([...f.configuration.files].sort((a, b) => a.path.localeCompare(b.path)));
+  });
+  it.each(["unknown", "changed"])("rejects a %s dynamically imported file at checkpoint", async variant => {
+    const f = await fixture(`process.on('message', async () => {
+      await import('./late.mjs'); process.send({ kind: 'imported' });
+    });`);
+    const source = "export const late = 7;\n";
+    await writeFile(path.join(f.root, "late.mjs"), source);
+    if (variant === "changed") f.configuration.files.push({ path: "late.mjs", sha256: sha256(source) });
+    const child = await start(f.configuration);
+    if (variant === "changed") await writeFile(path.join(f.root, "late.mjs"), "export const late = 8;\n");
+    child.send({ kind: "import" });
+    await child.waitForMessage("imported");
+    await expect(child.checkpoint()).rejects.toMatchObject({ message: "RUNTIME_OBSERVATION_UNAVAILABLE",
+      cause: variant === "unknown" ? "script_url" : "source_hash" });
+  });
+  it("retains the source-command deadline after a real pause", async () => {
+    const f = await fixture(), gate = holdPausedEvents();
+    const child = await launchObservedNodeRuntime(f.configuration); children.push(child);
+    await gate.paused;
+    gate.release();
+    const emit = WebSocket.prototype.emit;
+    // Drop only actual source responses. Other inspector commands and the
+    // production ten-second source deadline remain real and unchanged.
+    vi.spyOn(WebSocket.prototype, "emit").mockImplementation(function (this: WebSocket, event, ...args) {
+      if (event === "message") {
+        const message = JSON.parse(args[0].toString());
+        const sourceIds = gate.sends.mock.calls.map(([data]) => JSON.parse(String(data)))
+          .filter(request => request.method === "Debugger.getScriptSource").map(request => request.id);
+        if (sourceIds.includes(message.id)) return true;
+      }
+      return emit.call(this, event, ...args);
+    });
+    await expect(child.checkpoint()).rejects.toMatchObject({ message: "RUNTIME_OBSERVATION_UNAVAILABLE", cause: "command_timeout_source" });
+  }, 15_000);
+  it("releases a checkpoint waiting for the initial pause when stopped", async () => {
+    const f = await fixture(), gate = holdPausedEvents();
+    const child = await launchObservedNodeRuntime(f.configuration); children.push(child);
+    await gate.paused;
+    let error: unknown;
+    const checkpoint = child.checkpoint().catch(reason => { error = reason; });
+    const stopping = child.stop();
+    try {
+      await vi.waitFor(() => expect(error).toMatchObject({ message: "RUNTIME_OBSERVATION_UNAVAILABLE" }), { timeout: 500 });
+      await checkpoint;
+      expect(gate.sends.mock.calls.map(([data]) => JSON.parse(String(data)).method)).not.toContain("Debugger.getScriptSource");
+    } finally { gate.release(); await stopping; }
   });
   it("runs the standalone proxy with normal stdio and a separately signed runtime witness", async () => {
     const f = await fixture(`process.stdin.setEncoding('utf8'); process.stdin.on('data', text => {
