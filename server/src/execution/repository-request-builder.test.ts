@@ -18,8 +18,9 @@ function fixture() {
     goal: "Update code", constraints: ["No push"], acceptanceCriteria: [], nodeTitle: "Implement task", completionDefinition: "Patch reviewed" };
   const query = { select: vi.fn(), from: vi.fn(), innerJoin: vi.fn(), where: vi.fn(), limit: vi.fn(), execute: vi.fn().mockResolvedValue([{ id: identity.leaseId }]) };
   for (const fn of [query.select, query.from, query.innerJoin, query.where]) fn.mockReturnValue(query);
+  const repositorySourceRevisionId = id();
   const configure = () => query.limit.mockReset().mockResolvedValueOnce([context])
-    .mockResolvedValueOnce([{ contentHash, contentRef: `storage:${identity.workspaceId}/verrail/run-artifacts/sha256/${contentHash}` }])
+    .mockResolvedValueOnce([{ repositorySourceRevisionId, contentHash, contentRef: `storage:${identity.workspaceId}/verrail/run-artifacts/sha256/${contentHash}` }])
     .mockResolvedValueOnce([{ contentRef: `storage:${identity.workspaceId}/verrail/run-artifacts/sha256/${manifest.source.contentHash}` }]);
   configure();
   const storage = { getObject: vi.fn(async () => ({ stream: Readable.from([body]), contentLength: body.length })) };
