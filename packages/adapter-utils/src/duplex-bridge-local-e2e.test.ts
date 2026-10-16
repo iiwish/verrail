@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import net from "node:net";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -226,6 +226,10 @@ interface HarnessOptions {
   runId?: string;
   maxBodyBytes?: number;
   lossExitGraceMs?: number;
+  bridgeToken?: string;
+  onFakeApiStart?: (api: FakeApiServer) => void;
+  beforeGatewaySpawn?: (port: number, attempt: number) => Promise<void>;
+  onGatewaySpawn?: (child: ChildProcessWithoutNullStreams) => void;
 }
 
 /** The full harness handle for one composed duplex path. */
@@ -264,6 +268,88 @@ async function reserveLoopbackPort(): Promise<number> {
   });
 }
 
+async function provisionGateway(
+  entrypoint: string,
+  env: NodeJS.ProcessEnv,
+  options: HarnessOptions,
+  forwardRequest: Parameters<typeof createDuplexBridgeBroker>[0]["forwardRequest"],
+  forwardedRequests: readonly DuplexRequestFrame[],
+) {
+  const deadline = performance.now() + 5000;
+  const diagnostics: string[] = [];
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const assignedPort = await reserveLoopbackPort();
+    await options.beforeGatewaySpawn?.(assignedPort, attempt);
+    if (performance.now() >= deadline) {
+      throw new Error(`Timed out provisioning the gateway. ${diagnostics.join("\n")}`);
+    }
+    const child = spawn(process.execPath, [entrypoint], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...env, PAPERCLIP_BRIDGE_PORT: String(assignedPort) },
+    }) as ChildProcessWithoutNullStreams;
+    let isClosed = false;
+    let spawnError: Error | undefined;
+    child.on("error", (error) => { spawnError = error; });
+    const closed = new Promise<void>((resolve) => child.once("close", () => {
+      isClosed = true;
+      resolve();
+    }));
+    const childChannel = attachChildDuplexChannel(child);
+    let broker: DuplexBridgeBroker | undefined;
+    const cleanup = async () => {
+      if (!isClosed) child.kill("SIGKILL");
+      await closed;
+      await broker?.close();
+      child.stdin.destroy();
+      child.stdout.destroy();
+      child.stderr.destroy();
+    };
+    try {
+      options.onGatewaySpawn?.(child);
+      broker = await createDuplexBridgeBroker({
+        channel: childChannel.channel,
+        forwardRequest,
+        logger: () => undefined,
+      });
+      broker.start();
+      for (;;) {
+        // Only a drained, pre-READY bind failure can provision another test
+        // endpoint. The gateway itself still binds its assigned port or exits.
+        if (isClosed) {
+          const diagnostic = childChannel.stderr().trim();
+          diagnostics.push(`Attempt ${attempt}, port ${assignedPort}: ${diagnostic}`);
+          const collision = child.exitCode === 1 && child.signalCode === null && !spawnError
+            && childChannel.observedFrames.length === 0
+            && forwardedRequests.length === 0
+            && diagnostic === `[paperclip-bridge] duplex gateway could not bind port ${assignedPort}: listen EADDRINUSE: address already in use 127.0.0.1:${assignedPort}`;
+          if (!collision) {
+            throw new Error(`Gateway startup failed: ${spawnError?.message ?? "child exited"}. ${diagnostics.join("\n")}`);
+          }
+          await cleanup();
+          if (attempt === 3) {
+            throw new Error(`Gateway startup exhausted 3 port-collision attempts. ${diagnostics.join("\n")}`);
+          }
+          break;
+        }
+        if (performance.now() >= deadline) {
+          throw new Error(`Timed out waiting for the gateway READY frame. ${diagnostics.join("\n")} stderr: ${childChannel.stderr()}`);
+        }
+        if (childChannel.observedFrames.some((frame) => frame.type === "ready")) {
+          return {
+            assignedPort, child, closed, broker, ...childChannel,
+            stderr: () => [...diagnostics, childChannel.stderr()].join("\n"),
+          };
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, Math.min(20, deadline - performance.now())));
+      }
+    } catch (error) {
+      await cleanup();
+      throw error;
+    }
+  }
+  throw new Error("Gateway provisioning ended without a child.");
+}
+
 /**
  * Build the composed duplex path: a spawned gateway child, the real broker on
  * the child stdio, and a local fake API server as the forward target.
@@ -272,35 +358,14 @@ async function createHarness(options: HarnessOptions = {}): Promise<DuplexE2EHar
   const hostApiToken = options.hostApiToken ?? "real-run-jwt";
   const runId = options.runId ?? "run-e2e";
   const maxBodyBytes = options.maxBodyBytes ?? 1_000_000;
-  const bridgeToken = "duplex-e2e-bridge-token";
+  const bridgeToken = options.bridgeToken ?? "duplex-e2e-bridge-token";
   const nonce = "e2e112233445566778899aabbccddeeff";
   let forwardMode: ForwardMode = "proxy";
   const forwardedRequests: DuplexRequestFrame[] = [];
 
   const api = await startFakeApiServer();
-  const assignedPort = await reserveLoopbackPort();
-
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-duplex-e2e-"));
   const entrypoint = path.join(tmpDir, "gateway.mjs");
-  await writeFile(entrypoint, getSandboxCallbackBridgeServerSource(), "utf8");
-
-  const child = spawn(process.execPath, [entrypoint], {
-    stdio: ["pipe", "pipe", "pipe"],
-    env: {
-      ...process.env,
-      PAPERCLIP_API_BRIDGE_MODE: SANDBOX_CALLBACK_BRIDGE_DUPLEX_MODE,
-      PAPERCLIP_BRIDGE_HOST: "127.0.0.1",
-      PAPERCLIP_BRIDGE_PORT: String(assignedPort),
-      PAPERCLIP_BRIDGE_NONCE: nonce,
-      PAPERCLIP_BRIDGE_TOKEN: bridgeToken,
-      PAPERCLIP_BRIDGE_MAX_BODY_BYTES: String(maxBodyBytes),
-      ...(options.lossExitGraceMs != null
-        ? { PAPERCLIP_BRIDGE_LOSS_EXIT_GRACE_MS: String(options.lossExitGraceMs) }
-        : {}),
-    },
-  }) as ChildProcessWithoutNullStreams;
-
-  const { channel, observedFrames, stderr } = attachChildDuplexChannel(child);
 
   const forwardRequest = async (
     request: DuplexRequestFrame,
@@ -358,12 +423,27 @@ async function createHarness(options: HarnessOptions = {}): Promise<DuplexE2EHar
     return { status: response.status, headers: outHeaders, body };
   };
 
-  const broker = await createDuplexBridgeBroker({
-    channel,
-    forwardRequest,
-    logger: () => undefined,
-  });
-  broker.start();
+  let gateway: Awaited<ReturnType<typeof provisionGateway>>;
+  try {
+    options.onFakeApiStart?.(api);
+    await writeFile(entrypoint, getSandboxCallbackBridgeServerSource(), "utf8");
+    gateway = await provisionGateway(entrypoint, {
+      ...process.env,
+      PAPERCLIP_API_BRIDGE_MODE: SANDBOX_CALLBACK_BRIDGE_DUPLEX_MODE,
+      PAPERCLIP_BRIDGE_HOST: "127.0.0.1",
+      PAPERCLIP_BRIDGE_NONCE: nonce,
+      PAPERCLIP_BRIDGE_TOKEN: bridgeToken,
+      PAPERCLIP_BRIDGE_MAX_BODY_BYTES: String(maxBodyBytes),
+      ...(options.lossExitGraceMs != null
+        ? { PAPERCLIP_BRIDGE_LOSS_EXIT_GRACE_MS: String(options.lossExitGraceMs) }
+        : {}),
+    }, options, forwardRequest, forwardedRequests);
+  } catch (error) {
+    await api.close();
+    await rm(tmpDir, { recursive: true, force: true });
+    throw error;
+  }
+  const { assignedPort, child, closed, broker, observedFrames, stderr } = gateway;
 
   const waitFor = async (
     predicate: () => boolean,
@@ -383,18 +463,9 @@ async function createHarness(options: HarnessOptions = {}): Promise<DuplexE2EHar
     }
   };
 
-  const waitForExit = (): Promise<void> =>
-    new Promise<void>((resolve) => {
-      if (child.exitCode !== null || child.signalCode !== null) {
-        resolve();
-        return;
-      }
-      child.once("exit", () => resolve());
-    });
-
   const killChild = async (): Promise<void> => {
     child.kill("SIGKILL");
-    await waitForExit();
+    await closed;
   };
 
   let torndown = false;
@@ -402,7 +473,7 @@ async function createHarness(options: HarnessOptions = {}): Promise<DuplexE2EHar
     if (torndown) return;
     torndown = true;
     child.kill("SIGKILL");
-    await waitForExit();
+    await closed;
     child.stdin.destroy();
     child.stdout.destroy();
     child.stderr.destroy();
@@ -455,6 +526,110 @@ describe("duplex bridge local end-to-end harness", () => {
 
   const readyPredicate = (harness: DuplexE2EHarness) => () =>
     harness.observedFrames.some((frame) => frame.type === "ready");
+
+  it("reprovisions only a real pre-ready port collision and preserves the successful gateway", async () => {
+    const blockers: net.Server[] = [];
+    const children: ChildProcessWithoutNullStreams[] = [];
+    try {
+      const harness = await createHarness({
+        beforeGatewaySpawn: async (port, attempt) => {
+          if (attempt !== 1) {
+            expect(children[0].exitCode).toBe(1);
+            expect(children[0].stdin.destroyed).toBe(true);
+            expect(children[0].stdout.destroyed).toBe(true);
+            expect(children[0].stderr.destroyed).toBe(true);
+            return;
+          }
+          const blocker = net.createServer();
+          blockers.push(blocker);
+          await new Promise<void>((resolve, reject) => {
+            blocker.once("error", reject);
+            blocker.listen(port, "127.0.0.1", resolve);
+          });
+        },
+        onGatewaySpawn: (child) => children.push(child),
+      });
+      harnesses.push(harness);
+      await harness.waitFor(readyPredicate(harness), "the gateway after a real port collision");
+      expect(children).toHaveLength(2);
+      expect(children[0].exitCode).toBe(1);
+      expect(children[0].stdin.destroyed).toBe(true);
+      expect(children[0].stdout.destroyed).toBe(true);
+      expect(children[0].stderr.destroyed).toBe(true);
+      expect(harness.child).toBe(children[1]);
+      expect(harness.broker.state).toBe("open");
+      expect(harness.stderr()).toContain("Attempt 1, port");
+      expect(harness.stderr()).toContain("EADDRINUSE");
+      const response = await fetch(`${harness.baseUrl}/api/agents/me`, {
+        headers: { authorization: `Bearer ${harness.bridgeToken}` },
+      });
+      expect(response.status).toBe(200);
+      await response.arrayBuffer();
+      expect(harness.api.requests).toHaveLength(1);
+    } finally {
+      await Promise.all(blockers.map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+    }
+  }, 20000);
+
+  it("fails after three real pre-ready port collisions and reaps every failed child", async () => {
+    const blockers: net.Server[] = [];
+    const children: ChildProcessWithoutNullStreams[] = [];
+    const apis: FakeApiServer[] = [];
+    try {
+      await expect((async () => {
+        const harness = await createHarness({
+          onFakeApiStart: (api) => apis.push(api),
+          beforeGatewaySpawn: async (port) => {
+            const blocker = net.createServer();
+            blockers.push(blocker);
+            await new Promise<void>((resolve, reject) => {
+              blocker.once("error", reject);
+              blocker.listen(port, "127.0.0.1", resolve);
+            });
+          },
+          onGatewaySpawn: (child) => children.push(child),
+        });
+        harnesses.push(harness);
+        await harness.waitFor(readyPredicate(harness), "the gateway after occupied ports");
+      })()).rejects.toThrow("Gateway startup exhausted 3 port-collision attempts");
+      expect(children).toHaveLength(3);
+      for (const child of children) {
+        expect(child.exitCode).toBe(1);
+        expect(child.stdin.destroyed).toBe(true);
+        expect(child.stdout.destroyed).toBe(true);
+        expect(child.stderr.destroyed).toBe(true);
+      }
+      expect(apis).toHaveLength(1);
+      expect(apis[0].listening()).toBe(false);
+      expect(apis[0].openSocketCount()).toBe(0);
+      await expect(access(path.dirname(children[0].spawnargs[1]))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await Promise.all(blockers.map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+    }
+  }, 20000);
+
+  it("does not reprovision a non-bind startup failure", async () => {
+    const children: ChildProcessWithoutNullStreams[] = [];
+    const apis: FakeApiServer[] = [];
+    await expect((async () => {
+      const harness = await createHarness({
+        bridgeToken: "",
+        onFakeApiStart: (api) => apis.push(api),
+        onGatewaySpawn: (child) => children.push(child),
+      });
+      harnesses.push(harness);
+      await harness.waitFor(readyPredicate(harness), "a gateway with invalid configuration");
+    })()).rejects.toThrow("PAPERCLIP_BRIDGE_TOKEN is required");
+    expect(children).toHaveLength(1);
+    expect(children[0].exitCode).toBe(1);
+    expect(children[0].stdin.destroyed).toBe(true);
+    expect(children[0].stdout.destroyed).toBe(true);
+    expect(children[0].stderr.destroyed).toBe(true);
+    expect(apis).toHaveLength(1);
+    expect(apis[0].listening()).toBe(false);
+    expect(apis[0].openSocketCount()).toBe(0);
+    await expect(access(path.dirname(children[0].spawnargs[1]))).rejects.toMatchObject({ code: "ENOENT" });
+  }, 20000);
 
   it("delivers a valid READY frame from the spawned gateway child to the attached broker", async () => {
     const harness = await createHarness();
