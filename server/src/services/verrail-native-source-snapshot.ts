@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { z } from "zod";
-import { freezeNativeSource, validateNativeSourceObservation, type NativeSourceIdentity, type NativeSourceObservation } from "./verrail-native-source.js";
+import { freezeSourceTree, validateNativeSourceObservation, type NativeSourceIdentity, type NativeSourceObservation, type SourceTreeObservation } from "./verrail-native-source.js";
 
 export const nativeSourceSnapshotSchema = z.object({
   schemaVersion: z.literal(1), format: z.literal("git_bundle"), scopeVersion: z.literal(2),
@@ -20,6 +20,15 @@ export async function createNativeSourceSnapshot(input: {
   cwd: string; identity: NativeSourceIdentity; source: NativeSourceObservation;
   check?: () => void; timeoutMs?: number; maxOutputBytes?: number;
 }) {
+  const source = validateNativeSourceObservation(input.source, input.identity, "after_adapter_return");
+  if (source?.schemaVersion !== 2 || source.status !== "captured") throw failure();
+  return createSourceTreeSnapshot({ ...input, source });
+}
+
+export async function createSourceTreeSnapshot(input: {
+  cwd: string; source: SourceTreeObservation;
+  check?: () => void; timeoutMs?: number; maxOutputBytes?: number;
+}) {
   const timeout = input.timeoutMs ?? TIMEOUT_MS;
   const outputLimit = input.maxOutputBytes ?? MAX_BUNDLE_BYTES;
   const deadline = performance.now() + (Number.isSafeInteger(timeout) ? Math.max(0, Math.min(timeout, TIMEOUT_MS)) : 0);
@@ -28,9 +37,9 @@ export async function createNativeSourceSnapshot(input: {
   let temporary: string | undefined;
   try {
     check();
-    const source = validateNativeSourceObservation(input.source, input.identity, "after_adapter_return");
-    if (source?.schemaVersion !== 2 || source.status !== "captured") throw failure();
-    const frozen = await freezeNativeSource({ cwd: input.cwd, identity: input.identity, phase: "after_adapter_return",
+    const source = input.source;
+    if (source.scope.version !== 2 || source.status !== "captured" || !source.manifest || !source.repository) throw failure();
+    const frozen = await freezeSourceTree({ cwd: input.cwd,
       limits: { timeoutMs: Math.floor(deadline - performance.now()) } });
     if (frozen.observation.status !== "captured" || JSON.stringify(frozen.observation.repository) !== JSON.stringify(source.repository)
       || JSON.stringify(frozen.observation.manifest) !== JSON.stringify(source.manifest)) throw failure();

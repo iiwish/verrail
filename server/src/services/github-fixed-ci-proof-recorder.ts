@@ -9,6 +9,7 @@ import { createGitHubFixedCiProofClient, type GitHubFixedCiProofClient } from ".
 import { loadGitHubCiSourceContext, type GitHubCiSourceContext } from "./github-ci-source-context.js";
 import { mapGitHubCiSource } from "./github-ci-source-mapping.js";
 import type { GithubConnectorCredentialActor } from "./secrets.js";
+import type { StorageService } from "../storage/types.js";
 
 function assertTrust(trust: Readonly<GithubFixedCiProofTrust>, verified: GitHubCiVerificationContext) {
   const { entry, policySha256 } = verified;
@@ -27,13 +28,17 @@ export function createGitHubFixedCiProofRecorder(options: GitHubCiCollectionOpti
   proofClient?: GitHubFixedCiProofClient | null;
   loadSourceContext?: typeof loadGitHubCiSourceContext;
   mapSource?: typeof mapGitHubCiSource;
+  sourceStorage?: Pick<StorageService, "getObject">;
 }) {
   // Snapshot configuration at composition/startup, before any request or secret lookup.
   const client = options.proofClient === undefined ? createGitHubFixedCiProofClient() : options.proofClient;
   if (!client) return null;
   const session = createGitHubCiVerificationSession(options);
   const sourceContext: typeof loadGitHubCiSourceContext = async (db, input) => {
-    try { return await (options.loadSourceContext ?? loadGitHubCiSourceContext)(db, input); }
+    try { return await (options.loadSourceContext ?? loadGitHubCiSourceContext)(db, input, options.sourceStorage ? {
+      storage: options.sourceStorage, repository: { repository: client.trust.repository,
+        connectionId: client.trust.connectionId, bindingId: client.trust.bindingId },
+    } : undefined); }
     catch (error) {
       if (error instanceof HttpError && [403, 404, 409, 422].includes(error.status)) {
         throw new HttpError(error.status, "GitHub fixed CI proof source or requirement is unavailable");

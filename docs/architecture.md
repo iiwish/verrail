@@ -175,7 +175,13 @@ Board/Workspace 授权的只读 `GET /api/workspaces/:workspaceId/delivery-conte
 
 封闭复合 verifier 的可选 `prove` 模式独立持有操作员配置的签名密钥，并组合 v2 只读事实、飞书 Provider 回读或 Codex 执行来源、固定 GitHub CI 与 launch-owned 运行时见证。它只覆盖代码固定的 `feishu_target`、`codex_execution` 完整断言组，不扩展 GitHub CI 的断言权限。Go 按不可变公开授信验证签名和来源，在同一事务内登记 Provider 为 `verrail` 的 IntegrationRun、`scan_result` 与关联 `ci_result`、VerificationResult 和 CriterionProof；普通 bearer、调用方 Principal 和普通 receipt 均不能进入该能力。Node 见证读取实际 V8 脚本，native 见证绑定冷启动的私有可执行文件副本；Harness 见证还绑定实际运行身份与终态。HostTrusted 限制、启动配置和重放边界见 [ADR 0011](./adrs/0011-closed-composite-delivery-proof.md)。
 
+独立的 `opencode_execution` 复合证明使用版本化仓库只读身份、真实内容寻址执行历史与观察、RepositorySandbox 回执，以及 Server、Domain API、repository executor、OpenCode 四个组件的独立见证。读取器重放完整 HTTP 历史并核对用量、前后权限与环境读回、实际原生进程身份和受控清理；完整签名见证归档后才生成有界摘要。Go 在专用准入事务中复核当前 dispatch、来源、身份与时间，签名正确但内容为空的观察仍被拒绝。费用保留未核实账单状态，HTTP 权限不代表 OS 隔离，运行证明不代表恢复或人工验收。旧 Codex/飞书合同保持独立。详见 [ADR 0018](./adrs/0018-opencode-repository-delivery-proof.md)。
+
+`repository_recovery` 复合证明使用 V4 私有只读身份、独立 reader/observer 签名和 launch-owned 执行器生命周期。在运行时清理且成功 dispatch 持久化之后、终态与工件登记之前中断旧执行器；同候选的新执行器只恢复同一 Run/Attempt 的登记，不重跑模型。读取器核验实际重复 reconciliation 与真实旧 Attempt 延迟 heartbeat 的签名请求/响应、fencing 拒绝回执和审计，并比较恢复结果与旧/当前状态，随后才授权新执行器最终清理。归档的旧四组件见证通过该闭合链使用，不降低普通 OpenCode fresh-nonce 门禁；完整私有原件与有界证明摘要分离。合同和局部恢复边界见 [ADR 0019](./adrs/0019-repository-recovery-delivery-proof.md)，实现或合成测试不代表候选已通过真实恢复演练。
+
 v2 输出 manifest 可以显式请求 `source_snapshot`，由 Runner 从 v2 范围内固定的文件字节生成自包含 Git bundle。该产物不读取原仓库历史、refs 或 Git 配置，不执行源码 checkout；确定性根提交包含受覆盖的实际文件、执行位和符号链接目标字节，包括未提交和未跟踪内容。v2 输出回执保存导出器计算的内容摘要、快照 tree/commit、bundle Hash 与 Storage 引用。冻结源码输入上限为 256 MiB，单个 bundle 仍不超过 32 MiB，全部输出产物合计不超过 64 MiB；导出总时限为 30 秒，并受外层 60 秒采集期限约束。普通文件 manifest 和历史 v1 回执不获得源码等价属性；Agent 不能提供或覆盖导出器元数据。
+
+RepositorySandbox 复用有界源码冻结与 bundle 导出实现，使用独立的 `verrail.repository-output-receipt`，不生成 Heartbeat 或 HostTrusted 身份。回执绑定完整执行请求、Run 选择的输入 provenance 修订、实际运行时事实、采集前后稳定的源码观察及类型化工件映射，并在运行时、命令、私有 HOME 和 checkout 清理成功后定稿。固定 CI 的独立来源读取器校验真实 Storage 字节、当前成功 Run/最新 Attempt、已释放租约、fence、持久 dispatch、终态事件及唯一登记审计；Go 在准入事务中复查权威关联。该来源合同不等于 OpenCode 执行、费用、权限、恢复或人工验收证明。详见 [ADR 0016](./adrs/0016-repository-run-execution.md)。
 
 源码 bundle 是显式选择的数据导出，排除交付记录与忽略路径不等于秘密扫描或数据出境许可。快照根提交是独立的内容容器身份，不证明它等于 GitHub 受验 Commit、已加载的运行时构建或实际权限。固定 CI 映射读取精确受验 Commit 的非递归 root tree，通过隔离 Git plumbing 校验完整 tree 后排除根 `.verrail`，要求所得产品源码 tree 与权威 succeeded RunEvent 中已定稿快照的 tree 相等。这是 v2 产品源码范围的独立映射，不是完整 Commit 等价；`contentRef` 文本、来源 Run 非空或两个分别合法的 Hash 均不足以证明关联。
 

@@ -2710,6 +2710,7 @@ export * from "./types/github-ci-observation.js";
 export * from "./validators/connector.js";
 export * from "./validators/github-fixed-ci-proof.js";
 export * from "./validators/delivery-proof.js";
+export * from "./validators/opencode-execution-proof.js";
 export * from "./types/channel.js";
 export * from "./validators/channel.js";
 export * from "./types/criterion-proof.js";

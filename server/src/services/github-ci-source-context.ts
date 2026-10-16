@@ -10,6 +10,7 @@ import {
 import { conflict } from "../errors.js";
 import { validateNativeOutputReceipt } from "./verrail-native-output.js";
 import type { GitHubCiSourceSnapshot } from "./github-ci-source-mapping.js";
+import { loadRepositoryCiSourceContext, type RepositoryCiSourceOptions } from "./github-ci-repository-source-context.js";
 
 export interface GitHubCiSourceContextInput {
   workspaceId: string; targetId: string; targetRevisionId: string; graphRevisionId: string;
@@ -28,8 +29,8 @@ const canonical = (value: unknown) => JSON.stringify(value, (_key, entry) => ent
 const nativeArtifact = z.object({ title: z.string(), kind: z.string(), contentHash: z.string(), contentRef: z.string() }).strict();
 
 /** Trusted database associations establish authorship; receipt hashes alone do not. */
-export async function loadGitHubCiSourceContext(db: Db, input: GitHubCiSourceContextInput): Promise<GitHubCiSourceContext> {
-  return loadSourceContext(db, input, "fixed_ci");
+export async function loadGitHubCiSourceContext(db: Db, input: GitHubCiSourceContextInput, repositoryOptions?: RepositoryCiSourceOptions): Promise<GitHubCiSourceContext> {
+  return loadSourceContext(db, input, "fixed_ci", repositoryOptions);
 }
 
 /** Source association for the complete Codex requirement; never grants CI-only admission. */
@@ -41,7 +42,7 @@ export async function loadFeishuDeliverySourceContext(db: Db, input: GitHubCiSou
   return loadSourceContext(db, input, "feishu_target");
 }
 
-async function loadSourceContext(db: Db, input: GitHubCiSourceContextInput, kind: "fixed_ci" | "codex_execution" | "feishu_target"): Promise<GitHubCiSourceContext> {
+async function loadSourceContext(db: Db, input: GitHubCiSourceContextInput, kind: "fixed_ci" | "codex_execution" | "feishu_target", repositoryOptions?: RepositoryCiSourceOptions): Promise<GitHubCiSourceContext> {
   const { workspaceId, targetId, targetRevisionId, graphRevisionId } = input;
   return db.transaction(async tx => {
     const [context] = await tx.select({
@@ -90,6 +91,11 @@ async function loadSourceContext(db: Db, input: GitHubCiSourceContextInput, kind
       .innerJoin(verrailRuns, and(eq(verrailRuns.id, verrailArtifactRevisions.sourceRunId), eq(verrailRuns.workNodeId, verrailArtifactRevisions.sourceWorkNodeId), eq(verrailRuns.workspaceId, workspaceId), eq(verrailRuns.targetId, targetId), eq(verrailRuns.targetRevisionId, targetRevisionId), eq(verrailRuns.graphRevisionId, graphRevisionId), eq(verrailRuns.kind, "agent"), eq(verrailRuns.status, "succeeded")))
       .innerJoin(verrailRunAttempts, and(eq(verrailRunAttempts.runId, verrailRuns.id), eq(verrailRunAttempts.workspaceId, workspaceId), eq(verrailRunAttempts.attemptNumber, verrailRuns.attemptCount), eq(verrailRunAttempts.deploymentRevisionId, verrailRuns.deploymentRevisionId), eq(verrailRunAttempts.agentVersionId, verrailRuns.agentVersionId), eq(verrailRunAttempts.status, "succeeded"), eq(verrailRunAttempts.runtimeProfile, "host_trusted"), eq(verrailRunAttempts.executorPrincipalType, "service"), eq(verrailRunAttempts.executorPrincipalId, "verrail-host-runner")))
       .where(and(eq(verrailArtifactRevisions.id, input.artifactRevisionId), eq(verrailArtifactRevisions.workspaceId, workspaceId), eq(verrailArtifactRevisions.createdByPrincipalType, "service"), eq(verrailArtifactRevisions.createdByPrincipalId, "verrail-host-runner"))).limit(1);
+    if (!artifact && kind === "fixed_ci" && repositoryOptions) {
+      const repository = await loadRepositoryCiSourceContext(tx, input, repositoryOptions);
+      return { ...repository, criterionKey: context.criterionKey,
+        contextSha256: createHash("sha256").update(canonical({ context, repository })).digest("hex") };
+    }
     if (!artifact || !artifact.deploymentRevisionId || !artifact.agentVersionId || artifact.revisionNumber !== 1) unavailable();
     const [sourceNode] = await tx.select({ id: verrailWorkNodes.id, status: verrailWorkNodes.status, updatedAt: verrailWorkNodes.updatedAt }).from(verrailWorkNodes)
       .where(and(eq(verrailWorkNodes.id, artifact.nodeId), eq(verrailWorkNodes.workspaceId, workspaceId), eq(verrailWorkNodes.targetId, targetId), eq(verrailWorkNodes.graphRevisionId, graphRevisionId), eq(verrailWorkNodes.kind, "agent_task"), eq(verrailWorkNodes.status, "completed"))).limit(1);

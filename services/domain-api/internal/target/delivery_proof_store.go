@@ -46,6 +46,16 @@ func (verifier *DeliveryProofVerifier) Record(ctx context.Context, workspaceID, 
 		if err != nil {
 			return err
 		}
+		if payload.Kind == "opencode_execution" {
+			if err := validateOpenCodeDeliveryDatabase(ctx, tx, verifier.profile, payload); err != nil {
+				return err
+			}
+		}
+		if payload.Kind == "repository_recovery" {
+			if err := validateRepositoryRecoveryDatabase(ctx, tx, verifier.profile, payload); err != nil {
+				return err
+			}
+		}
 		ciReference := command.Input.Reference
 		coverage := command.Input.ProviderReceipt["criterionProof"].(map[string]any)
 		coverage["providerRunId"], coverage["providerAttempt"], coverage["verifiedAt"] = payload.ObservationID, 1, payload.VerifiedAt

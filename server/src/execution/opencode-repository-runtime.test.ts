@@ -58,7 +58,9 @@ it.skipIf(process.env.VERRAIL_TEST_OPENCODE_HTTP !== "1")("real OpenCode edits r
       runtime: "opencode", model: "fixture/test", instructions: "Update result.txt and submit the report.",
       timeoutSeconds: 45, output: { maxFiles: 1, maxFileBytes: 1024, maxTotalBytes: 1024 },
     };
-    expect(await runtime(request, root, AbortSignal.timeout(45_000))).toEqual({ exitCode: 0 });
+    expect(await runtime(request, root, AbortSignal.timeout(45_000))).toMatchObject({ exitCode: 0,
+      executionFacts: { runtime: "opencode", runtimeVersion: "1.17.13", model: request.model,
+        cleanup: { runtime: true, home: true, commands: true } } });
     expect(await readFile(join(root, "result.txt"), "utf8")).toBe("after");
     expect(await readFile(join(root, outputDirectory, "result.txt"), "utf8")).toBe("after");
     expect(text.join("")).toBe("Starting repository command. Repository changed");

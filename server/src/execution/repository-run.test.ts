@@ -49,6 +49,23 @@ it("does not report success or failure for a duplicate dispatch", async () => {
   expect(f.succeed).not.toHaveBeenCalled();
   expect(f.fail).not.toHaveBeenCalled();
 });
+it("holds only a durable success before the first terminal report and does not report after abort", async () => {
+  const controller = new AbortController(), result = { artifacts: [] };
+  f.execute.mockResolvedValue({ status: "succeeded", result });
+  const hold = vi.fn(async (_request: unknown, _result: unknown, signal: AbortSignal) => {
+    controller.abort(); signal.throwIfAborted();
+  });
+  const run = createStartedRepositoryRunExecutor({ domainApi: {}, beforeTerminalReport: hold } as never);
+  await expect(run(request, 2, controller.signal)).rejects.toThrow();
+  expect(hold).toHaveBeenCalledWith(request, result, controller.signal);
+  expect(f.succeed).not.toHaveBeenCalled(); expect(f.fail).not.toHaveBeenCalled();
+});
+it.each(["already_dispatched", "canceled"])("does not enter the success hold for %s", async status => {
+  f.execute.mockResolvedValue({ status }); f.reconcile.mockResolvedValue({ status: "registered" });
+  const hold = vi.fn();
+  await createStartedRepositoryRunExecutor({ domainApi: {}, beforeTerminalReport: hold } as never)(request, 2, signal);
+  expect(hold).not.toHaveBeenCalled();
+});
 it.each(["claim", "success-response"])("does not turn ambiguous %s into a competing failure", async stage => {
   if (stage === "claim") f.execute.mockRejectedValue(new Error("UNKNOWN"));
   else {

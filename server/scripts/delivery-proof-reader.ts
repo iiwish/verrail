@@ -11,6 +11,8 @@ import { codexExecutionProofContextInputSchema, loadCodexExecutionProofContext }
 import { observeChannelTargetProvider, type ChannelProviderObservationConfig } from "../src/services/channel-target-provider-observation.js";
 import { deliveryProofRequestSchema, recordDeliveryProof, type DeliveryProofRecorderConfig } from "../src/services/delivery-proof-recorder.js";
 import type { RunLogStore } from "../src/services/run-log-store.js";
+import { createDeliveryProofStorageReader } from "../src/services/delivery-proof-storage-reader.js";
+import { repositoryRecoveryReaderCommandSchema, runRepositoryRecoveryReaderCommand } from "../src/services/repository-recovery-proof-command.js";
 
 const inputSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("inspect") }).strict(),
@@ -18,6 +20,7 @@ const inputSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("channel-provider"), references: channelTargetProofContextInputSchema.omit({ workspaceId: true }) }).strict(),
   z.object({ kind: z.literal("codex"), references: codexExecutionProofContextInputSchema.omit({ workspaceId: true }) }).strict(),
   z.object({ kind: z.literal("prove"), references: deliveryProofRequestSchema }).strict(),
+  ...repositoryRecoveryReaderCommandSchema.options,
 ]);
 
 async function main() {
@@ -26,7 +29,8 @@ async function main() {
   if (!configPath || !path.isAbsolute(configPath)) throw new Error();
   const directory = await stat(path.dirname(configPath));
   const file = await open(configPath, constants.O_RDONLY | constants.O_NOFOLLOW);
-  let access: DeliveryProofReaderAccess & { logRoot: string; channelProvider?: ChannelProviderObservationConfig; deliveryProof?: DeliveryProofRecorderConfig };
+  let access: DeliveryProofReaderAccess & { logRoot: string; executionStorageRoot?: string;
+    channelProvider?: ChannelProviderObservationConfig; deliveryProof?: DeliveryProofRecorderConfig };
   try {
     const metadata = await file.stat();
     if (!directory.isDirectory() || directory.uid !== process.getuid?.() || (directory.mode & 0o077) !== 0
@@ -42,7 +46,7 @@ async function main() {
     chunks.push(buffer);
   }
   const input = inputSchema.parse(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-  if (input.kind === "prove") {
+  if (input.kind === "prove" || input.kind.startsWith("recovery-")) {
     clearTimeout(deadline);
     deadline = setTimeout(() => { process.stderr.write("PROOF_READER_DEADLINE\n"); process.exit(1); }, 120_000);
   }
@@ -50,10 +54,23 @@ async function main() {
   try {
     const authority = await assertDeliveryProofReader(db, access);
     if (input.kind === "inspect") return authority;
+    if (input.kind === "recovery-authorize" || input.kind === "recovery-probe-authorize" || input.kind === "recovery-complete-authorize") {
+      if (access.schemaVersion !== 4 || !access.executionStorageRoot || !access.deliveryProof
+        || createHash("sha256").update(await readFile(fileURLToPath(import.meta.url))).digest("hex") !== access.deliveryProof.trust.verifierBuildSha256) throw new Error();
+      return runRepositoryRecoveryReaderCommand(db, access, input, access.deliveryProof,
+        createDeliveryProofStorageReader(access.executionStorageRoot, access.workspaceId));
+    }
     if (input.kind === "channel") return await loadChannelTargetProofContext(db, { ...input.references, workspaceId: access.workspaceId });
     if (input.kind === "channel-provider") {
       if (!access.channelProvider) throw new Error();
       return await observeChannelTargetProvider(db, { ...input.references, workspaceId: access.workspaceId }, access.channelProvider, { access });
+    }
+    if (input.kind === "prove" && ["opencode_execution", "repository_recovery"].includes(input.references.kind)) {
+      if (![3, 4].includes(access.schemaVersion) || !access.executionStorageRoot || !access.deliveryProof
+        || createHash("sha256").update(await readFile(fileURLToPath(import.meta.url))).digest("hex") !== access.deliveryProof.trust.verifierBuildSha256) throw new Error();
+      const storage = createDeliveryProofStorageReader(access.executionStorageRoot, access.workspaceId);
+      return recordDeliveryProof(db, access, input.references, access.deliveryProof,
+        { read: async () => { throw new Error("Legacy run logs are not an OpenCode proof capability"); } }, storage);
     }
     if (!path.isAbsolute(access.logRoot)) throw new Error();
     const root = await realpath(path.join(access.logRoot, access.workspaceId));

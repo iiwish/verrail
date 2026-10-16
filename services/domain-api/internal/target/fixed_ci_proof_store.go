@@ -132,7 +132,13 @@ func (verifier *FixedCIProofVerifier) admitForRequirement(ctx context.Context, t
 	if err != nil {
 		return command, nil, err
 	}
-	objectHash, err := validateFixedCISource(ctx, tx, p, input)
+	validateSource := validateFixedCINativeSource
+	if kind == "fixed_ci" {
+		validateSource = validateFixedCISource
+	} else if kind == "opencode_execution" || kind == "repository_recovery" {
+		validateSource = validateFixedCIRepositorySource
+	}
+	objectHash, err := validateSource(ctx, tx, p, input)
 	if err != nil {
 		return command, nil, err
 	}
@@ -176,7 +182,7 @@ type fixedCINativeArtifact struct {
 	} `json:"sourceSnapshot"`
 }
 
-func validateFixedCISource(ctx context.Context, tx pgx.Tx, p FixedCIProofTrustProfile, input FixedCIProofInput) (string, error) {
+func validateFixedCINativeSource(ctx context.Context, tx pgx.Tx, p FixedCIProofTrustProfile, input FixedCIProofInput) (string, error) {
 	var raw []byte
 	var title, contentHash, contentRef, sourceNodeID, deploymentID, agentVersionID string
 	var fence int64

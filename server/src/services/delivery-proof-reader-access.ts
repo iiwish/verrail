@@ -11,11 +11,12 @@ import {
   verrailAgentVersions, verrailDeployments, verrailDeploymentRevisions, verrailCriterionProofs,
   verrailIntegrationRuns, verrailIntegrationAttempts, verrailEvidence, verrailVerificationResults,
   verrailArtifacts, verrailArtifactRevisions, verrailAgentCommandReceipts, verrailClaims,
-  toolConnections, verrailGithubRepoBindings,
+  toolConnections, verrailGithubRepoBindings, verrailRepositoryDispatches, verrailRunSources, verrailExecutionCommandReceipts,
 } from "@paperclipai/db";
 
 const roleSchema = z.string().regex(/^verrail_proof_ro_[a-f0-9]{12}$/);
-const policy = (version: 1 | 2) => `verrail.workspace-proof-reader.v${version}`;
+type ReaderVersion = 1 | 2 | 3 | 4;
+const policy = (version: ReaderVersion) => `verrail.workspace-proof-reader.v${version}`;
 const quote = (name: string) => {
   if (!/^[a-z_][a-z0-9_]*$/.test(name)) throw new Error("PROOF_READER_IDENTIFIER_INVALID");
   return `"${name}"`;
@@ -45,8 +46,14 @@ const views: View[] = [
     verrailArtifacts, verrailArtifactRevisions, verrailAgentCommandReceipts, verrailClaims].map(table => ({ table })),
 ];
 export const deliveryProofReaderTables = views.map(view => getTableName(view.table));
-function viewsFor(version: 1 | 2): View[] {
+function viewsFor(version: ReaderVersion): View[] {
   if (version === 1) return views;
+  if (version === 4) return [...viewsFor(3).map(view => view.table === verrailDeployments
+    ? { ...view, columns: [...view.columns!, "status"] }
+    : view.table === verrailDeploymentRevisions ? { ...view, columns: [...view.columns!, "state"] } : view),
+    { table: verrailExecutionCommandReceipts, columns: ["id", "workspace_id", "principal_type", "principal_id", "command_type",
+      "idempotency_key", "request_hash", "response", "created_at"] }];
+  if (version === 3) return [...viewsFor(2), { table: verrailRepositoryDispatches }, { table: verrailRunSources }];
   return [...views.map(view => view.table === heartbeatRuns ? { ...view, expressions: { ...view.expressions,
     context_snapshot: `${view.expressions!.context_snapshot} || jsonb_build_object('verrailNativePermissionObservation',context_snapshot->'verrailNativePermissionObservation')` } }
     : view.table !== verrailConversationMessages ? view : {
@@ -55,7 +62,7 @@ function viewsFor(version: 1 | 2): View[] {
   { table: toolConnections, columns: ["id", "company_id", "enabled", "status", "auth_kind", "updated_at"] }];
 }
 export interface DeliveryProofReaderAccess {
-  schemaVersion: 1 | 2;
+  schemaVersion: ReaderVersion;
   workspaceId: string;
   roleName: string;
   schemaName: string;
@@ -63,14 +70,14 @@ export interface DeliveryProofReaderAccess {
   expiresAt: string;
   policySha256: string;
 }
-function marker(workspaceId: string, version: 1 | 2) { return `${policy(version)}:${workspaceId}`; }
+function marker(workspaceId: string, version: ReaderVersion) { return `${policy(version)}:${workspaceId}`; }
 function projection(view: View) {
   const available = Object.values(getTableColumns(view.table)).map(column => column.name);
   const columns = view.columns ?? available;
   if (columns.some(column => !available.includes(column))) throw new Error("PROOF_READER_COLUMNS_INVALID");
   return columns.map(column => view.expressions?.[column] ? `${view.expressions[column]} as ${quote(column)}` : quote(column)).join(",");
 }
-function policyHash(workspaceId: string, version: 1 | 2) {
+function policyHash(workspaceId: string, version: ReaderVersion) {
   return createHash("sha256").update(JSON.stringify({ policy: policy(version), workspaceId,
     views: viewsFor(version).map(view => [getTableName(view.table), projection(view)]) })).digest("hex");
 }
@@ -83,9 +90,9 @@ function scram(password: string) {
 }
 
 /** Creates only a new private role/schema. Existing roles, grants and business rows are never altered. */
-export async function provisionDeliveryProofReader(db: Db, input: { workspaceId: string; roleName: string; databaseUrl: string; schemaVersion?: 1 | 2 }): Promise<DeliveryProofReaderAccess> {
+export async function provisionDeliveryProofReader(db: Db, input: { workspaceId: string; roleName: string; databaseUrl: string; schemaVersion?: ReaderVersion }): Promise<DeliveryProofReaderAccess> {
   const workspaceId = z.string().uuid().parse(input.workspaceId), roleName = roleSchema.parse(input.roleName);
-  const schemaVersion = z.union([z.literal(1), z.literal(2)]).parse(input.schemaVersion ?? 1);
+  const schemaVersion = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).parse(input.schemaVersion ?? 1);
   const schemaName = `${roleName}_facts`, password = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   const url = new URL(input.databaseUrl);
@@ -120,7 +127,7 @@ export async function provisionDeliveryProofReader(db: Db, input: { workspaceId:
 export async function assertDeliveryProofReader(db: Db, access: DeliveryProofReaderAccess) {
   try {
     const roleName = roleSchema.parse(access.roleName), workspaceId = z.string().uuid().parse(access.workspaceId);
-    if (![1, 2].includes(access.schemaVersion) || access.schemaName !== `${roleName}_facts` || access.policySha256 !== policyHash(workspaceId, access.schemaVersion)
+    if (![1, 2, 3, 4].includes(access.schemaVersion) || access.schemaName !== `${roleName}_facts` || access.policySha256 !== policyHash(workspaceId, access.schemaVersion)
       || !Number.isFinite(Date.parse(access.expiresAt)) || Date.parse(access.expiresAt) <= Date.now()) throw new Error();
     const rows = await db.$client`select current_user as name, current_schema() as schema,
       current_setting('transaction_read_only') as readonly, rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls,rolinherit,rolcanlogin,rolvaliduntil,

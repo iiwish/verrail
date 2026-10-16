@@ -71,6 +71,16 @@ describe("fixed CI proof recorder composition", () => {
     const f = setup(); expect(createGitHubFixedCiProofRecorder({ ...f.options, proofClient: null })).toBeNull();
     expect(f.resolveCredential).not.toHaveBeenCalled();
   });
+  it("passes only the trusted repository binding and storage reader to each source recheck", async () => {
+    const f = setup();
+    const sourceStorage = { getObject: vi.fn() };
+    await createGitHubFixedCiProofRecorder({ ...f.options, sourceStorage })!.record(f.request);
+    expect(f.loadSourceContext).toHaveBeenCalledTimes(3);
+    expect(f.loadSourceContext).toHaveBeenCalledWith(f.options.db, expect.objectContaining({ artifactRevisionId: f.request.input.artifactRevisionId }), {
+      storage: sourceStorage, repository: { repository: f.trust.repository, connectionId: f.trust.connectionId, bindingId: f.trust.bindingId },
+    });
+    expect(sourceStorage.getObject).not.toHaveBeenCalled();
+  });
   it("derives the dedicated command from actual session outputs and audits the initiating user separately", async () => {
     const f = setup(); await expect(f.recorder.record(f.request)).resolves.toMatchObject({ resourceType: "integration_run" });
     expect(f.read).toHaveBeenCalledWith({ runId: "123", runAttempt: 2, candidateSha: commit });

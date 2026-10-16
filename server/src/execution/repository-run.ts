@@ -10,6 +10,7 @@ type ControllerOptions = Parameters<typeof createRepositoryExecutionController>[
 // Neither requests nor cursors from a browser/model may enter this internal API.
 export function createStartedRepositoryRunExecutor(options: Omit<ControllerOptions, "renewRun" | "emit"> & {
   domainApi: Pick<VerrailDomainApiClient, "reportRunEvent">;
+  beforeTerminalReport?: (request: RepositoryExecutionRequest, result: unknown, signal: AbortSignal) => Promise<void>;
 }) {
   return async (request: RepositoryExecutionRequest, lastEventCursor: number, signal: AbortSignal) => {
     const reporter = createRepositoryRunReporter({ request, lastEventCursor, domainApi: options.domainApi });
@@ -31,6 +32,7 @@ export function createStartedRepositoryRunExecutor(options: Omit<ControllerOptio
     }
     // Do not turn an ambiguous success response into a failure command or repeat
     // execution. The durable transport result is available for reconciliation.
+    if (options.beforeTerminalReport) await options.beforeTerminalReport(request, outcome.result, signal);
     const event = await reporter.succeed(outcome.result, signal);
     return { status: "succeeded" as const, result: outcome.result, event };
   };

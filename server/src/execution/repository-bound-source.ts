@@ -13,13 +13,14 @@ const manifestSchema = repositorySourceProvenanceSchema.extend({ source: z.objec
 const identitySchema = repositoryExecutionRequestSchema.pick({ workspaceId: true, runId: true,
   targetId: true, targetRevisionId: true, graphRevisionId: true, workNodeId: true }).strip();
 
-export async function loadBoundRepositorySource(options: {
-  db: Db; storage: Pick<StorageService, "getObject">; request: z.infer<typeof identitySchema>; signal: AbortSignal;
+export async function loadBoundRepositorySourceWithBinding(options: {
+  db: Pick<Db, "select">; storage: Pick<StorageService, "getObject">; request: z.infer<typeof identitySchema>; signal: AbortSignal;
 }) {
   const request = identitySchema.parse(options.request);
   const { db, signal } = options;
   signal.throwIfAborted();
-  const [revision] = await db.select({ contentHash: verrailArtifactRevisions.contentHash, contentRef: verrailArtifactRevisions.contentRef })
+  const [revision] = await db.select({ repositorySourceRevisionId: verrailRunSources.repositorySourceRevisionId,
+    contentHash: verrailArtifactRevisions.contentHash, contentRef: verrailArtifactRevisions.contentRef })
     .from(verrailRunSources)
     .innerJoin(verrailRuns, and(eq(verrailRuns.id, verrailRunSources.runId), eq(verrailRuns.workspaceId, verrailRunSources.workspaceId)))
     .innerJoin(verrailArtifactRevisions, and(eq(verrailArtifactRevisions.id, verrailRunSources.repositorySourceRevisionId), eq(verrailArtifactRevisions.workspaceId, verrailRunSources.workspaceId)))
@@ -32,7 +33,19 @@ export async function loadBoundRepositorySource(options: {
   if (!revision || !/^[a-f0-9]{64}$/.test(revision.contentHash)) throw new Error("REPOSITORY_SOURCE_BINDING_REQUIRED");
   const key = `${request.workspaceId}/verrail/run-artifacts/sha256/${revision.contentHash}`;
   if (revision.contentRef !== `storage:${key}`) throw new Error("REPOSITORY_SOURCE_BINDING_INVALID");
-  const object = await options.storage.getObject(request.workspaceId, key);
+  const pending = options.storage.getObject(request.workspaceId, key);
+  const object = await new Promise<Awaited<typeof pending>>((resolve, reject) => {
+    const abort = () => reject(new Error("REPOSITORY_SOURCE_CANCELED"));
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+    // A provider may resolve after cancellation; it still owns a stream that
+    // must be destroyed rather than read or leaked into the next operation.
+    pending.then(value => {
+      signal.removeEventListener("abort", abort);
+      if (signal.aborted) { value.stream.destroy(); return; }
+      resolve(value);
+    }, error => { signal.removeEventListener("abort", abort); reject(error); });
+  });
   const abort = () => object.stream.destroy(new Error("REPOSITORY_SOURCE_CANCELED"));
   signal.addEventListener("abort", abort, { once: true });
   let manifest: z.infer<typeof manifestSchema>;
@@ -69,15 +82,25 @@ export async function loadBoundRepositorySource(options: {
   if (source?.contentRef !== `storage:${request.workspaceId}/verrail/run-artifacts/sha256/${manifest.source.contentHash}`) {
     throw new Error("REPOSITORY_SOURCE_BINDING_INVALID");
   }
-  return manifest;
+  return { manifest, binding: { repositorySourceRevisionId: z.string().uuid().parse(revision.repositorySourceRevisionId),
+    provenanceContentHash: revision.contentHash } };
 }
 
-export async function validateBoundRepositorySource(options: {
-  db: Db; storage: Pick<StorageService, "getObject">; request: RepositoryExecutionRequest; signal: AbortSignal;
+export async function loadBoundRepositorySource(options: Parameters<typeof loadBoundRepositorySourceWithBinding>[0]) {
+  return (await loadBoundRepositorySourceWithBinding(options)).manifest;
+}
+
+export async function validateBoundRepositorySourceWithBinding(options: {
+  db: Pick<Db, "select">; storage: Pick<StorageService, "getObject">; request: RepositoryExecutionRequest; signal: AbortSignal;
 }) {
   const request = repositoryExecutionRequestSchema.parse(options.request);
-  const manifest = await loadBoundRepositorySource({ ...options, request });
+  const result = await loadBoundRepositorySourceWithBinding({ ...options, request });
+  const { manifest } = result;
   if (manifest.baseCommit !== request.source.baseCommit || manifest.source.artifactId !== request.source.artifactId
     || manifest.source.contentHash !== request.source.contentHash) throw new Error("REPOSITORY_SOURCE_BINDING_INVALID");
-  return manifest;
+  return result;
+}
+
+export async function validateBoundRepositorySource(options: Parameters<typeof validateBoundRepositorySourceWithBinding>[0]) {
+  return (await validateBoundRepositorySourceWithBinding(options)).manifest;
 }

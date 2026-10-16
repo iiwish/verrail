@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { captureNativeSource, validateNativeSourceObservation } from "./verrail-native-source.js";
+import { captureNativeSource, captureSourceTree, freezeSourceTree, validateNativeSourceObservation } from "./verrail-native-source.js";
 
 const exec = promisify(execFile);
 const identity = { workspaceId: "workspace-1", heartbeatRunId: "heartbeat-1", agentId: "agent-1", runId: "run-1", attemptId: "attempt-1", deploymentRevisionId: "deployment-1", agentVersionId: "version-1" };
@@ -33,6 +33,20 @@ describe("native pre-dispatch source observation", () => {
     expect(validateNativeSourceObservation(a, identity)).toEqual(a);
     expect(validateNativeSourceObservation({ ...a, identity: { ...identity, runId: "foreign" } }, identity)).toBeNull();
     expect(JSON.stringify(a)).not.toContain("export const");
+  });
+  it("shares byte freezing without inventing a native execution identity", async () => {
+    const native = await capture();
+    const source = await captureSourceTree({ cwd, scopeVersion: 2 });
+    const frozen = await freezeSourceTree({ cwd });
+    expect(source.manifest).toEqual(native.manifest);
+    expect(frozen.observation.manifest).toEqual(native.manifest);
+    expect(source.repository).toEqual(native.repository);
+    expect(source).not.toHaveProperty("identity");
+    expect(source).not.toHaveProperty("phase");
+    expect(frozen.files.map(file => [file.path, file.body.toString()])).toEqual([["source.ts", "export const source = 1;\n"]]);
+    const raced = await freezeSourceTree({ cwd, beforeRecheck: async () => { await writeFile(path.join(cwd, "source.ts"), "raced"); } });
+    expect(raced.observation).toMatchObject({ status: "unavailable", reasonCode: "source_changed" });
+    expect(raced.files).toEqual([]);
   });
   it("retains the exact v1 content hash construction and rejects relabeled schemas", async () => {
     const old = await capture({ cwd, identity, scopeVersion: 1 });

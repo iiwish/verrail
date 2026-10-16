@@ -160,6 +160,10 @@ CriterionProof 是独立 VerificationResult 的不可变上下文绑定，固定
 
 封闭复合证明的 Provider 为 `verrail`，表示操作员授信的独立本地 verifier，而非 GitHub 对飞书或 Codex 运行作出的认证。其 VerificationResult 同时引用本地验证的 `scan_result` 和独立读取的 GitHub `ci_result`，并保存签名观察与来源绑定。`feishu_target` 和 `codex_execution` 各自覆盖固定的完整前置断言组；只读上下文、版本字符串、调用方声明及普通 IntegrationRun 写入不产生该准入能力。该证明不代表 Human Acceptance 或后置外部动作完成。
 
+`opencode_execution` 使用独立的仓库执行身份和完整断言组，绑定 RepositorySandbox 的请求、输入来源、实际 OpenCode 会话、运行时见证、日志、用量、费用状态、权限读回与产物。它不复用 Codex Heartbeat 身份；费用估计、HTTP 权限和已清理回执不分别等于核实账单、OS 隔离或恢复验收。来源与准入合同见 [ADR-0018](adrs/0018-opencode-repository-delivery-proof.md)。
+
+`repository_recovery` 的完整断言组同时要求 OpenCode 执行、固定 CI、已持久成功结果在同一 Run/Attempt 的中断恢复，以及实际重复恢复和真实旧 Attempt 的 fencing 拒绝。Before/After 数据检查点、签名生命周期、实际请求/响应日志与独立回读的命令回执/审计是不同事实；重复读取不等于重复执行，已清理回执不等于进程中断证明。该 kind 只覆盖明确的仓库执行器恢复点，不表示整机灾难恢复、费用结算、外部 Effect 或真人 Acceptance，见 [ADR-0019](adrs/0019-repository-recovery-delivery-proof.md)。
+
 VerificationResult 绑定 Criterion、Claim、Evidence 集合和验证器版本，结果为 `passed`、`failed`、`inconclusive` 或 `waived`。`waived` 必须引用具备权限的人类例外决定及有效范围。Agent 自述只能作为低信任 Observation，不能冒充 CI、扫描器或人工核验结果。
 
 ### ArtifactContract、Artifact 与 ArtifactRevision

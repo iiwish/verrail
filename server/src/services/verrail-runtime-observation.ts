@@ -22,7 +22,8 @@ const configurationSchema = z.object({
 }).strict();
 export type ObservedNodeRuntimeConfiguration = z.infer<typeof configurationSchema>;
 type RuntimeTransport = { stdin?: Readable; stdout?: Writable; stderr?: Writable;
-  onMessage?: (value: unknown) => void; onExit?: () => void };
+  onMessage?: (value: unknown) => void; onExit?: () => void;
+  stopProcessGroup?: (child: ChildProcess) => Promise<void> };
 const digest = (value: unknown) => createHash("sha256").update(canonicalJson(value)).digest("hex");
 const inspectorTimeoutCodes = {
   "Debugger.enable": "command_timeout_enable",
@@ -66,6 +67,7 @@ async function stableHash(name: string, maxBytes: number) {
 export async function launchObservedNodeRuntime(raw: ObservedNodeRuntimeConfiguration, transport: RuntimeTransport = {}) {
   let child: ChildProcess | undefined, socket: WebSocket | undefined;
   let stopped = false, failed = false;
+  let customStop: Promise<void> | undefined;
   let firstFailure: RuntimeFailureCode | undefined;
   const sourcePauseWaiters = new Set<{ resolve: () => void; reject: (error: Error) => void }>();
   let pausedReject: ((error: Error) => void) | undefined;
@@ -81,6 +83,7 @@ export async function launchObservedNodeRuntime(raw: ObservedNodeRuntimeConfigur
   const messageWaiters = new Set<{ kind: string; resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   const messages: Array<{ kind: string; value: unknown }> = [];
   async function stop() {
+    if (customStop) return customStop;
     if (stopped) return;
     stopped = true;
     rejectPauseWaiters(unavailable());
@@ -90,6 +93,10 @@ export async function launchObservedNodeRuntime(raw: ObservedNodeRuntimeConfigur
     messageWaiters.clear(); messages.length = 0;
     socket?.terminate();
     if (child?.pid) {
+      if (transport.stopProcessGroup) {
+        customStop = Promise.resolve().then(() => transport.stopProcessGroup!(child!));
+        return customStop;
+      }
       const group = -child.pid;
       // The group can outlive its leader; a parent close must not cancel cleanup.
       try { process.kill(group, "SIGTERM"); } catch { return; }

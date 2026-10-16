@@ -8,10 +8,12 @@ import { createOpenCodeRepositoryRuntime } from "./opencode-repository-runtime.j
 import { executeRepositoryAttempt } from "./repository-attempt.js";
 import { GatewayRuntimeCleanupError } from "./gateway-store.js";
 import type { RepositoryCommandRunner } from "./repository-container-command.js";
+import { validateBoundRepositorySourceWithBinding } from "./repository-bound-source.js";
 
 export function createRepositoryExecutionController(options: {
   db: Db; storage: StorageService; controllerId: string;
   command?: string; version: string; launcher?: string; providers: Record<string, unknown>;
+  trustedObserver?: Parameters<typeof createOpenCodeRepositoryRuntime>[0]["trustedObserver"];
   runCommand?: RepositoryCommandRunner;
   checkoutRoot?: string;
   // Must use the Go event protocol, not direct Run/Lease updates.
@@ -48,7 +50,7 @@ export function createRepositoryExecutionController(options: {
     try {
       let outputBytes = 0;
       const run = createOpenCodeRepositoryRuntime({ command: options.command, version: options.version,
-        launcher: options.launcher, runCommand: options.runCommand, providers: options.providers,
+        launcher: options.launcher, runCommand: options.runCommand, providers: options.providers, trustedObserver: options.trustedObserver,
         authorize: (input, currentSignal) => store.authorize(input, currentSignal),
         consumeToolCall: input => store.consumeToolCall(input, signal),
         emit: async (input, text) => {
@@ -60,7 +62,11 @@ export function createRepositoryExecutionController(options: {
         },
       });
       const result = await executeRepositoryAttempt(request, { readSource,
-        revalidate: store.authorize, run, storage: options.storage, checkoutRoot: options.checkoutRoot }, signal);
+        revalidate: store.authorize, run, storage: options.storage, checkoutRoot: options.checkoutRoot,
+        readSourceBinding: async (input, currentSignal) => (await validateBoundRepositorySourceWithBinding({
+          db: options.db, storage: options.storage, request: input, signal: currentSignal,
+        })).binding,
+      }, signal);
       await store.finishSucceeded(request, result, signal);
       return { status: "succeeded" as const, result };
     } catch (error) {

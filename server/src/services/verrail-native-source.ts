@@ -42,6 +42,7 @@ const observationSchema = z.object({
   ? !!value.repository && !!value.manifest && !value.reasonCode
   : !!value.reasonCode && !value.repository && !value.manifest);
 export type NativeSourceObservation = z.infer<typeof observationSchema>;
+export type SourceTreeObservation = Pick<NativeSourceObservation, "status" | "observedAt" | "scope" | "reasonCode" | "repository" | "manifest">;
 
 export function unavailableNativeSource(identity: NativeSourceIdentity, reasonCode: Reason, phase: NativeSourcePhase = "before_dispatch", scopeVersion: NativeSourceScopeVersion = 2): NativeSourceObservation {
   return { schemaVersion: scopeVersion, kind: "verrail.native-source-observation", phase, status: "unavailable", observedAt: new Date().toISOString(), identity: identitySchema.parse(identity), scope: structuredClone(scopeVersion === 1 ? scopeV1 : scopeV2), limitations: [...limitations], reasonCode };
@@ -68,13 +69,16 @@ function sameFile(a: BigIntStats, b: BigIntStats) {
   return a.dev === b.dev && a.ino === b.ino && a.mode === b.mode && a.nlink === b.nlink && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
 }
 
-interface CaptureInput {
-  cwd: string; identity: NativeSourceIdentity;
-  phase?: NativeSourcePhase;
+interface SourceTreeInput {
+  cwd: string;
   scopeVersion?: NativeSourceScopeVersion;
   limits?: Partial<CaptureLimits>;
   /** Test-only interleaving; production never supplies this callback. */
   beforeRecheck?: () => Promise<void>;
+}
+interface CaptureInput extends SourceTreeInput {
+  identity: NativeSourceIdentity;
+  phase?: NativeSourcePhase;
 }
 export interface NativeSourceFile {
   path: string;
@@ -83,25 +87,37 @@ export interface NativeSourceFile {
   body: Buffer;
 }
 
-export function captureNativeSource(input: CaptureInput): Promise<NativeSourceObservation> {
-  return observeNativeSource(input);
+export async function captureNativeSource(input: CaptureInput): Promise<NativeSourceObservation> {
+  const base = unavailableNativeSource(input.identity, "read_failed", input.phase, input.scopeVersion);
+  return { ...base, ...await captureSourceTree(input) };
 }
 
 // Only the trusted exporter receives bytes. Observations and failed reads never do.
 export async function freezeNativeSource(input: Omit<CaptureInput, "scopeVersion">) {
+  const base = unavailableNativeSource(input.identity, "read_failed", input.phase, 2);
+  const frozen = await freezeSourceTree(input);
+  return { observation: { ...base, ...frozen.observation }, files: frozen.files };
+}
+
+// Byte ownership is independent of any executor's identity or receipt domain.
+export function captureSourceTree(input: SourceTreeInput): Promise<SourceTreeObservation> {
+  return observeSourceTree(input);
+}
+
+export async function freezeSourceTree(input: Omit<SourceTreeInput, "scopeVersion">) {
   const files: NativeSourceFile[] = [];
-  const observation = await observeNativeSource({ ...input, scopeVersion: 2, limits: {
+  const observation = await observeSourceTree({ ...input, scopeVersion: 2, limits: {
     ...input.limits, totalBytes: Math.min(input.limits?.totalBytes ?? Infinity, 256 * 1024 * 1024),
   } }, files);
   return { observation, files: observation.status === "captured" ? files : [] };
 }
 
-async function observeNativeSource(input: CaptureInput, frozenFiles?: NativeSourceFile[]): Promise<NativeSourceObservation> {
+async function observeSourceTree(input: SourceTreeInput, frozenFiles?: NativeSourceFile[]): Promise<SourceTreeObservation> {
   const scope = input.scopeVersion === 1 ? scopeV1 : scopeV2;
   const excluded = (name: string) => scope.version === 1
     ? name.startsWith(".verrail/run-artifacts/")
     : name === ".verrail" || name.startsWith(".verrail/");
-  const base = unavailableNativeSource(input.identity, "read_failed", input.phase, scope.version);
+  const base: SourceTreeObservation = { status: "unavailable", observedAt: new Date().toISOString(), scope: structuredClone(scope), reasonCode: "read_failed" };
   const limits: CaptureLimits = { ...NATIVE_SOURCE_LIMITS };
   for (const key of Object.keys(limits) as Array<keyof typeof limits>) {
     const value = input.limits?.[key];

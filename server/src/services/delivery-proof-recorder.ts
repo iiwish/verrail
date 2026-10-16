@@ -16,8 +16,13 @@ import { mapGitHubCiSource } from "./github-ci-source-mapping.js";
 import { channelTargetProofContextInputSchema } from "./channel-target-proof-context.js";
 import { observeChannelTargetProvider, type ChannelProviderObservationConfig } from "./channel-target-provider-observation.js";
 import { codexExecutionProofContextInputSchema, loadCodexExecutionProofContext } from "./codex-execution-proof-context.js";
-import { collectDeliveryRuntimeWitnesses, deliveryObservationHash, readPrivateProofJson } from "./delivery-proof-observation.js";
+import { collectDeliveryRuntimeWitnesses, deliveryObservationHash, readPrivateProofJson, deliveryRuntimeManifestSchema } from "./delivery-proof-observation.js";
+import { collectOpenCodeRuntimeWitnesses, openCodeRuntimeManifestSchema } from "./opencode-runtime-observation.js";
+import { loadOpenCodeDeliveryProofContext } from "./opencode-delivery-proof-context.js";
+import { loadRepositoryRecoveryDeliveryProofContext } from "./repository-recovery-delivery-proof-context.js";
+import type { RepositoryRecoveryReaderConfiguration } from "./repository-recovery-proof-reader.js";
 import type { RunLogStore } from "./run-log-store.js";
+import type { StorageService } from "../storage/types.js";
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 export const deliveryProofTrustSchema = z.object({ schemaVersion: z.literal(1), ci: githubFixedCiProofTrustSchema,
@@ -28,19 +33,30 @@ export const deliveryProofRequestSchema = z.discriminatedUnion("kind", [
   z.object({ ...common, kind: z.literal("feishu_target"), channel: channelTargetProofContextInputSchema.omit({ workspaceId: true }) }).strict(),
   z.object({ ...common, kind: z.literal("codex_execution"), execution: codexExecutionProofContextInputSchema.omit({
     workspaceId: true, artifactRevisionId: true, fixedCiProofId: true }) }).strict(),
+  z.object({ ...common, kind: z.literal("opencode_execution"), execution: z.object({
+    runId: z.string().uuid(), runAttemptId: z.string().uuid() }).strict() }).strict(),
+  z.object({ ...common, kind: z.literal("repository_recovery"), execution: z.object({
+    runId: z.string().uuid(), runAttemptId: z.string().uuid() }).strict() }).strict(),
 ]);
 export type DeliveryProofRecorderConfig = {
   trust: z.infer<typeof deliveryProofTrustSchema>; privateKey: string; domainOrigin: string;
   githubPolicy: string; githubAuthorization: string; channelProvider?: ChannelProviderObservationConfig;
-  runtime: Parameters<typeof collectDeliveryRuntimeWitnesses>[0];
+  runtime: Parameters<typeof collectDeliveryRuntimeWitnesses>[0] | Parameters<typeof collectOpenCodeRuntimeWitnesses>[0];
+  recovery?: Omit<RepositoryRecoveryReaderConfiguration, "runtime" | "readerPrivateKey">;
 };
 const unavailable = () => new Error("DELIVERY_PROOF_UNAVAILABLE");
 
 /** The bundled private reader owns collection and signing. Requests contain references only. */
 export async function recordDeliveryProof(db: Db, access: DeliveryProofReaderAccess, raw: unknown,
-  config: DeliveryProofRecorderConfig, logs: Pick<RunLogStore, "read">) {
+  config: DeliveryProofRecorderConfig, logs: Pick<RunLogStore, "read">, storage?: Pick<StorageService, "getObject">) {
   const input = deliveryProofRequestSchema.parse(raw), trust = deliveryProofTrustSchema.parse(config.trust);
   const startedAt = new Date().toISOString(), workspaceId = access.workspaceId;
+  const repositoryKind = input.kind === "opencode_execution" || input.kind === "repository_recovery";
+  const manifest = repositoryKind ? openCodeRuntimeManifestSchema.parse(config.runtime.manifest)
+    : deliveryRuntimeManifestSchema.parse(config.runtime.manifest);
+  if (deliveryObservationHash(manifest) !== config.runtime.manifestSha256
+    || (repositoryKind && (!storage || ![3, 4].includes(access.schemaVersion)))
+    || (input.kind === "repository_recovery" && (access.schemaVersion !== 4 || !config.recovery))) throw unavailable();
   const authority = await assertDeliveryProofReader(db, access);
   if (authority.policySha256 !== trust.readerPolicySha256 || workspaceId !== trust.ci.workspaceId
     || config.runtime.manifestSha256 !== trust.runtimeManifestSha256
@@ -61,9 +77,13 @@ export async function recordDeliveryProof(db: Db, access: DeliveryProofReaderAcc
     if (bytes.toString("base64") !== stored.payload || signature.toString("base64") !== stored.signature
       || !verify(null, Buffer.concat([Buffer.from("verrail.closed-delivery-proof.v1\0"), bytes]), publicKey, signature)) throw unavailable();
     const payload = JSON.parse(bytes.toString("utf8"));
+    const observation = JSON.parse(payload.observationJson);
+    const references = input.kind === "repository_recovery" ? observation.delivery?.references : observation.references;
+    const expectedReferences = input.kind === "repository_recovery" ? { ...input, kind: "opencode_execution" } : input;
     if (payload.workspaceId !== workspaceId || payload.idempotencyKey !== input.idempotencyKey
+      || payload.kind !== input.kind
       || payload.trustProfileSha256 !== deliveryObservationHash(trust)
-      || canonicalJson(JSON.parse(payload.observationJson).references) !== canonicalJson(input)) throw unavailable();
+      || canonicalJson(references) !== canonicalJson(expectedReferences)) throw unavailable();
     return stored;
   };
   try { return await submitEnvelope(await readEnvelope(), origin, workspaceId, input.idempotencyKey); }
@@ -82,7 +102,22 @@ export async function recordDeliveryProof(db: Db, access: DeliveryProofReaderAcc
     graphRevisionId: trust.ci.graphRevisionId, claimId: input.ci.claimId, workNodeId: input.ci.workNodeId,
     artifactRevisionId: input.ci.artifactRevisionId, requirementId: input.ci.requirementId };
   const loadSource = input.kind === "feishu_target" ? loadFeishuDeliverySourceContext : loadCodexDeliverySourceContext;
-  const source = await loadSource(db, selection);
+  const loadOpenCode = async () => {
+    if ((input.kind !== "opencode_execution" && input.kind !== "repository_recovery") || !storage) throw unavailable();
+    const options = {
+      storage, repository: { repository: entry.policy.repository, connectionId: entry.connectionId, bindingId: entry.bindingId },
+      runtime: { ...config.runtime, manifest: openCodeRuntimeManifestSchema.parse(config.runtime.manifest) },
+    };
+    if (input.kind === "repository_recovery") {
+      if (!config.recovery) throw unavailable();
+      return loadRepositoryRecoveryDeliveryProofContext(db, access, { ...selection, ...input.execution }, {
+        ...options, config: { ...config.recovery, runtime: options.runtime, readerPrivateKey: config.privateKey },
+      });
+    }
+    return loadOpenCodeDeliveryProofContext(db, { ...selection, ...input.execution }, options);
+  };
+  const openCode = repositoryKind ? await loadOpenCode() : null;
+  const source = openCode?.source ?? await loadSource(db, selection);
   const readBinding = async () => {
     const rows = await db.select({ id: verrailGithubRepoBindings.id, owner: verrailGithubRepoBindings.repoOwner,
       name: verrailGithubRepoBindings.repoName, connectionId: toolConnections.id, updatedAt: toolConnections.updatedAt,
@@ -104,10 +139,12 @@ export async function recordDeliveryProof(db: Db, access: DeliveryProofReaderAcc
     testedCandidateSha: ci.testedCandidateSha, get: dependencies.get, timeoutMs: entry.policy.timeoutMs,
     maxResponseBytes: entry.policy.maxResponseBytes });
   const readFacts = async () => {
+    if (input.kind === "opencode_execution" || input.kind === "repository_recovery") throw unavailable();
+    const legacyManifest = deliveryRuntimeManifestSchema.parse(config.runtime.manifest);
     if (input.kind === "feishu_target") {
       if (!config.channelProvider) throw unavailable();
       const channel = await observeChannelTargetProvider(db, { ...input.channel, workspaceId }, config.channelProvider, { access });
-      if (channel.runtimeSessionId !== config.runtime.sessionId || channel.pluginId !== config.runtime.manifest.pluginId) throw unavailable();
+      if (channel.runtimeSessionId !== config.runtime.sessionId || channel.pluginId !== legacyManifest.pluginId) throw unavailable();
       return { channel, execution: null, window: { startedAt: channel.providerMessageCreatedAt, finishedAt: channel.providerReplyCreatedAt } };
     }
     const execution = await loadCodexExecutionProofContext(db, { ...input.execution, workspaceId }, { logs });
@@ -117,30 +154,48 @@ export async function recordDeliveryProof(db: Db, access: DeliveryProofReaderAcc
       || execution.runAttemptId !== source.source.runAttemptId || execution.runEventId !== source.source.runEventId
       || execution.outputReceiptSha256 !== source.source.outputReceiptSha256
       || !dispatch || dispatch.binding !== "version_bound" || dispatch.runtimeSessionId !== config.runtime.sessionId
-      || !permission || permission.apiOriginSha256 !== config.runtime.manifest.apiOriginSha256
+      || !permission || permission.apiOriginSha256 !== legacyManifest.apiOriginSha256
       || permission.dispatchSha256 !== dispatch.sha256) throw unavailable();
     return { channel: null, execution, window: execution.executionWindow };
   };
-  const facts = await readFacts();
-  const runtime = await collectDeliveryRuntimeWitnesses(config.runtime, facts.window);
-  if (facts.execution) {
-    const identity = runtime.witnesses.find(witness => witness.component === "harness")?.executionIdentity;
+  const facts = openCode ? null : await readFacts();
+  const legacyRuntime = facts ? await collectDeliveryRuntimeWitnesses({ ...config.runtime,
+    manifest: deliveryRuntimeManifestSchema.parse(config.runtime.manifest) }, facts.window) : null;
+  const runtime = openCode?.runtime ?? legacyRuntime!;
+  if (facts?.execution) {
+    const identity = legacyRuntime!.witnesses.find(witness => witness.component === "harness")?.executionIdentity;
     if (!identity || identity.workspaceId !== workspaceId || identity.agentId !== facts.execution.agentId
       || identity.heartbeatRunId !== facts.execution.heartbeatRunId) throw unavailable();
   }
-  if (source.contextSha256 !== (await loadSource(db, selection)).contextSha256 || binding !== await readBinding()) throw unavailable();
-  const rechecked = await readFacts();
-  if (facts.execution?.contextSha256 !== rechecked.execution?.contextSha256
-    || facts.channel?.sourceContextSha256 !== rechecked.channel?.sourceContextSha256) throw unavailable();
+  if (openCode) {
+    const rechecked = await loadOpenCode();
+    if (source.contextSha256 !== rechecked.source.contextSha256
+      || openCode.execution.contextSha256 !== rechecked.execution.contextSha256
+      || ("recovery" in openCode && (! ("recovery" in rechecked)
+        || canonicalJson(openCode.recovery) !== canonicalJson(rechecked.recovery)))) throw unavailable();
+  } else {
+    if (source.contextSha256 !== (await loadSource(db, selection)).contextSha256) throw unavailable();
+    const rechecked = await readFacts();
+    if (facts!.execution?.contextSha256 !== rechecked.execution?.contextSha256
+      || facts!.channel?.sourceContextSha256 !== rechecked.channel?.sourceContextSha256) throw unavailable();
+  }
+  if (binding !== await readBinding()) throw unavailable();
   if ((await assertDeliveryProofReader(db, access)).policySha256 !== trust.readerPolicySha256) throw unavailable();
   const { workspaceId: _workspaceId, ...commandSelection } = selection;
   const command = githubFixedCiProofCommandSchema.parse({ schemaVersion: 1, ...commandSelection,
     criterionKey: source.criterionKey, source: source.source, ci: { providerRunId: ci.providerRunId,
       providerAttempt: ci.providerAttempt, testedCommit: ci.testedCandidateSha, verifiedAt: ci.verifiedAt,
       artifactId: ci.artifactId, archiveSha256: ci.archiveSha256, reportSha256: ci.reportSha256, observationSha256: ci.receiptSha256 }, mapping });
-  const observationJson = canonicalJson({ schemaVersion: 1, kind: input.kind, references: input, runtime,
-    channel: facts.channel, execution: facts.execution, ci, sourceContextSha256: source.contextSha256,
-    assurance: "host_trusted_fixed_verifier", limitations: ["not_hostile_same_uid_isolation", "not_filesystem_or_network_isolation"] });
+  const delivery = { schemaVersion: 1, kind: input.kind === "repository_recovery" ? "opencode_execution" : input.kind,
+    references: input.kind === "repository_recovery" ? { ...input, kind: "opencode_execution" } : input, runtime,
+    channel: facts?.channel ?? null, execution: openCode?.execution ?? facts?.execution ?? null, ci, sourceContextSha256: source.contextSha256,
+    assurance: "host_trusted_fixed_verifier", limitations: repositoryKind
+      ? ["not_hostile_same_uid_isolation", "runtime_http_readback_not_os_sandbox", "reported_cost_is_not_verified_billing"]
+      : ["not_hostile_same_uid_isolation", "not_filesystem_or_network_isolation"] };
+  if (input.kind === "repository_recovery" && (!openCode || !("recovery" in openCode))) throw unavailable();
+  const observationJson = canonicalJson(input.kind === "repository_recovery"
+    ? { schemaVersion: 1, kind: "repository_recovery", delivery, recovery: openCode && "recovery" in openCode ? openCode.recovery : null }
+    : delivery);
   const verifiedAt = new Date().toISOString();
   if (Date.parse(verifiedAt) - Date.parse(startedAt) > trust.maxAgeMs || Buffer.byteLength(observationJson) > 40000) throw unavailable();
   const payload = Buffer.from(JSON.stringify({ schemaVersion: 1, kind: input.kind, observationId: randomUUID(),

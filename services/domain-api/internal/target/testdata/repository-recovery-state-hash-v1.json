@@ -1,0 +1,497 @@
+{
+  "synthetic": true,
+  "cases": [
+    {
+      "name": "null",
+      "value": null,
+      "sha256": "6e059f32176df30beaf3e65139033e07c866c0a2b3ac179d44599331fef7a559"
+    },
+    {
+      "name": "booleans",
+      "value": [
+        true,
+        false
+      ],
+      "sha256": "a73a07a0866431f6dc314f179487e6c7751083310d01befdb5cea4e3fdc6bfad"
+    },
+    {
+      "name": "fractional-json",
+      "value": {
+        "cost": 0.125,
+        "reportedCostUsd": 1.23456789012345,
+        "negative": -42.5
+      },
+      "sha256": "d2ccab73ac6e6581b5a220895b230ed35bcbdaa3f90914c687c65a86ddc4a46d"
+    },
+    {
+      "name": "finite-extremes",
+      "value": [
+        1e+308,
+        -1e+308,
+        1e-300,
+        -1e-300,
+        5e-324,
+        1.7976931348623157e+308
+      ],
+      "sha256": "ba963f9e34b512116ea45cf9bf273d43d020015770f5c462871dd98aa8fa153d"
+    },
+    {
+      "name": "negative-zero",
+      "value": 0,
+      "sha256": "956926e1c87659dcbcf6b94c18013cc4f7418862c4053b6b41cd66a7ba25468a"
+    },
+    {
+      "name": "numeric-looking-keys",
+      "value": {
+        "2": "two",
+        "10": "ten",
+        "01": "one",
+        "4294967295": "not-an-array-index"
+      },
+      "sha256": "e8a0d0ce76295e1d82bbf8c6551d22fab028056c8ac67c15ae227a7c982ab98a"
+    },
+    {
+      "name": "mixed-case-unicode-keys",
+      "value": {
+        "2": "two",
+        "10": "ten",
+        "created_at": "not-a-date",
+        "nested_key": {
+          "received_at": null,
+          "fraction": 0.125
+        },
+        "A": true,
+        "a": false,
+        "": "bmp",
+        "𐀀": "astral",
+        "中文": "<&  "
+      },
+      "sha256": "403a51fc10bca944f5d2e50215447bd18e8eab49ea1c2f0622fd8fb0d3f9481f"
+    },
+    {
+      "name": "nested-array-and-null",
+      "value": [
+        null,
+        {
+          "items": [
+            1.5,
+            false,
+            "",
+            {
+              "nullable": null
+            }
+          ]
+        },
+        []
+      ],
+      "sha256": "39cb3c8eb2c5c4d6b9702a7e9a8cca677b41a62c8e22e452582ce885b20c1c90"
+    },
+    {
+      "name": "normalized-date-string",
+      "value": {
+        "createdAt": "2026-10-16T04:14:15.123Z",
+        "finishedAt": null
+      },
+      "sha256": "556d86cb538ec454b25f9fcd82e06b814c624d09676bc802b0439898619f39db"
+    },
+    {
+      "name": "synthetic-drizzle-verrail_run_attempts-populated",
+      "value": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "runId": "00000000-0000-4000-8000-000000000001",
+        "attemptNumber": 17,
+        "deploymentRevisionId": "00000000-0000-4000-8000-000000000001",
+        "agentVersionId": "00000000-0000-4000-8000-000000000001",
+        "runtimeProfile": "synthetic:runtimeProfile",
+        "executorPrincipalType": "synthetic:executorPrincipalType",
+        "executorPrincipalId": "synthetic:executorPrincipalId",
+        "fencingToken": 17,
+        "status": "synthetic:status",
+        "lastEventCursor": 17,
+        "errorCode": "synthetic:errorCode",
+        "errorMessage": "synthetic:errorMessage",
+        "result": {
+          "2": "two",
+          "10": "ten",
+          "created_at": "not-a-date",
+          "nested_key": {
+            "received_at": null,
+            "fraction": 0.125
+          },
+          "A": true,
+          "a": false,
+          "": "bmp",
+          "𐀀": "astral",
+          "中文": "<&  "
+        },
+        "idempotencyKey": "synthetic:idempotencyKey",
+        "startedAt": "2026-10-16T04:14:15.123Z",
+        "finishedAt": "2026-10-16T04:14:15.123Z",
+        "createdAt": "2026-10-16T04:14:15.123Z",
+        "updatedAt": "2026-10-16T04:14:15.123Z"
+      },
+      "sha256": "2bea7618b1874166ca9cde141bcc35f631ef721ee9e93db897039daffc0cdb84"
+    },
+    {
+      "name": "synthetic-drizzle-verrail_run_attempts-nullable",
+      "value": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "runId": "00000000-0000-4000-8000-000000000001",
+        "attemptNumber": 17,
+        "deploymentRevisionId": "00000000-0000-4000-8000-000000000001",
+        "agentVersionId": "00000000-0000-4000-8000-000000000001",
+        "runtimeProfile": "synthetic:runtimeProfile",
+        "executorPrincipalType": "synthetic:executorPrincipalType",
+        "executorPrincipalId": "synthetic:executorPrincipalId",
+        "fencingToken": 17,
+        "status": "synthetic:status",
+        "lastEventCursor": 17,
+        "errorCode": null,
+        "errorMessage": null,
+        "result": null,
+        "idempotencyKey": "synthetic:idempotencyKey",
+        "startedAt": null,
+        "finishedAt": null,
+        "createdAt": "2026-10-16T04:14:15.123Z",
+        "updatedAt": "2026-10-16T04:14:15.123Z"
+      },
+      "sha256": "62b0586638c98564f10720439d04c6cf6fdd390696f9ebc780d52616bb0fcc22"
+    },
+    {
+      "name": "synthetic-drizzle-verrail_execution_leases-populated",
+      "value": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "runId": "00000000-0000-4000-8000-000000000001",
+        "runAttemptId": "00000000-0000-4000-8000-000000000001",
+        "executorPrincipalId": "synthetic:executorPrincipalId",
+        "runtimeProfile": "synthetic:runtimeProfile",
+        "fencingToken": 17,
+        "status": "synthetic:status",
+        "expiresAt": "2026-10-16T04:14:15.123Z",
+        "graceExpiresAt": "2026-10-16T04:14:15.123Z",
+        "claimedAt": "2026-10-16T04:14:15.123Z",
+        "lastHeartbeatAt": "2026-10-16T04:14:15.123Z",
+        "releasedAt": "2026-10-16T04:14:15.123Z",
+        "createdAt": "2026-10-16T04:14:15.123Z",
+        "updatedAt": "2026-10-16T04:14:15.123Z"
+      },
+      "sha256": "3f337911f70d5aa5c72ee53616f090f69cf37d2ad548cbe129f0b6f1227e39b1"
+    },
+    {
+      "name": "synthetic-drizzle-verrail_execution_leases-nullable",
+      "value": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "runId": "00000000-0000-4000-8000-000000000001",
+        "runAttemptId": "00000000-0000-4000-8000-000000000001",
+        "executorPrincipalId": "synthetic:executorPrincipalId",
+        "runtimeProfile": "synthetic:runtimeProfile",
+        "fencingToken": 17,
+        "status": "synthetic:status",
+        "expiresAt": "2026-10-16T04:14:15.123Z",
+        "graceExpiresAt": "2026-10-16T04:14:15.123Z",
+        "claimedAt": null,
+        "lastHeartbeatAt": null,
+        "releasedAt": null,
+        "createdAt": "2026-10-16T04:14:15.123Z",
+        "updatedAt": "2026-10-16T04:14:15.123Z"
+      },
+      "sha256": "fbfc4cf12e30884e054cbb61ff34df0378408807213dc0f7d2f3da4263d9e9a0"
+    },
+    {
+      "name": "synthetic-drizzle-verrail_runs-populated",
+      "value": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "targetId": "00000000-0000-4000-8000-000000000001",
+        "targetRevisionId": "00000000-0000-4000-8000-000000000001",
+        "graphRevisionId": "00000000-0000-4000-8000-000000000001",
+        "workNodeId": "00000000-0000-4000-8000-000000000001",
+        "kind": "synthetic:kind",
+        "status": "synthetic:status",
+        "actorPrincipalType": "synthetic:actorPrincipalType",
+        "actorPrincipalId": "synthetic:actorPrincipalId",
+        "actorDisplayName": "synthetic:actorDisplayName",
+        "deploymentRevisionId": "00000000-0000-4000-8000-000000000001",
+        "agentVersionId": "00000000-0000-4000-8000-000000000001",
+        "attemptCount": 17,
+        "cancelRequestedAt": "2026-10-16T04:14:15.123Z",
+        "idempotencyKey": "synthetic:idempotencyKey",
+        "startedAt": "2026-10-16T04:14:15.123Z",
+        "finishedAt": "2026-10-16T04:14:15.123Z",
+        "createdAt": "2026-10-16T04:14:15.123Z",
+        "updatedAt": "2026-10-16T04:14:15.123Z"
+      },
+      "sha256": "561c6bec429b40474ca5d7baebf1771c9334d7159d951a928f3bd2412eda066f"
+    },
+    {
+      "name": "synthetic-drizzle-verrail_runs-nullable",
+      "value": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "targetId": "00000000-0000-4000-8000-000000000001",
+        "targetRevisionId": "00000000-0000-4000-8000-000000000001",
+        "graphRevisionId": "00000000-0000-4000-8000-000000000001",
+        "workNodeId": "00000000-0000-4000-8000-000000000001",
+        "kind": "synthetic:kind",
+        "status": "synthetic:status",
+        "actorPrincipalType": "synthetic:actorPrincipalType",
+        "actorPrincipalId": "synthetic:actorPrincipalId",
+        "actorDisplayName": null,
+        "deploymentRevisionId": null,
+        "agentVersionId": null,
+        "attemptCount": 17,
+        "cancelRequestedAt": null,
+        "idempotencyKey": "synthetic:idempotencyKey",
+        "startedAt": null,
+        "finishedAt": null,
+        "createdAt": "2026-10-16T04:14:15.123Z",
+        "updatedAt": "2026-10-16T04:14:15.123Z"
+      },
+      "sha256": "5680a85561bbccda7df2d2b735e8b7f5d95c48766bdddec750f771bb91da0751"
+    },
+    {
+      "name": "synthetic-drizzle-verrail_run_events-populated",
+      "value": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "runId": "00000000-0000-4000-8000-000000000001",
+        "runAttemptId": "00000000-0000-4000-8000-000000000001",
+        "cursor": 17,
+        "fencingToken": 17,
+        "eventType": "synthetic:eventType",
+        "payload": {
+          "2": "two",
+          "10": "ten",
+          "created_at": "not-a-date",
+          "nested_key": {
+            "received_at": null,
+            "fraction": 0.125
+          },
+          "A": true,
+          "a": false,
+          "": "bmp",
+          "𐀀": "astral",
+          "中文": "<&  "
+        },
+        "contentHash": "synthetic:contentHash",
+        "emittedAt": "2026-10-16T04:14:15.123Z",
+        "receivedAt": "2026-10-16T04:14:15.123Z"
+      },
+      "sha256": "3e384afd4f304c7d2740353693cf8c9cd781526adc5705dc687b02f3d802825b"
+    },
+    {
+      "name": "synthetic-drizzle-verrail_run_events-nullable",
+      "value": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "runId": "00000000-0000-4000-8000-000000000001",
+        "runAttemptId": "00000000-0000-4000-8000-000000000001",
+        "cursor": 17,
+        "fencingToken": 17,
+        "eventType": "synthetic:eventType",
+        "payload": {
+          "2": "two",
+          "10": "ten",
+          "created_at": "not-a-date",
+          "nested_key": {
+            "received_at": null,
+            "fraction": 0.125
+          },
+          "A": true,
+          "a": false,
+          "": "bmp",
+          "𐀀": "astral",
+          "中文": "<&  "
+        },
+        "contentHash": "synthetic:contentHash",
+        "emittedAt": "2026-10-16T04:14:15.123Z",
+        "receivedAt": "2026-10-16T04:14:15.123Z"
+      },
+      "sha256": "3e384afd4f304c7d2740353693cf8c9cd781526adc5705dc687b02f3d802825b"
+    },
+    {
+      "name": "synthetic-drizzle-verrail_execution_command_receipts-populated",
+      "value": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "principalType": "synthetic:principalType",
+        "principalId": "synthetic:principalId",
+        "commandType": "synthetic:commandType",
+        "idempotencyKey": "synthetic:idempotencyKey",
+        "requestHash": "synthetic:requestHash",
+        "response": {
+          "2": "two",
+          "10": "ten",
+          "created_at": "not-a-date",
+          "nested_key": {
+            "received_at": null,
+            "fraction": 0.125
+          },
+          "A": true,
+          "a": false,
+          "": "bmp",
+          "𐀀": "astral",
+          "中文": "<&  "
+        },
+        "createdAt": "2026-10-16T04:14:15.123Z"
+      },
+      "sha256": "262930c83f45b0d6e7e0e25a6564ac1e810be684fe89fe98bdc0e17685a53854"
+    },
+    {
+      "name": "synthetic-drizzle-verrail_execution_command_receipts-nullable",
+      "value": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "principalType": "synthetic:principalType",
+        "principalId": "synthetic:principalId",
+        "commandType": "synthetic:commandType",
+        "idempotencyKey": "synthetic:idempotencyKey",
+        "requestHash": "synthetic:requestHash",
+        "response": {
+          "2": "two",
+          "10": "ten",
+          "created_at": "not-a-date",
+          "nested_key": {
+            "received_at": null,
+            "fraction": 0.125
+          },
+          "A": true,
+          "a": false,
+          "": "bmp",
+          "𐀀": "astral",
+          "中文": "<&  "
+        },
+        "createdAt": "2026-10-16T04:14:15.123Z"
+      },
+      "sha256": "262930c83f45b0d6e7e0e25a6564ac1e810be684fe89fe98bdc0e17685a53854"
+    },
+    {
+      "name": "synthetic-drizzle-verrail_audit_events-populated",
+      "value": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "principalType": "synthetic:principalType",
+        "principalId": "synthetic:principalId",
+        "eventType": "synthetic:eventType",
+        "aggregateType": "synthetic:aggregateType",
+        "aggregateId": "00000000-0000-4000-8000-000000000001",
+        "idempotencyKey": "synthetic:idempotencyKey",
+        "payload": {
+          "2": "two",
+          "10": "ten",
+          "created_at": "not-a-date",
+          "nested_key": {
+            "received_at": null,
+            "fraction": 0.125
+          },
+          "A": true,
+          "a": false,
+          "": "bmp",
+          "𐀀": "astral",
+          "中文": "<&  "
+        },
+        "occurredAt": "2026-10-16T04:14:15.123Z"
+      },
+      "sha256": "cbf82ef5bfd94cc336dfa9dea50051225499cc7672be885b7a5c7c80f9cd13b7"
+    },
+    {
+      "name": "synthetic-drizzle-verrail_audit_events-nullable",
+      "value": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "principalType": "synthetic:principalType",
+        "principalId": "synthetic:principalId",
+        "eventType": "synthetic:eventType",
+        "aggregateType": "synthetic:aggregateType",
+        "aggregateId": "00000000-0000-4000-8000-000000000001",
+        "idempotencyKey": "synthetic:idempotencyKey",
+        "payload": {
+          "2": "two",
+          "10": "ten",
+          "created_at": "not-a-date",
+          "nested_key": {
+            "received_at": null,
+            "fraction": 0.125
+          },
+          "A": true,
+          "a": false,
+          "": "bmp",
+          "𐀀": "astral",
+          "中文": "<&  "
+        },
+        "occurredAt": "2026-10-16T04:14:15.123Z"
+      },
+      "sha256": "cbf82ef5bfd94cc336dfa9dea50051225499cc7672be885b7a5c7c80f9cd13b7"
+    },
+    {
+      "name": "synthetic-drizzle-verrail_artifacts-populated",
+      "value": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "targetId": "00000000-0000-4000-8000-000000000001",
+        "kind": "synthetic:kind",
+        "title": "synthetic:title",
+        "createdByPrincipalType": "synthetic:createdByPrincipalType",
+        "createdByPrincipalId": "synthetic:createdByPrincipalId",
+        "createdAt": "2026-10-16T04:14:15.123Z",
+        "updatedAt": "2026-10-16T04:14:15.123Z"
+      },
+      "sha256": "a1056a9102f69c23207d857fe57504a340592360548ec994eba45fdd59f3f0c9"
+    },
+    {
+      "name": "synthetic-drizzle-verrail_artifacts-nullable",
+      "value": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "targetId": "00000000-0000-4000-8000-000000000001",
+        "kind": "synthetic:kind",
+        "title": "synthetic:title",
+        "createdByPrincipalType": "synthetic:createdByPrincipalType",
+        "createdByPrincipalId": "synthetic:createdByPrincipalId",
+        "createdAt": "2026-10-16T04:14:15.123Z",
+        "updatedAt": "2026-10-16T04:14:15.123Z"
+      },
+      "sha256": "a1056a9102f69c23207d857fe57504a340592360548ec994eba45fdd59f3f0c9"
+    },
+    {
+      "name": "synthetic-drizzle-verrail_artifact_revisions-populated",
+      "value": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "artifactId": "00000000-0000-4000-8000-000000000001",
+        "revisionNumber": 17,
+        "contentHash": "synthetic:contentHash",
+        "contentRef": "synthetic:contentRef",
+        "sourceRunId": "00000000-0000-4000-8000-000000000001",
+        "sourceWorkNodeId": "00000000-0000-4000-8000-000000000001",
+        "baseRevisionId": "00000000-0000-4000-8000-000000000001",
+        "createdByPrincipalType": "synthetic:createdByPrincipalType",
+        "createdByPrincipalId": "synthetic:createdByPrincipalId",
+        "createdAt": "2026-10-16T04:14:15.123Z"
+      },
+      "sha256": "5fdf1cacf277cf6783bd876d15c868a56404373ab843e9869b6187ecd8ed1255"
+    },
+    {
+      "name": "synthetic-drizzle-verrail_artifact_revisions-nullable",
+      "value": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "workspaceId": "00000000-0000-4000-8000-000000000001",
+        "artifactId": "00000000-0000-4000-8000-000000000001",
+        "revisionNumber": 17,
+        "contentHash": "synthetic:contentHash",
+        "contentRef": "synthetic:contentRef",
+        "sourceRunId": null,
+        "sourceWorkNodeId": null,
+        "baseRevisionId": null,
+        "createdByPrincipalType": "synthetic:createdByPrincipalType",
+        "createdByPrincipalId": "synthetic:createdByPrincipalId",
+        "createdAt": "2026-10-16T04:14:15.123Z"
+      },
+      "sha256": "7c931a5d0a7d5d50f68d57cd46e3eff5ec44e2eb0f25bac774a52e5758143b09"
+    }
+  ]
+}

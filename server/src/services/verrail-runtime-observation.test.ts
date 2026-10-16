@@ -48,6 +48,25 @@ describe("externally observed Node runtime bytes (synthetic processes)", () => {
     await child.waitForMessage("ready");
     return child;
   }
+  it.each(["success", "failure"])("uses the optional verified stop hook once and preserves its %s on repeated cleanup", async outcome => {
+    const f = await fixture(), error = new Error("verified cleanup failed");
+    let calls = 0, actualPid = 0;
+    const child = await launchObservedNodeRuntime(f.configuration, { stopProcessGroup: async process => {
+      calls++; actualPid = process.pid!;
+      const exited = once(process, "exit"); process.kill("SIGTERM"); await exited;
+      if (outcome === "failure") throw error;
+    } });
+    try {
+      await child.waitForMessage("ready");
+      if (outcome === "success") await Promise.all([child.stop(), child.stop()]);
+      else {
+        await expect(child.stop()).rejects.toBe(error);
+        await expect(child.stop()).rejects.toBe(error);
+      }
+      expect(calls).toBe(1);
+      expect(() => process.kill(-actualPid, 0)).toThrow();
+    } finally { await child.stop().catch(() => {}); }
+  });
   it("hashes source returned by the child's V8 debugger, including loaded dependencies", async () => {
     const f = await fixture(), child = await start(f.configuration), observation = await child.checkpoint();
     expect(observation).toMatchObject({ kind: "verrail.node-runtime-observation", candidateCommit: f.configuration.candidateCommit,

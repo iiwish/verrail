@@ -18,13 +18,22 @@ import { runRepositoryDispatchWorker } from "./repository-dispatch-worker.js";
 import { createRepositoryDispatchHealth } from "./repository-dispatch-health.js";
 import { assertRepositoryScratch } from "./repository-scratch.js";
 import { createRepositoryContainerCommand, createRepositoryContainerTransport, repositoryContainerConfigSchema } from "./repository-container-command.js";
+import { loadRepositoryObserverConfiguration } from "./repository-observer-config.js";
+import { installRecoveryIpc, loadRecoveryIpcConfiguration, readRecoveryCurrentState } from "./repository-recovery-ipc.js";
+import { reconcileRepositoryCompletion } from "./repository-reconciliation.js";
+import { canonicalJson } from "@paperclipai/shared/portability-hash";
 
 async function main() {
   if (process.platform !== "linux") throw new Error("REPOSITORY_LINUX_REQUIRED");
   const config = readRepositoryRecoveryConfig(process.env);
+  const trustedObserver = await loadRepositoryObserverConfiguration(process.env.VERRAIL_REPOSITORY_OBSERVER_FILE);
+  const recoveryConfig = await loadRecoveryIpcConfiguration();
   const identity = process.env.VERRAIL_REPOSITORY_REQUEST_FILE
     ? repositoryAttemptIdentitySchema.parse(await readMountedJson(process.env.VERRAIL_REPOSITORY_REQUEST_FILE, 65536)) : null;
   if (identity && !config.workspaceIds.includes(identity.workspaceId)) throw new Error("REPOSITORY_WORKSPACE_NOT_ADMITTED");
+  if (recoveryConfig && (!identity || !trustedObserver || canonicalJson(recoveryConfig.identity) !== canonicalJson(identity))) {
+    throw new Error("REPOSITORY_RECOVERY_IPC_IDENTITY_INVALID");
+  }
   const providers = z.record(z.string().min(1), z.record(z.string(), z.unknown())).parse(
     await readMountedJson(process.env.VERRAIL_REPOSITORY_PROVIDERS_FILE, 65536));
   if (!Object.keys(providers).length) throw new Error("REPOSITORY_PROVIDERS_REQUIRED");
@@ -48,13 +57,27 @@ async function main() {
   process.once("SIGTERM", stop);
   process.once("SIGINT", stop);
   const db = createDb(config.databaseUrl, { maxConnections: 1, idleTimeoutSeconds: 10, connectTimeoutSeconds: 5 });
+  let recovery: ReturnType<typeof installRecoveryIpc> | undefined;
   try {
     if (!identity) { server.listen(healthPort, "127.0.0.1"); await once(server, "listening"); }
     const domainApi = createVerrailDomainApiClient({ baseUrl: config.domainApiUrl, token: config.domainApiToken });
     if (!domainApi) throw new Error("REPOSITORY_DOMAIN_REQUIRED");
+    if (recoveryConfig) {
+      recovery = installRecoveryIpc({ config: recoveryConfig, db, domainApi, controller });
+      const state = await readRecoveryCurrentState(db, recoveryConfig.identity, controller.signal);
+      if (state.status !== "offered") {
+        // The exact completed dispatch is reconciled without creating a harness or invoking a model.
+        const result = await reconcileRepositoryCompletion({ db, domainApi, workspaceId: recoveryConfig.identity.workspaceId,
+          runAttemptId: recoveryConfig.identity.runAttemptId, signal: controller.signal }, "succeeded");
+        if (result.status !== "registered") throw new Error("REPOSITORY_RECOVERY_NOT_REGISTERED");
+        await recovery.waitForAbort();
+        return;
+      }
+    }
     const storage = createStorageService(createLocalDiskStorageProvider(storageRoot));
     const execute = createStartedRepositoryRunExecutor({ db, domainApi, controllerId: randomUUID(), version,
-      runCommand, checkoutRoot, providers, storage, onAuthority: health.authority });
+      runCommand, checkoutRoot, providers, storage, trustedObserver, onAuthority: health.authority,
+      ...(recovery ? { beforeTerminalReport: recovery.beforeTerminalReport } : {}) });
     if (!identity) {
       await runRepositoryDispatchWorker({ db, domainApi, storage, execute, workspaceIds: config.workspaceIds,
         signal: controller.signal, onActive: health.active, onCycle: health.cycle,
@@ -73,6 +96,7 @@ async function main() {
     process.stdout.write(`${JSON.stringify({ status: result.status, runAttemptId: request.runAttemptId })}\n`);
   } finally {
     stop();
+    recovery?.close();
     const closed = new Promise<void>(resolve => server.close(() => resolve()));
     server.closeAllConnections();
     await closed;

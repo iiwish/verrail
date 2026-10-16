@@ -8,6 +8,9 @@ Date: 2026-09-10
 
 Composite pre-acceptance proof uses a separately installed, operator-configured
 local verifier. Its closed kinds are `feishu_target` and `codex_execution`.
+The separate repository-based `opencode_execution` kind follows
+[ADR-0018](0018-opencode-repository-delivery-proof.md), without changing these
+two native source contracts.
 Each kind covers exactly its two complete assertions in
 `DELIVERY_PROOF_ASSERTIONS`; partial clauses, extra assertions and post-effect
 obligations are unsupported. The GitHub fixed-CI verifier retains its four CI-only

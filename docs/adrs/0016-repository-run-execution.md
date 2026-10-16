@@ -10,8 +10,10 @@ fencing and terminal artifact-registration authority.
 
 The `repository_sandbox` runtime profile is paired exclusively with the service
 principal `verrail-repository-runner`. Command validators and database constraints
-enforce both directions of this pairing. The host executor and host proof readers
-retain their `host_trusted` gates. A profile name alone does not attest isolation.
+enforce both directions of this pairing. The host executor and host-specific
+proof readers retain their `host_trusted` gates. Fixed-CI source admission uses
+separate native and repository receipt validators selected from the persisted
+Attempt profile and executor. A profile name alone does not attest isolation.
 
 Temporal Worker selects the profile with `VERRAIL_EXECUTOR_RUNTIME_PROFILE` and
 the service identity with `VERRAIL_EXECUTOR_PRINCIPAL_ID`. Defaults are
@@ -110,6 +112,25 @@ does not authorize a cancellation receipt or a successful terminal claim.
 Uploaded bytes are content addressed. Upload success alone does not make the Run
 successful, publish a Submission or grant acceptance. Registration must still pass
 the current fenced Run contract with immutable source and output provenance.
+
+An explicit v2 output manifest can request a `source_snapshot`. The trusted
+collector freezes the same bounded product-source scope used by native snapshots,
+without inventing a Heartbeat or host-agent identity. File counts and bundle bytes
+remain inside the requested artifact budget. A repository-specific output receipt
+binds the immutable request, selected input provenance revision, actual runtime
+facts, stable before/after collection observations and typed output mappings.
+Finalization requires confirmed runtime, command, private-home and checkout
+cleanup. Historical ordinary-file results remain executable results, not source
+equivalence proofs.
+
+Repository fixed-CI admission requires the current successful Run and latest
+Attempt, released matching lease and fence, durable successful dispatch, exact
+terminal event and cursor, unique artifact-registration audit, and an unmodified
+typed receipt. The independent reader verifies the actual content-addressed input
+provenance and source/output bytes and matches the authorized repository binding.
+Go rechecks the authoritative associations in the admission transaction. Native
+and repository identities are not interchangeable. Source admission does not
+establish live-model, billing, permission, recovery or human-acceptance proof.
 
 A Run can bind `repositorySourceRevisionId` when created. The Go transaction
 records the selected provenance ArtifactRevision in `verrail_run_sources`, with

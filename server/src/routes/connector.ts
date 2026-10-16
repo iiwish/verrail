@@ -14,6 +14,7 @@ import {
 import { HttpError } from "../errors.js";
 import { createGitHubCiObservationCollector } from "../services/github-ci-proof-collector.js";
 import { createGitHubFixedCiProofRecorder } from "../services/github-fixed-ci-proof-recorder.js";
+import { getStorageService } from "../storage/index.js";
 import { validate } from "../middleware/validate.js";
 import { createVerrailDomainApiClient, type VerrailDomainApiClient } from "../services/verrail-domain-api-client.js";
 import {
@@ -38,7 +39,9 @@ export function connectorRoutes(options: {
   const collectGithubCiObservation = options.collectGithubCiObservation
     ?? (options.db ? createGitHubCiObservationCollector({ db: options.db }).collect : null);
   const recordGithubFixedCiProof = options.recordGithubFixedCiProof === undefined
-    ? (options.db ? createGitHubFixedCiProofRecorder({ db: options.db })?.record : null)
+    ? (options.db ? createGitHubFixedCiProofRecorder({ db: options.db,
+      sourceStorage: { getObject: (...args) => getStorageService().getObject(...args) },
+    })?.record : null)
     : options.recordGithubFixedCiProof;
   const resolveGithubCredential = options.resolveGithubCredential
     ?? (options.db ? (workspaceId: string, actor: GithubConnectorCredentialActor) =>

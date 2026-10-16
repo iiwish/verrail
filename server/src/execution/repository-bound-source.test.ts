@@ -3,7 +3,7 @@ import { Readable } from "node:stream";
 import type { Db } from "@paperclipai/db";
 import type { RepositoryExecutionRequest } from "@paperclipai/shared";
 import { expect, it, vi } from "vitest";
-import { validateBoundRepositorySource } from "./repository-bound-source.js";
+import { validateBoundRepositorySource, validateBoundRepositorySourceWithBinding } from "./repository-bound-source.js";
 
 function fixture() {
   const id = () => randomUUID();
@@ -16,23 +16,48 @@ function fixture() {
     baseCommit: request.source.baseCommit, authorizationContextHash: "c".repeat(64),
     source: { artifactId: request.source.artifactId, artifactRevisionId: id(), contentHash: request.source.contentHash } };
   let body = Buffer.from(JSON.stringify(manifest));
+  const repositorySourceRevisionId = id();
   const query = { select: vi.fn(), from: vi.fn(), innerJoin: vi.fn(), where: vi.fn(), limit: vi.fn() };
   for (const method of [query.select, query.from, query.innerJoin, query.where]) method.mockReturnValue(query);
   const configure = (value = manifest) => {
     body = Buffer.from(JSON.stringify(value));
     const contentHash = createHash("sha256").update(body).digest("hex");
-    query.limit.mockReset().mockResolvedValueOnce([{ contentHash, contentRef: `storage:${request.workspaceId}/verrail/run-artifacts/sha256/${contentHash}` }])
+    query.limit.mockReset().mockResolvedValueOnce([{ repositorySourceRevisionId, contentHash, contentRef: `storage:${request.workspaceId}/verrail/run-artifacts/sha256/${contentHash}` }])
       .mockResolvedValueOnce([{ contentRef: `storage:${request.workspaceId}/verrail/run-artifacts/sha256/${request.source.contentHash}` }]);
   };
   configure();
   const getObject = vi.fn(async () => ({ stream: Readable.from([body]), contentLength: body.length }));
   const options = { db: query as unknown as Db, request, storage: { getObject }, signal: new AbortController().signal };
-  return { options, manifest, configure, query, getObject };
+  return { options, manifest, configure, query, getObject, repositorySourceRevisionId };
 }
 
 it("resolves the Run-selected manifest and exact registered source revision", async () => {
   const f = fixture(); expect(await validateBoundRepositorySource(f.options)).toEqual(f.manifest);
   expect(f.query.limit).toHaveBeenCalledTimes(2); expect(f.getObject).toHaveBeenCalledTimes(1);
+});
+it("returns binding identity only from the verified persisted provenance revision", async () => {
+  const f = fixture();
+  const value = await validateBoundRepositorySourceWithBinding(f.options);
+  expect(value).toEqual({ manifest: f.manifest, binding: { repositorySourceRevisionId: f.repositorySourceRevisionId,
+    provenanceContentHash: createHash("sha256").update(JSON.stringify(f.manifest)).digest("hex") } });
+});
+it("aborts a pending provider read and destroys a stream delivered after the deadline", async () => {
+  const f = fixture();
+  const controller = new AbortController();
+  let release!: (value: { stream: Readable; contentLength: number }) => void;
+  let entered!: () => void;
+  const ready = new Promise<void>(resolve => { entered = resolve; });
+  f.getObject.mockImplementation(async () => { entered(); return new Promise(resolve => { release = resolve; }); });
+  const pending = validateBoundRepositorySourceWithBinding({ ...f.options, signal: controller.signal });
+  const rejected = expect(pending).rejects.toThrow("REPOSITORY_SOURCE_CANCELED");
+  await ready;
+  controller.abort(new Error("fixture deadline"));
+  await rejected;
+  expect(f.query.limit).toHaveBeenCalledTimes(1);
+  const stream = Readable.from(["unread"]);
+  release({ stream, contentLength: 6 });
+  await new Promise(resolve => setImmediate(resolve));
+  expect(stream.destroyed).toBe(true);
 });
 
 it("requires a persisted Run source before reading any object", async () => {
