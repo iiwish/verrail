@@ -472,6 +472,47 @@ describe("codex_local ACP lane", () => {
     });
   });
 
+  it("binds local ACP to the resolved Codex runtime command", () => {
+    expect(buildCodexAcpConfig(
+      { engine: "acp", env: { CODEX_HOME: "/managed/codex-home" } },
+      { runtimeCommandSpec: { command: "/Applications/ChatGPT.app/Contents/Resources/codex" } },
+    )).toMatchObject({
+      env: {
+        CODEX_HOME: "/managed/codex-home",
+        CODEX_PATH: "/Applications/ChatGPT.app/Contents/Resources/codex",
+      },
+    });
+  });
+
+  it("preserves an explicit CODEX_PATH and does not project host command paths remotely", () => {
+    expect(buildCodexAcpConfig(
+      { engine: "acp", env: { CODEX_PATH: "/operator/codex" } },
+      { runtimeCommandSpec: { command: "/host/codex" } },
+    )).toMatchObject({ env: { CODEX_PATH: "/operator/codex" } });
+
+    expect(buildCodexAcpConfig(
+      { engine: "acp" },
+      {
+        runtimeCommandSpec: { command: "/host/codex" },
+        executionTarget: {
+          kind: "remote",
+          transport: "ssh",
+          remoteCwd: "/workspace",
+          spec: {
+            host: "runner.example.test",
+            port: 22,
+            username: "runner",
+            remoteCwd: "/workspace",
+            remoteWorkspacePath: "/workspace",
+            privateKey: null,
+            knownHosts: null,
+            strictHostKeyChecking: true,
+          },
+        },
+      },
+    )).not.toHaveProperty("env.CODEX_PATH");
+  });
+
   it("normalizes the legacy bare gpt-5.6 alias to gpt-5.6-sol", () => {
     expect(buildCodexAcpConfig({ engine: "acp", model: "gpt-5.6" })).toMatchObject({
       model: "gpt-5.6-sol",
@@ -731,6 +772,7 @@ describe("codex_local ACP lane", () => {
     expect(runtimes[0]?.setConfigInputs).toEqual([]);
     expect(meta[0]?.commandNotes?.join("\n")).toContain("Prepared ACPX Codex skill home");
     expect(meta[0]?.env?.CODEX_HOME).toBe(path.join(root, "codex-home"));
+    expect(meta[0]?.env?.CODEX_PATH).toBe("codex");
     expect(JSON.parse(String(meta[0]?.env?.CODEX_CONFIG))).toEqual({
       model: "gpt-5.5",
       model_reasoning_effort: "high",

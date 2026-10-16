@@ -15,8 +15,10 @@ import {
   projects,
   routines,
   secretAccessEvents,
+  toolConnections,
   userSecretDeclarations,
   userSecretDefinitions,
+  verrailGithubRepoBindings,
 } from "@paperclipai/db";
 import type {
   AgentApiKeyScope,
@@ -118,6 +120,107 @@ const CLAUDE_OAUTH_VALUE_EXISTS =
 // The metadata field that records the setup-token session id on the owner value.
 // It is the idempotency key for one completion. It is not a secret.
 const CLAUDE_OAUTH_SESSION_METADATA_FIELD = "claudeSetupTokenSessionId";
+
+export interface GithubConnectorCredential {
+  connectionId: string;
+  authorization: string;
+}
+
+export interface GithubConnectorCredentialActor {
+  actorType: "user";
+  actorId: string;
+  actorSource?: "local_implicit" | "session" | "board_key" | "cloud_tenant";
+}
+
+const GITHUB_TOKEN_SECRET_PATHS = [
+  "oauth.access_token",
+  "credentials.token",
+  "github.token",
+  "access_token",
+  "token",
+] as const;
+
+function githubAuthorizationValue(value: string, prefix = "Bearer "): string {
+  const trimmed = value.trim();
+  if (!trimmed || /[\r\n\0]/.test(trimmed)) {
+    throw unprocessable("The GitHub connection credential is unavailable", {
+      code: "CONNECTOR_CREDENTIALS_NOT_CONFIGURED",
+    });
+  }
+  return /^(?:Bearer|token)\s+/i.test(trimmed) ? trimmed : `${prefix}${trimmed}`;
+}
+
+/**
+ * Resolves the credential for the workspace's bound GitHub connection at the
+ * execution boundary. The returned value is intentionally suitable only for
+ * an immediate internal request; callers must not persist or log it.
+ */
+export async function resolveGithubConnectorCredential(
+  db: Db,
+  workspaceId: string,
+  actor: GithubConnectorCredentialActor,
+): Promise<GithubConnectorCredential> {
+  const [row] = await db
+    .select({
+      connection: toolConnections,
+    })
+    .from(verrailGithubRepoBindings)
+    .innerJoin(
+      toolConnections,
+      and(
+        eq(toolConnections.id, verrailGithubRepoBindings.connectionId),
+        eq(toolConnections.companyId, verrailGithubRepoBindings.workspaceId),
+      ),
+    )
+    .where(and(
+      eq(verrailGithubRepoBindings.workspaceId, workspaceId),
+      eq(toolConnections.enabled, true),
+      eq(toolConnections.status, "active"),
+    ))
+    .limit(1);
+  if (!row || !["oauth", "api_key"].includes(row.connection.authKind)) {
+    throw unprocessable("The GitHub connection credential is unavailable", {
+      code: "CONNECTOR_CREDENTIALS_NOT_CONFIGURED",
+    });
+  }
+
+  const headerRef = row.connection.credentialRefs.find(
+    (ref) => ref.placement === "header" && ref.key.toLowerCase() === "authorization",
+  );
+  const secretRef = GITHUB_TOKEN_SECRET_PATHS
+    .map((path) => row.connection.credentialSecretRefs.find((ref) => ref.configPath === path))
+    .find((ref) => ref !== undefined);
+  const selected = headerRef
+    ? { secretId: headerRef.secretId, version: headerRef.version ?? "latest", configPath: `credentials.${headerRef.name}` }
+    : secretRef
+      ? { secretId: secretRef.secretId, version: secretRef.versionSelector ?? "latest", configPath: secretRef.configPath }
+      : null;
+  if (!selected) {
+    throw unprocessable("The GitHub connection credential is unavailable", {
+      code: "CONNECTOR_CREDENTIALS_NOT_CONFIGURED",
+    });
+  }
+
+  const value = await secretService(db).resolveSecretValue(
+    workspaceId,
+    selected.secretId,
+    selected.version,
+    {
+      accessContext: {
+        consumerType: "tool_connection",
+        consumerId: row.connection.id,
+        configPath: selected.configPath,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        actorSource: actor.actorSource,
+      },
+    },
+  );
+  return {
+    connectionId: row.connection.id,
+    authorization: githubAuthorizationValue(value, headerRef?.prefix ?? "Bearer "),
+  };
+}
 
 /** The stored result of one owner-bound Claude OAuth completion. It holds no secret. */
 export interface ClaudeOAuthUserSecretResult {

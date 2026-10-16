@@ -75,6 +75,42 @@ describe("createBufferedTextFileWriter", () => {
 });
 
 describeEmbeddedPostgres("runDatabaseBackup", () => {
+  it("preserves CHECK definitions, quoted names and NOT VALID state after transformed restore", async () => {
+    const source = await createTempDatabase();
+    const target = await createSiblingDatabase(source, "check_restore");
+    const sourceSql = postgres(source, { max: 1, onnotice: () => {} });
+    const targetSql = postgres(target, { max: 1, onnotice: () => {} });
+    try {
+      await sourceSql.unsafe(`
+        CREATE SCHEMA check_fixture;
+        CREATE TABLE check_fixture.items (
+          id int PRIMARY KEY,
+          amount int,
+          CONSTRAINT "positive""amount" CHECK (amount > 0) NO INHERIT
+        );
+        INSERT INTO check_fixture.items VALUES (1, 2);
+        ALTER TABLE check_fixture.items ADD CONSTRAINT legacy_min CHECK (amount >= 10) NOT VALID;
+      `);
+      const constraints = (sql: typeof sourceSql) => sql`
+        SELECT conname, convalidated, connoinherit, pg_get_constraintdef(oid) AS definition
+        FROM pg_constraint WHERE conrelid = 'check_fixture.items'::regclass AND contype = 'c'
+        ORDER BY conname
+      `;
+      const expected = await constraints(sourceSql);
+      const backup = await runDatabaseBackup({ connectionString: source, backupDir: createTempDir("check-backup-"),
+        retention: { dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 }, backupEngine: "javascript" });
+      await runDatabaseRestore({ connectionString: target, backupFile: backup.backupFile });
+      expect(await constraints(targetSql)).toEqual(expected);
+      expect(await targetSql`SELECT amount FROM check_fixture.items WHERE id = 1`).toEqual([{ amount: 2 }]);
+      await expect(targetSql`INSERT INTO check_fixture.items VALUES (2, -1)`).rejects.toMatchObject({ code: "23514" });
+      await expect(targetSql`INSERT INTO check_fixture.items VALUES (2, 3)`).rejects.toMatchObject({ code: "23514" });
+      await targetSql`INSERT INTO check_fixture.items VALUES (2, 12)`;
+    } finally {
+      await sourceSql.end();
+      await targetSql.end();
+    }
+  }, 60_000);
+
   it(
     "keeps the newest backup for each retained calendar month",
     async () => {

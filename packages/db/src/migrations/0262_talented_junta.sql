@@ -1,0 +1,1 @@
+ALTER TABLE "verrail_run_sources" ADD CONSTRAINT "verrail_run_sources_workspace_id_companies_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."companies"("id") ON DELETE cascade ON UPDATE no action;

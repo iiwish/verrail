@@ -103,9 +103,13 @@ import { execute } from "./execute.js";
 describe("opencode remote execution", () => {
   const cleanupDirs: string[] = [];
   const originalOpenCodeAllowAllModels = process.env.OPENCODE_ALLOW_ALL_MODELS;
+  const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     delete process.env.OPENCODE_ALLOW_ALL_MODELS;
+    const configHome = await mkdtemp(path.join(os.tmpdir(), "paperclip-opencode-remote-config-"));
+    cleanupDirs.push(configHome);
+    process.env.XDG_CONFIG_HOME = configHome;
   });
 
   afterEach(async () => {
@@ -114,6 +118,11 @@ describe("opencode remote execution", () => {
       delete process.env.OPENCODE_ALLOW_ALL_MODELS;
     } else {
       process.env.OPENCODE_ALLOW_ALL_MODELS = originalOpenCodeAllowAllModels;
+    }
+    if (originalXdgConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
     }
     while (cleanupDirs.length > 0) {
       const dir = cleanupDirs.pop();

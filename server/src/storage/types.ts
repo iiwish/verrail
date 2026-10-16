@@ -48,6 +48,7 @@ export interface PutFileInput {
   originalFilename: string | null;
   contentType: string;
   body: Buffer;
+  contentAddressed?: boolean;
 }
 
 export interface PutFileResult {

@@ -1,0 +1,62 @@
+{
+  "id": "T003-A001",
+  "target_id": "g2-7-production-closure",
+  "task_id": "T003",
+  "agent": "codex",
+  "runner": "local_direct_execute",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "output_commit": null,
+  "branch": "codex/g2-7-production-closure",
+  "changed_files": [
+    "services/domain-api/internal/target/adjudication.go",
+    "services/domain-api/internal/target/agent_lifecycle.go",
+    "services/domain-api/internal/target/agent_lifecycle_store.go",
+    "services/domain-api/internal/target/adjudication_store.go",
+    "services/domain-api/internal/target/adjudication_test.go",
+    "services/domain-api/internal/target/connector_store.go",
+    "services/domain-api/internal/target/connector_test.go",
+    "services/domain-api/internal/httpapi/server.go",
+    "services/domain-api/internal/httpapi/candidate_principal_test.go",
+    "server/src/services/verrail-domain-api-client.ts",
+    "server/src/services/verrail-domain-api-client.test.ts",
+    "server/src/routes/adjudication.ts",
+    "server/src/routes/connector.ts",
+    "server/src/__tests__/adjudication-routes.test.ts",
+    "server/src/__tests__/connector-routes.test.ts",
+    ".verrail/targets/g2-7-production-closure/packets/T003.json",
+    ".verrail/targets/g2-7-production-closure/runs/T003-A001/evidence.json",
+    ".verrail/targets/g2-7-production-closure/runs/T003-A001/receipt.json",
+    ".verrail/targets/g2-7-production-closure/runs/T003-A001/logs/tdd.md",
+    ".verrail/targets/g2-7-production-closure/runs/T003-A001/logs/review.md",
+    ".verrail/targets/g2-7-production-closure/timeline.jsonl"
+  ],
+  "commands": [
+    {
+      "command": "go test ./internal/target ./internal/httpapi",
+      "status": "red_then_passed",
+      "summary": "RED proved missing candidate authority; GREEN passed focused Go packages."
+    },
+    {
+      "command": "VERRAIL_TEST_DATABASE_URL=<ephemeral-postgres> pnpm test:domain-api",
+      "status": "passed",
+      "summary": "All Go packages passed with PostgreSQL integration enabled."
+    },
+    {
+      "command": "focused server Vitest suite",
+      "status": "red_then_passed",
+      "summary": "RED 2 failed/22 passed; GREEN 3 files and 26 tests passed."
+    },
+    {
+      "command": "shared and server typecheck; git diff --check",
+      "status": "passed"
+    }
+  ],
+  "logs": [
+    ".verrail/targets/g2-7-production-closure/runs/T003-A001/logs/tdd.md",
+    ".verrail/targets/g2-7-production-closure/runs/T003-A001/logs/review.md"
+  ],
+  "errors": [],
+  "summary": "Separated Agent/Service candidate authorship from authenticated human governance and proved identity persistence, spoof rejection, workspace isolation, replay, and single-human governance."
+}

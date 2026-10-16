@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "kind": "independent_ai_technical_review",
+  "reviewer": "independent_candidate_review",
+  "sourceHash": "e640ed79b53e31717fbf86b33849d35c29cad7e555024619f5580ec43e0f8471",
+  "baseRef": "origin/master",
+  "baseCommit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "reviewedCodeCommit": "d16f1385deabd926768f6975a0e1020d91e9e742",
+  "scope": "Risk-oriented review of the full 835-file aggregate candidate range, not an exhaustive line-by-line audit",
+  "findings": [
+    { "id": "R1", "priority": "P2", "summary": "An unbound repository Run consumed its ready node", "status": "resolved", "resolution": "Repository mode rejects missing source in the facade and the Go transaction; the UI requires a current-version source before Start" },
+    { "id": "R2", "priority": "P2", "summary": "Repository prompt and SSE inherited a two-minute execution ceiling", "status": "resolved", "resolution": "Bound execution timeout follows the repository Run budget; cancellation also reaches health and session setup" },
+    { "id": "R3", "priority": "P2", "summary": "The observed proof API omitted the stable runner's JWT instance identity", "status": "resolved", "resolution": "Explicitly propagate the instance ID and exercise non-default identities without inheriting the whole host environment" },
+    { "id": "R4", "priority": "P2", "summary": "Target archive and Deployment pause revoked admitted repository Runs", "status": "resolved", "resolution": "Continue pinned admitted Runs while preserving Go new-Run admission, cancellation, expiry, revision, graph and fencing checks" }
+  ],
+  "followupChecks": ["Strict shared workspace validator accepts the optional policy field", "Cleanup fixture retains its original uncertain-cleanup assertion", "Session setup receives cancellation"],
+  "independentlyRunTests": { "httpTransport": 23, "sharedTarget": 7, "deadlineAndCleanup": 2, "archiveAndPausePostgres": 5, "jwtNormalizationCases": 5, "failedAfterFixes": 0 },
+  "primaryAgentVerificationNotIndependent": { "fixedJwtBridgeCases": 2, "repositoryLeaseSuite": 25 },
+  "baselineRisks": [{ "priority": "P2", "status": "open", "summary": "Product GitHub PR creation does not verify provider HEAD against the accepted commit", "mechanism": "Database expected/current commit comparison does not prevent params.head moving before PR creation; the receipt is not proof of provider head.sha", "paths": ["services/domain-api/internal/target/connector_store.go:563", "services/domain-api/internal/target/connector_store.go:723"], "presentAtBase": true, "liveExternalReproduction": false }],
+  "inspectedSurfaces": ["Workspace and authentication boundaries", "Director tool permissions", "Version admission and continuation", "Lease, fencing, cancellation and recovery", "Source and credential isolation", "Command container authority and cleanup", "Proof reading and recording", "GitHub CI and external effects", "Migration SQL", "Channel notification idempotency"],
+  "conclusion": "No unclosed substantiated newly introduced blocker within this bounded review; the baseline PR head-binding risk remains open",
+  "limitations": ["Not human Acceptance", "Not a formal GitHub approval or release authorization", "Not an exhaustive review of every changed line", "Current-source full verification is recorded separately", "No independent latest full suite, real GitHub or channel effects, maco deployment, native Linux fault matrix, production-scale migration rollback, or complete UI verification", "Prior image and paid-model evidence does not automatically apply to the new source"]
+}

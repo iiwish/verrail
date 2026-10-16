@@ -91,6 +91,40 @@ describeEmbeddedPostgres("conversationService", () => {
     expect(detail?.lastMessageAt).toBeInstanceOf(Date);
   });
 
+  it("filters agent work by actual assistant authorship, without attributing user messages or other workspaces", async () => {
+    const [workspace, other] = await db.insert(companies).values([{ name: "Agent work", issuePrefix: "AWK" }, { name: "Other work", issuePrefix: "OWK" }]).returning();
+    const service = conversationService(db);
+    const agentId = "33333333-3333-4333-8333-333333333333";
+    const create = (workspaceId: string, title: string) => service.create(workspaceId, { title, contextBindings: [] }, { principalType: "user", principalId: "operator" });
+    const authored = await create(workspace!.id, "Actual agent reply");
+    const unrelated = await create(workspace!.id, "User-only conversation");
+    const foreign = await create(other!.id, "Other workspace");
+    for (const conversation of [authored, foreign]) {
+      await service.appendMessage(conversation.workspaceId, conversation.id, { role: "assistant", body: "Recorded reply", actor: { principalType: "agent", principalId: agentId } });
+    }
+    await service.appendMessage(workspace!.id, authored.id, { role: "assistant", body: "Second reply", actor: { principalType: "agent", principalId: agentId } });
+    await service.appendMessage(workspace!.id, unrelated.id, { role: "user", body: "An agent identifier is not authorship", actor: { principalType: "user", principalId: agentId } });
+    expect((await service.list(workspace!.id, { status: "active", agentId })).map((row) => row.id)).toEqual([authored.id]);
+    expect(await service.list(workspace!.id, { status: "active", agentId: "44444444-4444-4444-8444-444444444444" })).toEqual([]);
+    await service.update(workspace!.id, authored.id, { status: "archived" });
+    expect(await service.list(workspace!.id, { status: "active", agentId })).toEqual([]);
+    expect((await service.list(workspace!.id, { status: "archived", agentId })).map((row) => row.id)).toEqual([authored.id]);
+  });
+
+  it("orders recent conversations by message time or creation time, never nulls or cosmetic updates", async () => {
+    const [workspace] = await db.insert(companies).values({ name: "Recent ordering", issuePrefix: "REC" }).returning();
+    const base = { workspaceId: workspace!.id, createdByPrincipalType: "user", createdByPrincipalId: "user-1" };
+    const old = new Date("2026-09-01T00:00:00Z");
+    await db.insert(verrailConversations).values([
+      { ...base, title: "Old empty renamed today", createdAt: old, updatedAt: new Date("2026-09-11T12:00:00Z") },
+      { ...base, title: "Recent reply", createdAt: old, lastMessageAt: new Date("2026-09-11T11:00:00Z") },
+      { ...base, title: "New empty", createdAt: new Date("2026-09-11T10:00:00Z") },
+      { ...base, title: "Old reply", createdAt: old, lastMessageAt: new Date("2026-09-08T00:00:00Z") },
+      { ...base, title: "Pinned", createdAt: old, pinnedAt: old },
+    ]);
+    expect((await conversationService(db).list(workspace!.id, { status: "active" })).map(row => row.title)).toEqual(["Pinned", "Recent reply", "New empty", "Old reply", "Old empty renamed today"]);
+  });
+
   it("derives a first-turn title and requires archived conversations to be restored", async () => {
     const [workspace] = await db
       .insert(companies)

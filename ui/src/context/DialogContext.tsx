@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
-import type { IssueWorkMode } from "@paperclipai/shared";
+import type { IssueWorkMode, TargetCreationDraft } from "@paperclipai/shared";
 
 interface NewIssueDefaults {
   status?: string;
@@ -27,6 +27,7 @@ interface NewGoalDefaults {
 interface NewTargetDefaults {
   collectionId?: string;
   conversationId?: string;
+  draft?: TargetCreationDraft;
 }
 
 interface OnboardingOptions {

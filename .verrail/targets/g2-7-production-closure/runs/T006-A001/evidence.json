@@ -1,0 +1,106 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T006-A001",
+  "task_id": "T006",
+  "status": "passed",
+  "credential_boundary": {
+    "resolution": "TypeScript resolves the active Workspace repo binding and its referenced Secret only after an authenticated human execution request.",
+    "transport": [
+      "X-Verrail-GitHub-Connection-Id",
+      "X-Verrail-Ephemeral-GitHub-Authorization"
+    ],
+    "domain_auth": "The internal Domain API remains independently authenticated by its bearer token before reading the ephemeral headers.",
+    "durability": "The credential is absent from command JSON, receipts, audits, outbox events, Temporal payloads and connector facts.",
+    "sentinel_proof": "github-connector-credential.test.ts resolves a random encrypted sentinel, observes one value-free Secret access audit, and scans tool connection, repo binding, secret metadata, versions and access events to prove the sentinel is absent."
+  },
+  "effect_reconciliation": {
+    "marker": "sha256(github:create_pull_request:{actionRequestId}:{paramsHash})",
+    "states": [
+      "pending_approval",
+      "approved",
+      "executing",
+      "unknown_effect",
+      "executed"
+    ],
+    "lookup_rule": "found finalizes one receipt, absent may create only with the current claim, and inconclusive never creates",
+    "faults_proven": [
+      "provider timeout before effect",
+      "provider timeout after effect",
+      "inconclusive lookup",
+      "concurrent execution while a live claim exists",
+      "post-effect EffectReceipt database failure",
+      "retry convergence from lookup-found without a second create"
+    ],
+    "database_guards": [
+      "unique action_request_id EffectReceipt",
+      "unique provider_marker on ActionRequest and EffectReceipt",
+      "status/marker consistency checks",
+      "database-clock reclaim decision",
+      "no provider call inside a database transaction"
+    ]
+  },
+  "execution_revalidation": [
+    "authenticated human execution authority",
+    "approved parameters hash and requester/approver separation",
+    "latest Submission and active TargetRevision",
+    "valid Acceptance for the same Workspace, Target, Submission and Revision",
+    "immutable Submission commit binding",
+    "active Workspace GitHub repo binding and exact facade connection ID"
+  ],
+  "verification": [
+    {
+      "command": "focused server/shared tests",
+      "status": "passed",
+      "result": "37 tests passed"
+    },
+    {
+      "command": "DATABASE_URL=<fresh-postgres> pnpm --filter @paperclipai/db migrate",
+      "status": "passed",
+      "result": "243 migrations applied to a fresh PostgreSQL database"
+    },
+    {
+      "command": "VERRAIL_TEST_DATABASE_URL=<fresh-postgres> go test -count=1 ./internal/target ./internal/httpapi ./internal/orchestration",
+      "status": "passed"
+    },
+    {
+      "command": "go vet ./...",
+      "status": "passed"
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "result": "34 of 35 workspace projects"
+    },
+    {
+      "command": "pnpm build",
+      "status": "passed"
+    },
+    {
+      "command": "pnpm test:run",
+      "status": "failed_unrelated_flake",
+      "result": "General server 4,713 passed; one untouched UI timing assertion failed; isolated file rerun 18/18 passed"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    }
+  ],
+  "real_github_prerequisites_for_T010": [
+    "A user-authorized writable GitHub test repository",
+    "An active Workspace tool connection whose referenced access token can list and create pull requests",
+    "A pushed head branch and an expected base branch in the bound repository",
+    "A fresh Target journey whose immutable Submission commit binding corresponds to the tested code",
+    "Permission to leave exactly one marker-bearing acceptance PR in that repository"
+  ],
+  "review": {
+    "critical_or_high_findings": 0,
+    "recommendation": "accept_for_dependency_progression",
+    "final_product_authority": "not_granted",
+    "reference": ".verrail/targets/g2-7-production-closure/runs/T006-A001/logs/review.md"
+  },
+  "residual_risks": [
+    "A real GitHub credential and repository were not supplied during T006; T010 must prove the contract against a real provider and inspect the resulting PR and EffectReceipt.",
+    "The marker lives in the PR body, so a human edit that removes it before crash reconciliation can leave an outcome inconclusive rather than falsely creating another PR.",
+    "The repo-wide Vitest run exposed one pre-existing UI timing flake; the isolated rerun passed and the file is outside T006 scope."
+  ]
+}

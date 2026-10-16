@@ -13,12 +13,17 @@ import (
 const createCommandType = "target.create.v1"
 
 type Store struct {
-	pool *pgxpool.Pool
+	pool                    *pgxpool.Pool
+	requireRepositorySource bool
 	// github is the governed external-effect client used by ExecuteAction.
 	// The default is the real thin REST wrapper with no resolved credential,
 	// which fails fast with CONNECTOR_CREDENTIALS_NOT_CONFIGURED; tests swap
 	// in a fake via WithGitHubClient.
 	github GitHubClient
+}
+
+func WithRequiredRepositorySource() StoreOption {
+	return func(store *Store) { store.requireRepositorySource = true }
 }
 
 func NewStore(pool *pgxpool.Pool, options ...StoreOption) *Store {

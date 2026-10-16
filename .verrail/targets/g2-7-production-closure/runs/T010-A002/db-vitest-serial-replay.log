@@ -1,0 +1,17 @@
+
+ RUN  v4.1.10 /Users/iiwish/self/verrail
+
+ ❯ |@paperclipai/db| src/client.test.ts (14 tests | 13 failed) 293385ms
+     × recreates an existing database so stale tables are removed 30013ms
+     × applies an inserted earlier migration without replaying later legacy migrations 20885ms
+     × replays migration 0044 safely when its schema changes already exist 22400ms
+     × enforces a unique board_api_keys.key_hash after migration 0044 22305ms
+     × replays migration 0046 safely when document revision columns already exist 21813ms
+     × replays migration 0047 safely when feedback tables and run columns already exist 23353ms
+     × replays migration 0048 safely when routines.variables already exists 20002ms
+     × replays migration 0050 safely when projects.env already exists 22371ms
+     × replays migration 0059 safely when plugin_database_namespaces already exists 23941ms
+     × replays the built-in managed resources migration after the legacy 0136 journal entry 20005ms
+     × replays migration 0134 without bumping issue updated_at for inbox archives 22958ms
+     × replays migration 0135 to repair updated_at sweeps and no-op when clean 23200ms
+     × replays the run responsible user repair migration when heartbeat run issue refs are identifiers 20007ms

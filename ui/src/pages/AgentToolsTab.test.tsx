@@ -240,7 +240,7 @@ describe("AgentToolsTab", () => {
     expect(text).toContain("Production GitHub");
     expect(text).toContain("GitHub safe");
     expect(text).toContain("Access profiles");
-    expect(text).toContain("Company default");
+    expect(text).toContain("Workspace default");
     expect(container.querySelector('a[href="/apps/advanced/profiles/prof-1"]')?.textContent).toBe("GitHub safe");
     expect(container.querySelector('a[href="/apps/advanced/profiles?check=1"]')?.textContent).toBe("Check access");
     // Governing policy #1 is the company-wide require_approval rule.
@@ -268,7 +268,7 @@ describe("AgentToolsTab", () => {
 
     const text = container.textContent ?? "";
     expect(text).toContain("No tools are allowed for this agent");
-    expect(text).toContain("No active profile applies");
+    expect(text).toContain("No active access profile applies");
   });
 
   it("autosaves installed apps for the current agent", async () => {
@@ -292,7 +292,7 @@ describe("AgentToolsTab", () => {
 
     expect(container.textContent).toContain("Installed apps");
     expect(container.textContent).toContain("Permitted only");
-    expect(container.textContent).toContain("Permitted but not installed — tools will not appear in runs.");
+    expect(container.textContent).toContain("Permitted but not installed; tools will not appear in runs.");
     expect(container.querySelector('a[href="/apps/conn-1/permissions"]')?.textContent).toBe("Open permissions");
     const installCheckbox = container.querySelector<HTMLElement>('[aria-label="Install Production GitHub on Coder"]');
     expect(installCheckbox).toBeTruthy();

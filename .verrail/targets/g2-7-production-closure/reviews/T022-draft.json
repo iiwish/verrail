@@ -1,0 +1,14 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T022-A001",
+  "decision": "request_changes",
+  "reviewer": "codex",
+  "review_type": "implementation_self_check_not_independent_final_review",
+  "rationale": "The bounded cache-isolation implementation and focused tests are present, but the complete browser gate is not green and the final path refinement lacks a live browser run. Environmental failure must not be represented as accepted evidence.",
+  "linked_evidence": ["runs/T022-A001/evidence.json", "runs/T022-A001/receipt.json"],
+  "requested_changes": [
+    "Free disk space, restore the original isolated infrastructure, and complete browser validation with a concurrent live server.",
+    "Resume T010 only after this technical gate passes; preserve the human and independent final review boundaries."
+  ],
+  "created_at": "2026-09-05T02:31:00Z"
+}

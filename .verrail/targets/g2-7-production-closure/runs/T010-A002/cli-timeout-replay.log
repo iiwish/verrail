@@ -1,0 +1,55 @@
+
+ RUN  v4.1.10 /Users/iiwish/self/verrail
+
+ ❯ |paperclipai| src/__tests__/company-import-transfer.test.ts (16 tests | 3 failed) 31884ms
+     × takes the chunked path for a small zip whose entries inflate past the threshold 7072ms
+     × takes the chunked path for a binary-heavy folder whose inline body outgrows the threshold 7521ms
+     × zips an oversized folder in memory with the same walk filters as the inline path 10413ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |paperclipai| src/__tests__/company-import-transfer.test.ts > resolveChunkedImportZip > takes the chunked path for a small zip whose entries inflate past the threshold
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/__tests__/company-import-transfer.test.ts:129:3
+    127|   });
+    128|
+    129|   it("takes the chunked path for a small zip whose entries inflate pas…
+       |   ^
+    130|     const dir = await makeTempDir();
+    131|     const zipPath = path.join(dir, "dense-package.zip");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |paperclipai| src/__tests__/company-import-transfer.test.ts > resolveChunkedImportZip > takes the chunked path for a binary-heavy folder whose inline body outgrows the threshold
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/__tests__/company-import-transfer.test.ts:193:3
+    191|   });
+    192|
+    193|   it("takes the chunked path for a binary-heavy folder whose inline bo…
+       |   ^
+    194|     const dir = await makeTempDir();
+    195|     const packageDir = path.join(dir, "binary-package");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  |paperclipai| src/__tests__/company-import-transfer.test.ts > resolveChunkedImportZip > zips an oversized folder in memory with the same walk filters as the inline path
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/__tests__/company-import-transfer.test.ts:226:3
+    224|   });
+    225|
+    226|   it("zips an oversized folder in memory with the same walk filters as…
+       |   ^
+    227|     const dir = await makeTempDir();
+    228|     const packageDir = path.join(dir, "big-package");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 13 passed (16)
+   Start at  21:06:09
+   Duration  34.81s (transform 805ms, setup 0ms, import 1.33s, tests 31.88s, environment 0ms)
+

@@ -1,0 +1,72 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T004-A001",
+  "task_id": "T004",
+  "status": "passed",
+  "result_contracts": {
+    "agent_task": "Agent Run command accepts only agent_run with an authenticated agent actor and an active DeploymentRevision binding",
+    "integration_task": "IntegrationRun plus immutable IntegrationAttempt; new commands require active TargetRevision, active GraphRevision, IntegrationTask WorkNode, ConnectorVersion, active Connection, commit, criterion, environment, provider reference, idempotency key, and credential-free Provider Receipt",
+    "human_task": "immutable HumanWorkResult bound to active TargetRevision, active GraphRevision, HumanTask WorkNode, authenticated user, input hash, structured result hash, and optional ArtifactRevision or attachment hashes"
+  },
+  "compatibility_proof": {
+    "migration": "0242_bizarre_meggan.sql is expand-only",
+    "legacy_integration_runs": "new IntegrationRun binding columns remain nullable for pre-T004 rows and read as explicit null with an empty attempts array",
+    "invented_backfill": false,
+    "destructive_statements": false
+  },
+  "rejection_proof": {
+    "agent_as_integration_result_producer": "403 WORK_RESULT_COMMAND_FORBIDDEN",
+    "integration_result_on_wrong_node_kind": "409 INTEGRATION_NODE_KIND_MISMATCH",
+    "human_result_on_wrong_node_kind": "409 HUMAN_WORK_NODE_KIND_MISMATCH",
+    "cross_workspace_connection": "409 INTEGRATION_CONNECTION_NOT_ACTIVE",
+    "stale_target_revision": "409 INTEGRATION_TARGET_REVISION_MISMATCH or HUMAN_WORK_TARGET_REVISION_MISMATCH",
+    "credential_like_result_or_receipt_fields": "400 TARGET_COMMAND_INVALID"
+  },
+  "idempotency_and_immutability": {
+    "integration": "one lifecycle receipt, IntegrationRun, and attempt number 1 are committed atomically; replay returns the original resource",
+    "human": "principal-scoped command receipt and unique principal idempotency key replay the original immutable result",
+    "attempt_uniqueness": "unique IntegrationRun plus attempt number and Workspace plus Connection plus idempotency key",
+    "fact_updates": "no update command exists for IntegrationAttempt or HumanWorkResult; WorkNode status transition is the only mutable projection in the transaction"
+  },
+  "tdd": {
+    "red": "Shared contract RED failed because complete IntegrationRun fields and HumanWorkResult were absent; behavior tests also exposed omitted dependency lists persisting as JSON null and never becoming ready.",
+    "green": "Expand migration, strict shared validators, Go commands/stores, TypeScript facade routes, and read-model mappings passed focused and PostgreSQL-backed suites.",
+    "refactor": "Nil dependency lists are normalized to [] before persistence so dependency-free nodes activate deterministically; result authority uses a separate user-or-service allowlist."
+  },
+  "verification": [
+    {
+      "command": "DATABASE_URL=<fresh-postgres> pnpm --filter @paperclipai/db migrate",
+      "status": "passed",
+      "result": "241 migrations including 0242 applied to a fresh PostgreSQL database"
+    },
+    {
+      "command": "VERRAIL_TEST_DATABASE_URL=<fresh-postgres> go test -count=1 ./...",
+      "status": "passed",
+      "result": "all Domain API HTTP, orchestration, and target packages passed with database-backed tests"
+    },
+    {
+      "command": "pnpm exec vitest run <T004 focused suite>",
+      "status": "passed",
+      "result": "5 files, 38 tests"
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "result": "34 of 35 workspace projects"
+    },
+    {
+      "command": "pnpm --filter @paperclipai/db check:migrations && git diff --check",
+      "status": "passed"
+    }
+  ],
+  "review": {
+    "critical_or_high_findings": 0,
+    "recommendation": "accept_for_dependency_progression",
+    "final_product_authority": "not_granted",
+    "reference": ".verrail/targets/g2-7-production-closure/runs/T004-A001/logs/review.md"
+  },
+  "residual_risks": [
+    "T004 creates the first IntegrationAttempt atomically; retry scheduling and additional-attempt orchestration remain T005/T009 work.",
+    "Connection Workspace ownership is enforced transactionally in Go because the inherited tool_connections table does not expose a stable composite unique key for a composite foreign key."
+  ]
+}

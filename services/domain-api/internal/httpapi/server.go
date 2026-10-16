@@ -36,6 +36,7 @@ type createSubmissionFunc func(*http.Request, target.AgentLifecycleCommand[targe
 type recordDeliveryReviewFunc func(*http.Request, target.AgentLifecycleCommand[target.RecordDeliveryReviewInput]) (target.AgentLifecycleResult, error)
 type acceptSubmissionFunc func(*http.Request, target.AgentLifecycleCommand[target.AcceptSubmissionInput]) (target.AgentLifecycleResult, error)
 type recordIntegrationRunFunc func(*http.Request, target.AgentLifecycleCommand[target.RecordIntegrationRunInput]) (target.AgentLifecycleResult, error)
+type recordHumanWorkResultFunc func(*http.Request, target.AgentLifecycleCommand[target.RecordHumanWorkResultInput]) (target.AgentLifecycleResult, error)
 type requestPullRequestActionFunc func(*http.Request, target.AgentLifecycleCommand[target.RequestPullRequestActionInput]) (target.AgentLifecycleResult, error)
 type approveActionFunc func(*http.Request, target.AgentLifecycleCommand[target.ApproveActionInput]) (target.AgentLifecycleResult, error)
 type executeActionFunc func(*http.Request, target.AgentLifecycleCommand[target.ExecuteActionInput]) (target.AgentLifecycleResult, error)
@@ -43,6 +44,7 @@ type createGithubRepoBindingFunc func(*http.Request, target.AgentLifecycleComman
 
 type Server struct {
 	token                    string
+	fixedCIProof             *FixedCIProofConfiguration
 	create                   createFunc
 	createGraphRevision      createGraphRevisionFunc
 	activateGraphRevision    activateGraphRevisionFunc
@@ -50,6 +52,7 @@ type Server struct {
 	createRunAttempt         createRunAttemptFunc
 	reportRunEvent           reportRunEventFunc
 	requestRunCancellation   requestRunCancellationFunc
+	retryRunOutbox           func(*http.Request, target.RetryRunOutboxCommand) (target.RetryRunOutboxResult, error)
 	createAgentDefinition    createAgentDefinitionFunc
 	updateAgentDefinition    updateAgentDefinitionFunc
 	publishAgentVersion      publishAgentVersionFunc
@@ -65,6 +68,7 @@ type Server struct {
 	recordDeliveryReview     recordDeliveryReviewFunc
 	acceptSubmission         acceptSubmissionFunc
 	recordIntegrationRun     recordIntegrationRunFunc
+	recordHumanWorkResult    recordHumanWorkResultFunc
 	requestPullRequestAction requestPullRequestActionFunc
 	approveAction            approveActionFunc
 	executeAction            executeActionFunc
@@ -73,9 +77,14 @@ type Server struct {
 }
 
 func New(token string, store *target.Store, logger *slog.Logger) http.Handler {
+	return newServer(token, store, logger, nil)
+}
+
+func newServer(token string, store *target.Store, logger *slog.Logger, proof *FixedCIProofConfiguration) http.Handler {
 	server := &Server{
-		token:  token,
-		logger: logger,
+		token:        token,
+		fixedCIProof: proof,
+		logger:       logger,
 		create: func(request *http.Request, command target.CreateCommand) (target.CreateResult, error) {
 			return store.Create(request.Context(), command)
 		},
@@ -96,6 +105,9 @@ func New(token string, store *target.Store, logger *slog.Logger) http.Handler {
 		},
 		requestRunCancellation: func(request *http.Request, command target.RequestRunCancellationCommand) (target.RequestRunCancellationResult, error) {
 			return store.RequestRunCancellation(request.Context(), command)
+		},
+		retryRunOutbox: func(request *http.Request, command target.RetryRunOutboxCommand) (target.RetryRunOutboxResult, error) {
+			return store.RetryRunOutbox(request.Context(), command)
 		},
 		createAgentDefinition: func(request *http.Request, command target.AgentLifecycleCommand[target.AgentDefinitionInput]) (target.AgentLifecycleResult, error) {
 			return store.CreateAgentDefinition(request.Context(), command)
@@ -142,6 +154,9 @@ func New(token string, store *target.Store, logger *slog.Logger) http.Handler {
 		recordIntegrationRun: func(request *http.Request, command target.AgentLifecycleCommand[target.RecordIntegrationRunInput]) (target.AgentLifecycleResult, error) {
 			return store.RecordIntegrationRun(request.Context(), command)
 		},
+		recordHumanWorkResult: func(request *http.Request, command target.AgentLifecycleCommand[target.RecordHumanWorkResultInput]) (target.AgentLifecycleResult, error) {
+			return store.RecordHumanWorkResult(request.Context(), command)
+		},
 		requestPullRequestAction: func(request *http.Request, command target.AgentLifecycleCommand[target.RequestPullRequestActionInput]) (target.AgentLifecycleResult, error) {
 			return store.RequestPullRequestAction(request.Context(), command)
 		},
@@ -149,7 +164,12 @@ func New(token string, store *target.Store, logger *slog.Logger) http.Handler {
 			return store.ApproveAction(request.Context(), command)
 		},
 		executeAction: func(request *http.Request, command target.AgentLifecycleCommand[target.ExecuteActionInput]) (target.AgentLifecycleResult, error) {
-			return store.ExecuteAction(request.Context(), command)
+			return store.ExecuteActionWithGitHubCredential(
+				request.Context(),
+				command,
+				request.Header.Get("X-Verrail-GitHub-Connection-Id"),
+				request.Header.Get("X-Verrail-Ephemeral-GitHub-Authorization"),
+			)
 		},
 		createGithubRepoBinding: func(request *http.Request, command target.AgentLifecycleCommand[target.CreateGithubRepoBindingInput]) (target.AgentLifecycleResult, error) {
 			return store.CreateGithubRepoBinding(request.Context(), command)
@@ -158,10 +178,53 @@ func New(token string, store *target.Store, logger *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", server.health)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/targets", server.createTarget)
+	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/targets/{targetId}/manage", func(response http.ResponseWriter, request *http.Request) {
+		if !server.authorized(request) {
+			writeError(response, &target.Error{Status: 401, Code: "DOMAIN_API_UNAUTHORIZED", Message: "Unauthorized"})
+			return
+		}
+		command := target.ManageTargetCommand{WorkspaceID: request.PathValue("workspaceId"), TargetID: request.PathValue("targetId"), Principal: principal(request), IdempotencyKey: request.Header.Get("Idempotency-Key")}
+		if err := decodeBody(response, request, &command.Input); err != nil {
+			writeError(response, err)
+			return
+		}
+		result, err := store.ManageTarget(request.Context(), command)
+		if err != nil {
+			writeError(response, target.AsError(err))
+			return
+		}
+		writeJSON(response, http.StatusOK, result)
+	})
+	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/targets/{targetId}/revisions", func(response http.ResponseWriter, request *http.Request) {
+		if !server.authorized(request) {
+			writeError(response, &target.Error{Status: 401, Code: "DOMAIN_API_UNAUTHORIZED", Message: "Unauthorized"})
+			return
+		}
+		command := target.ReviseTargetProofCommand{WorkspaceID: request.PathValue("workspaceId"), TargetID: request.PathValue("targetId"), Principal: principal(request), IdempotencyKey: request.Header.Get("Idempotency-Key")}
+		if err := decodeBody(response, request, &command.Input); err != nil {
+			writeError(response, err)
+			return
+		}
+		if err := target.ValidateReviseTargetProofCommand(&command); err != nil {
+			writeError(response, target.AsError(err))
+			return
+		}
+		result, err := store.ReviseTargetProof(request.Context(), command)
+		if err != nil {
+			writeError(response, target.AsError(err))
+			return
+		}
+		status := http.StatusCreated
+		if result.Replayed {
+			status = http.StatusOK
+		}
+		writeJSON(response, status, result)
+	})
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/targets/{targetId}/graph-revisions", server.createGraph)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/targets/{targetId}/graph-revisions/{graphRevisionId}/activate", server.activateGraph)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/targets/{targetId}/graph-revisions/{graphRevisionId}/nodes/{workNodeId}/runs", server.createNativeRun)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/runs/{runId}/attempts", server.createAttempt)
+	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/runs/{runId}/outbox/retry", server.retryOutbox)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/runs/{runId}/attempts/{runAttemptId}/events", server.reportAttemptEvent)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/runs/{runId}/cancel", server.cancelRun)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/agent-definitions", server.createDefinition)
@@ -179,6 +242,8 @@ func New(token string, store *target.Store, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/delivery-reviews", server.recordAdjudicationDeliveryReview)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/acceptances", server.acceptAdjudicationSubmission)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/integration-runs", server.recordConnectorIntegrationRun)
+	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/github-fixed-ci-proofs", server.recordFixedCIProof)
+	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/human-work-results", server.recordConnectorHumanWorkResult)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/pull-request-actions", server.requestConnectorPullRequestAction)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/pull-request-actions/{actionRequestId}/approvals", server.approveConnectorAction)
 	mux.HandleFunc("POST /v1/workspaces/{workspaceId}/pull-request-actions/{actionRequestId}/executions", server.executeConnectorAction)
@@ -489,7 +554,7 @@ func (server *Server) createAdjudicationSubmission(response http.ResponseWriter,
 		writeError(response, target.AsError(err))
 		return
 	}
-	if err := target.ValidateAgentLifecycleCommand(&command); err != nil {
+	if err := target.ValidateCandidateLifecycleCommand(&command); err != nil {
 		writeError(response, target.AsError(err))
 		return
 	}
@@ -564,11 +629,36 @@ func (server *Server) recordConnectorIntegrationRun(response http.ResponseWriter
 		writeError(response, target.AsError(err))
 		return
 	}
-	if err := target.ValidateAgentLifecycleCommand(&command); err != nil {
+	if err := target.ValidateResultLifecycleCommand(&command); err != nil {
 		writeError(response, target.AsError(err))
 		return
 	}
 	result, err := server.recordIntegrationRun(request, command)
+	if err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	writeJSON(response, lifecycleStatus(result), result)
+}
+
+func (server *Server) recordConnectorHumanWorkResult(response http.ResponseWriter, request *http.Request) {
+	if !server.lifecycleAuthorized(response, request) {
+		return
+	}
+	command := target.AgentLifecycleCommand[target.RecordHumanWorkResultInput]{WorkspaceID: request.PathValue("workspaceId"), Principal: principal(request), IdempotencyKey: request.Header.Get("Idempotency-Key"), CommandType: target.ConnectorHumanWorkResultRecordCommand}
+	if err := decodeBody(response, request, &command.Input); err != nil {
+		writeError(response, err)
+		return
+	}
+	if err := target.ValidateRecordHumanWorkResultInput(&command.Input); err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	if err := target.ValidateAgentLifecycleCommand(&command); err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	result, err := server.recordHumanWorkResult(request, command)
 	if err != nil {
 		writeError(response, target.AsError(err))
 		return
@@ -589,7 +679,7 @@ func (server *Server) requestConnectorPullRequestAction(response http.ResponseWr
 		writeError(response, target.AsError(err))
 		return
 	}
-	if err := target.ValidateAgentLifecycleCommand(&command); err != nil {
+	if err := target.ValidateCandidateLifecycleCommand(&command); err != nil {
 		writeError(response, target.AsError(err))
 		return
 	}
@@ -841,6 +931,27 @@ func (server *Server) cancelRun(response http.ResponseWriter, request *http.Requ
 		return
 	}
 	result, err := server.requestRunCancellation(request, command)
+	if err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	writeJSON(response, http.StatusOK, result)
+}
+
+func (server *Server) retryOutbox(response http.ResponseWriter, request *http.Request) {
+	if !server.lifecycleAuthorized(response, request) {
+		return
+	}
+	command := target.RetryRunOutboxCommand{WorkspaceID: request.PathValue("workspaceId"), RunID: request.PathValue("runId"), Principal: principal(request), IdempotencyKey: request.Header.Get("Idempotency-Key")}
+	if err := decodeBody(response, request, &command.Input); err != nil {
+		writeError(response, err)
+		return
+	}
+	if err := target.ValidateRetryRunOutboxCommand(&command); err != nil {
+		writeError(response, target.AsError(err))
+		return
+	}
+	result, err := server.retryRunOutbox(request, command)
 	if err != nil {
 		writeError(response, target.AsError(err))
 		return

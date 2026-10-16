@@ -134,7 +134,14 @@ function firstNonEmptyString(...values: unknown[]): string | undefined {
   return undefined;
 }
 
-export function buildCodexAcpConfig(config: Record<string, unknown>): Record<string, unknown> {
+type CodexAcpConfigContext = Partial<
+  Pick<AdapterExecutionContext, "runtimeCommandSpec" | "executionTarget" | "executionTransport">
+>;
+
+export function buildCodexAcpConfig(
+  config: Record<string, unknown>,
+  context: CodexAcpConfigContext = {},
+): Record<string, unknown> {
   const agentCommand = firstNonEmptyString(config.agentCommand, config.acpAgentCommand);
   const stateDir = firstNonEmptyString(config.stateDir, config.acpStateDir);
   const mode = firstNonEmptyString(config.mode, config.acpMode) ?? DEFAULT_ACP_ENGINE_MODE;
@@ -153,9 +160,28 @@ export function buildCodexAcpConfig(config: Record<string, unknown>): Record<str
   const normalizedModel = normalizeCodexModel(
     typeof config.model === "string" ? config.model : "",
   );
+  const configuredEnv = parseObject(config.env);
+  const target = readAdapterExecutionTarget({
+    executionTarget: context.executionTarget,
+    legacyRemoteExecution: context.executionTransport?.remoteExecution,
+  });
+  const configuredCodexPath = firstNonEmptyString(configuredEnv.CODEX_PATH);
+  const runtimeCodexPath = firstNonEmptyString(
+    context.runtimeCommandSpec?.command,
+    config.command,
+  ) ?? "codex";
+  const bindLocalRuntime = target?.kind !== "remote" && !configuredCodexPath;
 
   return {
     ...config,
+    ...(configuredCodexPath || bindLocalRuntime
+      ? {
+          env: {
+            ...configuredEnv,
+            CODEX_PATH: configuredCodexPath ?? runtimeCodexPath,
+          },
+        }
+      : {}),
     agent: "codex",
     mode,
     permissionMode,
@@ -353,7 +379,7 @@ export function createCodexAcpExecutor(options: CodexAcpExecutorOptions = {}): C
     }
     const result = await currentExecutor({
       ...ctx,
-      config: buildCodexAcpConfig(ctx.config),
+      config: buildCodexAcpConfig(ctx.config, ctx),
     });
     return withCodexAuthRefreshFailureClassification(result);
   };

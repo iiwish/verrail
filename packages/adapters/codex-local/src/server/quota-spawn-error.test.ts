@@ -51,6 +51,7 @@ describe("CodexRpcClient spawn failures", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     if (isolatedCodexHome) {
       try {
@@ -65,6 +66,18 @@ describe("CodexRpcClient spawn failures", () => {
     } else {
       process.env.CODEX_HOME = previousCodexHome;
     }
+  });
+
+  it("does not pass control-plane credentials to the quota app-server", async () => {
+    const keys = ["VERRAIL_DOMAIN_API_TOKEN", "verrail_github_ci_proof_token", "ACPX_AUTH_VERRAIL_DOMAIN_API_TOKEN", "acpx_auth_verrail_github_ci_proof_token"];
+    for (const key of keys) vi.stubEnv(key, "fixture-control-credential");
+    vi.stubEnv("OPENAI_API_KEY", "fixture-model-key");
+    mockSpawn.mockImplementation(() => createChildThatErrorsOnMicrotask(new Error("fixture spawn failure")));
+    await getQuotaWindows();
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    const env = mockSpawn.mock.calls[0][2].env;
+    for (const key of keys) expect(env[key]).toBeUndefined();
+    expect(env.OPENAI_API_KEY).toBe("fixture-model-key");
   });
 
   it("classifies app-server refresh-token failures as quota probe auth errors", async () => {

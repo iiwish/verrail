@@ -98,6 +98,9 @@ export class InvocationScopeDeniedError extends Error {
  * All methods return promises to support async I/O (database, HTTP, etc.).
  */
 export interface HostServices {
+  channels?: {
+    ingest(params: WorkerToHostMethods["channels.ingest"][0]): Promise<WorkerToHostMethods["channels.ingest"][1]>;
+  };
   /** Provides `config.get`. */
   config: {
     get(
@@ -379,6 +382,7 @@ export type HostClientHandlers = {
 const METHOD_CAPABILITY_MAP: Record<WorkerToHostMethodName, PluginCapability | null> = {
   // Config — always allowed
   "config.get": null,
+  "channels.ingest": "webhooks.receive",
 
   // Trusted local folders
   "localFolders.declarations": null,
@@ -705,6 +709,16 @@ export function createHostClientHandlers(
 
   return {
     // Config
+    "channels.ingest": gated("channels.ingest", async (params, context) => {
+      if (context?.invalidInvocationScope || (context?.invocationScope?.companyId
+        && context.invocationScope.companyId !== params.workspaceId)) {
+        throw new InvocationScopeDeniedError(pluginId, "channels.ingest", "invalid channel invocation scope");
+      }
+      if (!services.channels) throw new Error("Channel ingress is unavailable");
+      // Background receivers are authorized by the current manifest and connection,
+      // not by retaining a completed configuration invocation's authority.
+      return services.channels.ingest(params);
+    }),
     "config.get": gated("config.get", async (params, context) => {
       const companyId = resolveRequiredCompanyId("config.get", params, context);
       return services.config.get({ ...params, companyId }, context);

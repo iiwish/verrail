@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	enumspb "go.temporal.io/api/enums/v1"
+	workflowpb "go.temporal.io/api/workflow/v1"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
 )
 
@@ -19,6 +21,11 @@ type recordedSignalWithStartClient struct {
 	workflowArgs []interface{}
 	run          client.WorkflowRun
 	err          error
+	status       enumspb.WorkflowExecutionStatus
+}
+
+func (recorded *recordedSignalWithStartClient) DescribeWorkflowExecution(context.Context, string, string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
+	return &workflowservice.DescribeWorkflowExecutionResponse{WorkflowExecutionInfo: &workflowpb.WorkflowExecutionInfo{Status: recorded.status}}, nil
 }
 
 func (recorded *recordedSignalWithStartClient) SignalWithStartWorkflow(
@@ -116,4 +123,71 @@ func TestTemporalDelivererRoutesRunEventsToRunWorkflow(t *testing.T) {
 		SchemaVersion: SchemaVersion, EventID: event.ID, EventType: "run.event_started", WorkspaceID: testWorkspaceID,
 		TargetID: testRevisionID, RunID: testTargetID, RunAttemptID: "attempt-1",
 	}, recorded.signal)
+}
+
+func TestTemporalDelivererNormalizesStoredCancellationPayload(t *testing.T) {
+	for _, payloadType := range []string{"", RunCancellationRequestedEventType, "run.cancellation_requested"} {
+		t.Run(payloadType, func(t *testing.T) {
+			event := OutboxEvent{
+				ID: "cancel-event", WorkspaceID: testWorkspaceID, AggregateType: "run", AggregateID: testTargetID,
+				EventType: RunCancellationRequestedEventType,
+				Payload:   []byte(`{"schemaVersion":1,"targetId":"` + testRevisionID + `","runId":"` + testTargetID + `","runAttemptId":"attempt-1","eventType":"` + payloadType + `"}`),
+			}
+			recorded := &recordedSignalWithStartClient{run: fakeWorkflowRun{id: RunWorkflowID(testWorkspaceID, testTargetID), runID: "temporal-run-1"}}
+			_, err := NewTemporalDeliverer(recorded, DefaultTargetTaskQueue).Deliver(context.Background(), event)
+			require.NoError(t, err)
+			signal := recorded.signal.(RunEvent)
+			require.Equal(t, RunCancellationRequestedEventType, signal.EventType)
+			require.Equal(t, "attempt-1", signal.RunAttemptID)
+			require.Equal(t, event.ID, signal.EventID)
+
+			state := RunWorkflowState{SchemaVersion: SchemaVersion, WorkspaceID: testWorkspaceID, RunID: testTargetID, CurrentAttemptID: "attempt-2", Phase: "running"}
+			require.False(t, applyRunEvent(&state, signal), "historical cancellation cannot cancel a newer Attempt")
+			require.Equal(t, "running", state.Phase)
+			require.False(t, state.CancellationRequested)
+		})
+	}
+}
+
+func TestTemporalDelivererDoesNotNormalizeArbitraryCancellationAliases(t *testing.T) {
+	for _, test := range []struct{ envelope, payload string }{
+		{RunAttemptChangedEventType, "run.cancellation_requested"},
+		{RunCancellationRequestedEventType, "cancellation_requested"},
+	} {
+		event := OutboxEvent{
+			ID: "invalid-cancel", WorkspaceID: testWorkspaceID, AggregateType: "run", AggregateID: testTargetID,
+			EventType: test.envelope,
+			Payload:   []byte(`{"schemaVersion":1,"targetId":"` + testRevisionID + `","runId":"` + testTargetID + `","runAttemptId":"attempt-1","eventType":"` + test.payload + `"}`),
+		}
+		recorded := &recordedSignalWithStartClient{}
+		_, err := NewTemporalDeliverer(recorded, DefaultTargetTaskQueue).Deliver(context.Background(), event)
+		require.Error(t, err)
+		require.True(t, isPermanent(err))
+		require.Empty(t, recorded.workflowID)
+	}
+}
+
+func TestRunRecoveryRequiresReceiptAndFailedWorkflow(t *testing.T) {
+	for _, status := range []enumspb.WorkflowExecutionStatus{enumspb.WORKFLOW_EXECUTION_STATUS_FAILED, enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED, enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED, enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED} {
+		t.Run(status.String(), func(t *testing.T) {
+			event := OutboxEvent{ID: "recovery-event", WorkspaceID: testWorkspaceID, AggregateType: "run", AggregateID: testTargetID, EventType: RunCancellationRequestedEventType, RecoveryRequested: true,
+				Payload: []byte(`{"schemaVersion":1,"targetId":"` + testRevisionID + `","runId":"` + testTargetID + `","runAttemptId":"old-attempt","eventType":"run.cancellation_requested"}`)}
+			recorded := &recordedSignalWithStartClient{status: status, run: fakeWorkflowRun{id: "workflow", runID: "recovered"}}
+			_, err := NewTemporalDeliverer(recorded, DefaultTargetTaskQueue).Deliver(context.Background(), event)
+			if status != enumspb.WORKFLOW_EXECUTION_STATUS_FAILED {
+				require.Error(t, err)
+				require.True(t, isPermanent(err))
+				require.Empty(t, recorded.workflowID)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY, recorded.options.WorkflowIDReusePolicy)
+			require.True(t, recorded.workflowArgs[0].(RunWorkflowInput).Recovery)
+			event.RecoveryRequested = false
+			_, err = NewTemporalDeliverer(recorded, DefaultTargetTaskQueue).Deliver(context.Background(), event)
+			require.NoError(t, err)
+			require.Equal(t, enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE, recorded.options.WorkflowIDReusePolicy)
+			require.False(t, recorded.workflowArgs[0].(RunWorkflowInput).Recovery)
+		})
+	}
 }

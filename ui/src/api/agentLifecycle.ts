@@ -1,6 +1,7 @@
 import type {
   AgentLifecycleCommandResponseV1,
   AgentLifecycleReadModelV1,
+  AgentPublicationPreviewV1,
   CreateAgentDefinitionInputV1,
   CreateDeploymentInputV1,
   PublishAgentVersionInputV1,
@@ -15,6 +16,8 @@ const headers = (idempotencyKey?: string) => ({ "Idempotency-Key": `ui.agent.${i
 const workspacePath = (workspaceId: string) => `/workspaces/${encodeURIComponent(workspaceId)}`;
 
 export const agentLifecycleApi = {
+  preview: (workspaceId: string, agentId: string) => api.get<AgentPublicationPreviewV1>(`${workspacePath(workspaceId)}/agents/${encodeURIComponent(agentId)}/publication-preview`),
+  publishSaved: (workspaceId: string, definitionId: string, sourceHash: string, idempotencyKey?: string) => api.post<AgentLifecycleCommandResponseV1>(`${workspacePath(workspaceId)}/agent-definitions/${encodeURIComponent(definitionId)}/publish-saved`, { sourceHash }, { headers: headers(idempotencyKey) }),
   get: (workspaceId: string) => api.get<AgentLifecycleReadModelV1>(`${workspacePath(workspaceId)}/agent-lifecycle`),
   createDefinition: (workspaceId: string, input: CreateAgentDefinitionInputV1, idempotencyKey?: string) => api.post<AgentLifecycleCommandResponseV1>(`${workspacePath(workspaceId)}/agent-definitions`, input, { headers: headers(idempotencyKey) }),
   updateDefinition: (workspaceId: string, definitionId: string, input: UpdateAgentDefinitionInputV1, idempotencyKey?: string) => api.patch<AgentLifecycleCommandResponseV1>(`${workspacePath(workspaceId)}/agent-definitions/${encodeURIComponent(definitionId)}`, input, { headers: headers(idempotencyKey) }),

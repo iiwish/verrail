@@ -3,6 +3,15 @@
   "runtime_target_id": "3e9c92ff-f655-4a0b-8653-da7f109a4a1f",
   "runtime_target_revision_id": "29b8f0f3-2f8d-40be-9684-2790bd507cdd",
   "runtime_workspace_id": "c641493c-081c-4607-84ba-0818cd97981a",
+  "status_scope": "repository_feature_slice",
+  "current_runtime_observation": {
+    "status": "draft",
+    "observed_at": "2026-09-04T03:22:33Z",
+    "submissions": 1,
+    "reviews": 0,
+    "acceptances": 0,
+    "product_domain_target_accepted": false
+  },
   "title": "G2.4 - Submission, DeliveryReview, and Acceptance",
   "intent": "Add immutable Submission candidates binding TargetRevision with artifact and verification sets, DeliveryReview by a reviewer independent of the submitter, and Acceptance reserved to the outcome owner, with derived invalidation when the target revision or submission changes.",
   "scope": "Implement the adjudication half of the trusted delivery loop: submissions, delivery reviews, acceptances as append-only facts with receipt+audit commands; read-model derived acceptance validity; Workbench Submission/Acceptance surfaces.",
@@ -21,7 +30,7 @@
   ],
   "status": "accepted",
   "created_at": "2026-09-03T03:55:00Z",
-  "updated_at": "2026-09-03T03:55:00Z",
+  "updated_at": "2026-09-04T03:34:10Z",
   "accepted_at": "2026-09-03T07:05:00Z",
   "accepted_by": "Outcome Owner (browser acceptance delegated to Sisyphus; passed)"
 }

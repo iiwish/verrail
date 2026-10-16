@@ -1,5 +1,6 @@
 import express, { Router, type Request as ExpressRequest } from "express";
 import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -59,6 +60,8 @@ import { goalRoutes } from "./routes/goals.js";
 import { onboardingSeedRoutes } from "./routes/onboarding-seed.js";
 import { boardChatRoutes } from "./routes/board-chat.js";
 import { conversationRoutes } from "./routes/conversations.js";
+import { conversationInvocationRoutes } from "./routes/conversation-invocations.js";
+import { configureConversationGateway } from "./services/conversation-gateway.js";
 import { approvalRoutes } from "./routes/approvals.js";
 import { secretRoutes } from "./routes/secrets.js";
 import { toolAccessRoutes } from "./routes/tool-access.js";
@@ -113,12 +116,14 @@ import { setPluginEventBus } from "./services/activity-log.js";
 import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
+import { deliveryContextRoutes } from "./routes/delivery-context.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 import { createCachedViteHtmlRenderer } from "./vite-html-renderer.js";
 import { DEFAULT_JSON_BODY_LIMIT, PORTABLE_JSON_BODY_LIMIT } from "./http/body-limits.js";
 import { COMPANY_IMPORT_API_PATH } from "./routes/company-import-paths.js";
 import { apiCompression } from "./middleware/api-compression.js";
+import { resolvePaperclipInstanceRoot } from "./home-paths.js";
 
 type UiMode = "none" | "static" | "vite-dev";
 const FEEDBACK_EXPORT_FLUSH_INTERVAL_MS = 5_000;
@@ -149,6 +154,19 @@ export function isDatabaseConnectionUnavailableError(err: unknown): boolean {
 
 export function resolveViteHmrPort(serverPort: number): number {
   return derivePaperclipViteHmrPort(serverPort);
+}
+
+export function resolveViteCacheDir(input: {
+  instanceRoot: string;
+  uiRoot: string;
+  bindHost: string;
+  serverPort: number;
+}): string {
+  const identity = createHash("sha256")
+    .update(JSON.stringify([path.resolve(input.uiRoot), input.bindHost, input.serverPort]))
+    .digest("hex");
+  // Keep optimized files outside source transforms such as React Fast Refresh.
+  return path.join(input.instanceRoot, "cache", "vite", identity, "node_modules", ".vite");
 }
 
 export function resolveViteHmrHost(bindHost: string): string | undefined {
@@ -512,9 +530,9 @@ export async function createApp(
   api.use(collectionRoutes(db));
   api.use(targetRoutes(db));
   api.use(agentLifecycleRoutes(db));
-  api.use(assuranceRoutes());
+  api.use(assuranceRoutes({ db, storage: opts.storageService }));
   api.use(adjudicationRoutes());
-  api.use(connectorRoutes());
+  api.use(connectorRoutes({ db }));
   api.use(caseRoutes(db, opts.storageService));
   api.use(issueTreeControlRoutes(db));
   api.use(fileResourceRoutes(db));
@@ -532,7 +550,11 @@ export async function createApp(
   api.use(executionWorkspaceRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(goalRoutes(db));
   api.use(onboardingSeedRoutes(db));
-  api.use(conversationRoutes(db, { deploymentMode: opts.deploymentMode }));
+  const conversationGateway = await configureConversationGateway(db, () => { logger.warn("Conversation invocation reconciliation failed; retrying persisted state"); });
+  if (conversationGateway) api.use(conversationInvocationRoutes(db, conversationGateway.controller));
+  api.use(conversationRoutes(db, { deploymentMode: opts.deploymentMode, pluginWorkerManager: workerManager, invocationMcp: conversationGateway?.handleMcp,
+    publicBaseUrl: opts.authPublicBaseUrl ?? (opts.deploymentMode === "local_trusted" ? `http://127.0.0.1:${opts.serverPort}` : null) }));
+  api.use(deliveryContextRoutes(db));
   api.use(boardChatRoutes(db, { deploymentMode: opts.deploymentMode }));
   api.use(approvalRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(secretRoutes(db));
@@ -744,6 +766,13 @@ export async function createApp(
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       root: uiRoot,
+      // Concurrent acceptance servers must not replace a live server's optimizer files.
+      cacheDir: resolveViteCacheDir({
+        instanceRoot: resolvePaperclipInstanceRoot(),
+        uiRoot,
+        bindHost: opts.bindHost,
+        serverPort: opts.serverPort,
+      }),
       appType: "custom",
       server: {
         // Listener binding and browser HMR hostname are deliberately separate:
@@ -939,6 +968,7 @@ export async function createApp(
     if (appServicesShutdown) return appServicesShutdown;
     appServicesShutdown = (async () => {
       disableFeedbackExportFlushes();
+      await conversationGateway?.controller.close();
       if (importTransferSweepTimer) {
         clearInterval(importTransferSweepTimer);
         importTransferSweepTimer = null;
@@ -958,6 +988,7 @@ export async function createApp(
     return appServicesShutdown;
   };
   app.locals.paperclipShutdown = shutdownAppServices;
+  conversationGateway?.controller.start();
 
   // The `exit` event is synchronous. It cannot await the teardown, so it runs
   // the best-effort cleanup and drops the returned promise. The orderly signal

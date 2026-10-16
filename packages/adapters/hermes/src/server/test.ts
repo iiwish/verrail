@@ -12,6 +12,7 @@ import type {
 } from "@paperclipai/adapter-utils";
 
 import { execFile } from "node:child_process";
+import { sanitizeControlPlaneEnv } from "@paperclipai/adapter-utils/control-plane-env";
 import { readFileSync } from "node:fs";
 import { promisify } from "node:util";
 
@@ -34,7 +35,7 @@ async function checkCliInstalled(
 ): Promise<AdapterEnvironmentCheck | null> {
   try {
     // Try to run the command to see if it exists
-    await execFileAsync(command, ["--version"], { timeout: 10_000 });
+    await execFileAsync(command, ["--version"], { timeout: 10_000, env: sanitizeControlPlaneEnv(process.env) });
     return null; // OK — it ran successfully
   } catch (err: unknown) {
     const e = err as NodeJS.ErrnoException;
@@ -57,6 +58,7 @@ async function checkCliVersion(
 ): Promise<AdapterEnvironmentCheck | null> {
   try {
     const { stdout } = await execFileAsync(command, ["--version"], {
+      env: sanitizeControlPlaneEnv(process.env),
       timeout: 10_000,
     });
     const version = stdout.trim();
@@ -86,6 +88,7 @@ async function checkCliVersion(
 async function checkPython(): Promise<AdapterEnvironmentCheck | null> {
   try {
     const { stdout } = await execFileAsync("python3", ["--version"], {
+      env: sanitizeControlPlaneEnv(process.env),
       timeout: 5_000,
     });
     const version = stdout.trim();

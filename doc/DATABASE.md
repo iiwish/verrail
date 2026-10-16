@@ -214,6 +214,12 @@ Database backups do not include non-database instance files such as local-disk
 uploads, workspace files, or the local encrypted secrets master key. Back those paths
 up separately when you need full instance disaster recovery.
 
+Transformed JavaScript backups preserve table CHECK constraint definitions,
+including names, `NO INHERIT` and `NOT VALID` state. Restore adds these constraints
+after data loading, retaining existing rows covered by an unvalidated constraint
+while enforcing it on subsequent writes. Validated constraints reject a restore
+whose transformed rows violate the original check.
+
 ## Secret storage
 
 Paperclip stores secret metadata and versions in:

@@ -1,0 +1,41 @@
+{
+  "id": "T017-A001",
+  "target_id": "g2-7-production-closure",
+  "task_id": "T017",
+  "agent": "codex",
+  "runner": "local_direct_execute",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "output_commit": null,
+  "branch": "codex/g2-7-production-closure",
+  "changed_files": [
+    "services/domain-api/internal/target/agent_lifecycle_store.go",
+    "services/domain-api/internal/target/agent_lifecycle_test.go"
+  ],
+  "commands": [
+    {
+      "command": "focused Go integration test before fix",
+      "status": "failed_as_expected",
+      "summary": "resume returned nil error for an inconclusive/not_run EvaluationRun."
+    },
+    {
+      "command": "focused resume and retired-deployment integration tests after fix",
+      "status": "passed"
+    },
+    {
+      "command": "pnpm test:domain-api",
+      "status": "passed"
+    },
+    {
+      "command": "gofmt and git diff --check",
+      "status": "passed"
+    }
+  ],
+  "logs": [
+    ".verrail/targets/g2-7-production-closure/runs/T017-A001/logs/tdd.md",
+    ".verrail/targets/g2-7-production-closure/runs/T017-A001/logs/review.md"
+  ],
+  "errors": [],
+  "summary": "Deployment resume now enforces the existing passing quality and passing safety evaluation gate without side effects on rejection."
+}

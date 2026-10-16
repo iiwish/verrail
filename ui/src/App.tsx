@@ -104,8 +104,13 @@ import { VerrailHome } from "./pages/VerrailHome";
 import { VerrailChat } from "./pages/VerrailChat";
 import { Targets } from "./pages/Targets";
 import { Collections } from "./pages/Collections";
-import { TargetWorkbench } from "./pages/TargetWorkbench";
-import { VerrailAgents } from "./pages/VerrailAgents";
+const LazyTargetWorkbench = lazy(() =>
+  import("./pages/TargetWorkbench").then((module) => ({ default: module.TargetWorkbench })),
+);
+
+function TargetWorkbench() {
+  return <Suspense fallback={<VerrailLoading />}><LazyTargetWorkbench /></Suspense>;
+}
 
 const CompanyExport = lazy(() =>
   import("./pages/CompanyExport").then((module) => ({ default: module.CompanyExport })),
@@ -125,7 +130,8 @@ function boardRoutes() {
         <Route path="targets/:targetId" element={<TargetOverviewRedirect />} />
         <Route path="targets/:targetId/:tab" element={<TargetWorkbench />} />
         <Route path="targets/:targetId/revisions/:targetRevisionId" element={<TargetWorkbench />} />
-        <Route path="agents" element={<VerrailAgents />} />
+        <Route path="agents" element={<Agents />} />
+        <Route path="agents/lifecycle" element={<Navigate to="/agents" replace />} />
         <Route path="projects/:projectId/targets" element={<Navigate to="/collections" replace />} />
         <Route path="projects/:projectId/legacy-work" element={<ProjectDetail />} />
         <Route path="infrastructure" element={<Navigate to="/infrastructure/secrets" replace />} />
@@ -261,7 +267,6 @@ function boardRoutes() {
       <Route path="settings/*" element={<LegacySettingsRedirect />} />
       <Route path="plugins/:pluginId" element={<PluginPage />} />
       <Route path="org" element={<OrgChart />} />
-      <Route path="agents" element={<Navigate to="/agents/definitions" replace />} />
       <Route path="agents/definitions" element={<Agents />} />
       <Route path="agents/deployments" element={<AgentDeployments />} />
       {AGENT_FILTER_TABS.map((tab) => (
@@ -727,6 +732,7 @@ export function App() {
           <Route path="settings" element={<LegacySettingsRedirect />} />
           <Route path="settings/*" element={<LegacySettingsRedirect />} />
           <Route path="agents" element={<UnprefixedBoardRedirect />} />
+          <Route path="agents/lifecycle" element={<UnprefixedBoardRedirect />} />
           <Route path="agents/definitions" element={<UnprefixedBoardRedirect />} />
           <Route path="agents/deployments" element={<UnprefixedBoardRedirect />} />
           {AGENT_FILTER_TABS.map((tab) => (

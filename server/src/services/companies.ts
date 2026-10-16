@@ -498,6 +498,8 @@ export function companyService(db: Db) {
 
     remove: (id: string) =>
       db.transaction(async (tx) => {
+        // Match skill persistence without changing other writers' parent/child lock order.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended('paperclip:company-skills-lifecycle:' || ${id}::uuid::text, 0))`);
         // Delete from child tables in dependency order
         const companyRunIds = await tx
           .select({ id: heartbeatRuns.id })

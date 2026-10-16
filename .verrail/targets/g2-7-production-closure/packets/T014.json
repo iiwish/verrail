@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T014",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T014",
+  "status": "accepted_for_dependency_progression",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T15:15:38Z",
+  "work_unit": {
+    "title": "让受治理的 GitHub PR 携带完整、审批绑定的正文",
+    "goal": "在创建真实 Verrail PR 前，把正文纳入不可变 ActionRequest、参数哈希和 GitHub effect，并保留稳定 provider marker。",
+    "requirements": ["AC-07", "AC-08", "AC-11"],
+    "depends_on": ["T006", "T007"],
+    "blocks": ["T010"]
+  },
+  "reason": "T010 发现当前 Connector 只向 GitHub 写入 marker，无法满足仓库强制 PR 模板。按照 T010 stop condition，先在独立修复任务中关闭该缺口。",
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "allowed_files": [
+      "packages/shared/src/types/connector.ts",
+      "packages/shared/src/validators/connector.ts",
+      "packages/shared/src/validators/connector.test.ts",
+      "packages/db/src/schema/verrail_connector.ts",
+      "services/domain-api/internal/target/connector.go",
+      "services/domain-api/internal/target/connector_test.go",
+      "server/src/services/target-read-model.ts",
+      "server/src/__tests__/target-read-model.test.ts",
+      "docs/github-connector.md",
+      ".verrail/targets/g2-7-production-closure/**"
+    ],
+    "rules": [
+      "The body must be included in the parameter hash so approval cannot be reused after body changes.",
+      "The stable provider marker must be appended exactly once and remain discoverable during reconciliation.",
+      "Existing callers that omit a body must remain compatible."
+    ]
+  },
+  "validation_loop": {
+    "commands": [
+      "pnpm --filter @paperclipai/shared exec vitest run src/validators/connector.test.ts",
+      "go test ./internal/target",
+      "pnpm --filter @paperclipai/server exec vitest run src/__tests__/target-read-model.test.ts",
+      "pnpm -r typecheck",
+      "git diff --check"
+    ],
+    "retry_budget": 3
+  },
+  "evidence_contract": {
+    "run_id": "T014-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T014-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T014-A001/evidence.json"
+  }
+}

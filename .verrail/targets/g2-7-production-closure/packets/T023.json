@@ -1,0 +1,16 @@
+{
+  "packet_id": "EP-G2.7-T023",
+  "task_id": "T023",
+  "target_id": "g2-7-production-closure",
+  "status": "accepted_for_dependency_progression",
+  "mode": "direct_execute",
+  "authority": "user confirmed recommended long-connection integration and labeled test direct messages on 2026-09-05; intermediate technical gates delegated",
+  "depends_on": ["T022"],
+  "parallel": false,
+  "goal": "Support the selected Feishu app without changing its published transport. Use the official WSClient, normalized configured-connection ingress and existing draft/reply contracts.",
+  "allowed_files": ["packages/plugins/channel-connectors/feishu/**", "packages/plugins/sdk/src/**", "packages/shared/src/types/channel.ts", "packages/shared/src/validators/channel.ts", "packages/shared/src/validators/channel.test.ts", "packages/shared/src/index.ts", "server/src/services/channel-connector-host.ts", "server/src/services/channel-connector-ingress.ts", "server/src/services/plugin-host-services.ts", "server/src/__tests__/*channel*.test.ts", "pnpm-lock.yaml", "docs/architecture.md", ".verrail/targets/g2-7-production-closure/**"],
+  "design": ["The worker owns Feishu credentials, TLS WebSocket transport, normalization and reconnect/shutdown.", "A webhooks.receive-capability-gated worker-to-host channel ingress accepts only a declared connector and matching ready-plugin workspace configuration with transport=long_connection; no new public endpoint.", "Only configured authorized direct-chat users are ingested by the long-connection path. Replayed provider events converge through existing host idempotency.", "Resolve secrets in scoped configuration or reply calls; background ingress rechecks the authoritative connection configuration and never passes credentials.", "Configuration change stops old sessions and prevents stale callbacks. SDK errors are replaced by fixed diagnostics without request objects or credentials.", "No fake callback signatures or challenge evidence are generated for a WebSocket delivery."],
+  "tdd_plan": ["RED: host ingress rejects undeclared/wrong-workspace/wrong-transport/stale-connection events and normalizer/connection lifecycle cases fail without implementation.", "GREEN: add the smallest shared host ingress and scoped SDK worker lifecycle.", "Verify focused tests, impacted typechecks/builds, then configure and exercise real direct chat through product UI."],
+  "validation": ["Feishu connector tests and build", "SDK host-client and worker-RPC tests/typecheck", "channel host and ingress tests", "server typecheck", "git diff --check", "real Feishu direct-chat provider IDs without secrets"],
+  "stop_conditions": ["An application permission, public exposure or published transport change becomes necessary.", "Secrets or raw authenticated provider request objects appear in durable evidence or logs.", "Provider ingress requires bypassing workspace configuration, identity mapping or explicit Target draft confirmation."]
+}

@@ -1,0 +1,42 @@
+{
+  "id": "run-002",
+  "target_id": "g2-0-stabilize-g1-baseline",
+  "agent": "independent-reviewer",
+  "runner": "historical_local_execution",
+  "model": "unknown",
+  "status": "completed_reconstructed_from_existing_evidence",
+  "retrospective": true,
+  "reconstructed_at": "2026-09-04T03:34:10Z",
+  "base_commit": "b307b961445632a79acf712600ff1b1736a87112",
+  "output_commit": null,
+  "landed_commit": "c4d2ae2fb25fdf60e72671e45706f5a58799fe03",
+  "branch": "codex/g1-domain-closure",
+  "changed_files": [
+    "packages/db/src/migrations/0234_good_nighthawk.sql",
+    "packages/db/src/migrations/0235_public_landau.sql",
+    "packages/db/src/migrations/0238_happy_human_cannonball.sql",
+    "packages/db/src/migrations/meta/_journal.json"
+  ],
+  "commands": [
+    {
+      "command": "migration 0234 expand/contract verification",
+      "status": "passed_as_recorded",
+      "summary": "Existing timeline and evidence record retained project_id compatibility storage and verified a 237-migration throwaway PostgreSQL path."
+    },
+    {
+      "command": "migration 0238 seed reconciliation",
+      "status": "passed_as_recorded",
+      "summary": "Existing timeline and evidence record a reconcilable migration and passing worktree seed check."
+    }
+  ],
+  "logs": [],
+  "errors": [],
+  "reconstruction_sources": [
+    ".verrail/targets/g2-0-stabilize-g1-baseline/runs/run-002/evidence.json",
+    ".verrail/targets/g2-0-stabilize-g1-baseline/timeline.jsonl",
+    ".verrail/targets/g2-0-stabilize-g1-baseline/reviews/independent-review.md",
+    "git commit c4d2ae2fb25fdf60e72671e45706f5a58799fe03"
+  ],
+  "uncertainty": "The exact pre-merge output commit and original model were not recorded; they remain unknown rather than inferred.",
+  "summary": "Retrospective receipt for the recorded expand/contract and migration-reconciliation fix run."
+}

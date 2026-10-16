@@ -1,0 +1,14 @@
+{
+  "packet_id": "EP-G2.7-T024",
+  "task_id": "T024",
+  "status": "accepted_for_dependency_progression",
+  "mode": "direct_execute",
+  "authority": "Delegated intermediate technical gates; real Feishu acceptance exposed this continuation defect.",
+  "depends_on": ["T023"],
+  "parallel": false,
+  "goal": "Continue the existing versioned channel draft from Web Chat through review and explicit confirmation, without creating replacement messages or drafts.",
+  "allowed_files": ["ui/src/api/conversations.ts", "ui/src/context/DialogContext.tsx", "ui/src/components/NewTargetDialog.tsx", "ui/src/components/NewTargetDialog.test.tsx", "ui/src/pages/VerrailChat.tsx", "ui/src/pages/VerrailChat.test.tsx", "ui/src/i18n/locales/en.json", "ui/src/i18n/locales/zh-CN.json", "ui/src/lib/queryKeys.ts", ".verrail/targets/g2-7-production-closure/**"],
+  "constraints": ["Reuse existing workspace-scoped list/update/confirm draft APIs and expectedRevisionNumber optimistic locking.", "Preserve draft, source message and revision identity; never silently create another draft on update failure.", "Keep confirmation separate from draft editing; no automatic Target creation, execution or human governance decisions.", "Follow DESIGN.md tokens and existing dialog/form patterns; no backend contract or unrelated UI redesign."],
+  "validation": ["RED/GREEN existing draft resume tests", "UI typecheck", "token gates", "live UI resume and original draft identity", "git diff --check"],
+  "stop_conditions": ["A backend authority bypass or schema migration is required.", "Confirmation would imply final human acceptance."]
+}

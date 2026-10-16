@@ -34,6 +34,7 @@ func (store *PostgresOutboxStore) Claim(ctx context.Context, options ClaimOption
 				(event.status = 'pending' and event.available_at <= clock_timestamp())
 				or (event.status = 'delivering' and event.lease_expires_at <= clock_timestamp())
 			)
+			and ($3::text = '' or event.workspace_id::text = $3::text)
 			and not exists (
 				select 1
 				from verrail_outbox_events predecessor
@@ -59,8 +60,15 @@ func (store *PostgresOutboxStore) Claim(ctx context.Context, options ClaimOption
 		from candidate
 		where event.id = candidate.id
 		returning event.id, event.workspace_id, event.aggregate_type, event.aggregate_id,
-			event.event_type, event.payload, event.attempt_count, event.claim_token, event.created_at
-	`, claimToken, options.LeaseDuration.Seconds()).Scan(
+			event.event_type, event.payload, event.attempt_count, event.claim_token, event.created_at,
+			(event.aggregate_type='run' and exists (
+				select 1 from verrail_execution_command_receipts receipt
+				where receipt.workspace_id=event.workspace_id and receipt.principal_type='user'
+				and receipt.command_type='run_outbox.retry.v1'
+				and receipt.response->>'eventId'=event.id::text
+				and receipt.response->>'runId'=event.aggregate_id::text
+			))
+	`, claimToken, options.LeaseDuration.Seconds(), options.WorkspaceID).Scan(
 		&event.ID,
 		&event.WorkspaceID,
 		&event.AggregateType,
@@ -70,6 +78,7 @@ func (store *PostgresOutboxStore) Claim(ctx context.Context, options ClaimOption
 		&event.AttemptCount,
 		&event.ClaimToken,
 		&event.CreatedAt,
+		&event.RecoveryRequested,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil

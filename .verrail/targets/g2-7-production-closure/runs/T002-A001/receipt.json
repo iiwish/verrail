@@ -1,0 +1,77 @@
+{
+  "id": "T002-A001",
+  "target_id": "g2-7-production-closure",
+  "task_id": "T002",
+  "agent": "codex",
+  "runner": "local_direct_execute",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "output_commit": null,
+  "branch": "codex/g2-7-production-closure",
+  "changed_files": [
+    ".verrail/targets/g1-domain-closure/target.json",
+    ".verrail/targets/g1-domain-closure/timeline.jsonl",
+    ".verrail/targets/g2-0-stabilize-g1-baseline/target.json",
+    ".verrail/targets/g2-0-stabilize-g1-baseline/timeline.jsonl",
+    ".verrail/targets/g2-0-stabilize-g1-baseline/runs/run-002/receipt.json",
+    ".verrail/targets/g2-1-versioned-agent-lifecycle/target.json",
+    ".verrail/targets/g2-1-versioned-agent-lifecycle/timeline.jsonl",
+    ".verrail/targets/g2-2-recoverable-run-execution/target.json",
+    ".verrail/targets/g2-2-recoverable-run-execution/timeline.jsonl",
+    ".verrail/targets/g2-3-artifact-evidence-contracts/target.json",
+    ".verrail/targets/g2-3-artifact-evidence-contracts/timeline.jsonl",
+    ".verrail/targets/g2-3-artifact-evidence-contracts/runs/run-001/receipt.json",
+    ".verrail/targets/g2-4-submission-acceptance/target.json",
+    ".verrail/targets/g2-4-submission-acceptance/timeline.jsonl",
+    ".verrail/targets/g2-4-submission-acceptance/runs/run-001/receipt.json",
+    ".verrail/targets/g2-5-github-connector-ci-evidence/target.json",
+    ".verrail/targets/g2-5-github-connector-ci-evidence/timeline.jsonl",
+    ".verrail/targets/g2-5-github-connector-ci-evidence/g25-evidence-tab.md",
+    ".verrail/targets/g2-5-github-connector-ci-evidence/runs/run-001/receipt.json",
+    ".verrail/targets/g2-6-loop-verification/target.json",
+    ".verrail/targets/g2-6-loop-verification/timeline.jsonl",
+    ".verrail/targets/g2-6-loop-verification/runs/run-001/receipt.json",
+    "scripts/run-vitest-stable.mjs",
+    "scripts/__tests__/run-vitest-stable-shard.test.mjs",
+    "packages/adapters/opencode-local/src/server/execute.remote.test.ts",
+    ".verrail/targets/g2-7-production-closure/runs/T002-A001/receipt.json",
+    ".verrail/targets/g2-7-production-closure/runs/T002-A001/evidence.json",
+    ".verrail/targets/g2-7-production-closure/runs/T002-A001/logs/reconciliation.md",
+    ".verrail/targets/g2-7-production-closure/runs/T002-A001/logs/validation.md",
+    ".verrail/targets/g2-7-production-closure/timeline.jsonl"
+  ],
+  "commands": [
+    {
+      "command": "heartbeat stale-queue focused test repeated four times",
+      "status": "passed",
+      "summary": "24/24 passed on every run; heartbeat source unchanged."
+    },
+    {
+      "command": "node --test scripts/__tests__/run-vitest-stable-shard.test.mjs",
+      "status": "passed",
+      "summary": "RED exposed cleanup leak; GREEN passed 14/14."
+    },
+    {
+      "command": "pnpm test:run plus stable lane/project isolation",
+      "status": "passed_with_documented_environment_isolation",
+      "summary": "Every selected suite/project passed after generated disk and detached PostgreSQL IPC cleanup; no assertion or timeout was relaxed."
+    },
+    {
+      "command": "pnpm -r typecheck",
+      "status": "passed",
+      "summary": "All 34 selected workspace projects passed."
+    },
+    {
+      "command": "JSON/JSONL parse and git diff --check",
+      "status": "passed",
+      "summary": "All delivery records parse and the diff has no whitespace error."
+    }
+  ],
+  "logs": [
+    ".verrail/targets/g2-7-production-closure/runs/T002-A001/logs/reconciliation.md",
+    ".verrail/targets/g2-7-production-closure/runs/T002-A001/logs/validation.md"
+  ],
+  "errors": [],
+  "summary": "Reconciled historical G1/G2 delivery truth without fabricating decisions, fixed two test-isolation leaks with RED/GREEN proof, and established an executable full-suite baseline."
+}

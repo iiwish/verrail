@@ -1,0 +1,36 @@
+{
+  "id": "T014-A001",
+  "target_id": "g2-7-production-closure",
+  "task_id": "T014",
+  "agent": "codex",
+  "runner": "local_direct_execute",
+  "model": "gpt-5.6-sol",
+  "status": "completed",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "output_commit": null,
+  "branch": "codex/g2-7-production-closure",
+  "changed_files": [
+    "packages/shared/src/types/connector.ts",
+    "packages/shared/src/validators/connector.ts",
+    "packages/shared/src/validators/connector.test.ts",
+    "packages/db/src/schema/verrail_connector.ts",
+    "services/domain-api/internal/target/connector.go",
+    "services/domain-api/internal/target/connector_test.go",
+    "server/src/services/target-read-model.ts",
+    "server/src/__tests__/target-read-model.test.ts",
+    "docs/github-connector.md"
+  ],
+  "commands": [
+    {"command":"pnpm --filter @paperclipai/shared exec vitest run src/validators/connector.test.ts","status":"passed","summary":"8 tests passed."},
+    {"command":"go test ./internal/target ./internal/httpapi","status":"passed","summary":"Target and HTTP API packages passed."},
+    {"command":"pnpm --filter @paperclipai/server exec vitest run src/__tests__/target-read-model.test.ts","status":"passed","summary":"11 tests passed."},
+    {"command":"pnpm -r typecheck","status":"passed","summary":"35 of 36 workspace projects passed."},
+    {"command":"git diff --check","status":"passed","summary":"Whitespace gate passed."}
+  ],
+  "logs": [
+    ".verrail/targets/g2-7-production-closure/runs/T014-A001/logs/tdd.md",
+    ".verrail/targets/g2-7-production-closure/runs/T014-A001/logs/review.md"
+  ],
+  "errors": [],
+  "summary": "The complete pull-request body is part of the immutable, approval-bound parameters and the GitHub effect appends exactly one reconciliation marker."
+}

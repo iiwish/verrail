@@ -1,0 +1,16 @@
+# syntax=docker/dockerfile:1
+ARG TEMPORAL_SERVER_IMAGE
+ARG TEMPORAL_TOOLS_IMAGE
+ARG RUNTIME_IMAGE
+FROM ${TEMPORAL_SERVER_IMAGE} AS server
+FROM ${TEMPORAL_TOOLS_IMAGE} AS tools
+FROM ${RUNTIME_IMAGE}
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates python3 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=server /usr/local/bin/temporal-server /usr/local/bin/
+COPY --from=tools /usr/local/bin/temporal /usr/local/bin/temporal-sql-tool /usr/local/bin/
+COPY docker/maco/runtime_env.py docker/maco/temporal_runtime.py /usr/local/lib/verrail/
+USER 1000:1000
+ENV HOME=/tmp
+ENTRYPOINT ["python3", "/usr/local/lib/verrail/temporal_runtime.py"]
+CMD ["server"]

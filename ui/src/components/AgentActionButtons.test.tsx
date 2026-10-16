@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
-import type { ComponentProps, ReactNode } from "react";
-import { flushSync } from "react-dom";
+import { act, type ComponentProps, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Agent } from "@paperclipai/shared";
@@ -46,14 +45,6 @@ vi.mock("../api/agents", () => ({
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
-
-async function act(callback: () => void | Promise<void>) {
-  let result: void | Promise<void> = undefined;
-  flushSync(() => {
-    result = callback();
-  });
-  await result;
-}
 
 async function flushReact() {
   await act(async () => {
@@ -125,17 +116,19 @@ describe("AgentActionButtons", () => {
     vi.clearAllMocks();
   });
 
-  function render(agent: Agent, props: Partial<ComponentProps<typeof AgentActionButtons>> = {}) {
+  async function render(agent: Agent, props: Partial<ComponentProps<typeof AgentActionButtons>> = {}) {
     root ??= createRoot(container);
-    root.render(
-      <QueryClientProvider client={queryClient}>
-        <AgentActionButtons agent={agent} companyId="company-1" runLabel="Run Heartbeat" {...props} />
-      </QueryClientProvider>,
-    );
+    await act(async () => {
+      root!.render(
+        <QueryClientProvider client={queryClient}>
+          <AgentActionButtons agent={agent} companyId="company-1" runLabel="Run Heartbeat" {...props} />
+        </QueryClientProvider>,
+      );
+    });
   }
 
   it("replaces the pause slot with Clear error for error agents", async () => {
-    render(makeAgent({ status: "error" }));
+    await render(makeAgent({ status: "error" }));
     await flushReact();
 
     expect(container.textContent).toContain("Clear error");
@@ -151,7 +144,7 @@ describe("AgentActionButtons", () => {
   });
 
   it("calls clearError and refreshes agent-related queries", async () => {
-    render(makeAgent({ status: "error" }));
+    await render(makeAgent({ status: "error" }));
     await flushReact();
 
     await act(async () => {
@@ -170,16 +163,65 @@ describe("AgentActionButtons", () => {
   });
 
   it("keeps the normal pause action for non-error agents", async () => {
-    render(makeAgent({ status: "active" }));
+    await render(makeAgent({ status: "active" }));
     await flushReact();
 
     expect(container.textContent).toContain("Pause");
     expect(container.textContent).not.toContain("Clear error");
   });
 
+  it("moves maintenance into overflow without bypassing pause confirmation", async () => {
+    await render(makeAgent(), { maintenanceInMenu: true, hideWorkActions: true, showStatus: false,
+      pauseConfirm: { title: "Pause Director?", description: "Chat will be unavailable." } });
+    expect(container.textContent).not.toContain("Pause");
+    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="Open actions for Alpha Agent"]')!.click(); });
+    await flushReact();
+    const pause = [...document.querySelectorAll("button")].find((button) => button.textContent === "Pause")!;
+    expect(pause).toBeTruthy();
+    await act(async () => pause.click()); await flushReact();
+    expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain("Pause Director?");
+    expect(mockAgentsApi.pause).not.toHaveBeenCalled();
+  });
+
+  it.each([ ["paused", "Resume", "resume"], ["error", "Clear error", "clearError"] ] as const)("keeps %s recovery available in overflow", async (status, label, method) => {
+    await render(makeAgent({ status }), { maintenanceInMenu: true, hideWorkActions: true });
+    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="Open actions for Alpha Agent"]')!.click(); });
+    await flushReact();
+    const action = [...document.querySelectorAll("button")].find((button) => button.textContent === label)!;
+    await act(async () => action.click()); await flushReact();
+    expect(mockAgentsApi[method]).toHaveBeenCalledWith("agent-1", "company-1");
+  });
+
+  it("hides execution actions for the Director and confirms before pausing", async () => {
+    await render(makeAgent(), {
+      hideWorkActions: true,
+      hideSessionActions: true,
+      hideTerminate: true,
+      pauseConfirm: { title: "Pause Director?", description: "Chat will be unavailable." },
+    });
+    expect(container.textContent).not.toContain("Run Heartbeat");
+    expect(container.textContent).not.toContain("Assign Task");
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Open actions for Alpha Agent"]')?.click();
+    });
+    expect(document.body.textContent).not.toContain("Reset Sessions");
+    expect(document.body.textContent).not.toContain("Duplicate Agent");
+    expect(document.body.textContent).not.toContain("Terminate");
+    await act(async () => {
+      Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Pause")?.click();
+    });
+    expect(mockAgentsApi.pause).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Chat will be unavailable.");
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('[role="alertdialog"] button:last-child')?.click();
+    });
+    await flushReact();
+    expect(mockAgentsApi.pause).toHaveBeenCalledWith("agent-1", "company-1");
+  });
+
   it("calls the terminate success handler after terminating an agent", async () => {
     const onTerminateSuccess = vi.fn();
-    render(makeAgent(), { onTerminateSuccess });
+    await render(makeAgent(), { onTerminateSuccess });
     await flushReact();
 
     await act(async () => {
@@ -208,7 +250,7 @@ describe("AgentActionButtons", () => {
 
   it("does not terminate when navigation away from a dirty detail page is rejected", async () => {
     const onBeforeNavigate = vi.fn().mockReturnValue(false);
-    render(makeAgent(), { onBeforeNavigate, onTerminateSuccess: vi.fn() });
+    await render(makeAgent(), { onBeforeNavigate, onTerminateSuccess: vi.fn() });
     await flushReact();
 
     await act(async () => {
@@ -235,7 +277,7 @@ describe("AgentActionButtons", () => {
     const onBeforeNavigate = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
     const onTerminateSuccess = vi.fn();
     const agent = makeAgent();
-    render(agent, {
+    await render(agent, {
       hasPendingNavigationChanges: false,
       onBeforeNavigate,
       onTerminateSuccess,
@@ -253,7 +295,7 @@ describe("AgentActionButtons", () => {
     });
     await flushReact();
 
-    render(agent, {
+    await render(agent, {
       hasPendingNavigationChanges: true,
       onBeforeNavigate,
       onTerminateSuccess,

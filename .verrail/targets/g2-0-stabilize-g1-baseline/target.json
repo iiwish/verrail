@@ -2,6 +2,11 @@
   "id": "g2-0-stabilize-g1-baseline",
   "runtime_target_id": "d637ae28-74c5-4e77-9d06-d433bbdda14c",
   "runtime_target_revision_id": "71870e8f-6167-49ef-afb4-92fbc1e04a80",
+  "runtime_workspace_id": "74170eed-f251-4ff1-a9b7-6ebe49e1cb0d",
+  "current_runtime_observation": {
+    "status": "runtime_unavailable_in_current_database",
+    "observed_at": "2026-09-04T03:22:33Z"
+  },
   "title": "G2.0 - Stabilize G1 delivery baseline",
   "intent": "Make the completed G1 domain skeleton a trustworthy base for G2 implementation.",
   "scope": "Close or explicitly adjudicate repository verification failures, verify the G1 migration path, freeze rollback and compatibility boundaries, and produce a maintainer-grade review package.",
@@ -20,5 +25,5 @@
   ],
   "status": "needs_review",
   "created_at": "2026-09-01T10:10:17Z",
-  "updated_at": "2026-09-01T12:56:59Z"
+  "updated_at": "2026-09-04T03:34:10Z"
 }

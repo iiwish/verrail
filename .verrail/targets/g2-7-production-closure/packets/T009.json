@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T009",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T009",
+  "status": "accepted_for_dependency_progression",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T09:18:00Z",
+  "governance_inputs": [
+    ".verrail/targets/g2-7-production-closure/spec.md",
+    ".verrail/targets/g2-7-production-closure/plan.md",
+    ".verrail/targets/g2-7-production-closure/tasks.md",
+    ".verrail/targets/g2-7-production-closure/runs/T007-A001/evidence.json",
+    "docs/adrs/0005-conversation-first-target-creation.md",
+    "docs/operational-ontology.md"
+  ],
+  "approval_gates": {
+    "enterprise_channel": "feishu",
+    "intermediate_plan_authority": "delegated_to_codex",
+    "dependency_T007": "accepted_for_dependency_progression"
+  },
+  "work_unit": {
+    "title": "实现飞书 Channel Connector 纵向切片",
+    "goal": "通过版本化 Plugin SDK Channel Connector 合同接入飞书安全 webhook、群聊和私聊 Conversation 绑定、幂等消息、规范化回复，以及仅由已映射授权真人触发的显式 Target Draft。",
+    "epic": "E004",
+    "requirements": ["AC-02", "AC-09"],
+    "depends_on": ["T007"],
+    "blocks": ["T008", "T010"],
+    "parallel": false
+  },
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "allowed_files": [
+      "packages/shared/src/types/channel.ts",
+      "packages/shared/src/validators/channel.ts",
+      "packages/shared/src/types/plugin.ts",
+      "packages/shared/src/validators/plugin.ts",
+      "packages/shared/src/index.ts",
+      "packages/shared/src/validators/plugin.test.ts",
+      "packages/plugins/sdk/src/**",
+      "packages/plugins/sdk/tests/**",
+      "packages/plugins/channel-connectors/feishu/**",
+      "packages/db/src/schema/verrail_channel.ts",
+      "packages/db/src/schema/index.ts",
+      "packages/db/src/migrations/**",
+      "server/src/services/channel-connector-host.ts",
+      "server/src/services/conversation-target-drafts.ts",
+      "server/src/routes/plugins.ts",
+      "server/src/app.ts",
+      "server/src/__tests__/channel-connector-host.test.ts",
+      "server/src/__tests__/plugin-channel-webhook.test.ts",
+      "pnpm-workspace.yaml",
+      "pnpm-lock.yaml",
+      ".verrail/targets/g2-7-production-closure/runs/T009-A001/**",
+      ".verrail/targets/g2-7-production-closure/timeline.jsonl"
+    ],
+    "authority_rules": [
+      "Signature, encryption, verification-token or app-id failure rejects before any durable Conversation fact.",
+      "The Host binds one Workspace, plugin connection and external conversation; provider payload cannot choose another scope after verification.",
+      "Provider event id is durably unique per Workspace, connector and connection, including concurrent delivery.",
+      "Ordinary messages only append ConversationMessage. Draft creation requires an explicit normalized intent and a provider-user to local-user authorization mapping.",
+      "Provider identifiers and diagnostics stay in adapter metadata and never become Target title, goal or acceptance semantics."
+    ]
+  },
+  "tdd_plan": {
+    "required": true,
+    "red": "Add challenge, invalid signature/encryption/token/app, replay, concurrent duplicate, group/direct binding, ordinary message, explicit draft and unauthorized-provider-user tests.",
+    "green": "Add the minimum V1 contract, Feishu adapter, worker RPC return path, durable event inbox and Host transaction.",
+    "refactor": "Keep provider parsing and reply transport in the plugin while the Host consumes only normalized V1 events."
+  },
+  "validation_loop": {
+    "commands": [
+      "focused shared/plugin/server Channel Connector tests",
+      "pnpm --filter @verrail/channel-connector-feishu test",
+      "pnpm --filter @verrail/channel-connector-feishu typecheck",
+      "pnpm -r typecheck",
+      "pnpm test:run",
+      "pnpm check:token-gates",
+      "pnpm build",
+      "git diff --check"
+    ],
+    "retry_budget": 5
+  },
+  "evidence_contract": {
+    "run_id": "T009-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T009-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T009-A001/evidence.json",
+    "logs": ".verrail/targets/g2-7-production-closure/runs/T009-A001/logs/",
+    "required_items": [
+      "webhook security matrix",
+      "event idempotency and scope proof",
+      "group/direct Conversation binding facts",
+      "ordinary-message versus explicit-draft proof",
+      "sandbox delivery and reply ids or named T010 prerequisite"
+    ]
+  },
+  "stop_conditions": [
+    "A provider callback can write before cryptographic and connection binding checks pass.",
+    "Draft confirmation relies on an unmapped provider identity or a fabricated local user.",
+    "A replay can create a second ConversationMessage or Draft.",
+    "The plugin must leak an app secret, verification token or encryption key into durable facts."
+  ]
+}

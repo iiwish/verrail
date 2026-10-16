@@ -37,11 +37,14 @@ export {
   verrailConversations,
   verrailConversationMessages,
   verrailConversationContextBindings,
+  verrailConversationContextChanges,
   verrailProviderConversationBindings,
   verrailTargetCreationDrafts,
   verrailTargetCreationDraftRevisions,
   type VerrailTargetDraftDefinitionRecord,
 } from "./verrail_conversations.js";
+export { verrailChannelEvents, verrailChannelTargetReplies } from "./verrail_channel.js";
+export { verrailConversationInvocations, verrailConversationInvocationEvents } from "./verrail_conversation_invocations.js";
 export {
   verrailWorkGraphs,
   verrailGraphRevisions,
@@ -76,11 +79,14 @@ export {
 } from "./verrail_adjudication.js";
 export {
   verrailIntegrationRuns,
+  verrailIntegrationAttempts,
   verrailActionRequests,
   verrailActionApprovals,
   verrailEffectReceipts,
   verrailGithubRepoBindings,
+  verrailCriterionProofs,
 } from "./verrail_connector.js";
+export { verrailHumanWorkResults } from "./verrail_work_results.js";
 export { projectMemberships } from "./project_memberships.js";
 export { documentMemberships } from "./document_memberships.js";
 export { projectWorkspaces } from "./project_workspaces.js";
@@ -226,3 +232,5 @@ export { pluginDatabaseNamespaces, pluginMigrations } from "./plugin_database.js
 export { pluginJobs, pluginJobRuns } from "./plugin_jobs.js";
 export { pluginWebhookDeliveries } from "./plugin_webhooks.js";
 export { pluginLogs } from "./plugin_logs.js";
+export { verrailRepositoryDispatches } from "./verrail_repository_dispatches.js";
+export { verrailRunSources } from "./verrail_run_sources.js";

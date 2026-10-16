@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { ControlPlaneCredentialEnvError, isControlPlaneCredentialEnvKey } from "@paperclipai/adapter-utils/control-plane-env";
 import path from "node:path";
 
 type PreparedCodexRuntimeConfig = {
@@ -337,7 +338,10 @@ export async function prepareCodexRuntimeConfig(input: {
   env: Record<string, string>;
   codexHome: string | null;
 }): Promise<PreparedCodexRuntimeConfig> {
-  const resolveEnv = (name: string): string | undefined => input.env[name] ?? process.env[name];
+  const resolveEnv = (name: string): string | undefined => {
+    if (isControlPlaneCredentialEnvKey(name)) throw new ControlPlaneCredentialEnvError();
+    return input.env[name] ?? process.env[name];
+  };
   const notes: string[] = [];
   const parsed = parseCodexProvidersConfig(
     input.env.PAPERCLIP_CODEX_PROVIDERS ?? process.env.PAPERCLIP_CODEX_PROVIDERS,

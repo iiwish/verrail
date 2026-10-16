@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, CircleAlert, MessageSquare, RotateCcw, Square, Target } from "lucide-react";
+import { Archive, ArchiveRestore, Bot, Check, CircleAlert, MessageSquare, RotateCcw, Square, Target } from "lucide-react";
 import type { ConversationMessage } from "@paperclipai/shared";
+import { directorTargetProposalSchema } from "@paperclipai/shared";
 import { useNavigate, useParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { ChatComposer, type ChatComposerHandle } from "../components/ChatComposer";
@@ -12,7 +13,11 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useDialogActions } from "../context/DialogContext";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
+import { ConversationTargetContext, ConversationContextChange, FocusCreatedTarget } from "../components/ConversationTargetContext";
+import { ConversationTargetsPanel } from "../components/ConversationTargetsPanel";
 import { useTranslation } from "@/i18n";
+import { invocationQueryKey, useConversationInvocation } from "../hooks/useConversationInvocation";
+import { startDurableConversationInvocation } from "../api/conversation-invocation-request";
 
 const CHAT_MARKDOWN_CLASS =
   "max-w-full overflow-visible [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto";
@@ -61,10 +66,38 @@ function Message({ message }: { message: ConversationMessage }) {
   );
 }
 
+function TargetProposal({ message, applied, disabled }: { message: ConversationMessage; applied: boolean; disabled: boolean }) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const proposal = directorTargetProposalSchema.parse(message.metadata);
+  const mutation = useMutation({
+    mutationFn: () => conversationsApi.confirmTargetProposal(message.workspaceId, message.conversationId, message.id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.conversations.detail(message.workspaceId, message.conversationId) });
+      await queryClient.invalidateQueries({ queryKey: ["targets"] });
+    },
+  });
+  return (
+    <article className="space-y-3 rounded-md border border-border p-3 text-sm">
+      <p className="flex items-center gap-2 font-medium"><Target className="h-4 w-4 shrink-0" />{proposal.targetTitle}</p>
+      <p className="text-xs text-muted-foreground">{t(`chat.targetProposal.${proposal.input.operation}`)}</p>
+      {proposal.input.operation === "archive" || proposal.input.operation === "restore" ? <p className="text-sm text-muted-foreground">{t(`chat.targetProposal.${proposal.input.operation}Notice`)}</p> : null}
+      <p className="break-all font-mono text-xs text-muted-foreground">{proposal.input.expectedTargetRevisionId}</p>
+      {(["title", "summary", "goal"] as const).map((key) => proposal.input[key] !== undefined ? (
+        <div key={key}><p className="text-xs font-medium text-muted-foreground">{t(`chat.targetProposal.${key}`)}</p><del className="block whitespace-pre-wrap break-words text-muted-foreground">{proposal.before[key]}</del><ins className="block whitespace-pre-wrap break-words no-underline">{proposal.input[key]}</ins></div>
+      ) : null)}
+      {mutation.isError ? <p role="alert" className="text-destructive">{mutation.error.message}</p> : null}
+      <Button size="sm" variant={proposal.input.operation === "cancel" && !applied && !mutation.isSuccess ? "destructive" : "outline"} disabled={disabled || applied || mutation.isPending || mutation.isSuccess} onClick={() => mutation.mutate()}>
+        {proposal.input.operation === "archive" ? <Archive className="h-4 w-4" /> : proposal.input.operation === "restore" ? <ArchiveRestore className="h-4 w-4" /> : <Check className="h-4 w-4" />}{t(applied || mutation.isSuccess ? "chat.targetProposal.applied" : "chat.targetProposal.confirm")}
+      </Button>
+    </article>
+  );
+}
+
 export function VerrailChat() {
   const { t } = useTranslation();
   const { conversationId: routeConversationId } = useParams<{ conversationId?: string }>();
-  const { selectedCompany, selectedCompanyId } = useCompany();
+  const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { openNewTarget } = useDialogActions();
   const navigate = useNavigate();
@@ -72,11 +105,11 @@ export function VerrailChat() {
   const [createdConversationId, setCreatedConversationId] = useState<string | null>(null);
   const conversationId = routeConversationId ?? createdConversationId;
   const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
-  const [streamingText, setStreamingText] = useState("");
+  const [localSending, setSending] = useState(false);
+  const [localStreamingText, setStreamingText] = useState("");
   const [streamingAssistantName, setStreamingAssistantName] = useState("");
   const [optimisticMessage, setOptimisticMessage] = useState<string | null>(null);
-  const [errorText, setErrorText] = useState("");
+  const [localErrorText, setErrorText] = useState("");
   const [lastSubmitted, setLastSubmitted] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<ChatComposerHandle>(null);
@@ -84,15 +117,28 @@ export function VerrailChat() {
   const requestSequenceRef = useRef(0);
   const internalNavigationIdRef = useRef<string | null>(null);
   const previousRouteConversationIdRef = useRef(routeConversationId);
+  const previousWorkspaceRef = useRef(selectedCompanyId);
+  const runtimeQuery = useQuery({
+    queryKey: ["conversation-runtime", selectedCompanyId],
+    queryFn: () => conversationsApi.runtime(selectedCompanyId!),
+    enabled: Boolean(selectedCompanyId),
+  });
+  const gatewayMode = runtimeQuery.data?.mode === "execution_gateway";
+  const invocation = useConversationInvocation(selectedCompanyId, conversationId, gatewayMode);
+  const sending = localSending || Boolean(invocation.active);
+  const streamingText = gatewayMode ? invocation.active?.output ?? localStreamingText : localStreamingText;
+  const errorText = localErrorText || (runtimeQuery.error || invocation.error || runtimeQuery.data?.mode === "unavailable" || (gatewayMode && invocation.latest?.status === "failed") ? t("chat.unavailable") : gatewayMode && invocation.latest?.status === "canceled" ? t("chat.stopped") : "");
 
   useEffect(() => {
     setBreadcrumbs([{ label: t("nav.chat") }]);
   }, [setBreadcrumbs, t]);
 
   useEffect(() => {
-    if (previousRouteConversationIdRef.current === routeConversationId) return;
+    const workspaceChanged = previousWorkspaceRef.current !== selectedCompanyId;
+    previousWorkspaceRef.current = selectedCompanyId;
+    if (!workspaceChanged && previousRouteConversationIdRef.current === routeConversationId) return;
     previousRouteConversationIdRef.current = routeConversationId;
-    if (routeConversationId && internalNavigationIdRef.current === routeConversationId) {
+    if (!workspaceChanged && routeConversationId && internalNavigationIdRef.current === routeConversationId) {
       internalNavigationIdRef.current = null;
       setCreatedConversationId(null);
       return;
@@ -106,7 +152,7 @@ export function VerrailChat() {
     setStreamingAssistantName("");
     setOptimisticMessage(null);
     setErrorText("");
-  }, [routeConversationId]);
+  }, [routeConversationId, selectedCompanyId]);
 
   useEffect(() => () => abortControllerRef.current?.abort(), []);
 
@@ -116,6 +162,15 @@ export function VerrailChat() {
       : ["conversations", "detail", "disabled"],
     queryFn: () => conversationsApi.get(selectedCompanyId!, conversationId!),
     enabled: Boolean(selectedCompanyId && conversationId),
+    refetchInterval: 5_000,
+  });
+  const draftsQuery = useQuery({
+    queryKey: selectedCompanyId && conversationId
+      ? queryKeys.conversations.drafts(selectedCompanyId, conversationId)
+      : ["conversations", "drafts", "disabled"],
+    queryFn: () => conversationsApi.listTargetDrafts(selectedCompanyId!, conversationId!),
+    enabled: Boolean(selectedCompanyId && conversationId),
+    refetchInterval: 10_000,
   });
 
   const createMutation = useMutation({
@@ -128,7 +183,7 @@ export function VerrailChat() {
 
   const sendMessage = useCallback(async (body: string) => {
     const trimmed = body.trim();
-    if (!trimmed || !selectedCompanyId || sending) return;
+    if (!trimmed || !selectedCompanyId || sending || runtimeQuery.isPending || runtimeQuery.isError || invocation.loading || runtimeQuery.data?.mode === "unavailable") return;
     if (conversationQuery.data?.status === "archived") return;
 
     const requestSequence = requestSequenceRef.current + 1;
@@ -156,6 +211,12 @@ export function VerrailChat() {
         navigate(`/chat/${created.id}`, { replace: true });
       }
 
+      if (gatewayMode) {
+        const result = await startDurableConversationInvocation(selectedCompanyId, targetConversationId, trimmed);
+        await queryClient.cancelQueries({ queryKey: invocationQueryKey(selectedCompanyId, targetConversationId) });
+        queryClient.setQueryData(invocationQueryKey(selectedCompanyId, targetConversationId), [result.invocation]);
+        return;
+      }
       controller = new AbortController();
       abortControllerRef.current = controller;
       const response = await fetch(
@@ -231,6 +292,9 @@ export function VerrailChat() {
           queryClient.invalidateQueries({
             queryKey: queryKeys.conversations.all(selectedCompanyId),
           }),
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.conversations.drafts(selectedCompanyId, targetConversationId),
+          }),
         ]);
       }
       if (requestSequenceRef.current === requestSequence) {
@@ -249,10 +313,15 @@ export function VerrailChat() {
     queryClient,
     selectedCompanyId,
     sending,
+    gatewayMode,
+    runtimeQuery.isPending,
+    runtimeQuery.isError,
+    runtimeQuery.data?.mode,
+    invocation.loading,
     t,
   ]);
 
-  const stopStreaming = () => abortControllerRef.current?.abort();
+  const stopStreaming = () => gatewayMode ? invocation.cancel.mutate() : abortControllerRef.current?.abort();
   const restoreDraft = () => {
     setInput(lastSubmitted);
     setErrorText("");
@@ -261,7 +330,7 @@ export function VerrailChat() {
 
   const conversation = conversationQuery.data;
   const isArchived = conversation?.status === "archived";
-  const hasMessages = Boolean(conversation?.messages.length || optimisticMessage || streamingText);
+  const hasMessages = Boolean(conversation?.messages.length || optimisticMessage || streamingText || sending);
   const showOptimisticMessage = Boolean(
     optimisticMessage
       && !conversation?.messages.some(
@@ -294,42 +363,41 @@ export function VerrailChat() {
 
   return (
     <div className="-m-4 flex h-(--sz-verrail-chat-mobile) min-h-0 flex-col md:-m-6 md:h-(--sz-calc-29)">
-      <header className="flex min-h-14 shrink-0 items-center justify-between gap-4 border-b border-border px-5 py-3">
-        <div className="min-w-0">
+      <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-5 py-3">
+        <div className="min-w-0 flex-1">
           <h1 className="truncate text-sm font-semibold">
             {conversation?.title && conversation.title !== "New conversation"
               ? conversation.title
               : t("chat.new")}
           </h1>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {selectedCompany?.name ?? t("chat.workspaceContext")}
-          </p>
         </div>
-        <div className="flex min-w-0 items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => openNewTarget(conversationId ? { conversationId } : undefined)}
-          >
-            <Target className="h-4 w-4" />
-            {t("targets.create.title")}
-          </Button>
-          {conversation?.contextBindings.map((binding) => (
-            <span
-              key={binding.id}
-              className="max-w-48 truncate rounded-md border border-border px-2 py-1 text-xs text-muted-foreground"
-              title={binding.label ?? binding.contextId}
-            >
-              {binding.label ?? binding.contextId}
-            </span>
-          ))}
-        </div>
+        {conversation ? <div className="flex max-w-full flex-wrap items-center gap-1"><ConversationTargetContext key={conversation.id} conversation={conversation} /><ConversationTargetsPanel key={`targets-${conversation.id}`} conversation={conversation} onCreateTarget={() => openNewTarget({ conversationId: conversation.id })} /></div> : null}
       </header>
 
       <div className="relative min-h-0 flex-1">
         <div className="absolute inset-0 overflow-y-auto scrollbar-auto-hide">
           <div className="mx-auto flex min-h-full max-w-4xl flex-col px-5 py-6 md:px-8">
+            {draftsQuery.isError ? (
+              <div role="alert" className="mb-4 flex items-center gap-3 border-b border-border pb-3 text-sm text-destructive">
+                <p className="min-w-0 flex-1">{t("targets.create.errors.loadDrafts")}</p>
+                <Button variant="ghost" size="icon-sm" title={t("common.retry")} aria-label={t("common.retry")} onClick={() => void draftsQuery.refetch()}>
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : null}
+            {(draftsQuery.data ?? []).filter((draft) => ["collecting", "ready_for_confirmation", "converting", "converted"].includes(draft.status)).map((draft) => (
+              <div key={draft.id} className="mb-4 flex flex-wrap items-center gap-3 border-b border-border pb-3">
+                <div className="min-w-0 flex-1">
+                  <p className="break-words text-sm font-medium">{draft.activeRevision.definition.title ?? t("targets.create.untitledDraft")}</p>
+                  <p className="break-all font-mono text-xs text-muted-foreground">{draft.id} · v{draft.activeRevisionNumber}</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => openNewTarget({ conversationId: draft.conversationId, draft })}>
+                  <Target className="h-4 w-4" />
+                  {t(draft.status === "converted" ? "targets.create.reply.title" : "targets.create.resume")}
+                </Button>
+                {draft.status === "converted" && draft.convertedTargetId && conversation ? <FocusCreatedTarget conversation={conversation} targetId={draft.convertedTargetId} /> : null}
+              </div>
+            ))}
             {!hasMessages ? (
               <div className="flex flex-1 items-center justify-center py-10">
                 <div className="max-w-xl text-center">
@@ -342,7 +410,16 @@ export function VerrailChat() {
               </div>
             ) : (
               <div className="space-y-6">
-                {conversation?.messages.map((message) => <Message key={message.id} message={message} />)}
+                {conversation?.messages.map((message) => {
+                  if (message.role === "tool" && message.metadata?.kind === "conversation_context_changed") return <ConversationContextChange key={message.id} conversation={conversation} message={message} />;
+                  if (message.role === "tool" && message.metadata?.kind === "director_target_read") return <p key={message.id} className="flex items-center gap-2 text-xs text-muted-foreground"><Target className="h-3.5 w-3.5 shrink-0" />{t("chat.targetProposal.queried")}{message.metadata.tool === "get_target" ? `: ${message.body}` : ` (${message.metadata.total})`}</p>;
+                  if (message.role === "tool" && message.metadata?.kind === "director_target_result") return null;
+                  if (message.role === "tool" && directorTargetProposalSchema.safeParse(message.metadata).success) {
+                    const applied = conversation.messages.some((entry) => entry.role === "tool" && entry.metadata?.kind === "director_target_result" && entry.metadata.proposalMessageId === message.id);
+                    return <TargetProposal key={message.id} message={message} applied={applied} disabled={isArchived || sending} />;
+                  }
+                  return <Message key={message.id} message={message} />;
+                })}
                 {showOptimisticMessage && optimisticMessage ? (
                   <Message
                     message={{
@@ -374,6 +451,7 @@ export function VerrailChat() {
                       ) : (
                         <p className="text-muted-foreground">{t("chat.thinking")}</p>
                       )}
+                      {invocation.active?.status === "cancel_requested" ? <p role="status" className="mt-2 text-xs text-muted-foreground">{t("chat.stopping")}</p> : null}
                     </div>
                   </article>
                 ) : null}
@@ -407,7 +485,7 @@ export function VerrailChat() {
               onChange={setInput}
               onSubmit={() => void sendMessage(input)}
               placeholder={t("chat.placeholder")}
-              disabled={!selectedCompanyId}
+              disabled={!selectedCompanyId || runtimeQuery.isPending || runtimeQuery.isError || runtimeQuery.data?.mode === "unavailable" || invocation.loading}
               submitting={sending}
               submitKey="enter"
               autoFocus
@@ -418,6 +496,7 @@ export function VerrailChat() {
                   variant="ghost"
                   size="icon-sm"
                   onClick={stopStreaming}
+                  disabled={gatewayMode && (!invocation.active || invocation.active.status === "cancel_requested" || invocation.cancel.isPending)}
                   aria-label={t("chat.stop")}
                   title={t("chat.stop")}
                 >

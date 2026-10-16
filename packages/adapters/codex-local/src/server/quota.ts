@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { sanitizeControlPlaneEnv } from "@paperclipai/adapter-utils/control-plane-env";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -471,7 +472,7 @@ class CodexRpcClient {
   private proc = spawn(
     "codex",
     ["-s", "read-only", "-a", "untrusted", "app-server"],
-    { stdio: ["pipe", "pipe", "pipe"], env: process.env },
+    { stdio: ["pipe", "pipe", "pipe"], env: sanitizeControlPlaneEnv(process.env) },
   );
 
   private nextId = 1;

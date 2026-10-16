@@ -1,0 +1,13 @@
+{
+  "task_id": "T028",
+  "status": "needs_review",
+  "verification": "两个回归均先 RED 复现；修复后 30 项执行器、CLI 和 ACP 回退测试通过，server 与 adapter typecheck 通过。开发服务自动重启载入修改。最终独立评审仍待完成。",
+  "mode": "direct_execute",
+  "goal": "原生 Run 实际发送固定版本提示词，Codex CLI 回退保留原生任务正文。",
+  "authority": "用户委托 G2.7 技术收口及中间技术计划；不改变真人交付审批边界。",
+  "observed_defect": "执行器校验 AgentVersion.prompt 却未放入任务正文；ACP 使用任务正文，CLI 回退没有读取 paperclipTaskMarkdown，可能丢失原生任务及其约束。",
+  "allowed_files": ["server/src/services/verrail-run-executor.ts", "server/src/services/verrail-run-executor.test.ts", "packages/adapters/codex-local/src/server/execute.ts", "server/src/__tests__/codex-local-execute.test.ts", "docs/temporal-target-workflow.md", ".verrail/targets/g2-7-production-closure/**"],
+  "validation": ["固定提示词实际进入 invoke context 的 RED/GREEN 测试", "CLI stdin 包含原生任务和版本提示词的 RED/GREEN 测试", "既有 Codex CLI 和原生执行器回归", "server/adapter typecheck"],
+  "non_goals": ["改变历史 Run 或 AgentVersion", "跳过权限、评测、审批", "改写继承 Issue 提示词行为"],
+  "parallel": false
+}

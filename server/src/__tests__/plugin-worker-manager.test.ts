@@ -1175,12 +1175,13 @@ describe("plugin worker manager setup-token pty route gate", () => {
     }
   });
 
-  it("delivers output only for the exact bound worker session id and drops a mismatch", async () => {
+  it.each([false, true])("delivers output only for the exact bound worker session id and drops a mismatch (coalesced: %s)", async (coalesced) => {
     const handle = makeLoginPtyHandle();
     try {
       await handle.start();
       const session = await handle.openLoginPtySession(
         ptyOpenInput({
+          coalesced,
           workerSessionId: "ws-A",
           outputs: [
             { chunk: "good-1" },
@@ -1228,31 +1229,60 @@ describe("plugin worker manager setup-token pty route gate", () => {
     try {
       await handle.start();
       const session = await handle.openLoginPtySession(
-        ptyOpenInput({
-          outputs: [
-            { chunk: "aaaaa" }, // total 5 → delivered
-            { chunk: "bbbbb" }, // total 10 → delivered
-            { chunk: "ccccc" }, // total 15 > 10 → terminalize
-          ],
-        }),
+        ptyOpenInput({ mode: "normal" }),
       );
       const chunks: string[] = [];
       session.onData((chunk) => chunks.push(chunk));
+      // Install the listener before requesting the three five-character echoes.
+      session.write(""); // total 5: delivered
+      session.write(""); // total 10: delivered
+      session.write(""); // total 15: terminalize
       // The per-route bound terminalizes the route, so the login wait resolves
       // with a null exit code and the third chunk never reaches the listener.
       await expect(session.wait()).resolves.toEqual({ exitCode: null });
-      expect(chunks).toEqual(["aaaaa", "bbbbb"]);
+      expect(chunks).toEqual(["echo:", "echo:"]);
     } finally {
       await handle.stop().catch(() => undefined);
     }
   });
 
-  it("terminalizes and fails closed on a malformed open reply, then admits a later open", async () => {
+  it("does not revive a coalesced route terminalized before the open continuation", async () => {
+    const handle = makeLoginPtyHandle({
+      loginPtyLimits: { maxTotalChars: 10, closeTimeoutMs: 500 },
+    });
+    try {
+      await handle.start();
+      const exited = new Promise<void>((resolve) => handle.on("exit", () => resolve()));
+      const session = await handle.openLoginPtySession(ptyOpenInput({
+        coalesced: true,
+        closeMode: "no-ack",
+        outputs: [{ chunk: "aaaaa" }, { chunk: "bbbbb" }, { chunk: "ccccc" }],
+        exitCode: 0,
+      }));
+      const chunks: string[] = [];
+      session.onData((chunk) => chunks.push(chunk));
+      session.write("must-not-reopen");
+      await expect(session.wait()).resolves.toEqual({ exitCode: null });
+      expect(chunks).toEqual([]);
+      await expect(handle.openLoginPtySession(ptyOpenInput({})))
+        .rejects.toThrow("LOGIN_PTY_ROUTE_BUSY");
+      await exited;
+      expect(chunks).toEqual([]);
+      await expect(session.wait()).resolves.toEqual({ exitCode: null });
+    } finally {
+      await handle.stop().catch(() => undefined);
+    }
+  });
+
+  it.each([false, true])("terminalizes and fails closed on a malformed open reply, then admits a later open (coalesced: %s)", async (coalesced) => {
     const handle = makeLoginPtyHandle();
     try {
       await handle.start();
       await expect(
-        handle.openLoginPtySession(ptyOpenInput({ mode: "malformed-open" })),
+        handle.openLoginPtySession(ptyOpenInput({
+          mode: "malformed-open", coalesced,
+          outputs: [{ chunk: "unbound" }], exitCode: 0,
+        })),
       ).rejects.toThrow("LOGIN_PTY_OPEN_FAILED");
       // The terminalize closed the route by the host route id and the worker
       // acknowledged the close, so a later open is admitted.
@@ -1280,15 +1310,17 @@ describe("plugin worker manager setup-token pty route gate", () => {
     }
   });
 
-  it("binds the worker session id one time and ignores a duplicate open reply", async () => {
+  it.each([false, true])("binds the worker session id one time and ignores a duplicate open reply (coalesced: %s)", async (coalesced) => {
     const handle = makeLoginPtyHandle();
     try {
       await handle.start();
       const session = await handle.openLoginPtySession(
         ptyOpenInput({
           mode: "duplicate-open-reply",
+          coalesced,
+          beforeOpen: true,
           workerSessionId: "ws-A",
-          outputs: [{ chunk: "hello" }],
+          outputs: [{ chunk: "hello" }, { chunk: "forged", sid: "ws-EVIL" }],
           exitCode: 0,
         }),
       );

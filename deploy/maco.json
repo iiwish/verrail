@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "target": "maco",
+  "app": "verrail",
+  "environment": "test",
+  "compose_project": "verrail-test",
+  "database": {
+    "instance": "pg-main",
+    "name": "verrail_test",
+    "runtime_role": "verrail_test_app",
+    "migration_role": "verrail_test_migrator",
+    "pool_budget": 20,
+    "secret_file": "/opt/maco-ops/secrets/verrail/test/postgres.env"
+  },
+  "redis": null,
+  "ingress": {"visibility": "private", "hostname": null},
+  "rollback": {
+    "application": "Redeploy the recorded schema-compatible prior image digests; the first test release has no prior application rollback.",
+    "database": "Forward-only project migrations. Stop on incompatibility; never restore or roll back the shared PostgreSQL instance. Project recovery requires separate authorization."
+  },
+  "persistent_data": [
+    "/opt/maco-apps/verrail/test/data/control-plane",
+    "/opt/maco-apps/verrail/test/data/gateway",
+    "/opt/maco-apps/verrail/test/data/artifacts",
+    "/opt/maco-apps/verrail/test/data/repository"
+  ],
+  "services": {
+    "migrate": {"kind": "job"},
+    "temporal-migrate": {"kind": "job"},
+    "temporal": {"kind": "service"},
+    "temporal-namespace": {"kind": "job"},
+    "domain-api": {"kind": "service"},
+    "orchestration-worker": {"kind": "service"},
+    "repository-recovery": {"kind": "service"},
+    "repository-executor": {"kind": "service"},
+    "execution-gateway": {"kind": "service"},
+    "control-plane": {"kind": "service"}
+  }
+}

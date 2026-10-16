@@ -1,0 +1,30 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T017-A001",
+  "task_id": "T017",
+  "status": "passed_for_dependency_progression",
+  "failure_reproduction": {
+    "admission_state": "inconclusive/not_run",
+    "observed_before_fix": "resume succeeded and activated the Deployment"
+  },
+  "fix": {
+    "gate": "assertPassingEvaluation",
+    "location": "resume branch before status or Revision writes",
+    "rejection_code": "AGENT_EVALUATION_GATE_FAILED"
+  },
+  "no_side_effect_proof": [
+    "Deployment remains paused",
+    "DeploymentRevision count is unchanged",
+    "latest DeploymentRevision state is unchanged"
+  ],
+  "verification": [
+    {"command": "focused integration tests", "status": "passed"},
+    {"command": "complete Go Domain API suite", "status": "passed"},
+    {"command": "format and diff gates", "status": "passed"}
+  ],
+  "review": {
+    "critical_or_high_findings": 0,
+    "recommendation": "accept_for_dependency_progression",
+    "reference": ".verrail/targets/g2-7-production-closure/runs/T017-A001/logs/review.md"
+  }
+}

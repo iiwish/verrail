@@ -6,6 +6,7 @@ const mockAgentService = vi.hoisted(() => ({
   getById: vi.fn(),
   update: vi.fn(),
   resolveByReference: vi.fn(),
+  applyDirectorInstructions: vi.fn(),
 }));
 
 const mockBuiltInAgentService = vi.hoisted(() => ({
@@ -192,6 +193,39 @@ function makeReflectionCoachAgent(overrides: Record<string, unknown> = {}) {
 }
 
 describe("agent instructions bundle routes", () => {
+  it("previews Director instructions without applying them and requires human scope for apply", async () => {
+    const director = { ...makeAgent(), name: "Director", metadata: { paperclipBuiltInAgent: { key: "director", featureKeys: [] } } };
+    mockAgentService.getById.mockResolvedValue(director);
+    mockAgentService.applyDirectorInstructions.mockResolvedValue(director);
+    const app = await createApp();
+    const url = `/api/agents/${director.id}/director-instructions`;
+    const active = await requestApp(app, (base) => request(base).get(url));
+    expect(active.status).toBe(200);
+    expect(active.body.roleSource).toBe("builtin");
+    const preview = await requestApp(app, (base) => request(base).post(`${url}/preview`).send({ rolePrompt: "A draft" }));
+    expect(preview.status).toBe(200);
+    expect(preview.body.systemPrompt).toContain("A draft");
+    expect(preview.body.configHash).toBe(active.body.configHash);
+    expect(mockAgentService.applyDirectorInstructions).not.toHaveBeenCalled();
+    const body = { rolePrompt: "A draft", expectedConfigHash: active.body.configHash };
+    const applied = await requestApp(app, (base) => request(base).put(url).send(body));
+    expect(applied.status).toBe(200);
+    expect(mockAgentService.applyDirectorInstructions).toHaveBeenCalledWith("company-1", director.id, "local-board", body);
+    const injected = await requestApp(app, (base) => request(base).put(url).send({ ...body, appliedByUserId: "someone-else" }));
+    expect(injected.status).toBe(400);
+    const agentApp = await createApp({ type: "agent", agentId: director.id, companyId: "company-1" });
+    expect((await requestApp(agentApp, (base) => request(base).put(url).send(body))).status).toBe(403);
+    const foreignApp = await createApp({ ...boardActor(), source: "session", companyIds: ["other"] });
+    expect((await requestApp(foreignApp, (base) => request(base).get(url))).status).toBe(404);
+    expect(mockAgentService.applyDirectorInstructions).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not expose Director behavior for a regular agent", async () => {
+    const app = await createApp();
+    const response = await requestApp(app, (base) => request(base).get(`/api/agents/${makeAgent().id}/director-instructions`));
+    expect(response.status).toBe(404);
+  });
+
   beforeEach(() => {
     vi.resetModules();
     vi.doUnmock("../routes/agents.js");

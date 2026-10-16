@@ -11,6 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 import { verrailTargetRevisions, verrailTargets } from "./verrail_targets.js";
+import { verrailGraphRevisions } from "./verrail_delivery.js";
 
 /**
  * Adjudication data spine (G2.4): immutable submissions, delivery reviews,
@@ -28,6 +29,7 @@ export const verrailSubmissions = pgTable(
     workspaceId: uuid("workspace_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
     targetId: uuid("target_id").notNull(),
     targetRevisionId: uuid("target_revision_id").notNull(),
+    graphRevisionId: uuid("graph_revision_id"),
     artifactRevisionIds: uuid("artifact_revision_ids").array().notNull(),
     verificationResultIds: uuid("verification_result_ids").array().notNull(),
     commitRef: text("commit_ref"),
@@ -50,6 +52,11 @@ export const verrailSubmissions = pgTable(
       columns: [table.targetRevisionId, table.workspaceId],
       foreignColumns: [verrailTargetRevisions.id, verrailTargetRevisions.workspaceId],
       name: "verrail_submissions_target_revision_workspace_fk",
+    }).onDelete("restrict"),
+    graphRevisionWorkspaceFk: foreignKey({
+      columns: [table.graphRevisionId, table.workspaceId],
+      foreignColumns: [verrailGraphRevisions.id, verrailGraphRevisions.workspaceId],
+      name: "verrail_submissions_graph_revision_workspace_fk",
     }).onDelete("restrict"),
     workspaceTargetCreatedIdx: index("verrail_submissions_workspace_target_created_idx").on(
       table.workspaceId,
@@ -128,7 +135,7 @@ export const verrailAcceptances = pgTable(
   },
   (table) => ({
     idWorkspaceUq: unique("verrail_acceptances_id_workspace_uq").on(table.id, table.workspaceId),
-    submissionUq: unique("verrail_acceptances_submission_uq").on(table.submissionId),
+    submissionReviewUq: unique("verrail_acceptances_submission_review_uq").on(table.submissionId, table.reviewId),
     targetWorkspaceFk: foreignKey({
       columns: [table.targetId, table.workspaceId],
       foreignColumns: [verrailTargets.id, verrailTargets.workspaceId],

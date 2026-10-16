@@ -8,6 +8,7 @@ import { HTTP_LOG_REDACT_PATHS } from "../middleware/http-log-redaction.js";
 describe("HTTP logger redaction", () => {
   it("defines the HTTP auth and cookie header paths that must be redacted", () => {
     expect(HTTP_LOG_REDACT_PATHS).toContain("req.headers.authorization");
+    expect(HTTP_LOG_REDACT_PATHS).toContain('req.headers["x-verrail-chat-token"]');
     expect(HTTP_LOG_REDACT_PATHS).toContain("req.headers.cookie");
     expect(HTTP_LOG_REDACT_PATHS).toContain('req.headers["set-cookie"]');
     expect(HTTP_LOG_REDACT_PATHS).toContain('res.headers["set-cookie"]');
@@ -53,6 +54,7 @@ describe("HTTP logger redaction", () => {
               authorization: "Bearer auth-secret",
               cookie: "sid=request-secret",
               "set-cookie": "proxy-secret",
+              "x-verrail-chat-token": "director-secret",
             },
           },
           (res) => {
@@ -72,7 +74,7 @@ describe("HTTP logger redaction", () => {
     }
 
     const output = chunks.join("");
-    expect(output).not.toMatch(/auth-secret|request-secret|proxy-secret|response-secret/);
+    expect(output).not.toMatch(/auth-secret|request-secret|proxy-secret|response-secret|director-secret/);
 
     const log = JSON.parse(output.trim()) as {
       req: { headers: Record<string, string> };

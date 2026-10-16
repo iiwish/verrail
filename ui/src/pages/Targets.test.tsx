@@ -23,13 +23,15 @@ vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBre
 vi.mock("../components/StatusBadge", () => ({
   StatusBadge: ({ label }: { label: string }) => <span>{label}</span>,
 }));
-vi.mock("../components/ui/tabs", () => ({
-  Tabs: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+vi.mock("../components/ui/tabs", () => {
+  let change: (value: string) => void;
+  return {
+  Tabs: ({ children, onValueChange }: { children: React.ReactNode; onValueChange: (value: string) => void }) => { change = onValueChange; return <div>{children}</div>; },
   TabsList: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   TabsTrigger: ({ children, value }: { children: React.ReactNode; value: string }) => (
-    <button type="button" data-value={value}>{children}</button>
+    <button type="button" data-value={value} onClick={() => change(value)}>{children}</button>
   ),
-}));
+}; });
 vi.mock("../i18n", () => ({
   getCurrentLocale: () => "en",
   useTranslation: () => ({
@@ -119,5 +121,17 @@ describe("Targets", () => {
 
     await act(() => container.querySelector<HTMLButtonElement>("button")?.click());
     expect(openNewTarget).toHaveBeenCalledWith();
+  });
+  it("finds archived Targets in their own view without hiding their attention", async () => {
+    listTargets.mockResolvedValue({ items: [target({ archivedAt: "2026-09-11T06:00:00Z", attentionSummary: { total: 1 } })], summary: { total: 1, open: 1, attention: 1, byCollection: {} } });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    await act(async () => { root = createRoot(container); root.render(<QueryClientProvider client={queryClient}><Targets /></QueryClientProvider>); });
+    await vi.waitFor(() => expect(container.querySelector('[data-value="archived"]')).not.toBeNull());
+    expect(container.textContent).not.toContain("Ship conversation-first targets");
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-value="archived"]')!.click());
+    await vi.waitFor(() => expect(container.textContent).toContain("Ship conversation-first targets"));
+    expect(listTargets).toHaveBeenCalledWith("workspace-1", expect.objectContaining({ archiveState: "archived" }));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-value="attention"]')!.click());
+    await vi.waitFor(() => expect(listTargets).toHaveBeenCalledWith("workspace-1", expect.objectContaining({ archiveState: "all", attention: true })));
   });
 });

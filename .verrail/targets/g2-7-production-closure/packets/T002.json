@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T002",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T002",
+  "status": "completed",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T03:29:40Z",
+  "completed_at": "2026-09-04T05:33:14Z",
+  "governance_inputs": [
+    ".verrail/targets/g2-7-production-closure/spec.md",
+    ".verrail/targets/g2-7-production-closure/plan.md",
+    ".verrail/targets/g2-7-production-closure/tasks.md",
+    ".verrail/targets/g2-7-production-closure/analysis.md",
+    ".verrail/targets/g2-7-production-closure/gap-matrix.md",
+    ".verrail/targets/g2-7-production-closure/runs/T001-A001/evidence.json"
+  ],
+  "approval_gates": {
+    "plan_and_work_graph": "confirmed_by_outcome_owner_2026-09-04",
+    "intermediate_plan_authority": "delegated_to_codex",
+    "dependency_T001": "accepted_for_dependency_progression",
+    "analysis": "no_critical_or_high_findings"
+  },
+  "work_unit": {
+    "title": "对账交付记录并稳定仓库验证基线",
+    "goal": "只依据 T001 的可验证事实修复交付记录断链与状态漂移，并证明当前 HEAD 的全量 Vitest 基线是否可重复。",
+    "epic": "E001",
+    "requirements": [
+      "AC-01",
+      "AC-11"
+    ],
+    "depends_on": [
+      "T001"
+    ],
+    "blocks": [
+      "T003",
+      "T004",
+      "T009"
+    ],
+    "parallel": false
+  },
+  "codebase_context": {
+    "authoritative_matrix": ".verrail/targets/g2-7-production-closure/gap-matrix.md",
+    "existing_pattern": "Delivery records are append-only where possible; reconstructed receipts must explicitly say they are retrospective and must cite existing evidence, timeline, Git, and provider facts.",
+    "known_test_risk": "Historical full runs reported heartbeat stale-queue/concurrency failures that passed in isolation. T002-A001 additionally proved that run-vitest-stable leaks each invocation root; 251 stale pcvt roots consumed 11.8 GiB and caused ENOSPC, database shutdown, and 112 cascading suite failures.",
+    "forbidden_changes": [
+      "Do not invent a review, acceptance, screenshot, runtime fact, or command result.",
+      "Do not promote any historical target to accepted without explicit Outcome Owner acceptance.",
+      "Do not rewrite or delete existing timeline events.",
+      "Do not mutate the runtime database or historical Git commits.",
+      "Do not change heartbeat product code unless the focused RED case is reproducible and directly identifies a product race.",
+      "Test-harness changes must be limited to guaranteed cleanup of the per-invocation root and a regression test; no test timeout or assertion may be relaxed."
+    ]
+  },
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "allowed_files": [
+      ".verrail/targets/g1-domain-closure/target.json",
+      ".verrail/targets/g1-domain-closure/timeline.jsonl",
+      ".verrail/targets/g2-0-stabilize-g1-baseline/runs/run-002/receipt.json",
+      ".verrail/targets/g2-0-stabilize-g1-baseline/timeline.jsonl",
+      ".verrail/targets/g2-1-versioned-agent-lifecycle/target.json",
+      ".verrail/targets/g2-1-versioned-agent-lifecycle/timeline.jsonl",
+      ".verrail/targets/g2-2-recoverable-run-execution/target.json",
+      ".verrail/targets/g2-2-recoverable-run-execution/timeline.jsonl",
+      ".verrail/targets/g2-3-artifact-evidence-contracts/target.json",
+      ".verrail/targets/g2-3-artifact-evidence-contracts/runs/run-001/receipt.json",
+      ".verrail/targets/g2-3-artifact-evidence-contracts/timeline.jsonl",
+      ".verrail/targets/g2-4-submission-acceptance/target.json",
+      ".verrail/targets/g2-4-submission-acceptance/runs/run-001/receipt.json",
+      ".verrail/targets/g2-4-submission-acceptance/timeline.jsonl",
+      ".verrail/targets/g2-5-github-connector-ci-evidence/target.json",
+      ".verrail/targets/g2-5-github-connector-ci-evidence/runs/run-001/receipt.json",
+      ".verrail/targets/g2-5-github-connector-ci-evidence/timeline.jsonl",
+      ".verrail/targets/g2-5-github-connector-ci-evidence/g25-evidence-tab.md",
+      ".verrail/targets/g2-6-loop-verification/target.json",
+      ".verrail/targets/g2-6-loop-verification/runs/run-001/receipt.json",
+      ".verrail/targets/g2-6-loop-verification/timeline.jsonl",
+      "server/src/__tests__/heartbeat-stale-queue-invalidation.test.ts",
+      "server/src/services/heartbeat.ts",
+      "scripts/run-vitest-stable.mjs",
+      "scripts/__tests__/run-vitest-stable-shard.test.mjs",
+      "packages/adapters/opencode-local/src/server/execute.remote.test.ts",
+      ".verrail/targets/g2-7-production-closure/runs/T002-A001/**",
+      ".verrail/targets/g2-7-production-closure/timeline.jsonl"
+    ],
+    "ownership": "Existing G1/G2 records are user-owned historical artifacts. Preserve their events and decisions; add provenance or corrected current fields only."
+  },
+  "tdd_plan": {
+    "required_for_product_code": true,
+    "red": "Run the focused heartbeat stale-queue invalidation test repeatedly before any product source edit. Separately reproduce the run-vitest-stable per-invocation temp-root leak with a fake pnpm regression test.",
+    "green": "If RED proves a product defect, apply the smallest lifecycle fix and rerun focused/repeated tests. If no product RED, make no product-code change. Make the test harness delete each invocation root after the child exits without weakening tests.",
+    "refactor": "No refactor unless the focused test remains green after the minimum fix."
+  },
+  "validation_loop": {
+    "commands": [
+      "pnpm --filter @paperclipai/server exec vitest run src/__tests__/heartbeat-stale-queue-invalidation.test.ts",
+      "pnpm test:run",
+      "pnpm -r typecheck",
+      "for file in .verrail/targets/{g1-*,g2-*}/timeline.jsonl; do jq -e . \"$file\" >/dev/null || exit 1; done",
+      "git diff --check"
+    ],
+    "failure_handling": "Classify full-suite failures by reproducibility and changed-path ownership. The first full run failed after ENOSPC terminated the embedded PostgreSQL test environment; clean only generated pcvt roots, rerun the regression test, then rerun the relevant full-suite lanes without weakening assertions. The isolated workspace rerun proved that the OpenCode remote test copied the operator's 554 MiB XDG config into its fixture and deterministically exceeded five seconds; isolate XDG_CONFIG_HOME to an empty per-test directory rather than extending the timeout.",
+    "retry_budget": 2
+  },
+  "evidence_contract": {
+    "run_id": "T002-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T002-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T002-A001/evidence.json",
+    "logs": ".verrail/targets/g2-7-production-closure/runs/T002-A001/logs/",
+    "required_items": [
+      "before/after record reconciliation",
+      "retrospective receipt provenance",
+      "focused heartbeat result",
+      "full Vitest result",
+      "workspace typecheck result",
+      "unchanged user decisions",
+      "residual missing evidence"
+    ]
+  },
+  "review_contract": {
+    "required": true,
+    "checks": [
+      "No historical event or human decision was rewritten",
+      "Every reconstructed receipt is labeled retrospective",
+      "Status scope distinguishes delivery slice from runtime Target",
+      "No product code changed without reproducible RED",
+      "Full-suite disposition is supported by actual output"
+    ]
+  },
+  "stop_conditions": [
+    "A proposed reconciliation would fabricate or replace a human review or acceptance.",
+    "The current full-suite failure cannot be reproduced or attributed within the retry budget.",
+    "A required change expands beyond the reconciled test-harness temp-root leak or heartbeat race boundary.",
+    "Another change modifies an allowed historical record during execution."
+  ]
+}

@@ -44,6 +44,9 @@ import type {
 } from "@paperclipai/shared";
 import {
   PLUGIN_STATUSES,
+  channelConnectionBindingV1Schema,
+  channelReplyResultV1Schema,
+  channelWebhookResultV1Schema,
 } from "@paperclipai/shared";
 import { pluginRegistryService } from "../services/plugin-registry.js";
 import { pluginLifecycleManager } from "../services/plugin-lifecycle.js";
@@ -91,7 +94,8 @@ import {
 import { isCloudManagedInstance } from "../services/cloud-instance.js";
 import { getHiddenSettings } from "../services/settings-visibility.js";
 import { secretService } from "../services/secrets.js";
-import { badRequest, forbidden, notFound, unauthorized, unprocessable } from "../errors.js";
+import { badRequest, forbidden, HttpError, notFound, unauthorized, unprocessable } from "../errors.js";
+import { channelConnectorHostService } from "../services/channel-connector-host.js";
 
 /**
  * Floor: when the hosting operator hides the Plugins settings surface
@@ -541,6 +545,7 @@ export function pluginRoutes(
     workerManager: bridgeDeps?.workerManager ?? webhookDeps?.workerManager,
   });
   const issuesSvc = issueService(db);
+  const channelHost = channelConnectorHostService(db);
 
   function matchScopedApiRoute(route: PluginApiRouteDeclaration, method: string, requestPath: string) {
     if (route.method !== method) return null;
@@ -2664,6 +2669,169 @@ export function pluginRoutes(
   // ===========================================================================
   // Webhook ingestion route
   // ===========================================================================
+
+  /**
+   * Public, connection-bound Channel Connector V1 callback. The worker must
+   * authenticate and normalize the exact raw body before the host writes any
+   * Conversation fact. Raw provider payloads and headers are never persisted.
+   */
+  router.post(
+    "/plugins/:pluginId/channel-connectors/:connectorKey/:workspaceId/:connectionId/webhook",
+    async (req, res) => {
+      if (!webhookDeps) {
+        res.status(501).json({ error: "Channel webhook ingestion is not enabled" });
+        return;
+      }
+
+      const { pluginId, connectorKey, workspaceId, connectionId } = req.params;
+      const plugin = await resolvePlugin(registry, pluginId);
+      if (!plugin) {
+        res.status(404).json({ error: "Plugin not found" });
+        return;
+      }
+      if (plugin.status !== "ready") {
+        res.status(400).json({ error: "Plugin is not ready" });
+        return;
+      }
+      const declaration = plugin.manifestJson?.channelConnectors?.find(
+        (candidate) => candidate.connectorKey === connectorKey,
+      );
+      if (!declaration || declaration.contractVersion !== 1) {
+        res.status(404).json({ error: "Channel connector is not declared" });
+        return;
+      }
+      const configRow = await registry.getConfig(plugin.id, workspaceId);
+      const rawConnections = configRow?.configJson.channelConnections;
+      const connection = Array.isArray(rawConnections)
+        ? rawConnections.map((candidate) => channelConnectionBindingV1Schema.safeParse(candidate))
+            .find((candidate) => candidate.success && candidate.data.connectionId === connectionId)?.data
+        : null;
+      if (!connection || connection.connectorKey !== connectorKey) {
+        res.status(404).json({ error: "Channel connection is not configured for this Workspace" });
+        return;
+      }
+
+      const rawHeaders: Record<string, string | string[]> = {};
+      for (const key of ["x-lark-request-timestamp", "x-lark-request-nonce", "x-lark-signature"]) {
+        const value = req.headers[key];
+        if (typeof value === "string" || Array.isArray(value)) rawHeaders[key] = value;
+      }
+      const stashedRaw = (req as unknown as { rawBody?: Buffer }).rawBody;
+      const rawBody = stashedRaw ? stashedRaw.toString("utf8") : "";
+      const requestId = randomUUID();
+      const startedAt = new Date();
+      let authenticated = false;
+      let delivery: { id: string } | null = null;
+
+      try {
+        const normalized = channelWebhookResultV1Schema.parse(
+          await webhookDeps.workerManager.call(plugin.id, "handleChannelWebhook", {
+            contractVersion: 1,
+            workspaceId,
+            connectionId,
+            connectorKey,
+            endpointKey: declaration.webhookEndpointKey,
+            headers: rawHeaders,
+            rawBody,
+            parsedBody: req.body,
+            requestId,
+          }),
+        );
+        authenticated = true;
+        const verifiedDelivery = await db.insert(pluginWebhookDeliveries).values({
+          pluginId: plugin.id,
+          companyId: workspaceId,
+          webhookKey: declaration.webhookEndpointKey,
+          status: "pending",
+          payload: { contractVersion: 1, connectorKey, connectionId },
+          headers: {},
+          startedAt,
+        }).returning({ id: pluginWebhookDeliveries.id }).then((rows) => rows[0]!);
+        delivery = verifiedDelivery;
+
+        if (normalized.kind === "challenge") {
+          await db.update(pluginWebhookDeliveries).set({
+            status: "success",
+            durationMs: Date.now() - startedAt.getTime(),
+            finishedAt: new Date(),
+          }).where(eq(pluginWebhookDeliveries.id, verifiedDelivery.id));
+          res.status(200).json({ challenge: normalized.challenge });
+          return;
+        }
+
+        if (normalized.kind === "ignored") {
+          await db.update(pluginWebhookDeliveries).set({
+            status: "success",
+            durationMs: Date.now() - startedAt.getTime(),
+            finishedAt: new Date(),
+          }).where(eq(pluginWebhookDeliveries.id, verifiedDelivery.id));
+          res.status(200).json({ deliveryId: verifiedDelivery.id, status: "ignored" });
+          return;
+        }
+
+        const ingested = await channelHost.ingest({
+          workspaceId,
+          connectorKey,
+          connectionId,
+          connection,
+          event: normalized,
+        });
+        let replyDeliveryId: string | null = ingested.replyProviderMessageId;
+        if (ingested.draftId && !replyDeliveryId) {
+          const reply = channelReplyResultV1Schema.parse(
+            await webhookDeps.workerManager.call(plugin.id, "handleChannelReply", {
+              contractVersion: 1,
+              workspaceId,
+              connectionId,
+              connectorKey,
+              replyContext: normalized.replyContext,
+              text: `Target draft ${ingested.draftId} is ready to continue in Verrail.`,
+              idempotencyKey: `verrail:${ingested.draftId}`,
+            }),
+          );
+          replyDeliveryId = reply.providerMessageId;
+          await channelHost.recordReply({
+            workspaceId,
+            connectorKey,
+            connectionId,
+            providerEventId: normalized.providerEventId,
+            providerMessageId: reply.providerMessageId,
+          });
+        }
+        await db.update(pluginWebhookDeliveries).set({
+          status: "success",
+          durationMs: Date.now() - startedAt.getTime(),
+          finishedAt: new Date(),
+        }).where(eq(pluginWebhookDeliveries.id, verifiedDelivery.id));
+        res.status(200).json({
+          deliveryId: verifiedDelivery.id,
+          status: ingested.duplicate ? "duplicate" : "success",
+          conversationId: ingested.conversationId,
+          messageId: ingested.messageId,
+          draftId: ingested.draftId,
+          replyDeliveryId,
+        });
+      } catch (error) {
+        if (delivery) {
+          await db.update(pluginWebhookDeliveries).set({
+            status: "failed",
+            durationMs: Date.now() - startedAt.getTime(),
+            error: error instanceof HttpError ? error.message : "Channel connector processing failed",
+            finishedAt: new Date(),
+          }).where(eq(pluginWebhookDeliveries.id, delivery.id));
+        }
+        if (error instanceof HttpError) {
+          res.status(error.status).json({ error: error.message, details: error.details });
+          return;
+        }
+        if (!authenticated) {
+          res.status(401).json({ error: "Channel webhook authentication or normalization failed" });
+          return;
+        }
+        res.status(500).json({ error: "Channel connector processing failed" });
+      }
+    },
+  );
 
   /**
    * POST /api/plugins/:pluginId/webhooks/:endpointKey

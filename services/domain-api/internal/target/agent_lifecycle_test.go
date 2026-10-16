@@ -155,9 +155,10 @@ func (h *lifecycleTestHarness) createDefinition() string {
 func (h *lifecycleTestHarness) publishVersion(definitionID, prompt string) string {
 	h.t.Helper()
 	result, err := h.store.PublishAgentVersion(context.Background(), buildLifecycleCommand(h, "agent_version.publish.v1", definitionID, PublishAgentVersionInput{
-		Runtime: "test-runtime",
-		Model:   "test-model",
-		Prompt:  prompt,
+		Runtime:     "codex",
+		Model:       "test-model",
+		Prompt:      prompt,
+		SupplyChain: map[string]any{"source": "saved_agent_configuration.v2", "mode": "director_chat"},
 	}))
 	require.NoError(h.t, err)
 	h.trackAggregate(result.ResourceID)
@@ -268,6 +269,51 @@ func requireLifecycleCode(t *testing.T, err error, code string) {
 	require.Equal(t, code, lifecycleErr.Code)
 }
 
+func TestResumeDeploymentEvaluationGateIntegration(t *testing.T) {
+	databaseURL := os.Getenv("VERRAIL_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("VERRAIL_TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	harness := newLifecycleTestHarness(t, pool)
+	defer harness.cleanup(pool)
+
+	definitionID := harness.createDefinition()
+	versionID := harness.publishVersion(definitionID, "prompt for resume evaluation gate")
+	evaluationID := harness.recordPassingEvaluation(versionID)
+	deploymentID := harness.createDeployment(definitionID, versionID, evaluationID, "resume-evaluation-gate")
+	// An unadopted historical deployment retains the legacy resume evaluation gate.
+	_, err = pool.Exec(ctx, `update verrail_deployments set is_primary=false where id=$1`, deploymentID)
+	require.NoError(t, err)
+
+	_, err = harness.revise("pause", deploymentID, ReviseDeploymentInput{})
+	require.NoError(t, err)
+	require.Equal(t, "paused", harness.deploymentStatus(deploymentID))
+
+	_, err = pool.Exec(ctx, `update verrail_evaluation_runs set status='inconclusive',safety_status='not_run' where id=$1`, evaluationID)
+	require.NoError(t, err)
+
+	var revisionCountBefore int
+	require.NoError(t, pool.QueryRow(ctx, `select count(*) from verrail_deployment_revisions where deployment_id=$1`, deploymentID).Scan(&revisionCountBefore))
+	var latestRevisionID, latestRevisionState string
+	require.NoError(t, pool.QueryRow(ctx, `select id,state from verrail_deployment_revisions where deployment_id=$1 order by revision_number desc limit 1`, deploymentID).Scan(&latestRevisionID, &latestRevisionState))
+
+	_, err = harness.revise("resume", deploymentID, ReviseDeploymentInput{})
+	requireLifecycleCode(t, err, "AGENT_EVALUATION_GATE_FAILED")
+
+	require.Equal(t, "paused", harness.deploymentStatus(deploymentID))
+	var revisionCountAfter int
+	require.NoError(t, pool.QueryRow(ctx, `select count(*) from verrail_deployment_revisions where deployment_id=$1`, deploymentID).Scan(&revisionCountAfter))
+	require.Equal(t, revisionCountBefore, revisionCountAfter)
+	var revisionStateAfter string
+	require.NoError(t, pool.QueryRow(ctx, `select state from verrail_deployment_revisions where id=$1`, latestRevisionID).Scan(&revisionStateAfter))
+	require.Equal(t, latestRevisionState, revisionStateAfter)
+}
+
 func TestReviseDeploymentRetiredGuardIntegration(t *testing.T) {
 	databaseURL := os.Getenv("VERRAIL_TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -287,7 +333,12 @@ func TestReviseDeploymentRetiredGuardIntegration(t *testing.T) {
 	deploymentA := harness.createDeployment(definitionID, versionOne, evaluationOne, "guard-test-a")
 	versionTwo := harness.publishVersion(definitionID, "prompt two for the retired-deployment guard test")
 	evaluationTwo := harness.recordPassingEvaluation(versionTwo)
-	deploymentB := harness.createDeployment(definitionID, versionTwo, evaluationTwo, "guard-test-b")
+	definitionB := harness.createDefinition()
+	versionB := harness.publishVersion(definitionB, "historical second definition")
+	deploymentB := harness.createDeployment(definitionB, versionB, harness.recordPassingEvaluation(versionB), "guard-test-b")
+	// Exercise the inherited state machine on pre-adoption records.
+	_, err = pool.Exec(ctx, `update verrail_deployments set is_primary=false where workspace_id=$1`, harness.workspaceID)
+	require.NoError(t, err)
 
 	t.Run("fresh deployment accepts pause upgrade rollback set_default", func(t *testing.T) {
 		_, err := harness.revise("pause", deploymentA, ReviseDeploymentInput{})

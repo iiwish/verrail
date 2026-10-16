@@ -184,7 +184,7 @@ describe("adjudication routes", () => {
     expect(domainApi.recordDeliveryReview).not.toHaveBeenCalled();
   });
 
-  it("rejects non-board actors with 403", async () => {
+  it("allows an authenticated workspace agent to create a submission", async () => {
     const app = await createApp(domainApi, {
       type: "agent",
       agentId: "agent-1",
@@ -201,7 +201,80 @@ describe("adjudication routes", () => {
         artifactRevisionIds: [ARTIFACT_REVISION_ID],
         verificationResultIds: [],
       });
+    expect(response.status).toBe(201);
+    expect(domainApi.createSubmission).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: WORKSPACE_ID,
+      principalType: "agent",
+      principalId: "agent-1",
+    }));
+  });
+
+  it("keeps review and acceptance human-only", async () => {
+    const app = await createApp(domainApi, {
+      type: "agent",
+      agentId: "agent-1",
+      companyId: WORKSPACE_ID,
+      source: "agent_key",
+      keyId: "key-1",
+    });
+    const review = await request(app)
+      .post(`/api/workspaces/${WORKSPACE_ID}/delivery-reviews`)
+      .set("Idempotency-Key", "adjudication:review:agent")
+      .send({
+        submissionId: SUBMISSION_ID,
+        reviewerPrincipalType: "user",
+        reviewerPrincipalId: "agent-1",
+        verdict: "approved",
+        unprovenItems: [],
+      });
+    const acceptance = await request(app)
+      .post(`/api/workspaces/${WORKSPACE_ID}/acceptances`)
+      .set("Idempotency-Key", "adjudication:acceptance:agent")
+      .send({ submissionId: SUBMISSION_ID, reviewId: REVIEW_ID });
+
+    expect(review.status).toBe(403);
+    expect(acceptance.status).toBe(403);
+    expect(domainApi.recordDeliveryReview).not.toHaveBeenCalled();
+    expect(domainApi.acceptSubmission).not.toHaveBeenCalled();
+  });
+
+  it("rejects an agent creating a submission across workspace boundaries", async () => {
+    const app = await createApp(domainApi, {
+      type: "agent",
+      agentId: "agent-1",
+      companyId: FOREIGN_WORKSPACE_ID,
+      source: "agent_key",
+      keyId: "key-1",
+    });
+    const response = await request(app)
+      .post(`/api/workspaces/${WORKSPACE_ID}/submissions`)
+      .set("Idempotency-Key", "adjudication:submission:foreign-agent")
+      .send({
+        targetId: TARGET_ID,
+        targetRevisionId: REVISION_ID,
+        artifactRevisionIds: [ARTIFACT_REVISION_ID],
+        verificationResultIds: [],
+      });
+
     expect(response.status).toBe(403);
+    expect(domainApi.createSubmission).not.toHaveBeenCalled();
+  });
+
+  it("rejects candidate principal fields supplied in the body", async () => {
+    const app = await createApp(domainApi);
+    const response = await request(app)
+      .post(`/api/workspaces/${WORKSPACE_ID}/submissions`)
+      .set("Idempotency-Key", "adjudication:submission:spoof")
+      .send({
+        targetId: TARGET_ID,
+        targetRevisionId: REVISION_ID,
+        artifactRevisionIds: [ARTIFACT_REVISION_ID],
+        verificationResultIds: [],
+        principalType: "service",
+        principalId: "spoofed-service",
+      });
+
+    expect(response.status).toBe(400);
     expect(domainApi.createSubmission).not.toHaveBeenCalled();
   });
 

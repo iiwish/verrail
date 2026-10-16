@@ -1,0 +1,8 @@
+ARG COMMAND_IMAGE
+FROM ${COMMAND_IMAGE}
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+COPY --chmod=0444 repository-container-client.mjs /usr/local/lib/verrail/repository-container-client.mjs
+USER 1000:1000
+ENTRYPOINT ["node", "/usr/local/lib/verrail/repository-container-client.mjs"]

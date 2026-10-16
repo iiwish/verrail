@@ -1,0 +1,100 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T001-A001",
+  "task_id": "T001",
+  "status": "passed",
+  "tests": [
+    {
+      "name": "delivery JSON parse",
+      "status": "passed",
+      "result": "11 target.json files and both T001 JSON artifacts parsed with jq"
+    },
+    {
+      "name": "timeline JSONL parse",
+      "status": "passed",
+      "result": "11 historical/current timeline files parsed line-by-line with jq"
+    },
+    {
+      "name": "Git reference integrity",
+      "status": "passed",
+      "result": "6/6 unique receipt commit references resolve; 6/6 relevant delivery merge commits are ancestors of HEAD"
+    },
+    {
+      "name": "runtime read-only probes",
+      "status": "passed",
+      "result": "health, company list, target list, target detail, and target workspace read models returned authoritative current facts"
+    },
+    {
+      "name": "diff and whitespace integrity",
+      "status": "passed",
+      "result": "git diff --check and trailing-whitespace scan passed"
+    }
+  ],
+  "build": {
+    "status": "skipped",
+    "reason": "T001 changes audit artifacts only and does not modify build inputs"
+  },
+  "typecheck": {
+    "status": "skipped",
+    "reason": "T001 changes Markdown, JSON, and JSONL delivery records only"
+  },
+  "lint": {
+    "status": "skipped",
+    "reason": "No repository lint command is part of the T001 packet; structured and whitespace checks passed"
+  },
+  "acceptance_coverage": {
+    "historical_target_status_evidence_runtime_matrix": "passed",
+    "g2_7_ac_01_to_ac_11_mapping": "passed",
+    "ontology_invariants_01_to_22_mapping": "passed",
+    "t002_exact_reconciliation_candidates": "passed",
+    "no_fake_production_closure": "passed"
+  },
+  "counts": {
+    "targets_audited": 11,
+    "g2_7_acceptance_criteria": {
+      "implemented": 0,
+      "partial": 9,
+      "missing": 2
+    },
+    "ontology_invariants": {
+      "implemented": 10,
+      "partial": 9,
+      "missing": 3
+    },
+    "t002_reconciliation_items": 11
+  },
+  "links": [
+    ".verrail/targets/g2-7-production-closure/gap-matrix.md",
+    ".verrail/targets/g2-7-production-closure/runs/T001-A001/logs/audit-observations.md",
+    ".verrail/targets/g2-7-production-closure/runs/T001-A001/logs/runtime-snapshot.json",
+    "https://github.com/iiwish/verrail/pull/10",
+    "https://github.com/iiwish/verrail/pull/11",
+    "https://github.com/iiwish/verrail/pull/12",
+    "https://github.com/iiwish/verrail/pull/13"
+  ],
+  "manual_notes": [
+    "A merged commit proves repository history, not Outcome Owner acceptance.",
+    "A local feature-slice accepted status is distinct from a product-domain Target reconstructed as accepted.",
+    "Runtime observations were read-only; T001 changed no historical target record or database fact.",
+    "Direct execution was used because T001 is a bounded artifact-only audit and subagent delegation was neither requested nor authorized."
+  ],
+  "missing": [
+    "Current runtime copies of the retired G1/G2.0/G2.1/G2.2 workspaces",
+    "G2.6 independent review file referenced by its timeline",
+    "G2.4 browser screenshot named by its timeline",
+    "A product-native accepted Target with a complete Review and Acceptance chain",
+    "A real GitHub EffectReceipt and Provider reconciliation evidence"
+  ],
+  "review": {
+    "spec_compliance": "passed",
+    "engineering_quality": "passed_for_artifact_only_scope",
+    "scope_drift": "none",
+    "recommendation": "accept_for_dependency_progression",
+    "final_product_authority": "not_granted"
+  },
+  "residual_risks": [
+    "Historical live facts in deleted development workspaces cannot be re-probed and remain historical evidence only.",
+    "Some accepted feature-slice records can be misread as product-domain Target acceptance until T002 adds explicit status scope.",
+    "T001 does not repair records or implement missing contracts; it only defines the evidence-backed boundary for later tasks."
+  ]
+}

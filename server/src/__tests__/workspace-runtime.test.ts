@@ -8,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parse as parseEnvContents } from "dotenv";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   activityLog,
   agents,
@@ -41,6 +41,7 @@ import {
   resolveRuntimeProvisionCommand,
   resolveWorkspaceRuntimeReadinessTimeoutSec,
   resolveShell,
+  runWorkspaceJobForControl,
   sanitizeRuntimeServiceBaseEnv,
   setWorkspaceRuntimeExposureDepsForTests,
   startRuntimeServicesForWorkspaceControl,
@@ -468,6 +469,35 @@ afterEach(async () => {
 });
 
 describe("sanitizeRuntimeServiceBaseEnv", () => {
+  it("filters inherited and explicit credentials before a real workspace job", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "verrail-runtime-env-"));
+    const keys = ["VERRAIL_DOMAIN_API_TOKEN", "verrail_github_ci_proof_token", "ACPX_AUTH_VERRAIL_DOMAIN_API_TOKEN", "acpx_auth_verrail_github_ci_proof_token"];
+    const script = path.join(root, "probe.cjs");
+    const output = path.join(root, "env.json");
+    try {
+      for (const key of keys) vi.stubEnv(key, "fixture-inherited-control");
+      await fs.writeFile(script, `require('node:fs').writeFileSync(${JSON.stringify(output)}, JSON.stringify(Object.fromEntries(${JSON.stringify([...keys, "OPENAI_API_KEY"])}.map(key => [key, process.env[key] ?? null]))));`);
+      await runWorkspaceJobForControl({ actor: { id: "fixture-agent", companyId: "fixture-company", name: "Fixture" }, issue: null,
+        workspace: buildWorkspace(root),
+        adapterEnv: { ...Object.fromEntries(keys.map(key => [key, "fixture-adapter-control"])), OPENAI_API_KEY: "fixture-model-key" },
+        command: { name: "env-probe", command: `${JSON.stringify(process.execPath)} ${JSON.stringify(script)}`, env: Object.fromEntries(keys.map(key => [key, "fixture-command-control"])) },
+      });
+      const observed = JSON.parse(await fs.readFile(output, "utf8"));
+      for (const key of keys) expect(observed[key]).toBeNull();
+      expect(observed.OPENAI_API_KEY).toBe("fixture-model-key");
+    } finally {
+      vi.unstubAllEnvs();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("removes reserved control-plane credentials including auth promotion aliases", () => {
+    const keys = ["VERRAIL_DOMAIN_API_TOKEN", "verrail_github_ci_proof_token", "ACPX_AUTH_VERRAIL_DOMAIN_API_TOKEN", "acpx_auth_verrail_github_ci_proof_token"];
+    const env = sanitizeRuntimeServiceBaseEnv({ ...Object.fromEntries(keys.map((key) => [key, "fixture-control-credential"])), OPENAI_API_KEY: "fixture-model-key" });
+    for (const key of keys) expect(env[key]).toBeUndefined();
+    expect(env.OPENAI_API_KEY).toBe("fixture-model-key");
+  });
+
   it("removes inherited Paperclip and pnpm auth flags before spawning runtime services", () => {
     const sanitized = sanitizeRuntimeServiceBaseEnv({
       PATH: process.env.PATH,
@@ -7029,17 +7059,18 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
     }
   }, 20_000);
 
-  it("retries a bind race on the next bounded port and persists the selected URL", async () => {
+  it.each([0, 1500])("retries a bind race on the next bounded port and persists the selected URL (blocker delay %i ms)", async (blockerDelayMs) => {
     const fixture = await createRuntimeFixture();
     const cleanupRuntimeHome = await createRuntimeHome();
     const workspace = fixture.workspaces[0]!;
     const basePort = await findFreePort();
     const markerPath = path.join(workspace.cwd, "bind-race.marker");
     const blockerPidPath = path.join(workspace.cwd, "bind-race.pid");
+    const blockerReadyPath = path.join(workspace.cwd, "bind-race-ready.json");
     const blockerScript = [
       "const net=require('node:net');",
       "const port=Number(process.argv[1]);",
-      "net.createServer((socket)=>socket.destroy()).listen(port,'127.0.0.1');",
+      `setTimeout(()=>net.createServer((socket)=>socket.destroy()).listen(port,'127.0.0.1',()=>process.send({type:'listening',port,pid:process.pid})),${blockerDelayMs});`,
     ].join("");
     const raceScript = [
       "const fs=require('node:fs');",
@@ -7047,13 +7078,23 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
       "const {spawn}=require('node:child_process');",
       `const marker=${JSON.stringify(markerPath)};`,
       `const pidFile=${JSON.stringify(blockerPidPath)};`,
+      `const readyFile=${JSON.stringify(blockerReadyPath)};`,
       `const blockerScript=${JSON.stringify(blockerScript)};`,
       "const port=Number(process.env.PORT);",
       "const start=()=>http.createServer((_req,res)=>res.end('ok')).listen(port,'127.0.0.1');",
       "if(!fs.existsSync(marker)){",
       "fs.writeFileSync(marker,String(port));",
-      "const blocker=spawn(process.execPath,['-e',blockerScript,String(port)],{detached:true,stdio:'ignore'});",
-      "fs.writeFileSync(pidFile,String(blocker.pid));blocker.unref();setTimeout(start,200);",
+      "const blocker=spawn(process.execPath,['-e',blockerScript,String(port)],{detached:true,stdio:['ignore','ignore','ignore','ipc']});",
+      "fs.writeFileSync(pidFile,String(blocker.pid));",
+      "let blockerReady=false;",
+      "blocker.once('error',()=>process.exit(1));",
+      "blocker.once('exit',()=>{if(!blockerReady)process.exit(1);});",
+      // The race starts only after this exact blocker has bound the allocated port.
+      "blocker.on('message',(message)=>{",
+      "if(blockerReady||message?.type!=='listening'||message.port!==port||message.pid!==blocker.pid)return;",
+      "blockerReady=true;fs.writeFileSync(readyFile,JSON.stringify(message));",
+      "blocker.disconnect();blocker.unref();start();",
+      "});",
       "}else{start();}",
       "setInterval(()=>{},1000);",
     ].join("");
@@ -7071,6 +7112,7 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
       }))[0]!;
 
       expect(await fs.readFile(markerPath, "utf8")).toBe(String(basePort));
+      expect(JSON.parse(await fs.readFile(blockerReadyPath, "utf8"))).toMatchObject({ type: "listening", port: basePort });
       expect(started.port).toBeGreaterThan(basePort);
       expect(started.url).toBe(`http://127.0.0.1:${started.port}`);
       await expect(fetch(started.url!)).resolves.toMatchObject({ ok: true });
@@ -7087,15 +7129,37 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
         workspaceCwd: workspace.cwd,
       }).catch(() => undefined);
       const blockerPid = Number.parseInt(await fs.readFile(blockerPidPath, "utf8").catch(() => ""), 10);
-      if (Number.isInteger(blockerPid) && blockerPid > 0) {
-        try {
-          process.kill(blockerPid, "SIGTERM");
-        } catch {
-          // The bind-race process already exited.
+      let blockerExited = false;
+      try {
+        expect(Number.isInteger(blockerPid) && blockerPid > 0).toBe(true);
+        const blockerIsAlive = () => {
+          try {
+            process.kill(blockerPid, 0);
+            return true;
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+            throw error;
+          }
+        };
+        for (const signal of ["SIGTERM", "SIGKILL"] as const) {
+          if (!blockerIsAlive()) break;
+          try {
+            process.kill(blockerPid, signal);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+          }
+          const deadline = Date.now() + 1_000;
+          while (blockerIsAlive() && Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 25));
+          }
         }
+        blockerExited = !blockerIsAlive();
+        expect(blockerExited).toBe(true);
+      } finally {
+        console.info("runtime-bind-fixture", JSON.stringify({ blockerDelayMs, blockerPid, blockerListening: existsSync(blockerReadyPath), blockerExited }));
+        await cleanupRuntimeHome();
+        await fixture.cleanup();
       }
-      await cleanupRuntimeHome();
-      await fixture.cleanup();
     }
   }, 20_000);
 
@@ -8623,15 +8687,16 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
       projectId,
       workspaceId: null,
     };
-    const serviceCommand =
-      "node -e \"require('node:http').createServer((req,res)=>res.end('ok')).listen(Number(process.env.PORT), '127.0.0.1')\"";
+    const reservedKeys = ["VERRAIL_DOMAIN_API_TOKEN", "verrail_github_ci_proof_token", "ACPX_AUTH_VERRAIL_DOMAIN_API_TOKEN", "acpx_auth_verrail_github_ci_proof_token"];
+    const probeCode = `require('node:http').createServer((req,res)=>res.end(JSON.stringify(Object.fromEntries(${JSON.stringify([...reservedKeys, "OPENAI_API_KEY"])}.map(key => [key, process.env[key] ?? null]))))).listen(Number(process.env.PORT), '127.0.0.1')`;
+    const serviceCommand = `${JSON.stringify(process.execPath)} -e ${JSON.stringify(probeCode)}`;
     const makeConfig = (flag: string) => ({
       workspaceRuntime: {
         services: [
           {
             name: "web",
             command: serviceCommand,
-            env: { PAPERCLIP_TEST_RUNTIME_FLAG: flag },
+            env: { PAPERCLIP_TEST_RUNTIME_FLAG: flag, OPENAI_API_KEY: "fixture-model-key", ...Object.fromEntries(reservedKeys.map(key => [key, "fixture-service-control"])) },
             port: { type: "auto" },
             readiness: {
               type: "http",
@@ -8664,6 +8729,9 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
     });
     expect(first).toHaveLength(1);
     await expect(fetch(first[0]!.url!)).resolves.toMatchObject({ ok: true });
+    const firstEnv = await (await fetch(first[0]!.url!)).json();
+    for (const key of reservedKeys) expect(firstEnv[key]).toBeNull();
+    expect(firstEnv.OPENAI_API_KEY).toBe("fixture-model-key");
 
     await stopRuntimeServicesForExecutionWorkspace({
       db,
@@ -8687,6 +8755,9 @@ describeEmbeddedPostgres("workspace runtime startup reconciliation", () => {
     expect(second[0]?.port).toBe(first[0]?.port);
     expect(second[0]?.url).toBe(first[0]?.url);
     await expect(fetch(second[0]!.url!)).resolves.toMatchObject({ ok: true });
+    const restartedEnv = await (await fetch(second[0]!.url!)).json();
+    for (const key of reservedKeys) expect(restartedEnv[key]).toBeNull();
+    expect(restartedEnv.OPENAI_API_KEY).toBe("fixture-model-key");
 
     await stopRuntimeServicesForExecutionWorkspace({
       db,

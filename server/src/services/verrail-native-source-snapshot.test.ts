@@ -1,0 +1,123 @@
+import { execFile } from "node:child_process";
+import * as childProcess from "node:child_process";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { captureNativeSource } from "./verrail-native-source.js";
+import { createNativeSourceSnapshot } from "./verrail-native-source-snapshot.js";
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return { ...actual, spawn: vi.fn(actual.spawn) };
+});
+
+const exec = promisify(execFile);
+const identity = { workspaceId: "workspace", heartbeatRunId: "heartbeat", agentId: "agent", runId: "run", attemptId: "attempt", deploymentRevisionId: "deployment", agentVersionId: "version" };
+describe("trusted source snapshot Git bundle", () => {
+  let cwd: string;
+  let destination: string;
+  const git = (args: string[], location = cwd) => exec("git", args, { cwd: location });
+  beforeEach(async () => {
+    cwd = await realpath(await mkdtemp(path.join(os.tmpdir(), "native-bundle-source-")));
+    destination = await realpath(await mkdtemp(path.join(os.tmpdir(), "native-bundle-read-")));
+    await git(["init", "-q"]);
+    await writeFile(path.join(cwd, "source.txt"), "old source");
+    await writeFile(path.join(cwd, "deleted.txt"), "old deleted content");
+    await git(["add", "."]);
+    await git(["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "original history"]);
+  });
+  afterEach(async () => { vi.restoreAllMocks(); vi.mocked(childProcess.spawn).mockReset(); await rm(cwd, { recursive: true, force: true }); await rm(destination, { recursive: true, force: true }); });
+  const inputs = async () => ({ cwd, identity, source: await captureNativeSource({ cwd, identity, phase: "after_adapter_return" }) });
+
+  it("reconstructs frozen dirty/untracked/mode/link bytes without history, ignored files or delivery records", async () => {
+    await writeFile(path.join(cwd, "source.txt"), "dirty source");
+    await rm(path.join(cwd, "deleted.txt"));
+    await writeFile(path.join(cwd, "new file.txt"), "untracked source");
+    await writeFile(path.join(cwd, 'quote"file.txt'), "quoted source");
+    const binary = Buffer.from([0, 255, 13, 10, 0, 128]);
+    await writeFile(path.join(cwd, "binary.dat"), binary);
+    await writeFile(path.join(cwd, "\u6e90\u7801.txt"), "UTF-8 path");
+    await writeFile(path.join(cwd, "run.sh"), "#!/bin/sh\nexit 0\n");
+    await chmod(path.join(cwd, "run.sh"), 0o755);
+    await symlink("source.txt", path.join(cwd, "linked"));
+    await writeFile(path.join(cwd, ".gitignore"), "ignored/\n");
+    await mkdir(path.join(cwd, "ignored"));
+    await writeFile(path.join(cwd, "ignored/private"), "OUTSIDE_COVERAGE");
+    await mkdir(path.join(cwd, ".verrail"));
+    await writeFile(path.join(cwd, ".verrail/record"), "DELIVERY_RECORD");
+    await git(["add", ".verrail"]);
+    await git(["config", "core.autocrlf", "true"]);
+    await writeFile(path.join(cwd, ".gitattributes"), "source.txt filter=untrusted\n");
+    await git(["config", "filter.untrusted.clean", "sh -c 'touch untrusted-filter-ran'"]);
+    const beforeIndex = await readFile(path.join(cwd, ".git/index"));
+    const beforeHead = (await git(["rev-parse", "HEAD"])).stdout;
+    const input = await inputs();
+    const a = await createNativeSourceSnapshot(input);
+    const b = await createNativeSourceSnapshot(input);
+    expect(a.body.equals(b.body)).toBe(true);
+    expect(a.sourceSnapshot.sourceContentSha256).toBe(input.source.manifest?.contentSha256);
+    await writeFile(path.join(destination, "source.bundle"), a.body);
+    await git(["clone", "-q", "source.bundle", "restored"], destination);
+    const restored = path.join(destination, "restored");
+    expect((await git(["rev-list", "--count", "HEAD"], restored)).stdout.trim()).toBe("1");
+    expect((await git(["show", "HEAD:source.txt"], restored)).stdout).toBe("dirty source");
+    expect((await git(["show", "HEAD:new file.txt"], restored)).stdout).toBe("untracked source");
+    expect((await git(["show", 'HEAD:quote"file.txt'], restored)).stdout).toBe("quoted source");
+    expect((await exec("git", ["show", "HEAD:binary.dat"], { cwd: restored, encoding: "buffer" })).stdout.equals(binary)).toBe(true);
+    expect((await git(["show", "HEAD:\u6e90\u7801.txt"], restored)).stdout).toBe("UTF-8 path");
+    const tree = (await git(["ls-tree", "-r", "HEAD"], restored)).stdout;
+    expect(tree).toMatch(/100755 blob .*\trun.sh/);
+    expect(tree).toMatch(/120000 blob .*\tlinked/);
+    expect(tree).not.toMatch(/deleted.txt|ignored\/|\.verrail/);
+    expect((await git(["show", "HEAD:linked"], restored)).stdout).toBe("source.txt");
+    expect((await git(["rev-parse", "HEAD^{tree}"], restored)).stdout.trim()).toBe(a.sourceSnapshot.snapshotTree);
+    expect((await git(["rev-parse", "HEAD"], restored)).stdout.trim()).toBe(a.sourceSnapshot.snapshotCommit);
+    expect((await git(["rev-parse", "HEAD"])).stdout).toBe(beforeHead);
+    expect((await readFile(path.join(cwd, ".git/index"))).equals(beforeIndex)).toBe(true);
+    await expect(stat(path.join(cwd, "untrusted-filter-ran"))).rejects.toMatchObject({ code: "ENOENT" });
+    await writeFile(path.join(cwd, ".verrail/record"), "UPDATED_DELIVERY_RECORD");
+    await git(["add", ".verrail/record"]);
+    await git(["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "delivery records only"]);
+    expect((await createNativeSourceSnapshot(await inputs())).body.equals(a.body)).toBe(true);
+  });
+  it("kills timed-out exporter processes and removes temporary state without exposing errors", async () => {
+    const input = await inputs();
+    const { spawn } = await vi.importActual<typeof import("node:child_process")>("node:child_process");
+    let pid: number | undefined;
+    let temporary: string | undefined;
+    vi.mocked(childProcess.spawn).mockImplementation(((command: string, args: string[], options: any) => {
+      temporary = options.cwd;
+      const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], options);
+      pid = child.pid;
+      return child;
+    }) as typeof spawn);
+    await expect(createNativeSourceSnapshot({ ...input, timeoutMs: 2000 })).rejects.toThrow("NATIVE_SOURCE_SNAPSHOT_INVALID");
+    expect(pid).toBeDefined();
+    expect(() => process.kill(pid!, 0)).toThrow();
+    await expect(stat(temporary!)).rejects.toMatchObject({ code: "ENOENT" });
+  }, 10_000);
+  it("rejects changed source, unavailable source, old scope and bounded output/deadline failures", async () => {
+    const input = await inputs();
+    await writeFile(path.join(cwd, "source.txt"), "changed after observation");
+    await expect(createNativeSourceSnapshot(input)).rejects.toThrow("NATIVE_SOURCE_SNAPSHOT_INVALID");
+    const current = await inputs();
+    await expect(createNativeSourceSnapshot({ ...current, maxOutputBytes: 1 })).rejects.toThrow("NATIVE_SOURCE_SNAPSHOT_INVALID");
+    await expect(createNativeSourceSnapshot({ ...current, timeoutMs: 0 })).rejects.toThrow("NATIVE_SOURCE_SNAPSHOT_INVALID");
+    const old = await captureNativeSource({ cwd, identity, phase: "after_adapter_return", scopeVersion: 1 });
+    await expect(createNativeSourceSnapshot({ ...current, source: old })).rejects.toThrow("NATIVE_SOURCE_SNAPSHOT_INVALID");
+    await rm(path.join(cwd, ".git"), { recursive: true });
+    await expect(createNativeSourceSnapshot(await inputs())).rejects.toThrow("NATIVE_SOURCE_SNAPSHOT_INVALID");
+  });
+  it("exports a bounded source tree larger than 64 MiB without increasing the bundle output limit", async () => {
+    for (let index = 0; index < 3; index++) await writeFile(path.join(cwd, `large-${index}.txt`), Buffer.alloc(23 * 1024 * 1024, 65 + index));
+    const input = await inputs();
+    expect(input.source.status).toBe("captured");
+    expect(input.source.manifest!.bytes).toBeGreaterThan(64 * 1024 * 1024);
+    const snapshot = await createNativeSourceSnapshot(input);
+    expect(snapshot.sourceSnapshot.sourceContentSha256).toBe(input.source.manifest!.contentSha256);
+    expect(snapshot.body.length).toBeLessThan(32 * 1024 * 1024);
+    await expect(createNativeSourceSnapshot({ ...input, maxOutputBytes: 1 })).rejects.toThrow("NATIVE_SOURCE_SNAPSHOT_INVALID");
+  }, 30_000);
+});

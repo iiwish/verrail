@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T004",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T004",
+  "status": "completed",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T05:54:57Z",
+  "governance_inputs": [
+    ".verrail/targets/g2-7-production-closure/spec.md",
+    ".verrail/targets/g2-7-production-closure/plan.md",
+    ".verrail/targets/g2-7-production-closure/tasks.md",
+    ".verrail/targets/g2-7-production-closure/gap-matrix.md",
+    ".verrail/targets/g2-7-production-closure/runs/T003-A001/evidence.json"
+  ],
+  "approval_gates": {
+    "intermediate_plan_authority": "delegated_to_codex",
+    "dependency_T003": "accepted_for_dependency_progression",
+    "analysis": "no_critical_or_high_findings"
+  },
+  "work_unit": {
+    "title": "增加完整工作结果与版本绑定",
+    "goal": "让 IntegrationTask 和 HumanTask 使用各自不可变、Workspace-scoped、版本固定的结果事实，并禁止 IntegrationTask 伪造成 Agent Run。",
+    "epic": "E002",
+    "requirements": ["AC-03", "AC-05", "AC-06"],
+    "depends_on": ["T003"],
+    "blocks": ["T005", "T006", "T007"],
+    "parallel": false
+  },
+  "codebase_context": {
+    "current_gap": "IntegrationRun has no attempt, graph revision, connection, connector version, commit, criterion, environment, provider receipt, or idempotency binding. HumanWorkResult does not exist. CreateRun still permits integration_run rows in the Agent Run table.",
+    "compatibility": "Existing IntegrationRun rows remain readable with nullable compatibility fields. New commands require complete bindings and create an immutable first IntegrationAttempt.",
+    "ownership": "Go Domain API owns result writes. PostgreSQL owns facts; Temporal may only invoke commands in T005."
+  },
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "allowed_files": [
+      "packages/db/src/schema/verrail_connector.ts",
+      "packages/db/src/schema/verrail_work_results.ts",
+      "packages/db/src/schema/index.ts",
+      "packages/db/src/migrations/0242_*.sql",
+      "packages/db/src/migrations/meta/0242_snapshot.json",
+      "packages/db/src/migrations/meta/_journal.json",
+      "packages/shared/src/types/connector.ts",
+      "packages/shared/src/types/target.ts",
+      "packages/shared/src/validators/connector.ts",
+      "packages/shared/src/validators/connector.test.ts",
+      "packages/shared/src/validators/target.ts",
+      "packages/shared/src/validators/target.test.ts",
+      "packages/shared/src/index.ts",
+      "services/domain-api/internal/target/connector.go",
+      "services/domain-api/internal/target/connector_store.go",
+      "services/domain-api/internal/target/connector_test.go",
+      "services/domain-api/internal/target/graph.go",
+      "services/domain-api/internal/target/graph_store.go",
+      "services/domain-api/internal/httpapi/server.go",
+      "services/domain-api/internal/httpapi/*_test.go",
+      "server/src/services/verrail-domain-api-client.ts",
+      "server/src/services/target-read-model.ts",
+      "server/src/__tests__/target-read-model.test.ts",
+      "server/src/routes/connector.ts",
+      "server/src/__tests__/connector-routes.test.ts",
+      ".verrail/targets/g2-7-production-closure/runs/T004-A001/**",
+      ".verrail/targets/g2-7-production-closure/timeline.jsonl"
+    ],
+    "data_rules": [
+      "No destructive DROP or invented backfill values.",
+      "New IntegrationRun binding columns are nullable only for pre-T004 compatibility rows; validators require them for new commands.",
+      "IntegrationAttempt and HumanWorkResult are append-only and use composite Workspace foreign keys wherever the parent schema supports them.",
+      "Provider receipts and result payloads must not contain credentials."
+    ]
+  },
+  "amendments": [
+    {
+      "at": "2026-09-04T05:56:43Z",
+      "approved_by": "codex_under_delegated_intermediate_technical_authority",
+      "reason": "Pre-RED inventory resolved the actual shared validator and read-model test paths and added the create-Run validator needed to prove IntegrationTask cannot be represented as an Agent Run.",
+      "scope_added": [
+        "packages/shared/src/validators/connector.test.ts",
+        "packages/shared/src/validators/target.ts",
+        "packages/shared/src/validators/target.test.ts",
+        "server/src/__tests__/target-read-model.test.ts"
+      ]
+    },
+    {
+      "at": "2026-09-04T06:23:43Z",
+      "approved_by": "codex_under_delegated_intermediate_technical_authority",
+      "reason": "The new public compatibility route must remain represented in the generated OpenAPI contract.",
+      "scope_added": [
+        "server/src/routes/openapi.ts"
+      ]
+    }
+  ],
+  "completed_at": "2026-09-04T06:23:43Z",
+  "tdd_plan": {
+    "required": true,
+    "red": "Add schema, validator, and PostgreSQL integration tests for complete bindings, wrong node kinds, cross-Workspace references, idempotent replay, immutable attempts/results, and rejection of integration_run through CreateRun.",
+    "green": "Add the minimum expand migration, Go commands/store handlers, shared contracts, and read-model mapping.",
+    "refactor": "Centralize WorkNode binding checks and preserve compatibility projection for old IntegrationRun rows."
+  },
+  "validation_loop": {
+    "commands": [
+      "pnpm db:generate",
+      "pnpm --filter @paperclipai/db check:migrations",
+      "VERRAIL_TEST_DATABASE_URL=<ephemeral-postgres> pnpm test:domain-api",
+      "focused shared/server tests",
+      "pnpm --filter @paperclipai/db typecheck",
+      "pnpm --filter @paperclipai/shared typecheck",
+      "pnpm --filter @paperclipai/server typecheck",
+      "git diff --check"
+    ],
+    "retry_budget": 3
+  },
+  "evidence_contract": {
+    "run_id": "T004-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T004-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T004-A001/evidence.json",
+    "logs": ".verrail/targets/g2-7-production-closure/runs/T004-A001/logs/",
+    "required_items": [
+      "migration and compatibility proof",
+      "version binding matrix",
+      "wrong-node and cross-Workspace rejection codes",
+      "idempotency and immutability proof",
+      "RED/GREEN outputs and residual risks"
+    ]
+  },
+  "review_contract": {
+    "required": true,
+    "checks": [
+      "Agent Run, IntegrationRun, and HumanWorkResult cannot substitute for one another",
+      "new result facts bind the active TargetRevision and GraphRevision",
+      "IntegrationAttempt binds connection, connector version, provider reference, idempotency key, and receipt",
+      "HumanWorkResult binds authenticated human, input version, immutable result hash, and optional artifact or attachment hash",
+      "legacy rows remain readable without fabricated bindings"
+    ]
+  },
+  "stop_conditions": [
+    "A required parent cannot be Workspace-scoped without a destructive migration.",
+    "Compatibility would require inventing version, connection, commit, environment, criterion, or receipt values.",
+    "The change would make Temporal or the UI a direct fact writer."
+  ]
+}

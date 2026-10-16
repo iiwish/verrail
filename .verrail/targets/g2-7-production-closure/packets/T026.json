@@ -1,0 +1,31 @@
+{
+  "packet_id": "EP-G2.7-T026",
+  "task_id": "T026",
+  "status": "needs_review",
+  "mode": "direct_execute",
+  "authority": "Delegated technical planning; real T010 recovery is blocked without a governed dead-letter recovery path.",
+  "depends_on": ["T025 technical fix"],
+  "parallel": false,
+  "recovery_design": "An outbox requeue receipt authorizes failed-only Workflow reuse. A distinct recovery input path reconstructs state through a scoped Domain Activity, expires only the current elapsed lease with audit, and never allocates Attempts. It drains historical notifications against authoritative facts, remains available for explicit retry, and completes terminal Runs only after their outbox drains. Existing workflow histories and automatic-attempt policy are unchanged.",
+  "scope_extension": ["services/domain-api/cmd/orchestration-worker/main.go", "docs/adrs/0006-explicit-failed-run-recovery.md"],
+  "progress": "Technical recovery is verified: the real UI requeue reopened the failed Workflow in observer mode, delivered the dead letter and all three blocked successors, and audited expiry of attempt 3 without allocating work. One normal UI retry created attempt 4, which verrail-host-runner claimed and failed with NATIVE_EXECUTION_IDENTITY_INVALID because pinned v1 uses unconfigured while the executor uses gpt-5.6-sol. Cursor 2 and released lease are real executor facts, not a successful Codex execution. Director v2 already exists but has no EvaluationRun; further production execution awaits human evaluation/deployment decisions. Independent review and the full G2 gate remain outstanding.",
+  "goal": "Recover a native Run whose cancellation outbox event was rejected, without manual SQL, skipping ordered events or fabricating executor receipts.",
+  "observed": {
+    "run_id": "52d7048a-37b3-4c01-88fa-ad4251c519d0",
+    "failed_outbox_event_id": "90209717-9920-4198-95fd-abae0403d7a4",
+    "error": "unsupported Run event type: run.cancellation_requested",
+    "blocked_pending_events": 3,
+    "temporal_workflow_status": "failed since 2026-09-04T15:46:13.978450936Z",
+    "latest_attempt": "cdac7272-b090-44d9-a60d-d6d79dfa8497 remains offered past grace expiry because the retry signal is blocked behind the failed event"
+  },
+  "required_design": [
+    "Reproduce actual cancellation event serialization from the Target store through the Temporal deliverer; normalize the event contract rather than accepting arbitrary names.",
+    "Provide an explicit authenticated, workspace-scoped, idempotent and audited recovery command surfaced in the product UI. Replay the failed event in order; do not globally exclude failed predecessors or automatically reset all dead letters.",
+    "Test late cancellation against a newer attempt and stale fencing. A historical cancellation must not cancel a new authorized retry.",
+    "Verify the closed RunWorkflow reuse policy under an explicit retry. Preserve running-workflow signal idempotency and prevent late terminal events from creating duplicate execution.",
+    "Replay the real poisoned aggregate via the governed recovery surface and verify authoritative expiry, the correct executor lease, one new attempt and no database repair."
+  ],
+  "allowed_files": ["services/domain-api/internal/orchestration/**", "services/domain-api/internal/target/execution*", "services/domain-api/internal/target/graph_test.go", "services/domain-api/internal/httpapi/**", "packages/shared/src/types/execution.ts", "packages/shared/src/validators/execution.ts", "packages/shared/src/index.ts", "server/src/routes/targets.ts", "server/src/services/verrail-domain-api-client*", "server/src/services/target-read-model.ts", "server/src/__tests__/target*", "ui/src/api/targets.ts", "ui/src/pages/TargetWorkbench*", "ui/src/i18n/locales/en.json", "ui/src/i18n/locales/zh-CN.json", "docs/temporal-target-workflow.md", ".verrail/targets/g2-7-production-closure/**"],
+  "validation": ["Producer-consumer cancellation contract regression", "Ordered dead-letter recovery and workspace authorization integration tests", "Closed workflow retry and late-event tests", "Target API/UI recovery tests", "Real recovery timeline without direct SQL writes"],
+  "stop_conditions": ["Recovery requires dropping ordered events or impersonating the original executor.", "An external effect or human governance decision would be performed implicitly."]
+}

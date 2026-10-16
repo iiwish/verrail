@@ -1,0 +1,24 @@
+{
+  "id": "ui-refresh",
+  "target_id": "target-workbench-navigation",
+  "agent": "codex",
+  "runner": "local desktop",
+  "model": null,
+  "status": "completed",
+  "base_commit": "b3cf4d69",
+  "output_commit": null,
+  "output_reference": "The Git commit containing this record",
+  "branch": "codex/g2-7-production-closure",
+  "changed_files": ["ui/src/pages/TargetWorkbench.tsx", "ui/src/pages/TargetWorkbench.test.tsx", "ui/src/components/targets/TargetWorkGraph.tsx", "ui/src/components/targets/workbench-model.ts", "ui/src/components/targets/TargetActivity.tsx", "ui/src/components/targets/TargetActivity.test.tsx", "ui/src/components/targets/ArtifactPreview.tsx", "ui/src/components/targets/ArtifactPreview.test.tsx", "ui/src/i18n/locales/en.json", "ui/src/i18n/locales/zh-CN.json", "docs/product-design.md", "docs/navigation-contract.md"],
+  "commands": [
+    {"command": "pnpm -r typecheck", "status": "passed", "scope": "source checkpoint"},
+    {"command": "pnpm build", "status": "passed", "scope": "repository baseline"},
+    {"command": "go test ./...", "cwd": "services/domain-api", "status": "passed"},
+    {"command": "pnpm --filter @paperclipai/ui typecheck", "status": "passed", "scope": "final UI"},
+    {"command": "pnpm --filter @paperclipai/ui build", "status": "passed", "scope": "final UI"},
+    {"command": "pnpm exec vitest run --project @paperclipai/ui ui/src/pages/TargetWorkbench.test.tsx ui/src/components/targets/TargetWorkGraph.test.tsx ui/src/components/targets/TargetActivity.test.tsx ui/src/components/targets/ArtifactPreview.test.tsx", "status": "passed", "tests": 36},
+    {"command": "pnpm check:token-gates", "status": "passed"},
+    {"command": "pnpm test:run", "status": "incomplete", "reason": "Stopped after approximately 27 minutes without a complete suite result; do not interpret process exit status as a test pass."}
+  ],
+  "summary": "Three primary Target views with legacy routes, version-bound candidate inspection, contextual execution, safe text previews, and recoverable activity grouping. No domain decisions or external effects were issued during browser checks."
+}

@@ -1,17 +1,21 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
+  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 
 import cliEsbuildConfig from "../cli/esbuild.config.mjs";
@@ -32,6 +36,18 @@ const releaseScript = await readFile(new URL("./release.sh", import.meta.url), "
 const releaseLib = await readFile(new URL("./release-lib.sh", import.meta.url), "utf8");
 const buildNpmScript = await readFile(new URL("./build-npm.sh", import.meta.url), "utf8");
 
+function fixtureEnvironment(directory, binDirectory) {
+  const home = join(directory, "home");
+  mkdirSync(home, { recursive: true });
+  return {
+    PATH: [binDirectory, dirname(process.execPath), "/usr/bin", "/bin"].filter(Boolean).join(":"),
+    HOME: home,
+    TMPDIR: directory,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+  };
+}
+
 test("published packages preserve the patched ACPX runtime", () => {
   assert.equal(
     rootPackage.pnpm.patchedDependencies["acpx@0.12.0"],
@@ -41,6 +57,68 @@ test("published packages preserve the patched ACPX runtime", () => {
   assert.deepEqual(adapterUtilsPackage.bundleDependencies, ["acpx"]);
   assert.equal(bundledCliNpmDependencies.has("acpx"), true);
   assert.equal(cliEsbuildConfig.external.includes("acpx"), false);
+});
+
+test("the shipped ACPX patch filters agent and terminal credential overlays", async () => {
+  const patch = await readFile(new URL("../patches/acpx@0.12.0.patch", import.meta.url), "utf8");
+  assert.match(patch, /VERRAIL_DOMAIN_API_TOKEN/);
+  assert.match(patch, /VERRAIL_GITHUB_CI_PROOF_TOKEN/);
+  assert.match(patch, /ACPX_AUTH_/);
+  assert.match(patch, /return withoutControlPlaneCredentials\(env\)/);
+  assert.match(patch, /return withoutControlPlaneCredentials\(merged\)/);
+  assert.match(patch, /for \(const entry of env \?\? \[\]\)/);
+});
+
+test("the entire ACPX patch passes strict Git whitespace checks", (t) => {
+  const fixtureDir = mkdtempSync(join(tmpdir(), "paperclip-patch-whitespace-"));
+  t.after(() => rmSync(fixtureDir, { recursive: true, force: true }));
+  const result = spawnSync("git", [
+    "-c", "core.whitespace=blank-at-eol,blank-at-eof,space-before-tab",
+    "diff", "--no-index", "--check", "--", "/dev/null",
+    new URL("../patches/acpx@0.12.0.patch", import.meta.url).pathname,
+  ], { cwd: fixtureDir, env: fixtureEnvironment(fixtureDir), encoding: "utf8", timeout: 10000 });
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 1, `${result.stdout}${result.stderr}`);
+  assert.equal(`${result.stdout}${result.stderr}`, "");
+});
+
+test("Git and the package staging patch command preserve every ACPX package file", (t) => {
+  const fixtureDir = mkdtempSync(join(tmpdir(), "paperclip-patch-roundtrip-"));
+  t.after(() => rmSync(fixtureDir, { recursive: true, force: true }));
+  const env = fixtureEnvironment(fixtureDir);
+  const require = createRequire(new URL("../packages/adapter-utils/package.json", import.meta.url));
+  const installed = dirname(require.resolve("acpx/package.json"));
+  const patch = readFileSync(new URL("../patches/acpx@0.12.0.patch", import.meta.url), "utf8");
+  const pristine = join(fixtureDir, "pristine");
+  cpSync(installed, pristine, { recursive: true });
+  execFileSync("git", ["apply", "--unidiff-zero", "--reverse", "-"], { cwd: pristine, env, input: patch, timeout: 10000 });
+
+  const inventory = (directory) => readdirSync(directory, { recursive: true }).sort().flatMap((file) => {
+    const absolute = join(directory, file);
+    const stat = lstatSync(absolute);
+    assert.equal(stat.isSymbolicLink(), false, `Unexpected package symlink: ${file}`);
+    return stat.isFile() ? [{ file, mode: stat.mode & 0o777, sha256: createHash("sha256").update(readFileSync(absolute)).digest("hex") }] : [];
+  });
+  const expected = inventory(installed);
+  // Whole-hunk replacement keeps tab-indented context out of the patch file.
+  // Git needs its zero-context parser; the production staging command does not.
+  for (const command of ["git", "patch"]) {
+    const destination = join(fixtureDir, command);
+    cpSync(pristine, destination, { recursive: true });
+    const args = command === "git" ? ["apply", "--unidiff-zero", "-"] : ["-p1", "--forward", "-d", destination];
+    execFileSync(command, args, { cwd: destination, env, input: patch, timeout: 10000 });
+    const actual = inventory(destination);
+    for (const file of expected) assert.deepEqual(actual.find((entry) => entry.file === file.file), file);
+    // BSD patch can retain preimage backups. Verify their bytes instead of
+    // overlooking unexpected files or comparing them with the patched runtime.
+    for (const extra of actual.filter((entry) => !expected.some((file) => file.file === entry.file))) {
+      assert.equal(command, "patch");
+      assert.match(extra.file, /\.orig$/);
+      const original = inventory(pristine).find((entry) => entry.file === extra.file.slice(0, -5));
+      assert.ok(original, `Unexpected backup: ${extra.file}`);
+      assert.deepEqual(extra, { ...original, file: extra.file });
+    }
+  }
 });
 
 test("published packages preserve the patched embedded-postgres runtime", () => {
@@ -160,8 +238,7 @@ printf 'patched onAgentStderr runtime\\n' > "$target/dist/runtime.js"
     [new URL("./prepare-bundled-package.mjs", import.meta.url).pathname, sourceDir, destinationDir],
     {
       env: {
-        ...process.env,
-        PATH: `${binDir}:${process.env.PATH}`,
+        ...fixtureEnvironment(fixtureDir, binDir),
         FAKE_CALL_LOG: callLog,
         FAKE_SOURCE_PACKAGE: join(sourceDir, "package.json"),
       },

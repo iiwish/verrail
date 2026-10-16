@@ -32,6 +32,7 @@ import type { Agent } from "./agent.js";
 import type { CompanySkill } from "./company-skill.js";
 import type { Project } from "./project.js";
 import type { Routine, RoutineTrigger, RoutineVariable } from "./routine.js";
+import type { ChannelConnectorDeclarationV1 } from "./channel.js";
 
 // ---------------------------------------------------------------------------
 // JSON Schema placeholder – plugins declare config schemas as JSON Schema
@@ -689,6 +690,8 @@ export interface PaperclipPluginManifestV1 {
   jobs?: PluginJobDeclaration[];
   /** Webhook endpoints this plugin declares. Requires `webhooks.receive` capability. */
   webhooks?: PluginWebhookDeclaration[];
+  /** Versioned enterprise messaging connectors implemented by this plugin. */
+  channelConnectors?: ChannelConnectorDeclarationV1[];
   /** Agent tools this plugin contributes. Requires `agent.tools.register` capability. */
   tools?: PluginToolDeclaration[];
   /** Restricted plugin-owned database namespace declaration. */

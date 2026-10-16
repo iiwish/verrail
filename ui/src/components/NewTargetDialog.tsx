@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CreateTargetInputV1, TargetCreationDraft } from "@paperclipai/shared";
-import { AlertCircle, LoaderCircle, Plus, Target, X } from "lucide-react";
+import type { CreateTargetInputV1, TargetCreationDraft, TargetDraftDefinition } from "@paperclipai/shared";
+import { AlertCircle, Check, LoaderCircle, Plus, RefreshCw, SearchCheck, Target, X } from "lucide-react";
 import { useNavigate } from "@/lib/router";
 import { accessApi } from "../api/access";
 import { agentsApi } from "../api/agents";
@@ -10,6 +10,7 @@ import { collectionsApi } from "../api/collections";
 import { conversationsApi } from "../api/conversations";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
+import { useToastActions } from "../context/ToastContext";
 import { useTranslation } from "../i18n";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
@@ -47,12 +48,93 @@ function errorCode(error: unknown) {
   return typeof code === "string" ? code : null;
 }
 
+function ChannelReplyRecovery({ draft, onClose }: { draft: TargetCreationDraft; onClose: () => void }) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [messageId, setMessageId] = useState("");
+  const queryKey = [...queryKeys.conversations.drafts(draft.workspaceId, draft.conversationId), draft.id, draft.activeRevisionId, "channel-reply"];
+  const receipt = useQuery({
+    queryKey,
+    queryFn: () => conversationsApi.getTargetDraftChannelReply(draft.workspaceId, draft.conversationId, draft.id),
+    retry: false,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  const reconcile = useMutation({
+    mutationFn: (providerMessageId: string) => conversationsApi.reconcileTargetDraftChannelReply(
+      draft.workspaceId, draft.conversationId, draft.id, providerMessageId,
+    ),
+    retry: false,
+    gcTime: 0,
+    onSuccess: async (result) => {
+      // A background refresh started before reconciliation must not replace its result.
+      await queryClient.cancelQueries({ queryKey, exact: true });
+      queryClient.setQueryData(queryKey, result);
+      if (result.status === "succeeded") setMessageId("");
+    },
+  });
+  const status = receipt.data?.status;
+  const canRecover = !receipt.isError && !receipt.isFetching && (status === "unknown" || status === "sending");
+  const validId = /^[A-Za-z0-9_-]{1,200}$/.test(messageId.trim());
+  const failure = reconcile.error instanceof ApiError && reconcile.error.status === 403
+    ? t("targets.create.reply.permission")
+    : reconcile.error instanceof ApiError && reconcile.error.status === 409
+      ? t("targets.create.reply.conflict")
+      : reconcile.isError ? t("targets.create.reply.failed")
+        : receipt.isError ? t("targets.create.reply.loadFailed") : null;
+
+  return <>
+    <DialogHeader>
+      <DialogTitle>{t("targets.create.reply.title")}</DialogTitle>
+      <DialogDescription className="break-words">{draft.activeRevision.definition.title ?? t("targets.create.untitledDraft")}</DialogDescription>
+    </DialogHeader>
+    <div className="grid gap-4 py-2">
+      <div className="flex items-center gap-2">
+        <p role="status" className="min-w-0 flex-1 text-sm">
+          {receipt.isFetching ? t("targets.create.reply.loading") : receipt.isError ? t("targets.create.reply.unavailable")
+            : status ? t(`targets.create.reply.status.${status}`) : null}
+        </p>
+        {status === "succeeded" && !receipt.isError && !receipt.isFetching ? <Check className="h-4 w-4" aria-hidden="true" /> : null}
+        <Button variant="ghost" size="icon" title={t("targets.create.reply.refresh")} aria-label={t("targets.create.reply.refresh")}
+          disabled={receipt.isFetching || reconcile.isPending} onClick={() => { reconcile.reset(); void receipt.refetch(); }}>
+          <RefreshCw className="h-4 w-4" />
+        </Button>
+      </div>
+      {failure ? <p role="alert" className="text-sm text-destructive">{failure}</p> : null}
+      {canRecover ? <form className="grid gap-3" onSubmit={(event) => {
+        event.preventDefault();
+        if (validId && !reconcile.isPending) reconcile.mutate(messageId.trim());
+      }}>
+        <Label htmlFor="channel-reply-message-id">{t("targets.create.reply.messageId")}</Label>
+        <Input id="channel-reply-message-id" aria-label={t("targets.create.reply.messageId")} autoComplete="off" spellCheck={false}
+          value={messageId} maxLength={200} disabled={reconcile.isPending} onChange={(event) => { setMessageId(event.target.value); reconcile.reset(); }} />
+        <Button type="submit" variant="outline" className="w-fit" disabled={!validId || reconcile.isPending}>
+          {reconcile.isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <SearchCheck className="h-4 w-4" />}
+          {t(reconcile.isPending ? "targets.create.reply.verifying" : "targets.create.reply.verify")}
+        </Button>
+        {reconcile.isSuccess && reconcile.data.status !== "succeeded"
+          ? <p role="status" className="text-sm text-muted-foreground">{t("targets.create.reply.unconfirmed")}</p> : null}
+      </form> : null}
+    </div>
+    <DialogFooter>
+      <Button variant="outline" onClick={onClose}>{t("common.close")}</Button>
+      {draft.convertedTargetId ? <Button onClick={() => { onClose(); navigate(`/targets/${encodeURIComponent(draft.convertedTargetId!)}/overview`); }}>
+        <Target className="h-4 w-4" />{t("targets.create.reply.openTarget")}
+      </Button> : null}
+    </DialogFooter>
+  </>;
+}
+
 export function NewTargetDialog() {
   const { t } = useTranslation();
   const { newTargetOpen, newTargetDefaults, closeNewTarget } = useDialog();
   const { selectedCompanyId, selectedCompany } = useCompany();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
   const [draft, setDraft] = useState<TargetCreationDraft | null>(null);
   const [collectionId, setCollectionId] = useState("");
   const [title, setTitle] = useState("");
@@ -64,23 +146,43 @@ export function NewTargetDialog() {
   const [riskLevel, setRiskLevel] = useState<CreateTargetInputV1["riskLevel"]>("medium");
   const [deadline, setDeadline] = useState("");
   const [policySummary, setPolicySummary] = useState("");
+  const existingDraft = newTargetDefaults.draft;
+  const invalidDraftScope = Boolean(existingDraft && existingDraft.workspaceId !== selectedCompanyId);
+
+  useEffect(() => {
+    if (!newTargetOpen || !existingDraft || invalidDraftScope) return;
+    const definition = existingDraft.activeRevision.definition;
+    setCollectionId(definition.collectionId ?? "");
+    setTitle(definition.title ?? "");
+    setSummary(definition.summary ?? "");
+    setOwnerValue(definition.outcomeOwner ? `${definition.outcomeOwner.principalType}:${definition.outcomeOwner.principalId}` : "");
+    setGoal(definition.goal ?? "");
+    setConstraints(definition.constraints.join("\n"));
+    setCriteria(definition.acceptanceCriteria.length ? definition.acceptanceCriteria.map((criterion) => ({
+      key: crypto.randomUUID(), title: criterion.title, description: criterion.description ?? "",
+    })) : [freshCriterion()]);
+    setRiskLevel(definition.riskLevel ?? "medium");
+    setDeadline(definition.deadline ?? "");
+    setPolicySummary(definition.policySummary ?? "");
+    setDraft(existingDraft.status === "converting" ? existingDraft : null);
+  }, [existingDraft, invalidDraftScope, newTargetOpen]);
 
   const collectionsQuery = useQuery({
     queryKey: selectedCompanyId ? queryKeys.collections.list(selectedCompanyId) : ["collections", "disabled"],
     queryFn: () => collectionsApi.list(selectedCompanyId!),
-    enabled: Boolean(selectedCompanyId && newTargetOpen),
+    enabled: Boolean(selectedCompanyId && newTargetOpen && !invalidDraftScope && existingDraft?.status !== "converted"),
   });
   const agentsQuery = useQuery({
     queryKey: selectedCompanyId ? queryKeys.agents.list(selectedCompanyId) : ["agents", "disabled"],
     queryFn: () => agentsApi.list(selectedCompanyId!),
-    enabled: Boolean(selectedCompanyId && newTargetOpen),
+    enabled: Boolean(selectedCompanyId && newTargetOpen && !invalidDraftScope && existingDraft?.status !== "converted"),
   });
   const usersQuery = useQuery({
     queryKey: selectedCompanyId
       ? queryKeys.access.companyUserDirectory(selectedCompanyId)
       : ["access", "users", "disabled"],
     queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),
-    enabled: Boolean(selectedCompanyId && newTargetOpen),
+    enabled: Boolean(selectedCompanyId && newTargetOpen && !invalidDraftScope && existingDraft?.status !== "converted"),
   });
 
   const collections = collectionsQuery.data ?? [];
@@ -90,21 +192,32 @@ export function NewTargetDialog() {
   );
 
   useEffect(() => {
-    if (!newTargetOpen || collectionId) return;
+    if (!newTargetOpen || collectionId || existingDraft) return;
     const preferred = newTargetDefaults.collectionId;
     if (preferred && collections.some((collection) => collection.id === preferred)) {
       setCollectionId(preferred);
     }
-  }, [collectionId, collections, newTargetDefaults.collectionId, newTargetOpen]);
+  }, [collectionId, collections, existingDraft, newTargetDefaults.collectionId, newTargetOpen]);
 
   useEffect(() => {
-    if (!newTargetOpen || ownerValue) return;
+    if (!newTargetOpen || ownerValue || existingDraft?.activeRevision.definition.outcomeOwner) return;
     const user = usersQuery.data?.users[0];
     if (user) setOwnerValue(`user:${user.principalId}`);
-  }, [newTargetOpen, ownerValue, usersQuery.data?.users]);
+  }, [existingDraft, newTargetOpen, ownerValue, usersQuery.data?.users]);
 
   const createDraft = useMutation({
     mutationFn: async (input: CreateTargetInputV1) => {
+      const definition: TargetDraftDefinition = {
+        collectionId: input.collectionId ?? null,
+        title: input.title, summary: input.summary ?? null, outcomeOwner: input.outcomeOwner,
+        goal: input.goal, constraints: input.constraints, acceptanceCriteria: input.acceptanceCriteria,
+        riskLevel: input.riskLevel, deadline: input.deadline ?? null, policySummary: input.policySummary ?? null,
+        resourceRefs: existingDraft?.activeRevision.definition.resourceRefs ?? input.resourceRefs ?? [],
+      };
+      if (existingDraft) {
+        return conversationsApi.updateTargetDraft(selectedCompanyId!, existingDraft.conversationId,
+          existingDraft.id, existingDraft.activeRevisionNumber, definition);
+      }
       const conversationId = newTargetDefaults.conversationId
         ?? (await conversationsApi.create(selectedCompanyId!, { title: input.title, contextBindings: [] })).id;
       const source = await conversationsApi.appendStructuredMessage(
@@ -112,19 +225,7 @@ export function NewTargetDialog() {
         conversationId,
         `Create Target: ${input.title}`,
       );
-      return conversationsApi.createTargetDraft(selectedCompanyId!, conversationId, source.id, {
-        collectionId: input.collectionId ?? null,
-        title: input.title,
-        summary: input.summary ?? null,
-        outcomeOwner: input.outcomeOwner,
-        goal: input.goal,
-        constraints: input.constraints,
-        acceptanceCriteria: input.acceptanceCriteria,
-        riskLevel: input.riskLevel,
-        deadline: input.deadline ?? null,
-        policySummary: input.policySummary ?? null,
-        resourceRefs: input.resourceRefs ?? [],
-      });
+      return conversationsApi.createTargetDraft(selectedCompanyId!, conversationId, source.id, definition);
     },
   });
   const confirmDraft = useMutation({
@@ -155,6 +256,8 @@ export function NewTargetDialog() {
   const validCriteria = criteria.filter((criterion) => criterion.title.trim());
   const canSubmit = Boolean(
     selectedCompanyId
+    && !invalidDraftScope
+    && (!existingDraft || ["collecting", "ready_for_confirmation", "converting"].includes(existingDraft.status))
     && title.trim()
     && ownerValue
     && goal.trim()
@@ -187,10 +290,16 @@ export function NewTargetDialog() {
     try {
       if (!draft) {
         setDraft(await createDraft.mutateAsync(input));
+        void queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all(selectedCompanyId) });
         return;
       }
-      const created = (await confirmDraft.mutateAsync(draft)).target;
+      const result = await confirmDraft.mutateAsync(draft);
+      const created = result.target;
+      if (result.channelReply && !["succeeded", "not_applicable"].includes(result.channelReply.status)) {
+        pushToast({ tone: "warn", title: t("targets.create.channelReplyPendingTitle"), body: t("targets.create.channelReplyPending") });
+      }
       await queryClient.invalidateQueries({ queryKey: ["targets", selectedCompanyId] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.conversations.all(selectedCompanyId) });
       reset();
       closeNewTarget();
       navigate(created.workbenchHref);
@@ -202,7 +311,9 @@ export function NewTargetDialog() {
 
   const mutationError = confirmDraft.error ?? createDraft.error;
   const code = errorCode(mutationError);
-  const errorMessage = code === "TARGET_IDEMPOTENCY_CONFLICT"
+  const errorMessage = invalidDraftScope ? t("targets.create.errors.permission")
+    : existingDraft && mutationError instanceof ApiError && mutationError.status === 409 ? t("targets.create.errors.staleDraft")
+    : code === "TARGET_IDEMPOTENCY_CONFLICT"
     ? t("targets.create.errors.conflict")
     : code === "TARGET_CREATE_FORBIDDEN"
       ? t("targets.create.errors.permission")
@@ -211,6 +322,18 @@ export function NewTargetDialog() {
         : createDraft.isError || confirmDraft.isError
           ? t("targets.create.errors.failed")
           : null;
+
+  if (existingDraft?.status === "converted") {
+    const close = () => { reset(); closeNewTarget(); };
+    return <Dialog open={newTargetOpen} onOpenChange={(open) => { if (!open) close(); }}>
+      <DialogContent className="max-h-(--sz-85vh) overflow-y-auto sm:max-w-lg">
+        {invalidDraftScope ? <>
+          <DialogHeader><DialogTitle>{t("targets.create.reply.title")}</DialogTitle><DialogDescription>{t("targets.create.reply.unavailable")}</DialogDescription></DialogHeader>
+          <p role="alert" className="text-sm text-destructive">{t("targets.create.reply.scopeDenied")}</p>
+        </> : newTargetOpen ? <ChannelReplyRecovery key={`${existingDraft.workspaceId}:${existingDraft.conversationId}:${existingDraft.id}:${existingDraft.activeRevisionId}`} draft={existingDraft} onClose={close} /> : null}
+      </DialogContent>
+    </Dialog>;
+  }
 
   return (
     <Dialog
@@ -228,7 +351,7 @@ export function NewTargetDialog() {
             <Target className="h-4 w-4" />
             {selectedCompany?.issuePrefix ? <span>{selectedCompany.issuePrefix}</span> : null}
           </div>
-          <DialogTitle>{t("targets.create.title")}</DialogTitle>
+          <DialogTitle>{t(existingDraft ? "targets.create.resume" : "targets.create.title")}</DialogTitle>
           <DialogDescription>{t("targets.create.description")}</DialogDescription>
         </DialogHeader>
 
@@ -317,7 +440,7 @@ export function NewTargetDialog() {
             <legend className="text-sm font-medium">{t("targets.create.acceptanceCriteria")}</legend>
             {criteria.map((criterion, index) => (
               <div key={criterion.key} className="grid gap-2 border-l border-border pl-3 sm:grid-cols-[1fr_1.5fr_auto]">
-                <Input
+                <Textarea
                   aria-label={t("targets.create.criterionName", { index: index + 1 })}
                   value={criterion.title}
                   maxLength={200}

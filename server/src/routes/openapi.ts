@@ -8,6 +8,8 @@ import {
   updateAgentPermissionsSchema,
   updateAgentInstructionsPathSchema,
   updateAgentInstructionsBundleSchema,
+  previewDirectorInstructionsSchema,
+  applyDirectorInstructionsSchema,
   upsertAgentInstructionsFileSchema,
   createAgentKeySchema,
   builtInAgentEmptyMutationSchema,
@@ -199,6 +201,9 @@ import {
   adjudicationIdempotencyKeySchema,
   approveActionSchema,
   connectorIdempotencyKeySchema,
+  collectGithubCiObservationSchema,
+  recordGithubFixedCiProofSchema,
+  githubFixedCiProofResultSchema,
   createAgentDefinitionSchema,
   createArtifactSchema,
   createClaimSchema,
@@ -209,15 +214,20 @@ import {
   createRunSchema,
   createSubmissionSchema,
   createTargetSchema,
+  prepareTargetRepositorySourceSchema,
+  repositorySourceReceiptSchema,
+  reviseTargetProofSchema,
   createGithubRepoBindingSchema,
   executeActionSchema,
   publishAgentVersionSchema,
   recordEvaluationRunSchema,
   recordDeliveryReviewSchema,
   recordEvidenceSchema,
+  recordHumanWorkResultSchema,
   recordIntegrationRunSchema,
   recordVerificationResultSchema,
   reportRunEventSchema,
+  retryRunOutboxSchema,
   requestPullRequestActionSchema,
   reviseDeploymentSchema,
   targetIdempotencyKeySchema,
@@ -225,8 +235,11 @@ import {
   updateAgentDefinitionSchema,
   // Workspace conversations
   conversationListQuerySchema,
+  startConversationInvocationSchema,
+  CONVERSATION_INVOCATION_STATUSES,
   createConversationSchema,
   updateConversationSchema,
+  switchConversationContextSchema,
   sendConversationMessageSchema,
   confirmTargetCreationDraftSchema,
   createProviderConversationBindingSchema,
@@ -886,6 +899,17 @@ const BOARD_ONLY_PREFIXES = [
 ];
 
 const BOARD_ONLY_OPERATIONS = new Set([
+  "POST /api/workspaces/{workspaceId}/targets/{targetId}/repository-sources",
+  "GET /api/workspaces/{workspaceId}/conversation-runtime",
+  "GET /api/workspaces/{workspaceId}/conversations/{conversationId}/invocations",
+  "POST /api/workspaces/{workspaceId}/conversations/{conversationId}/invocations",
+  "GET /api/workspaces/{workspaceId}/conversations/{conversationId}/invocations/{invocationId}",
+  "GET /api/workspaces/{workspaceId}/conversations/{conversationId}/invocations/{invocationId}/events",
+  "POST /api/workspaces/{workspaceId}/conversations/{conversationId}/invocations/{invocationId}/cancel",
+  "POST /api/workspaces/{workspaceId}/targets/{targetId}/github-ci-observations",
+  "POST /api/workspaces/{workspaceId}/targets/{targetId}/github-fixed-ci-proofs",
+  "GET /api/workspaces/{workspaceId}/targets/{targetId}/run-outbox-failures",
+  "POST /api/workspaces/{workspaceId}/runs/{runId}/outbox/retry",
   "GET /api/cloud/stacks",
   "GET /api/companies",
   "POST /api/companies",
@@ -1136,6 +1160,12 @@ function applyOperationStatusOverride(
 function applyDocumentFixups(document: any): any {
   document.components ??= {};
   document.components.securitySchemes = {
+    DirectorInvocationToken: {
+      type: "apiKey",
+      in: "header",
+      name: "X-Verrail-Chat-Token",
+      description: "Short-lived invocation-scoped Director token. Authenticated mode requires the configured execution gateway and a signed token bound to an active invocation and member.",
+    },
     [BOARD_SESSION_AUTH_SCHEME]: {
       type: "apiKey",
       in: "cookie",
@@ -1180,6 +1210,10 @@ function applyDocumentFixups(document: any): any {
               : { actor: "public" };
 
       const key = operationKey(method, path);
+      if (key === "POST /api/director/mcp") {
+        operation.security = [{ DirectorInvocationToken: [] }];
+        operation["x-paperclip-authorization"] = { actor: "director_invocation", deploymentModes: ["local_trusted", "authenticated"] };
+      }
       if (authLevel !== "public") {
         const responses = (operation.responses ??= {}) as Record<string, unknown>;
         if (!responses["403"]) {
@@ -1990,6 +2024,33 @@ registry.registerPath({
   summary: "Get agent instructions bundle",
   request: { params: z.object({ id: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/agents/{id}/director-instructions",
+  tags: ["agents"],
+  summary: "Inspect effective local Director chat instructions (board only)",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/agents/{id}/director-instructions/preview",
+  tags: ["agents"],
+  summary: "Preview a Director role draft without a model run or mutation (board only)",
+  request: { params: z.object({ id: z.string() }), body: jsonBody(previewDirectorInstructionsSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/agents/{id}/director-instructions",
+  tags: ["agents"],
+  summary: "Apply a concurrency-checked local Director instruction snapshot (human operator only)",
+  request: { params: z.object({ id: z.string() }), body: jsonBody(applyDirectorInstructionsSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
 });
 
 registry.registerPath({
@@ -2856,6 +2917,93 @@ registry.registerPath({
 
 // ─── Workspace conversations ────────────────────────────────────────────────
 
+const invocationParams = z.object({ workspaceId: z.string().uuid(), conversationId: z.string().uuid() });
+const invocationIdParams = invocationParams.extend({ invocationId: z.string().uuid() });
+const invocationViewSchema = z.object({
+  id: z.string().uuid(), workspaceId: z.string().uuid(), conversationId: z.string().uuid(),
+  sourceMessageId: z.string().uuid(), principalId: z.string(), agentVersionId: z.string().uuid(),
+  deploymentRevisionId: z.string().uuid(), status: z.enum(CONVERSATION_INVOCATION_STATUSES),
+  lastEventCursor: z.number().int().nonnegative(), output: z.string(), errorCode: z.string().nullable(),
+  createdAt: z.string().datetime(), startedAt: z.string().datetime().nullable(), finishedAt: z.string().datetime().nullable(),
+}).strict();
+const invocationStartResponse = z.object({ invocation: invocationViewSchema, replayed: z.boolean() }).strict();
+const invocationErrors = { 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict };
+
+registry.registerPath({
+  method: "get", path: "/api/workspaces/{workspaceId}/conversation-runtime", tags: ["conversations"],
+  summary: "Read the workspace conversation execution capability",
+  request: { params: z.object({ workspaceId: z.string().uuid() }) },
+  responses: { 200: r.ok(z.object({ mode: z.enum(["execution_gateway", "local_compatibility", "unavailable"]) }).strict()), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+registry.registerPath({
+  method: "post", path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/invocations", tags: ["conversations"],
+  summary: "Start or replay a member's version-pinned conversation invocation",
+  description: "Requires the configured execution gateway, an active OpenCode Director version and writable membership. The idempotency key belongs in the JSON body and is scoped to the initiating principal and conversation. Runtime credentials and authority cannot be supplied by the caller.",
+  request: { params: invocationParams, body: jsonBody(startConversationInvocationSchema) },
+  responses: { 200: { ...r.ok(invocationStartResponse), description: "Existing invocation replayed" }, 202: { ...r.ok(invocationStartResponse), description: "Invocation accepted" }, ...invocationErrors },
+});
+registry.registerPath({
+  method: "get", path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/invocations", tags: ["conversations"],
+  summary: "List persisted conversation invocations visible to a workspace member",
+  request: { params: invocationParams }, responses: { 200: r.ok(z.array(invocationViewSchema)), ...invocationErrors },
+});
+registry.registerPath({
+  method: "get", path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/invocations/{invocationId}", tags: ["conversations"],
+  summary: "Read persisted invocation output and terminal status",
+  request: { params: invocationIdParams }, responses: { 200: r.ok(invocationViewSchema), ...invocationErrors },
+});
+registry.registerPath({
+  method: "post", path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/invocations/{invocationId}/cancel", tags: ["conversations"],
+  summary: "Request cancellation as the invocation's initiating member",
+  description: "A cancellation request is not proof of process cleanup. Poll the invocation or follow its event stream for the terminal state. Repeated requests return the current state.",
+  request: { params: invocationIdParams, body: jsonBody(z.object({}).strict()) },
+  responses: { 202: { ...r.ok(invocationViewSchema), description: "Cancellation request acknowledged" }, ...invocationErrors },
+});
+registry.registerPath({
+  method: "get", path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/invocations/{invocationId}/events", tags: ["conversations"],
+  summary: "Replay and stream durable invocation events",
+  description: "Last-Event-ID takes precedence over the after query cursor. SSE event ids are persisted cursors; event types are start, chunk, cancel_requested, done and error. Disconnect or revoked membership ends delivery without canceling execution.",
+  request: {
+    params: invocationIdParams,
+    query: z.object({ after: z.coerce.number().int().min(0).max(2147483647).optional() }),
+    headers: z.object({ "Last-Event-ID": z.string().optional() }),
+  },
+  responses: { 200: { description: "Durable event stream", content: { "text/event-stream": { schema: z.string() } } }, ...invocationErrors },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/director/mcp",
+  tags: ["conversations"],
+  summary: "Handle invocation-scoped Director MCP requests",
+  request: { body: jsonBody(z.record(z.string(), z.unknown())) },
+  responses: { 200: r.ok(), 202: { description: "Notification accepted" }, 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/context",
+  tags: ["conversations"],
+  summary: "Switch, link or unlink a Target using the observed conversation context version",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), conversationId: z.string().uuid() }),
+    body: jsonBody(switchConversationContextSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/proposals/{messageId}/confirm",
+  tags: ["conversations", "targets"],
+  summary: "Confirm the initiating member's version-bound Director Target proposal",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), conversationId: z.string().uuid(), messageId: z.string().uuid() }),
+    body: jsonBody(z.object({}).strict()),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: { description: "Domain API unavailable" } },
+});
+
 registry.registerPath({
   method: "get",
   path: "/api/workspaces/{workspaceId}/conversations",
@@ -3005,7 +3153,77 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
 });
 
+const channelReplyParams = z.object({ workspaceId: z.string().uuid(), conversationId: z.string().uuid(), draftId: z.string().uuid() });
+registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/target-drafts/{draftId}/channel-reply",
+  tags: ["conversations", "targets"],
+  summary: "Read the persisted channel creation-reply status",
+  description: "Board and Workspace access required. Read-only; does not send a message or admit a proof. Response is not cacheable.",
+  request: { params: channelReplyParams },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/conversations/{conversationId}/target-drafts/{draftId}/channel-reply/reconcile",
+  tags: ["conversations", "targets"],
+  summary: "Reconcile an uncertain creation reply using its provider message reference",
+  description: "Human Workspace member required. Reads the existing provider message without resending it. Response is not cacheable.",
+  request: { params: channelReplyParams, body: jsonBody(z.object({ providerMessageId: z.string().regex(/^[A-Za-z0-9_-]{1,200}$/) }).strict()) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
+registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/delivery-context/channel",
+  tags: ["targets"],
+  summary: "Inspect version-bound channel Target source references",
+  description: "Board and Workspace access required. Inspection only, not proof admission. Response is not cacheable.",
+  request: { params: z.object({ workspaceId: z.string().uuid() }), query: z.object({
+    channelEventId: z.string().uuid(), draftRevisionId: z.string().uuid(), createdTargetId: z.string().uuid(), createdTargetRevisionId: z.string().uuid(),
+  }).strict() },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/delivery-context/codex",
+  tags: ["targets"],
+  summary: "Inspect version-bound Codex execution references",
+  description: "Board and Workspace access required. artifactRevisionId and fixedCiProofId must be supplied together or both omitted. Inspection only, not proof admission. Response is not cacheable; concurrent reads are bounded.",
+  request: { params: z.object({ workspaceId: z.string().uuid() }), query: z.object({
+    targetId: z.string().uuid(), targetRevisionId: z.string().uuid(), graphRevisionId: z.string().uuid(),
+    runId: z.string().uuid(), runAttemptId: z.string().uuid(), heartbeatRunId: z.string().uuid(),
+    artifactRevisionId: z.string().uuid().optional(), fixedCiProofId: z.string().uuid().optional(),
+  }).strict() },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 429: r.tooManyRequests },
+});
+
 // ─── Native Target domain read model ────────────────────────────────────────
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/targets/{targetId}/repository-sources",
+  tags: ["targets"],
+  summary: "Prepare an authorized, version-bound repository source",
+  description: "Board user and Workspace access required. Resolves the selected repository ref through the configured authorization and records immutable source provenance. Preparation is bounded and rejects concurrent requests.",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid() }),
+    body: jsonBody(prepareTargetRepositorySourceSchema),
+  },
+  responses: { 201: r.ok(repositorySourceReceiptSchema), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/targets/{targetId}/revisions",
+  tags: ["targets"],
+  summary: "Append a TargetRevision with explicit mandatory proof contracts",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(reviseTargetProofSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
 
 registry.registerPath({
   method: "post",
@@ -3109,6 +3327,57 @@ registry.registerPath({
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
 });
 
+registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/targets/{targetId}/run-outbox-failures",
+  tags: ["targets"],
+  summary: "List up to 100 failed Run outbox events for a Workspace Target",
+  request: { params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid() }) },
+  responses: {
+    200: r.ok(z.array(z.object({
+      eventId: z.string().uuid(), runId: z.string().uuid(), eventType: z.string(),
+      attemptCount: z.number().int(), lastError: z.string().nullable(), createdAt: z.string().datetime(),
+    }))),
+    401: r.unauthorized, 403: r.forbidden, 404: r.notFound,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/runs/{runId}/outbox/retry",
+  tags: ["targets"],
+  summary: "Retry a failed Run outbox event with a version-bound human command",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), runId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(retryRunOutboxSchema),
+  },
+  responses: {
+    200: r.ok(z.object({
+      schemaVersion: z.literal(1), runId: z.string().uuid(), eventId: z.string().uuid(),
+      status: z.literal("pending"), replayed: z.boolean(),
+    })),
+    400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound,
+    409: r.conflict, 503: r.serviceUnavailable,
+  },
+});
+
+registry.registerPath({
+  method: "get", path: "/api/workspaces/{workspaceId}/agents/{agentId}/publication-preview", tags: ["agents"],
+  summary: "Preview a saved configuration snapshot without resolving credentials",
+  request: { params: z.object({ workspaceId: z.string().uuid(), agentId: z.string().uuid() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.badRequest },
+});
+registry.registerPath({
+  method: "post", path: "/api/workspaces/{workspaceId}/agent-definitions/{definitionId}/publish-saved", tags: ["agents"],
+  summary: "Publish the saved configuration after checking the preview hash",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), definitionId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": targetIdempotencyKeySchema }),
+    body: jsonBody(z.object({ sourceHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict()),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
+});
 registry.registerPath({
   method: "get",
   path: "/api/workspaces/{workspaceId}/agent-lifecycle",
@@ -3223,6 +3492,21 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "get",
+  path: "/api/workspaces/{workspaceId}/artifact-revisions/{revisionId}/content",
+  tags: ["assurance"],
+  summary: "Download immutable ArtifactRevision content from Workspace storage",
+  request: { params: z.object({ workspaceId: z.string().uuid(), revisionId: z.string().uuid() }) },
+  responses: {
+    200: {
+      description: "Binary attachment with private, no-store caching and nosniff content handling",
+      content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } },
+    },
+    400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 503: r.serviceUnavailable,
+  },
+});
+
+registry.registerPath({
   method: "post",
   path: "/api/workspaces/{workspaceId}/claims",
   tags: ["assurance"],
@@ -3300,6 +3584,59 @@ registry.registerPath({
   responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
 });
 
+const githubCiObservationReceiptSchema = z.object({
+  schemaVersion: z.literal(1),
+  workspaceId: z.string().uuid(),
+  targetId: z.string().uuid(),
+  targetRevisionId: z.string().uuid(),
+  graphRevisionId: z.string().uuid(),
+  connectionId: z.string().uuid(),
+  bindingId: z.string().uuid(),
+  policySha256: z.string().regex(/^[a-f0-9]{64}$/),
+  auditEventId: z.string().uuid(),
+  observation: z.object({
+    kind: z.literal("verrail.fixed-ci-observation"), schemaVersion: z.literal(1),
+    repository: z.string(), repositoryId: z.number().int().positive(),
+    providerRunId: z.string(), providerAttempt: z.number().int().positive(),
+    workflowExecutionSha: z.string(), testedCandidateSha: z.string(), workflowPath: z.string(),
+    workflowSha256: z.string(), helperSha256: z.string(), artifactId: z.string(),
+    archiveSha256: z.string(), reportSha256: z.string(), verifiedAt: z.string().datetime(),
+    reference: z.string().url(),
+    checks: z.array(z.object({ id: z.enum(["ts_tests", "ts_typecheck", "ts_build", "go_tests"]), status: z.literal("passed") }).strict()).length(4),
+    unsupportedObligations: z.array(z.enum(["live_feishu", "live_codex", "live_recovery", "secret_non_persistence", "human_governance", "pr_effect"])).length(6),
+    receiptSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  }).strict(),
+}).strict();
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/targets/{targetId}/github-fixed-ci-proofs",
+  tags: ["connector"],
+  summary: "Verify fixed CI and native product-source identity before recording a CriterionProof",
+  description: "Disabled without a separate immutable verifier capability and exact operator policy. Requires an authenticated, policy-authorized user and active non-viewer Workspace membership, with the existing local-implicit membership exception. Executes the provider reader and native ArtifactRevision mapping in process; observations and audit IDs cannot be submitted. Only pre-acceptance independent requirements containing the supported fixed CI assertion IDs are admitted. Does not establish compound, live-runtime, human-governance or external-effect obligations. A replay revalidates the current context and independently collects the provider facts before Domain API replay.",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": connectorIdempotencyKeySchema }),
+    body: jsonBody(recordGithubFixedCiProofSchema),
+  },
+  responses: { 200: r.ok(githubFixedCiProofResultSchema), 201: r.ok(githubFixedCiProofResultSchema), 400: r.badRequest,
+    401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.badRequest,
+    429: r.tooManyRequests, 502: r.badGateway, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/targets/{targetId}/github-ci-observations",
+  tags: ["connector"],
+  summary: "Collect an exact-attempt fixed CI observation under operator-owned trust pins",
+  description: "Requires an actual authenticated user, active non-viewer Workspace membership (including instance admins), and explicit policy authorization. The existing local-board/local_implicit identity is exempt from session membership, but not policy authorization. Disabled by default. Persists a sanitized audit receipt only; does not create IntegrationRun, Evidence, VerificationResult or CriterionProof, establish Artifact equivalence, or complete compound requirements. Each request is a distinct audited collection, not an idempotent domain command.",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid(), targetId: z.string().uuid() }),
+    body: jsonBody(collectGithubCiObservationSchema),
+  },
+  responses: { 201: r.ok(githubCiObservationReceiptSchema), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 409: r.conflict, 429: r.tooManyRequests, 502: r.badGateway, 503: r.serviceUnavailable },
+});
+
 registry.registerPath({
   method: "post",
   path: "/api/workspaces/{workspaceId}/integration-runs",
@@ -3311,6 +3648,19 @@ registry.registerPath({
     body: jsonBody(recordIntegrationRunSchema),
   },
   responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 502: r.badGateway, 503: r.serviceUnavailable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/workspaces/{workspaceId}/human-work-results",
+  tags: ["connector"],
+  summary: "Record an immutable, version-bound HumanWorkResult for a HumanTask",
+  request: {
+    params: z.object({ workspaceId: z.string().uuid() }),
+    headers: z.object({ "Idempotency-Key": connectorIdempotencyKeySchema }),
+    body: jsonBody(recordHumanWorkResultSchema),
+  },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 503: r.serviceUnavailable },
 });
 
 registry.registerPath({
@@ -6665,6 +7015,32 @@ registry.registerPath({
   summary: "Trigger a plugin job",
   request: { params: z.object({ pluginId: z.string(), jobId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/plugins/{pluginId}/channel-connectors/{connectorKey}/{workspaceId}/{connectionId}/webhook",
+  tags: ["plugins"],
+  summary: "Deliver a provider webhook to a configured channel connection",
+  description:
+    "Public Channel Connector V1 callback. The connector worker authenticates the exact provider request before the host persists normalized conversation facts.",
+  request: {
+    params: z.object({
+      pluginId: z.string(),
+      connectorKey: z.string(),
+      workspaceId: z.string(),
+      connectionId: z.string(),
+    }),
+    body: jsonBody(z.record(z.string(), z.unknown())),
+  },
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    404: r.notFound,
+    500: r.serverError,
+    501: r.serverError,
+  },
 });
 
 registry.registerPath({

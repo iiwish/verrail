@@ -940,6 +940,27 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
       emit("");
     }
 
+    // Restore checks after rows so NOT VALID constraints can retain legacy data.
+    const checks = await sql<{
+      schema_name: string;
+      tablename: string;
+      constraint_name: string;
+      definition: string;
+    }[]>`
+      SELECT n.nspname AS schema_name, t.relname AS tablename,
+             c.conname AS constraint_name, pg_get_constraintdef(c.oid) AS definition
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+      WHERE c.contype = 'c'
+        AND ${sql.unsafe(nonSystemSchemaPredicate("n.nspname"))}
+      ORDER BY n.nspname, t.relname, c.conname
+    `;
+    for (const check of checks) {
+      if (!includedTableNames.has(tableKey(check.schema_name, check.tablename))) continue;
+      emitStatement(`ALTER TABLE ${quoteQualifiedName(check.schema_name, check.tablename)} ADD CONSTRAINT ${quoteIdentifier(check.constraint_name)} ${check.definition};`);
+    }
+
     // Sequence values
     if (sequences.length > 0) {
       emit("-- Sequence values");

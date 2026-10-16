@@ -38,7 +38,7 @@ Codex 等 Harness 负责高质量执行单个编码任务；Verrail 负责跨任
 1. 这次运行固定了哪个 AgentVersion、模型、Skill、权限与环境；
 2. 谁有权调用、决策、批准外部动作和验收结果；
 3. 本次 Submission 对应哪个 TargetRevision、ArtifactRevision、Base Revision 和内容 Hash；
-4. 每个 AcceptanceCriterion 是否由独立 Claim、Evidence 和 VerificationResult 覆盖，而不是 Agent 自述；
+4. 每个 AcceptanceCriterion 是否按显式版本化证明合同获得完整覆盖，独立验证义务由 Claim、Evidence 和 VerificationResult 证明，后置治理与外部动作义务由真实版本绑定事实证明，而不是 Agent 自述；
 5. 中断、重试、改派或 Runner 失联后，权威状态是否仍然一致；
 6. 企业代码与凭证能否留在客户网络，同时由统一控制平面治理。
 
@@ -55,6 +55,7 @@ Codex 等 Harness 负责高质量执行单个编码任务；Verrail 负责跨任
 7. **执行面可替换**：HostTrusted、CubeSandbox、容器或未来 Kubernetes 只实现 Runtime Backend，不拥有业务事实。
 8. **Go 采用目标内核加绞杀迁移**：Go 是 Verrail 新领域与编排内核的目标语言，但不以逐行翻译或一次性重写 Paperclip 全部能力作为路线。
 9. **会话不自动升级为目标**：Conversation 承载长期讨论与多个意图；显式创建目标的请求只启动 TargetCreationDraft，完整草稿经人类确认后才成为 Target。
+10. **会话是系统操作入口**：用户可以通过会话发起有权执行的系统能力，不受当前目标限制。会话有零或一个可切换的当前目标并可关联多个目标；Director 可响应明确意图切换上下文。上下文不授予权限，领域操作、人工批准和验收仍由各自命令与门禁裁决。
 10. **Collection 是可选归类**：Target 直接属于 Workspace；Collection 只聚合相关 Target 和视图，不是创建前置、权限边界或可变策略真相源。
 
 ## 4. 基座策略
@@ -74,7 +75,7 @@ Codex 等 Harness 负责高质量执行单个编码任务；Verrail 负责跨任
 ```text
 GitHub 需求
   -> 创建 TargetRevision 并固定验收条件
-  -> 选择已发布的 Codex AgentVersion
+  -> 选择已发布的 OpenCode AgentVersion
   -> 在受控 Workspace/Sandbox 执行
   -> 生成 CodeChange ArtifactRevision
   -> CI IntegrationTask 针对 Criterion 产生 Evidence 与 VerificationResult
@@ -85,6 +86,8 @@ GitHub 需求
 ```
 
 这个闭环必须能演示失败、重试、人工拒绝、修订后重新验收和安全回滚，不能只覆盖一次成功路径。
+
+1.0 首发采用 OpenCode-first：单机私有部署使用 OpenCode 完成真实仓库修改、版本绑定产物、独立验证与人工验收。已有 Codex 能力与历史证据保留，其兼容回归仍须通过，但不要求第二套运行时同时完成首发端到端验收。不同运行时的证明必须绑定各自真实身份、版本和执行事实，不得复用或改写其他运行时的历史证明。
 
 ## 6. 阶段路线
 
@@ -199,7 +202,7 @@ GitHub 需求
 5. 构建 Workspace-scoped Target 列表与 Target Workbench 的只读真实数据骨架，验证可选 Collection、Target 与 Work 映射；
 6. 实现 ProviderConversationBinding 与 TargetCreationDraft：普通消息保持会话，显式创建意图进入多轮补全，确认后幂等创建不依赖 Collection 的 Target；
 7. 完成 Go + Temporal 最小 Spike：Outbox 启动、Signal、Activity 幂等、Worker 重启、Workflow replay 和版本升级；
-8. 打通一个固定 Codex Deployment 的 GitHub 到 Submission/Acceptance 闭环；
+8. 打通一个固定 OpenCode Deployment 的 GitHub 到 Submission/Acceptance 闭环；
 9. 把 Runner Protocol 和 SandboxDriver 从进程实现中抽成稳定接口；
 10. 按 Workspace/Target、Orchestration、Assurance、Execution 的纵向切片迁入 Go；
 11. 在真实 Linux 环境完成 CubeSandbox Spike，再决定生产准入；
@@ -208,7 +211,7 @@ GitHub 需求
 ## 8. 成功指标
 
 - 首次可验收交付时间：从 TargetRevision 发布到首个可审阅 Submission；
-- 证明完整率：已验收 Submission 中每个必需 Criterion 都有有效 VerificationResult，且具备版本、权限、环境、CI 与内容 Hash 的比例；
+- 证明完整率：已完成 Target 的每个必需 Criterion 均按显式版本化合同获得全部阶段证明，独立验证具备有效 VerificationResult，治理与动作具备真实绑定事实，且版本、权限、环境、CI 与内容 Hash 完整的比例；
 - 恢复成功率：服务或 Runner 中断后无需人工改库即可收敛的运行比例；
 - 编排恢复率：Temporal Worker、API 或控制平面重启后能够从 Workflow History 和 PostgreSQL 事实自动继续的比例；
 - 人工注意力质量：Inbox 中确实需要责任人处理的事项比例；

@@ -24,6 +24,10 @@ import {
   normalizeAgentUrlKey,
   type AgentEligibilityAgent,
   type AgentApiKeyScope,
+  DIRECTOR_INSTRUCTIONS_CONFIG_KEY,
+  applyDirectorInstructionsSchema,
+  isWorkspaceDirector,
+  type ApplyDirectorInstructionsInput,
 } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import {
@@ -47,6 +51,7 @@ import {
   readBuiltInAgentMarker,
 } from "./built-in-agent-metadata.js";
 import { issueThreadInteractionService } from "./issue-thread-interactions.js";
+import { resolveDirectorRole } from "./director-instructions.js";
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -103,6 +108,7 @@ interface ClaudeLoginContext {
 
 interface UpdateAgentOptions {
   recordRevision?: RevisionMetadata;
+  allowDirectorInstructionsUpdate?: boolean;
   allowBuiltInAgentMetadata?: boolean;
   allowPendingApprovalConfigUpdate?: boolean;
   claudeLogin?: ClaudeLoginContext;
@@ -665,6 +671,19 @@ export function agentService(db: Db) {
     }
 
     const normalizedPatch = { ...data } as Partial<typeof agents.$inferInsert>;
+    if (normalizedPatch.adapterConfig && !options?.allowDirectorInstructionsUpdate) {
+      const prior = existing.adapterConfig?.[DIRECTOR_INSTRUCTIONS_CONFIG_KEY];
+      const next = normalizedPatch.adapterConfig[DIRECTOR_INSTRUCTIONS_CONFIG_KEY];
+      if (next !== undefined && JSON.stringify(next) !== JSON.stringify(prior)) {
+        throw conflict("Apply Director chat instructions through the explicit instructions command", {
+          code: "director_instructions_protected",
+        });
+      }
+      // Unrelated adapter configuration forms must not erase the active chat snapshot.
+      if (prior !== undefined) {
+        normalizedPatch.adapterConfig = { ...normalizedPatch.adapterConfig, [DIRECTOR_INSTRUCTIONS_CONFIG_KEY]: prior };
+      }
+    }
     if (data.permissions !== undefined) {
       const role = (data.role ?? existing.role) as string;
       normalizedPatch.permissions = normalizeAgentPermissions(data.permissions, role);
@@ -699,10 +718,19 @@ export function agentService(db: Db) {
       const updated = await txDb
         .update(agents)
         .set({ ...normalizedPatch, updatedAt: new Date() })
-        .where(eq(agents.id, id))
+        .where(and(eq(agents.id, id), normalizedPatch.adapterConfig && !options?.allowDirectorInstructionsUpdate
+          ? sql`coalesce(${agents.adapterConfig}->${DIRECTOR_INSTRUCTIONS_CONFIG_KEY}, 'null'::jsonb) = ${JSON.stringify(existing.adapterConfig?.[DIRECTOR_INSTRUCTIONS_CONFIG_KEY] ?? null)}::jsonb`
+          : undefined))
         .returning()
         .then((rows) => rows[0] ?? null);
-      if (!updated) return null;
+      if (!updated) {
+        if (normalizedPatch.adapterConfig && !options?.allowDirectorInstructionsUpdate) {
+          throw conflict("Director instructions changed during the configuration update. Reload before retrying.", {
+            code: "director_instructions_conflict",
+          });
+        }
+        return null;
+      }
 
       if (Object.prototype.hasOwnProperty.call(normalizedPatch, "adapterConfig")) {
         if (bindingDecision) {
@@ -756,6 +784,40 @@ export function agentService(db: Db) {
   }
 
   return {
+    async applyDirectorInstructions(companyId: string, id: string, userId: string, rawInput: ApplyDirectorInstructionsInput) {
+      const input = applyDirectorInstructionsSchema.parse(rawInput);
+      return db.transaction(async (tx) => {
+        const existing = await tx.select().from(agents)
+          .where(and(eq(agents.id, id), eq(agents.companyId, companyId)))
+          .for("update").then((rows) => rows[0] ?? null);
+        if (!existing || !isWorkspaceDirector(existing.metadata)) throw notFound("Workspace Director not found");
+        const active = resolveDirectorRole(existing.adapterConfig);
+        if (active.rolePrompt === input.rolePrompt) return existing;
+        if (active.configHash !== input.expectedConfigHash) {
+          throw conflict("Director instructions changed. Reload and review the latest instructions before applying.", {
+            code: "director_instructions_conflict",
+          });
+        }
+        const applied = {
+          schemaVersion: 1, revision: active.revision + 1, rolePrompt: input.rolePrompt,
+          appliedAt: new Date().toISOString(), appliedByUserId: userId,
+        };
+        const updated = await agentService(tx as unknown as Db).update(id, {
+          adapterConfig: { ...existing.adapterConfig, [DIRECTOR_INSTRUCTIONS_CONFIG_KEY]: applied },
+        }, {
+          allowDirectorInstructionsUpdate: true,
+          recordRevision: { createdByUserId: userId, source: "director_chat_instructions_apply" },
+        });
+        if (!updated) throw notFound("Workspace Director not found");
+        await logActivity(tx as unknown as Db, {
+          companyId, actorType: "user", actorId: userId,
+          action: "agent.director_instructions_applied", entityType: "agent", entityId: id,
+          details: { revision: applied.revision, previousConfigHash: active.configHash,
+            configHash: resolveDirectorRole(updated.adapterConfig).configHash, mode: "local_compatibility" },
+        });
+        return updated;
+      });
+    },
     list: async (companyId: string, options?: { includeTerminated?: boolean }) => {
       const conditions = [eq(agents.companyId, companyId)];
       if (!options?.includeTerminated) {

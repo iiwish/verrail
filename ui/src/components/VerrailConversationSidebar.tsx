@@ -68,7 +68,7 @@ function ConversationRow({
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{title}</span>
           <span className="mt-0.5 block truncate text-(length:--text-micro) text-muted-foreground">
-            {relativeTime(conversation.lastMessageAt ?? conversation.updatedAt)}
+            {relativeTime(conversation.lastMessageAt ?? conversation.createdAt)}
           </span>
         </span>
       </Link>
@@ -125,6 +125,7 @@ export function VerrailConversationSidebar() {
       : ["conversations", "disabled"],
     queryFn: () => conversationsApi.list(selectedCompanyId!, { status, q: deferredSearch || undefined }),
     enabled: Boolean(selectedCompanyId),
+    refetchInterval: 10_000,
   });
   const createMutation = useMutation({
     mutationFn: () => conversationsApi.create(selectedCompanyId!),

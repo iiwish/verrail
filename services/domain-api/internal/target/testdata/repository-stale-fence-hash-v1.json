@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "vectors": [
+    {
+      "name": "utc_whole_second_reordered",
+      "probe": {
+        "workspaceId": "11111111-1111-4111-8111-111111111111",
+        "runId": "22222222-2222-4222-8222-222222222222",
+        "runAttemptId": "33333333-3333-4333-8333-333333333333",
+        "idempotencyKey": "stale-fence-interop",
+        "input": {
+          "emittedAt": "2026-10-16T00:00:00Z",
+          "eventType": "heartbeat",
+          "cursor": 3,
+          "fencingToken": 1,
+          "leaseId": "44444444-4444-4444-8444-444444444444"
+        }
+      },
+      "serializedInput": "{\"leaseId\":\"44444444-4444-4444-8444-444444444444\",\"fencingToken\":1,\"cursor\":3,\"eventType\":\"heartbeat\",\"emittedAt\":\"2026-10-16T00:00:00Z\"}",
+      "requestSha256": "7597f267f4b0ac149e7a43ac88a78300e8b4ead7b0515dc4bb063f91cb104c2d"
+    },
+    {
+      "name": "utc_leap_day",
+      "probe": {
+        "workspaceId": "11111111-1111-4111-8111-111111111111",
+        "runId": "22222222-2222-4222-8222-222222222222",
+        "runAttemptId": "33333333-3333-4333-8333-333333333333",
+        "idempotencyKey": "stale-fence-interop",
+        "input": {
+          "emittedAt": "2024-02-29T12:34:56Z",
+          "eventType": "heartbeat",
+          "cursor": 3,
+          "fencingToken": 1,
+          "leaseId": "44444444-4444-4444-8444-444444444444"
+        }
+      },
+      "serializedInput": "{\"leaseId\":\"44444444-4444-4444-8444-444444444444\",\"fencingToken\":1,\"cursor\":3,\"eventType\":\"heartbeat\",\"emittedAt\":\"2024-02-29T12:34:56Z\"}",
+      "requestSha256": "7bd2619b0fb95d0a4554de1bcb246e249995c51e0fd7eda4fad48fd8d1e1a419"
+    },
+    {
+      "name": "safe_integer_boundaries",
+      "probe": {
+        "workspaceId": "11111111-1111-4111-8111-111111111111",
+        "runId": "22222222-2222-4222-8222-222222222222",
+        "runAttemptId": "33333333-3333-4333-8333-333333333333",
+        "idempotencyKey": "stale-fence-interop",
+        "input": {
+          "emittedAt": "2026-10-16T00:00:00Z",
+          "eventType": "heartbeat",
+          "cursor": 9007199254740991,
+          "fencingToken": 9007199254740991,
+          "leaseId": "44444444-4444-4444-8444-444444444444"
+        }
+      },
+      "serializedInput": "{\"leaseId\":\"44444444-4444-4444-8444-444444444444\",\"fencingToken\":9007199254740991,\"cursor\":9007199254740991,\"eventType\":\"heartbeat\",\"emittedAt\":\"2026-10-16T00:00:00Z\"}",
+      "requestSha256": "f257742d094264b7153cdef943faa4dcb8652f7d139c23051a4789a76cca6783"
+    }
+  ]
+}

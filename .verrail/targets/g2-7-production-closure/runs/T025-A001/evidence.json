@@ -1,0 +1,32 @@
+{
+  "task_id": "T025",
+  "attempt_id": "T025-A001",
+  "status": "focused_green_live_recovery_blocked",
+  "date": "2026-09-05",
+  "change": "Workbench retries use verrail-host-runner, the identity registered by both the native host executor and DomainActivities default configuration.",
+  "red": "Retry command test failed with expected verrail-host-runner but received host-trusted-local.",
+  "green": ["All 18 TargetWorkbench tests passed; later T026 replay passed all 20 tests", "All token gates clean, 818 files", "git diff --check passed", "Post-change UI typecheck and production build passed during T026 verification"],
+  "live_failure": {
+    "run_id": "52d7048a-37b3-4c01-88fa-ad4251c519d0",
+    "run_attempt_id": "cdac7272-b090-44d9-a60d-d6d79dfa8497",
+    "fencing_token": 3,
+    "cursor": 0,
+    "lease_id": "3bc000e5-a6d9-412b-9388-539b27d13c32",
+    "incorrect_executor": "host-trusted-local",
+    "created_at": "2026-09-05T07:22:49.602Z",
+    "grace_expires_at": "2026-09-05T07:25:19.638Z",
+    "result": "No executor claimed the lease. The UI cannot offer another retry while the run remains queued. No retry was submitted through an API or SQL workaround."
+  },
+  "deeper_recovery_blocker": {
+    "failed_outbox_event_id": "90209717-9920-4198-95fd-abae0403d7a4",
+    "error": "unsupported Run event type: run.cancellation_requested",
+    "pending_successors": ["c3e59a17-5308-4d3c-9421-19723e7b287b", "43b0c0cc-29ec-43a7-b9d0-d07d6163bd89", "ffd4cf5e-8455-49cd-b7f4-661f94541f70"],
+    "temporal_run_id": "01a06d14-89b8-7d42-82b4-fb7f9cab3fac",
+    "temporal_workflow_status": "failed",
+    "temporal_closed_at": "2026-09-04T15:46:13.978450936Z",
+    "static_risk": "Run SignalWithStart uses REJECT_DUPLICATE; failed-workflow retry policy also needs explicit coverage after ordered dead-letter recovery.",
+    "next_packet": "packets/T026.json"
+  },
+  "remaining": ["Governed recovery of the closed Workflow and actual executor receipt", "Full Vitest and final G2 human/provider gates"],
+  "authority": "Read-only scoped SQL and Temporal describe were used for diagnosis. No database repair, fabricated execution event, GitHub write, independent Review or Acceptance was performed."
+}

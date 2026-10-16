@@ -1,6 +1,9 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Readable } from "node:stream";
+import { assuranceRoutes } from "../routes/assurance.js";
+import { errorHandler } from "../middleware/error-handler.js";
 
 const WORKSPACE_ID = "4f9f7195-e5ce-4fd0-b8c7-ed151347e6e0";
 const FOREIGN_WORKSPACE_ID = "5f9f7195-e5ce-4fd0-b8c7-ed151347e6e0";
@@ -26,23 +29,61 @@ function boardActor(companyIds: string[] = [WORKSPACE_ID]) {
   };
 }
 
-async function createApp(domainApi: any, actor: Record<string, unknown> = boardActor()) {
-  const [{ assuranceRoutes }, { errorHandler }] = await Promise.all([
-    import("../routes/assurance.js"),
-    import("../middleware/index.js"),
-  ]);
+async function createApp(domainApi: any, actor: Record<string, unknown> = boardActor(), options: Record<string, any> = {}) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
     (req as any).actor = actor;
     next();
   });
-  app.use("/api", assuranceRoutes({ domainApiClient: domainApi }));
+  app.use("/api", assuranceRoutes({ domainApiClient: domainApi, ...options }));
   app.use(errorHandler);
   return app;
 }
 
 describe("assurance routes", () => {
+  function storedContent(contentRef = `storage:${WORKSPACE_ID}/verrail/run-artifacts/sha256/${CONTENT_HASH}`) {
+    const limit = vi.fn().mockResolvedValue([{ contentHash: CONTENT_HASH, contentRef }]);
+    const where = vi.fn(() => ({ limit }));
+    const db = { select: vi.fn(() => ({ from: vi.fn(() => ({ where })) })) };
+    const storage = { getObject: vi.fn(async () => ({ stream: Readable.from([Buffer.from("candidate")]), contentLength: 9 })) };
+    return { db, storage, limit, where };
+  }
+  it("serves stored revision bytes as a private attachment", async () => {
+    const content = storedContent();
+    const app = await createApp(null, boardActor(), content);
+    const response = await request(app).get(`/api/workspaces/${WORKSPACE_ID}/artifact-revisions/${REVISION_ID}/content`);
+    expect(response.status).toBe(200);
+    expect(response.body.toString()).toBe("candidate");
+    expect(response.headers["content-disposition"]).toContain("attachment;");
+    expect(response.headers["x-content-type-options"]).toBe("nosniff");
+    expect(response.headers["cache-control"]).toBe("private, no-store");
+    expect(content.storage.getObject).toHaveBeenCalledWith(WORKSPACE_ID, `${WORKSPACE_ID}/verrail/run-artifacts/sha256/${CONTENT_HASH}`);
+  });
+  it.each(["file:/etc/passwd", "https://example.com", `storage:${FOREIGN_WORKSPACE_ID}/verrail/run-artifacts/sha256/${CONTENT_HASH}`, `storage:${WORKSPACE_ID}/verrail/run-artifacts/sha256/${"b".repeat(64)}`])("does not dereference unsafe content %s", async (ref) => {
+    const content = storedContent(ref);
+    const response = await request(await createApp(null, boardActor(), content)).get(`/api/workspaces/${WORKSPACE_ID}/artifact-revisions/${REVISION_ID}/content`);
+    expect(response.status).toBe(404);
+    expect(content.storage.getObject).not.toHaveBeenCalled();
+  });
+  it.each([
+    boardActor([FOREIGN_WORKSPACE_ID]),
+    { type: "agent", agentId: "foreign-agent", companyId: FOREIGN_WORKSPACE_ID, source: "agent_key", keyId: "key" },
+    { type: "none" },
+  ])("denies content before database lookup for unauthorized actors", async (actor) => {
+    const content = storedContent();
+    const response = await request(await createApp(null, actor, content)).get(`/api/workspaces/${WORKSPACE_ID}/artifact-revisions/${REVISION_ID}/content`);
+    expect([401, 403]).toContain(response.status);
+    expect(content.db.select).not.toHaveBeenCalled();
+    expect(content.storage.getObject).not.toHaveBeenCalled();
+  });
+  it("does not disclose missing revisions", async () => {
+    const content = storedContent();
+    content.limit.mockResolvedValue([]);
+    const response = await request(await createApp(null, boardActor(), content)).get(`/api/workspaces/${WORKSPACE_ID}/artifact-revisions/${REVISION_ID}/content`);
+    expect(response.status).toBe(404);
+    expect(content.storage.getObject).not.toHaveBeenCalled();
+  });
   const domainApi = {
     createArtifact: vi.fn(),
     addArtifactRevision: vi.fn(),

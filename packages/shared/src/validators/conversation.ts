@@ -22,7 +22,17 @@ export const conversationContextTypeSchema = z.enum([
 export const conversationListQuerySchema = z.object({
   status: conversationStatusSchema.optional().default("active"),
   q: z.string().trim().max(200).optional(),
+  targetId: z.string().uuid().optional(),
+  agentId: z.string().uuid().optional(),
 }).strict();
+
+export const switchConversationContextSchema = z.object({
+  operation: z.enum(["link", "unlink"]).optional(),
+  targetId: z.string().uuid().nullable(),
+  expectedContextVersion: z.number().int().min(0).max(2147483646),
+  idempotencyKey: z.string().trim().min(1).max(200),
+}).strict().refine(value => !value.operation || value.targetId !== null, "Link commands require a Target");
+export type SwitchConversationContextInput = z.infer<typeof switchConversationContextSchema>;
 
 export const createConversationSchema = z.object({
   title: z.string().trim().min(1).max(160).optional(),

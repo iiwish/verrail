@@ -1,0 +1,63 @@
+{
+  "observed_at": "2026-09-04T03:22:33Z",
+  "server": {
+    "status": "ok",
+    "commit": "b46307dbd05a912c38a32395b88662952286fd58",
+    "auth_ready": true,
+    "database_backup_status": "ok"
+  },
+  "workspace_id": "c641493c-081c-4607-84ba-0818cd97981a",
+  "runtime_target_count": 7,
+  "targets": {
+    "g2_3": {
+      "target_id": "c18c7a6a-c93c-40a5-8010-2fe059399e61",
+      "status": "draft",
+      "active_revision_id": "cf5efd85-ee39-42c4-8a4f-881630048727",
+      "artifacts": 0,
+      "evidence": 0,
+      "submissions": 0,
+      "reviews": 0,
+      "acceptances": 0
+    },
+    "g2_4": {
+      "target_id": "3e9c92ff-f655-4a0b-8653-da7f109a4a1f",
+      "status": "draft",
+      "artifacts": 1,
+      "claims": 1,
+      "evidence": 1,
+      "verification_results": 1,
+      "submissions": 1,
+      "reviews": 0,
+      "acceptances": 0
+    },
+    "g2_5": {
+      "target_id": "cb87c140-ce5a-4f8b-abeb-54f4ef2dff00",
+      "status": "draft",
+      "integration_runs": 1,
+      "action_requests": 1,
+      "effect_receipts": 0
+    },
+    "g2_6": {
+      "target_id": "b6cb0501-a421-4544-b099-97f970f431e4",
+      "status": "draft",
+      "runtime_acceptance_criteria": 4,
+      "local_acceptance_criteria": 5,
+      "submissions": 0,
+      "reviews": 0,
+      "acceptances": 0,
+      "effect_receipts": 0
+    },
+    "g2_7": {
+      "target_id": "6164560c-b3bc-4ebe-a9b1-0054433b8d1b",
+      "status": "draft",
+      "runs": 0,
+      "artifacts": 0,
+      "evidence": 0,
+      "submissions": 0,
+      "reviews": 0,
+      "acceptances": 0,
+      "action_requests": 0,
+      "effect_receipts": 0
+    }
+  }
+}

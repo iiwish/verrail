@@ -1,0 +1,12 @@
+{
+  "task_id": "T030",
+  "status": "needs_review",
+  "technical_checks": "隔离数据库重现 RED 后，34 项读模型与工作台测试通过，server typecheck 通过；真实 UI 已激活工作图 r3 877fe101-cf97-4dc0-aa5a-c5d2374a46e1。",
+  "mode": "direct_execute",
+  "goal": "工作台在已有活动工作图时仍提供当前 TargetRevision 的非空草稿激活命令。",
+  "authority": "用户委托继续技术收口；不代作最终交付决策。",
+  "allowed_files": ["server/src/services/target-read-model.ts", "server/src/__tests__/target-read-model.test.ts", ".verrail/targets/g2-7-production-closure/**"],
+  "validation": ["隔离数据库 RED/GREEN 回归", "已有 UI 激活命令测试", "server typecheck", "真实界面激活新修订"],
+  "non_goals": ["原地修改历史工作图", "绕过 Graph Engine", "自动审批外部动作"],
+  "parallel": false
+}

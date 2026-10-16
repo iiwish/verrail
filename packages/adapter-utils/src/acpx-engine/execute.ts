@@ -6,6 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { sanitizeControlPlaneEnv } from "../control-plane-env.js";
 import type {
   AdapterBillingType,
   AdapterExecutionContext,
@@ -705,7 +706,7 @@ async function normalizeGeminiAcpCommandShell(commandShell: string, env: NodeJS.
     const { stdout } = await execFileAsync(tokens[0], ["--version"], {
       timeout: GEMINI_VERSION_PROBE_TIMEOUT_MS,
       encoding: "utf8",
-      env,
+      env: sanitizeControlPlaneEnv(env),
     });
     versionParts = parseGeminiVersionParts(stdout);
   } catch {
@@ -2284,7 +2285,7 @@ async function applySessionConfigOptions(input: {
  */
 function resolveRuntimeEnv(env: Record<string, string>): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(ensurePathInEnv({ ...process.env, ...env })).filter(
+    Object.entries(ensurePathInEnv(sanitizeControlPlaneEnv({ ...process.env, ...env }))).filter(
       (entry): entry is [string, string] => typeof entry[1] === "string",
     ),
   );

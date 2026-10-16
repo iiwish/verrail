@@ -1033,7 +1033,13 @@ export function toolAccessPolicyService(db: Db) {
     return grants.some((grant) => scopeAllowsTool(grant.scope, ctx));
   }
 
-  async function enforceRateLimit(policy: typeof toolPolicies.$inferSelect, ctx: ToolAccessContext, consume: boolean) {
+  async function enforceRateLimit(
+    policy: typeof toolPolicies.$inferSelect,
+    ctx: ToolAccessContext,
+    consume: boolean,
+    approvedReservationKeys: readonly string[] = [],
+    requireReservation = false,
+  ) {
     const rule = rateLimitRule(policy);
     if (!rule) return null;
     const now = new Date();
@@ -1041,6 +1047,11 @@ export function toolAccessPolicyService(db: Db) {
     const kind = windowKind(rule.windowSeconds);
     const resetAt = new Date(start.getTime() + rule.windowSeconds * 1000);
     const bucketKey = `${policy.id}:${rateBucket(rule, ctx)}`;
+    const reservationKey = sha256({
+      policyId: policy.id, policyType: policy.policyType, selectors: policy.selectors,
+      conditions: policy.conditions, config: policy.config, priority: policy.priority,
+      companyId: ctx.companyId, bucketKey, windowStartAt: start.toISOString(),
+    });
     const counterWhere = and(
       eq(toolRateLimitCounters.companyId, ctx.companyId),
       eq(toolRateLimitCounters.policyId, policy.id),
@@ -1051,7 +1062,12 @@ export function toolAccessPolicyService(db: Db) {
     if (!consume) {
       const [existing] = await db.select().from(toolRateLimitCounters).where(counterWhere);
       const count = existing ? Math.max(0, existing.limit - existing.remaining) : 0;
-      return { limited: count >= rule.limit, count, limit: rule.limit, windowSeconds: rule.windowSeconds, bucketKey };
+      const ownsReservation = approvedReservationKeys.includes(reservationKey);
+      return {
+        limited: (count >= rule.limit && !ownsReservation) || (requireReservation && !ownsReservation),
+        reservationMissing: requireReservation && !ownsReservation,
+        count, limit: rule.limit, windowSeconds: rule.windowSeconds, bucketKey, reservationKey,
+      };
     }
 
     const [counter] = await db
@@ -1094,6 +1110,7 @@ export function toolAccessPolicyService(db: Db) {
       limit: rule.limit,
       windowSeconds: rule.windowSeconds,
       bucketKey,
+      reservationKey,
     };
   }
 
@@ -1153,7 +1170,10 @@ export function toolAccessPolicyService(db: Db) {
     });
   }
 
-  async function decide(input: ToolAccessDecisionInput): Promise<ToolAccessDecision> {
+  async function decide(
+    input: ToolAccessDecisionInput,
+    options: { approvedPolicyIds?: readonly string[]; approvedReservationKeys?: readonly string[] } = {},
+  ): Promise<ToolAccessDecision> {
     const loaded = await loadContext(input);
     if (!loaded.ok) return loaded.decision;
     const { ctx, redaction } = loaded;
@@ -1190,12 +1210,64 @@ export function toolAccessPolicyService(db: Db) {
     const matchingPolicies = policies
       .map((policy) => ({ policy, conditionEvaluation: evaluatePolicyConditions(policyConditions(policy), ctx) }))
       .filter(({ policy, conditionEvaluation }) => selectorMatches(policy.selectors, ctx) && conditionEvaluation.matched);
+    function requiresApproval(policy: typeof toolPolicies.$inferSelect) {
+      if (policy.policyType === "require_approval") return true;
+      if (policy.policyType !== "trust_rule") return false;
+      const rule = trustRuleConfig(policy);
+      return Boolean(rule && trustRuleIsActive(policy) && argumentFiltersMatch(rule.argumentFilters, ctx) && trustRuleNeedsReview(policy, ctx));
+    }
+    if (options.approvedPolicyIds !== undefined) {
+      // A discharged approval must not hide a later revocation, limit, or new
+      // approval obligation. Ordinary (unapproved) policy precedence is unchanged.
+      const approved = new Set(options.approvedPolicyIds);
+      const guardOrder = (policy: typeof toolPolicies.$inferSelect) => {
+        if (policy.policyType === "block" || policy.policyType === "rate_limit" || unsupportedRuntimePolicyType(policy.policyType)) return 0;
+        if (requiresApproval(policy) && !approved.has(policy.id)) return 1;
+        return 2;
+      };
+      matchingPolicies.sort((a, b) => guardOrder(a.policy) - guardOrder(b.policy));
+    }
+    const rateLimitReservationKeys: string[] = [];
+    const evaluatedRatePolicies = new Set<string>();
+    async function evaluateRatePolicy(policy: typeof toolPolicies.$inferSelect, policyExplanation: Record<string, unknown>) {
+      if (evaluatedRatePolicies.has(policy.id)) return null;
+      evaluatedRatePolicies.add(policy.id);
+      if (!rateLimitRule(policy)) {
+        return decision("deny", "deny_policy_block", "Matching rate-limit policy is invalid.", effectiveProfileIds, [policy.id], { redactionPlan: redaction.redactionPlan, policyExplanation });
+      }
+      const state = await enforceRateLimit(policy, ctx, input.consumeRateLimit === true,
+        options.approvedReservationKeys, options.approvedPolicyIds !== undefined);
+      if (state?.limited) {
+        if ("reservationMissing" in state && state.reservationMissing) {
+          return decision("deny", "deny_policy_block", "Current rate limit requires a fresh reviewed request and reservation.", effectiveProfileIds, [policy.id], { redactionPlan: redaction.redactionPlan, policyExplanation });
+        }
+        return decision("rate_limited", "rate_limited", "Tool access rate limit exceeded.", effectiveProfileIds, [policy.id], { rateLimitState: state, redactionPlan: redaction.redactionPlan, policyExplanation });
+      }
+      if (input.consumeRateLimit === true && state && "reservationKey" in state && state.reservationKey) {
+        rateLimitReservationKeys.push(state.reservationKey);
+      }
+      return null;
+    }
+    async function reserveApprovalLimits(policyExplanation: Record<string, unknown>) {
+      for (const other of matchingPolicies) {
+        if (other.policy.policyType !== "rate_limit") continue;
+        const rejection = await evaluateRatePolicy(other.policy, {
+          ...policyExplanation, policyId: other.policy.id, policyType: other.policy.policyType,
+        });
+        if (rejection) return rejection;
+      }
+      return null;
+    }
+    function applicableApprovalPolicyIds() {
+      return matchingPolicies.filter(({ policy }) => requiresApproval(policy)).map(({ policy }) => policy.id);
+    }
     for (const { policy, conditionEvaluation } of matchingPolicies) {
       const policyExplanation = {
         policyId: policy.id,
         policyType: policy.policyType,
         selectorMatched: true,
         conditionsMatched: conditionEvaluation.matchedGroups,
+        rateLimitReservationKeys,
       };
       if (unsupportedRuntimePolicyType(policy.policyType)) {
         return decision(
@@ -1211,20 +1283,8 @@ export function toolAccessPolicyService(db: Db) {
         return decision("deny", "deny_policy_block", policy.description ?? "Tool access is blocked by policy.", effectiveProfileIds, [policy.id], { redactionPlan: redaction.redactionPlan, policyExplanation });
       }
       if (policy.policyType === "rate_limit") {
-        if (!rateLimitRule(policy)) {
-          return decision(
-            "deny",
-            "deny_policy_block",
-            "Tool access denied because a matching rate-limit policy has invalid runtime config.",
-            effectiveProfileIds,
-            [policy.id],
-            { redactionPlan: redaction.redactionPlan, policyExplanation },
-          );
-        }
-        const state = await enforceRateLimit(policy, ctx, input.consumeRateLimit === true);
-        if (state?.limited) {
-          return decision("rate_limited", "rate_limited", "Tool access rate limit exceeded.", effectiveProfileIds, [policy.id], { rateLimitState: state, redactionPlan: redaction.redactionPlan, policyExplanation });
-        }
+        const rejection = await evaluateRatePolicy(policy, policyExplanation);
+        if (rejection) return rejection;
         continue;
       }
       if (policy.policyType === "trust_rule") {
@@ -1232,12 +1292,14 @@ export function toolAccessPolicyService(db: Db) {
         if (!rule || !trustRuleIsActive(policy)) continue;
         if (!argumentFiltersMatch(rule.argumentFilters, ctx)) continue;
         if (trustRuleNeedsReview(policy, ctx)) {
+          const rejection = await reserveApprovalLimits(policyExplanation);
+          if (rejection) return rejection;
           return decision(
             "require_approval",
             "requires_review_changed_tool",
             "Tool definition changed or was quarantined after this trust rule was created; review is required.",
             effectiveProfileIds,
-            [policy.id],
+            applicableApprovalPolicyIds(),
             { redactionPlan: redaction.redactionPlan, policyExplanation },
           );
         }
@@ -1247,7 +1309,11 @@ export function toolAccessPolicyService(db: Db) {
         return decision("allow", "allow_trust_rule", policy.description ?? "Tool access allowed by trust rule.", effectiveProfileIds, [policy.id], { redactionPlan: redaction.redactionPlan, policyExplanation });
       }
       if (policy.policyType === "require_approval") {
-        return decision("require_approval", "requires_approval_policy", policy.description ?? "Tool access requires approval.", effectiveProfileIds, [policy.id], { redactionPlan: redaction.redactionPlan, policyExplanation });
+        // Park only after every applicable limiter has actually reserved this
+        // request, including limiters later than the approval rule in priority.
+        const rejection = await reserveApprovalLimits(policyExplanation);
+        if (rejection) return rejection;
+        return decision("require_approval", "requires_approval_policy", policy.description ?? "Tool access requires approval.", effectiveProfileIds, applicableApprovalPolicyIds(), { redactionPlan: redaction.redactionPlan, policyExplanation });
       }
       if (policy.policyType === "allow") {
         return decision("allow", "allow_policy", "Tool access allowed by policy.", effectiveProfileIds, [policy.id], { redactionPlan: redaction.redactionPlan, policyExplanation });
@@ -1411,6 +1477,7 @@ export function toolAccessPolicyService(db: Db) {
       argumentsSummary: redaction.summary,
       policyDecision: accessDecision.decision,
       matchedPolicyIds: accessDecision.matchedPolicyIds,
+      policyExplanation: accessDecision.policyExplanation ?? null,
       approvalState: accessDecision.decision === "require_approval" ? "pending" : "not_required",
       status,
       errorCode: accessDecision.allowed || accessDecision.decision === "require_approval" ? null : accessDecision.reasonCode,

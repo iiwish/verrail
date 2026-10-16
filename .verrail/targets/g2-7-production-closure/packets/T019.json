@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T019",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T019",
+  "status": "accepted_for_dependency_progression",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T16:29:19Z",
+  "work_unit": {
+    "title": "让 Codex ACP 使用受管运行时二进制",
+    "goal": "将本地 Codex ACP 子进程绑定到 compatibility runtime command，避免包内可选平台二进制缺失阻断真实执行。",
+    "requirements": ["AC-03", "AC-10", "AC-11"],
+    "depends_on": ["T018"],
+    "blocks": ["T010"]
+  },
+  "reason": "The first real AgentVersion v2 evaluation reached ACP session initialization but @agentclientprotocol/codex-acp invoked a broken package-local @openai/codex optional dependency while the configured host Codex command was healthy.",
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "allowed_files": [
+      "packages/adapters/codex-local/src/server/acp.ts",
+      "packages/adapters/codex-local/src/server/acp.test.ts",
+      ".verrail/targets/g2-7-production-closure/**"
+    ],
+    "rules": [
+      "Bind only local ACP runs to the host runtime command.",
+      "Preserve an explicit env.CODEX_PATH override.",
+      "Do not leak a host absolute path into a remote execution target."
+    ]
+  },
+  "validation_loop": {
+    "commands": [
+      "Codex ACP focused suite",
+      "Codex adapter typecheck",
+      "real MYW-1 retry",
+      "git diff --check"
+    ],
+    "retry_budget": 3
+  },
+  "evidence_contract": {
+    "run_id": "T019-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T019-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T019-A001/evidence.json"
+  }
+}

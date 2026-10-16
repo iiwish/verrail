@@ -1,0 +1,2 @@
+ALTER TABLE "verrail_submissions" ADD COLUMN "graph_revision_id" uuid;--> statement-breakpoint
+ALTER TABLE "verrail_submissions" ADD CONSTRAINT "verrail_submissions_graph_revision_workspace_fk" FOREIGN KEY ("graph_revision_id","workspace_id") REFERENCES "public"."verrail_graph_revisions"("id","workspace_id") ON DELETE restrict ON UPDATE no action;

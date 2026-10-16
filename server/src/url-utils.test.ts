@@ -22,6 +22,11 @@ describe("rewriteUrlPort", () => {
 });
 
 describe("rewriteLoopbackUrlPort", () => {
+  it("preserves published ports and follows only a changed matching listener", () => {
+    expect(rewriteLoopbackUrlPort("http://127.0.0.1:3271", 3100, 3100)).toBe("http://127.0.0.1:3271");
+    expect(rewriteLoopbackUrlPort("http://127.0.0.1:3271", 3101, 3100)).toBe("http://127.0.0.1:3271");
+    expect(rewriteLoopbackUrlPort("http://127.0.0.1:3100", 3101, 3100)).toBe("http://127.0.0.1:3101/");
+  });
   it("rewrites the port for loopback base URLs", () => {
     expect(rewriteLoopbackUrlPort("http://localhost:5678", 3101)).toBe("http://localhost:3101/");
     expect(rewriteLoopbackUrlPort("http://127.0.0.1:9999", 3101)).toBe("http://127.0.0.1:3101/");

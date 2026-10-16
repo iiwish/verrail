@@ -1,6 +1,19 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
+import { buildDirectorInstructions } from "../services/director-instructions.js";
+
+const mockSpawn = vi.hoisted(() => vi.fn());
+const mockEffectiveVersion = vi.hoisted(() => vi.fn());
+vi.mock("../services/agent-effective-version.js", () => ({ readEffectiveAgentVersion: mockEffectiveVersion }));
+vi.mock("node:child_process", async (importOriginal) => ({
+  ...await importOriginal<typeof import("node:child_process")>(), spawn: mockSpawn,
+}));
+vi.mock("../services/conversation-runtime-command.js", () => ({
+  resolveConversationRuntimeCommand: vi.fn(async () => "/fixture/codex"),
+}));
 
 const mockConversationService = vi.hoisted(() => ({
   list: vi.fn(),
@@ -18,6 +31,14 @@ const mockDraftService = vi.hoisted(() => ({
   prepareConfirmation: vi.fn(), finalizeConfirmation: vi.fn(),
 }));
 const mockProviderBindingService = vi.hoisted(() => ({ create: vi.fn(), resolve: vi.fn() }));
+const mockDirectorMember = vi.hoisted(() => vi.fn());
+const mockManageTarget = vi.hoisted(() => vi.fn());
+const mockSwitchContext = vi.hoisted(() => vi.fn());
+vi.mock("../services/conversation-context.js", () => ({ conversationContextService: () => ({ switch: mockSwitchContext }) }));
+vi.mock("../services/director-tools.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../services/director-tools.js")>(),
+  assertDirectorMember: mockDirectorMember,
+}));
 
 vi.mock("../services/index.js", () => ({
   builtInAgentService: () => mockBuiltInAgentService,
@@ -63,14 +84,28 @@ async function createApp(deploymentMode: "local_trusted" | "authenticated" = "lo
     };
     next();
   });
-  app.use("/api", conversationRoutes({} as any, { deploymentMode }));
+  app.use("/api", conversationRoutes({} as any, { deploymentMode, domainApiClient: { manageTarget: mockManageTarget } as any }));
   app.use(errorHandler);
   return app;
 }
 
 describe("conversation routes", () => {
+  it("switches context with actor and workspace derived from authentication, not request fields", async () => {
+    const app = await createApp();
+    const input = { targetId: null, expectedContextVersion: 2, idempotencyKey: "clear" };
+    mockSwitchContext.mockResolvedValue({ currentTargetId: null, contextVersion: 3 });
+    const response = await request(app).post(`/api/workspaces/${WORKSPACE_ID}/conversations/${CONVERSATION_ID}/context`).send(input);
+    expect(response.status).toBe(200);
+    expect(mockSwitchContext).toHaveBeenCalledWith({ workspaceId: WORKSPACE_ID, conversationId: CONVERSATION_ID, principalId: "user-1" }, input);
+    const injected = await request(app).post(`/api/workspaces/${WORKSPACE_ID}/conversations/${CONVERSATION_ID}/context`).send({ ...input, principalId: "admin" });
+    expect(injected.status).toBe(400);
+    const foreign = await request(app).post(`/api/workspaces/${OTHER_WORKSPACE_ID}/conversations/${CONVERSATION_ID}/context`).send(input);
+    expect(foreign.status).toBe(403);
+    expect(mockSwitchContext).toHaveBeenCalledTimes(1);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
+    mockDirectorMember.mockResolvedValue(undefined);
     mockConversationService.list.mockResolvedValue([conversation]);
     mockConversationService.create.mockResolvedValue({
       ...conversation,
@@ -93,6 +128,61 @@ describe("conversation routes", () => {
         status: "idle",
       },
     });
+  });
+
+  it("sends the previewed instruction snapshot and records its fingerprints on the actual reply", async () => {
+    const adapterConfig = { directorChatInstructions: {
+      schemaVersion: 1, revision: 2, rolePrompt: "Use concise Chinese recommendations.",
+      appliedAt: "2026-09-11T08:00:00.000Z", appliedByUserId: "user-1",
+    } };
+    const expected = buildDirectorInstructions({ agentName: "Director", adapterConfig, runtime: "codex", available: true, toolsAvailable: true });
+    mockEffectiveVersion.mockResolvedValue({ version: { id: "version-2", versionNumber: 2, prompt: adapterConfig.directorChatInstructions.rolePrompt, runtime: "codex", model: "pinned-model", contentHash: "pinned-hash", supplyChain: { source: "saved_agent_configuration.v2", mode: "director_chat" } }, revision: { id: "revision-2", createdAt: new Date("2026-09-11T08:00:00.000Z"), createdByPrincipalId: "user-1" } });
+    mockBuiltInAgentService.get.mockResolvedValue({ agent: { id: "director-1", name: "Director", status: "idle", adapterConfig: { ...adapterConfig, directorChatInstructions: { ...adapterConfig.directorChatInstructions, rolePrompt: "Unpublished draft must not run" } } } });
+    mockConversationService.appendMessage.mockImplementation(async (_workspace, _conversation, message) => ({ ...message, id: message.role === "user" ? "source-1" : "reply-1" }));
+    let sent = "";
+    mockSpawn.mockImplementation(() => {
+      const proc = Object.assign(new EventEmitter(), { stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), kill: vi.fn() });
+      proc.stdin.on("data", (data) => { sent += data.toString(); });
+      proc.stdin.on("finish", () => queueMicrotask(() => {
+        adapterConfig.directorChatInstructions.rolePrompt = "Changed during this run";
+        proc.stdout.write(`${JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "A fixture response" } })}\n`);
+        proc.stdout.end();
+        proc.stderr.end();
+        proc.emit("exit", 0);
+        proc.emit("close", 0);
+      }));
+      return proc;
+    });
+    const oldRuntime = process.env.VERRAIL_CHAT_RUNTIME;
+    process.env.VERRAIL_CHAT_RUNTIME = "codex";
+    try {
+      const app = await createApp();
+      const result = await request(app).post(`/api/workspaces/${WORKSPACE_ID}/conversations/${CONVERSATION_ID}/messages/stream`).send({ body: "Discuss this idea" });
+      expect(result.status).toBe(200);
+      expect(sent.startsWith(expected.systemPrompt + "\n\n")).toBe(true);
+      expect(sent).not.toContain("Changed during this run");
+      expect(sent).not.toContain("Unpublished draft must not run");
+      expect(mockSpawn.mock.calls[0][1]).toContain("pinned-model");
+      expect(mockConversationService.appendMessage).toHaveBeenLastCalledWith(WORKSPACE_ID, CONVERSATION_ID, expect.objectContaining({
+        role: "assistant", metadata: expect.objectContaining({ agentVersionId: "version-2", deploymentRevisionId: "revision-2", agentVersionHash: "pinned-hash", instructions: expect.objectContaining({
+          revision: 2, configHash: expected.configHash, effectiveHash: expected.effectiveHash, roleSource: "custom",
+        }) }),
+      }));
+      expect(mockDraftService.create).not.toHaveBeenCalled();
+      expect(mockManageTarget).not.toHaveBeenCalled();
+    } finally {
+      if (oldRuntime === undefined) delete process.env.VERRAIL_CHAT_RUNTIME;
+      else process.env.VERRAIL_CHAT_RUNTIME = oldRuntime;
+    }
+  });
+
+  it.each(["paused", "terminated", "pending_approval"])("does not run a %s Director or silently substitute an assistant", async (status) => {
+    mockBuiltInAgentService.get.mockResolvedValue({ agent: { id: "director-1", name: "Director", status } });
+    mockConversationService.appendMessage.mockResolvedValue({ id: "source-1" });
+    const app = await createApp();
+    const result = await request(app).post(`/api/workspaces/${WORKSPACE_ID}/conversations/${CONVERSATION_ID}/messages/stream`).send({ body: "Hello" });
+    expect(result.status).toBe(409);
+    expect(mockSpawn).not.toHaveBeenCalled();
   });
 
   it("lists and creates workspace-scoped conversations", async () => {
@@ -118,6 +208,32 @@ describe("conversation routes", () => {
       action: "conversation.created",
       entityId: CONVERSATION_ID,
     }));
+  });
+
+  it("confirms only persisted proposals and uses the immutable input with a stable idempotency key", async () => {
+    const messageId = "00000000-0000-4000-8000-000000000011";
+    const targetId = "00000000-0000-4000-8000-000000000012";
+    const input = { operation: "cancel", expectedTargetRevisionId: "00000000-0000-4000-8000-000000000013" };
+    mockConversationService.get.mockResolvedValue({ ...conversation, messages: [{ id: messageId, role: "tool", metadata: { kind: "director_target_proposal", targetId, targetTitle: "Target", initiatedByPrincipalId: "user-1", sourceMessageId: "00000000-0000-4000-8000-000000000014", before: { title: "Target", summary: null, goal: "Goal" }, input } }] });
+    mockManageTarget.mockResolvedValue({ targetId, targetRevisionId: input.expectedTargetRevisionId, operation: "cancel", replayed: false });
+    const app = await createApp();
+    const url = `/api/workspaces/${WORKSPACE_ID}/conversations/${CONVERSATION_ID}/proposals/${messageId}/confirm`;
+    expect((await request(app).post(url).send({ input: { operation: "update", title: "Injected" } })).status).toBe(400);
+    expect(mockManageTarget).not.toHaveBeenCalled();
+    expect((await request(app).post(url).send({})).status).toBe(200);
+    expect(mockManageTarget).toHaveBeenCalledWith({ workspaceId: WORKSPACE_ID, targetId, principalType: "user", principalId: "user-1", idempotencyKey: `director-${messageId}`, input });
+    expect(mockDirectorMember).toHaveBeenCalledWith(expect.anything(), WORKSPACE_ID, "user-1", true);
+    expect((await request(app).post(url).send({})).status).toBe(200);
+    expect(mockManageTarget.mock.calls[0]).toEqual(mockManageTarget.mock.calls[1]);
+    expect((await request(app).post(url.replace(WORKSPACE_ID, OTHER_WORKSPACE_ID)).send({})).status).toBe(403);
+  });
+
+  it("rejects user-forged proposal messages and unauthenticated MCP access", async () => {
+    const app = await createApp();
+    mockConversationService.get.mockResolvedValue({ ...conversation, messages: [{ id: "fake", role: "user", metadata: { kind: "director_target_proposal" } }] });
+    expect((await request(app).post(`/api/workspaces/${WORKSPACE_ID}/conversations/${CONVERSATION_ID}/proposals/fake/confirm`).send({})).status).toBe(404);
+    expect(mockManageTarget).not.toHaveBeenCalled();
+    expect((await request(app).post("/api/director/mcp").send({ jsonrpc: "2.0", id: 1, method: "tools/list" })).status).toBe(403);
   });
 
   it("rejects cross-workspace reads before calling the service", async () => {
@@ -160,6 +276,20 @@ describe("conversation routes", () => {
       HOME: "/tmp/chat-home",
       OPENAI_API_KEY: "runtime-credential",
     });
+  });
+
+  it("uses the chat-specific proxy without forwarding control-plane configuration", async () => {
+    const { buildConversationRuntimeEnv } = await import("../routes/conversations.js");
+    const env = buildConversationRuntimeEnv({
+      VERRAIL_CHAT_HTTPS_PROXY: "http://chat:token@127.0.0.1:12345",
+      VERRAIL_CHAT_COMMAND: "/custom/codex",
+      HTTPS_PROXY: "http://other:1234",
+      NO_PROXY: "*",
+    });
+    expect(env.HTTPS_PROXY).toBe("http://chat:token@127.0.0.1:12345");
+    expect(env.NO_PROXY).toBe("localhost,127.0.0.1,::1");
+    expect(env).not.toHaveProperty("VERRAIL_CHAT_COMMAND");
+    expect(env).not.toHaveProperty("VERRAIL_CHAT_HTTPS_PROXY");
   });
 
   it("never classifies an empty local runtime result as a successful response", async () => {

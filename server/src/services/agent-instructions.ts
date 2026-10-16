@@ -653,16 +653,25 @@ export function agentInstructionsService() {
     return { bundle, adapterConfig };
   }
 
-  async function exportFiles(agent: AgentLike): Promise<{
+  async function exportFiles(agent: AgentLike, options: { recover?: boolean; maxFiles?: number; maxBytes?: number } = {}): Promise<{
     files: Record<string, string>;
     entryFile: string;
     warnings: string[];
   }> {
-    const state = await recoverManagedBundleState(agent, deriveBundleState(agent));
+    const derived = deriveBundleState(agent);
+    const state = options.recover === false ? derived : await recoverManagedBundleState(agent, derived);
     if (state.rootPath) {
       const stat = await statIfExists(state.rootPath);
       if (stat?.isDirectory()) {
         const relativePaths = await listFilesRecursive(state.rootPath);
+        if (options.maxFiles !== undefined && relativePaths.length > options.maxFiles) throw new Error("Instruction bundle exceeds the publication file limit");
+        if (options.maxBytes !== undefined) {
+          let bytes = 0;
+          for (const relativePath of relativePaths) {
+            bytes += (await fs.stat(resolvePathWithinRoot(state.rootPath, relativePath))).size;
+            if (bytes > options.maxBytes) throw new Error("Instruction bundle exceeds the publication size limit");
+          }
+        }
         const files = Object.fromEntries(await Promise.all(relativePaths.map(async (relativePath) => {
           const absolutePath = resolvePathWithinRoot(state.rootPath!, relativePath);
           const content = await fs.readFile(absolutePath, "utf8");

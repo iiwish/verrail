@@ -1,9 +1,11 @@
 import { Router } from "express";
-import type { Db } from "@paperclipai/db";
+import { type Db, verrailAgentDefinitions } from "@paperclipai/db";
+import { and, eq } from "drizzle-orm";
 import {
   createAgentDefinitionSchema,
   createDeploymentSchema,
   publishAgentVersionSchema,
+  publishSavedAgentVersionSchema,
   recordEvaluationRunSchema,
   reviseDeploymentSchema,
   targetIdempotencyKeySchema,
@@ -12,6 +14,7 @@ import {
 import { HttpError } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { agentLifecycleService } from "../services/agent-lifecycle.js";
+import { readAgentPublication } from "../services/agent-publication.js";
 import { createVerrailDomainApiClient, type VerrailDomainApiClient } from "../services/verrail-domain-api-client.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -37,6 +40,20 @@ export function agentLifecycleRoutes(db: Db, options: { domainApiClient?: Verrai
   router.post("/workspaces/:workspaceId/agent-definitions", validate(createAgentDefinitionSchema), async (req, res) => {
     const context = commandContext(req, req.params.workspaceId as string);
     const result = await domainApi!.createAgentDefinition({ ...context, input: req.body });
+    res.status(result.replayed ? 200 : 201).json(result);
+  });
+  router.get("/workspaces/:workspaceId/agents/:agentId/publication-preview", async (req, res) => {
+    assertBoard(req);
+    assertCompanyAccess(req, req.params.workspaceId as string);
+    res.json(await readAgentPublication(db, req.params.workspaceId as string, req.params.agentId as string));
+  });
+  router.post("/workspaces/:workspaceId/agent-definitions/:definitionId/publish-saved", validate(publishSavedAgentVersionSchema), async (req, res) => {
+    const context = commandContext(req, req.params.workspaceId as string);
+    const [definition] = await db.select().from(verrailAgentDefinitions).where(and(eq(verrailAgentDefinitions.id, req.params.definitionId as string), eq(verrailAgentDefinitions.workspaceId, context.workspaceId)));
+    if (!definition?.compatibilityAgentId) throw new HttpError(404, "Linked AgentDefinition not found");
+    const preview = await readAgentPublication(db, context.workspaceId, definition.compatibilityAgentId);
+    if (preview.sourceHash !== req.body.sourceHash) throw new HttpError(409, "Saved configuration changed. Refresh the publication preview before publishing.");
+    const result = await domainApi!.publishAgentVersion({ ...context, definitionId: definition.id, input: preview.snapshot });
     res.status(result.replayed ? 200 : 201).json(result);
   });
   router.patch("/workspaces/:workspaceId/agent-definitions/:definitionId", validate(updateAgentDefinitionSchema), async (req, res) => {

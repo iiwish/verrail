@@ -1,0 +1,10 @@
+# Validate this overlay with the release manifest, then run only the migrate job.
+# Operator credentials arrive through stdin, never environment or image layers.
+services:
+  migrate:
+    command: [node, --import, ./server/node_modules/tsx/dist/loader.mjs, /app/server/dist/first-operator-main.js]
+    stdin_open: true
+    environment:
+      PAPERCLIP_DEPLOYMENT_MODE: authenticated
+      PAPERCLIP_DEPLOYMENT_EXPOSURE: private
+      PAPERCLIP_AUTH_DISABLE_SIGN_UP: "true"

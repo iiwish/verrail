@@ -2,6 +2,24 @@
   "id": "g1-domain-closure",
   "runtime_target_id": "ff331849-009e-4d09-a3ed-3f4e7c19e9bb",
   "runtime_target_revision_id": "87611d8d-6952-4369-8d30-c0844fbebe70",
+  "runtime_lineage": [
+    {
+      "role": "initial_delivery_target",
+      "workspace_id": "74170eed-f251-4ff1-a9b7-6ebe49e1cb0d",
+      "target_id": "ff331849-009e-4d09-a3ed-3f4e7c19e9bb",
+      "target_revision_id": "87611d8d-6952-4369-8d30-c0844fbebe70"
+    },
+    {
+      "role": "run_003_live_acceptance_target",
+      "workspace_id": "74170eed-f251-4ff1-a9b7-6ebe49e1cb0d",
+      "target_id": "33f4911b-8118-4d74-9a70-1334d54e66be",
+      "target_revision_id": "9635ab7d-e202-4103-85bb-ffbe554aabc2"
+    }
+  ],
+  "current_runtime_observation": {
+    "status": "runtime_unavailable_in_current_database",
+    "observed_at": "2026-09-04T03:22:33Z"
+  },
   "title": "Close G1: native Target and minimal delivery control loop",
   "intent": "Freeze the native Workspace-scoped Target model, make Target creation conversation-first and human-confirmed, and establish the minimal native WorkGraph, Stage, Attention, and Run loop.",
   "scope": "Complete items 1, 2, and 3 for G1 without claiming the later Submission, Evidence, Review, Acceptance, or external delivery loop.",
@@ -23,5 +41,5 @@
   ],
   "status": "needs_review",
   "created_at": "2026-09-01T02:26:54Z",
-  "updated_at": "2026-09-01T09:58:01Z"
+  "updated_at": "2026-09-04T03:34:10Z"
 }

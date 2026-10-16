@@ -47,11 +47,15 @@ export interface ConversationMessage {
 }
 
 export interface Conversation {
+  /** Present only on Target-filtered listings; provenance is not an access grant. */
+  targetRelation?: "source" | "related";
   id: string;
   workspaceId: string;
   title: string;
   status: ConversationStatus;
   pinnedAt: Date | null;
+  currentTargetId?: string | null;
+  contextVersion?: number;
   createdByPrincipalType: string;
   createdByPrincipalId: string;
   lastMessageAt: Date | null;
@@ -60,8 +64,21 @@ export interface Conversation {
 }
 
 export interface ConversationDetail extends Conversation {
+  currentTarget?: { targetId: string; title: string; archivedAt: string | null } | null;
   contextBindings: ConversationContextBinding[];
   messages: ConversationMessage[];
+}
+
+export interface SwitchConversationContextResult {
+  operation?: "link" | "unlink";
+  relatedTargetId?: string;
+  conversationId: string;
+  previousTargetId: string | null;
+  currentTargetId: string | null;
+  contextVersion: number;
+  changed: boolean;
+  replayed: boolean;
+  targetTitle: string | null;
 }
 
 export interface ProviderConversationBinding {

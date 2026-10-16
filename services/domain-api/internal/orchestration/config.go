@@ -8,39 +8,53 @@ import (
 	"strings"
 	"time"
 
+	"github.com/verrail/verrail/services/domain-api/internal/target"
 	"go.temporal.io/sdk/client"
 )
 
 type RuntimeConfig struct {
-	DatabaseURL       string
-	TemporalAddress   string
-	TemporalNamespace string
-	TemporalAPIKey    string
-	TLSServerName     string
-	TaskQueue         string
-	PollInterval      time.Duration
-	LeaseDuration     time.Duration
-	MaxAttempts       int
-	BackoffBase       time.Duration
-	BackoffMax        time.Duration
+	DatabaseURL         string
+	TemporalAddress     string
+	TemporalNamespace   string
+	TemporalAPIKey      string
+	TLSServerName       string
+	TaskQueue           string
+	PollInterval        time.Duration
+	LeaseDuration       time.Duration
+	MaxAttempts         int
+	BackoffBase         time.Duration
+	BackoffMax          time.Duration
+	ServicePrincipalID  string
+	ExecutorPrincipalID string
+	RuntimeProfile      string
+	RunLeaseDuration    time.Duration
+	RunGraceDuration    time.Duration
 }
 
 func LoadRuntimeConfig() (RuntimeConfig, error) {
 	config := RuntimeConfig{
-		DatabaseURL:       strings.TrimSpace(os.Getenv("DATABASE_URL")),
-		TemporalAddress:   envOrDefault("TEMPORAL_ADDRESS", "127.0.0.1:7233"),
-		TemporalNamespace: envOrDefault("TEMPORAL_NAMESPACE", "default"),
-		TemporalAPIKey:    strings.TrimSpace(os.Getenv("TEMPORAL_API_KEY")),
-		TLSServerName:     strings.TrimSpace(os.Getenv("TEMPORAL_TLS_SERVER_NAME")),
-		TaskQueue:         envOrDefault("VERRAIL_TEMPORAL_TASK_QUEUE", DefaultTargetTaskQueue),
-		PollInterval:      250 * time.Millisecond,
-		LeaseDuration:     30 * time.Second,
-		MaxAttempts:       8,
-		BackoffBase:       time.Second,
-		BackoffMax:        time.Minute,
+		DatabaseURL:         strings.TrimSpace(os.Getenv("DATABASE_URL")),
+		TemporalAddress:     envOrDefault("TEMPORAL_ADDRESS", "127.0.0.1:7233"),
+		TemporalNamespace:   envOrDefault("TEMPORAL_NAMESPACE", "default"),
+		TemporalAPIKey:      strings.TrimSpace(os.Getenv("TEMPORAL_API_KEY")),
+		TLSServerName:       strings.TrimSpace(os.Getenv("TEMPORAL_TLS_SERVER_NAME")),
+		TaskQueue:           envOrDefault("VERRAIL_TEMPORAL_TASK_QUEUE", DefaultTargetTaskQueue),
+		PollInterval:        250 * time.Millisecond,
+		LeaseDuration:       30 * time.Second,
+		MaxAttempts:         8,
+		BackoffBase:         time.Second,
+		BackoffMax:          time.Minute,
+		ServicePrincipalID:  envOrDefault("VERRAIL_ORCHESTRATION_PRINCIPAL_ID", "verrail-orchestration-worker"),
+		ExecutorPrincipalID: envOrDefault("VERRAIL_EXECUTOR_PRINCIPAL_ID", "verrail-host-runner"),
+		RuntimeProfile:      envOrDefault("VERRAIL_EXECUTOR_RUNTIME_PROFILE", "host_trusted"),
+		RunLeaseDuration:    2 * time.Minute,
+		RunGraceDuration:    30 * time.Second,
 	}
 	if config.DatabaseURL == "" {
 		return RuntimeConfig{}, fmt.Errorf("DATABASE_URL is required")
+	}
+	if err := target.ValidateExecutorRuntimeProfile(config.RuntimeProfile, config.ExecutorPrincipalID); err != nil {
+		return RuntimeConfig{}, fmt.Errorf("invalid executor configuration: %w", err)
 	}
 	var err error
 	if config.PollInterval, err = durationFromEnv("VERRAIL_OUTBOX_POLL_INTERVAL", config.PollInterval); err != nil {
@@ -54,6 +68,15 @@ func LoadRuntimeConfig() (RuntimeConfig, error) {
 	}
 	if config.BackoffMax, err = durationFromEnv("VERRAIL_OUTBOX_BACKOFF_MAX", config.BackoffMax); err != nil {
 		return RuntimeConfig{}, err
+	}
+	if config.RunLeaseDuration, err = durationFromEnv("VERRAIL_RUN_LEASE_DURATION", config.RunLeaseDuration); err != nil {
+		return RuntimeConfig{}, err
+	}
+	if config.RunGraceDuration, err = nonNegativeDurationFromEnv("VERRAIL_RUN_GRACE_DURATION", config.RunGraceDuration); err != nil {
+		return RuntimeConfig{}, err
+	}
+	if config.RunLeaseDuration < 15*time.Second || config.RunLeaseDuration > time.Hour || config.RunGraceDuration > 10*time.Minute {
+		return RuntimeConfig{}, fmt.Errorf("Run lease or grace duration is outside the supported range")
 	}
 	if value := strings.TrimSpace(os.Getenv("VERRAIL_OUTBOX_MAX_ATTEMPTS")); value != "" {
 		config.MaxAttempts, err = strconv.Atoi(value)
@@ -99,6 +122,18 @@ func durationFromEnv(name string, fallback time.Duration) (time.Duration, error)
 	duration, err := time.ParseDuration(value)
 	if err != nil || duration <= 0 {
 		return 0, fmt.Errorf("%s must be a positive Go duration", name)
+	}
+	return duration, nil
+}
+
+func nonNegativeDurationFromEnv(name string, fallback time.Duration) (time.Duration, error) {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback, nil
+	}
+	duration, err := time.ParseDuration(value)
+	if err != nil || duration < 0 {
+		return 0, fmt.Errorf("%s must be a non-negative Go duration", name)
 	}
 	return duration, nil
 }

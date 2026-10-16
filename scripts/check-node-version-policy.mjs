@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isSupportedWorkflowNodeVersion } from "./node-workflow-version-policy.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const expectedEngine = ">=24.11.0";
@@ -40,7 +41,7 @@ walk(workflowRoot, (filePath) => {
   if (!/\.ya?ml$/.test(filePath)) return;
   const source = fs.readFileSync(filePath, "utf8");
   for (const match of source.matchAll(/node-version:\s*["']?([^\s"'#]+)/g)) {
-    if (match[1] !== "24") failures.push(`${relative(filePath)}: node-version must be 24, found ${match[1]}`);
+    if (!isSupportedWorkflowNodeVersion(match[1])) failures.push(`${relative(filePath)}: node-version must be 24 or an exact 24.x version >=24.11.0, found ${match[1]}`);
   }
 });
 

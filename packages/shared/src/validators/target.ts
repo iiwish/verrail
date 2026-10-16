@@ -1,8 +1,12 @@
 import { z } from "zod";
+import { criterionProofContractSchema } from "./criterion-proof.js";
+import { runtimeProfileV1Schema } from "./execution.js";
 import {
   TARGET_READ_MODEL_POLICY_VERSION,
   TARGET_READ_MODEL_SCHEMA_VERSION,
   TARGET_RISK_LEVELS,
+  TARGET_OUTCOME_CONTROL_KEYS,
+  TARGET_COMMAND_IDS,
   TARGET_STAGE_KEYS,
   TARGET_STATUSES,
   TARGET_WORKSPACE_SCHEMA_VERSION,
@@ -11,6 +15,12 @@ import {
 } from "../types/target.js";
 
 const isoDateTimeSchema = z.iso.datetime({ offset: true });
+export const prepareTargetRepositorySourceSchema = z.object({
+  targetRevisionId: z.string().uuid(),
+  graphRevisionId: z.string().uuid(),
+  ref: z.string().min(1).max(256).refine(value => value !== "." && value !== ".." && !/[\x00-\x20\x7f]/.test(value)),
+}).strict();
+export type PrepareTargetRepositorySourceInput = z.infer<typeof prepareTargetRepositorySourceSchema>;
 const nullableTrimmed = (max: number) => z.string().trim().min(1).max(max).nullable().optional();
 const principalSchema = z.object({
   principalType: z.enum(["user", "agent"]),
@@ -30,10 +40,32 @@ const targetDefinitionSchema = z.object({
     id: z.string().min(1),
     title: z.string(),
     description: z.string().nullable(),
+    proofContract: criterionProofContractSchema.optional(),
   }).strict()),
   deadline: z.iso.date().nullable(),
   policySummary: z.string().nullable(),
   resourceRefs: z.array(targetResourceRefSchema),
+}).strict();
+
+const targetOutcomeSchema = z.object({
+  state: z.enum(["open", "blocked", "awaiting_acceptance", "accepted", "canceled"]),
+  latestSubmissionId: z.string().uuid().nullable(),
+  latestReviewId: z.string().uuid().nullable(),
+  validAcceptanceId: z.string().uuid().nullable(),
+  effectReceiptIds: z.array(z.string().uuid()),
+  controls: z.array(z.object({
+    key: z.enum(TARGET_OUTCOME_CONTROL_KEYS),
+    state: z.enum(["satisfied", "required", "blocked", "invalidated", "not_applicable"]),
+    reason: z.string().nullable(),
+    resourceId: z.string().uuid().nullable(),
+  }).strict()),
+}).strict();
+
+const targetAvailableCommandSchema = z.object({
+  id: z.enum(TARGET_COMMAND_IDS),
+  state: z.enum(["available", "blocked", "completed"]),
+  reason: z.string().nullable(),
+  resourceId: z.string().uuid().nullable(),
 }).strict();
 
 export const targetReadModelV1Schema: z.ZodType<TargetReadModelV1> = z.object({
@@ -46,6 +78,9 @@ export const targetReadModelV1Schema: z.ZodType<TargetReadModelV1> = z.object({
   title: z.string(),
   summary: z.string().nullable(),
   status: z.enum(TARGET_STATUSES),
+  archivedAt: isoDateTimeSchema.nullable().optional(),
+  archiveVersion: z.number().int().nonnegative().optional(),
+  outcome: targetOutcomeSchema,
   outcomeOwner: z.object({
     principalType: z.enum(["user", "agent"]),
     principalId: z.string().min(1),
@@ -89,7 +124,7 @@ const workStatusSchema = z.enum(["pending", "ready", "running", "blocked", "comp
 const runStatusSchema = z.enum(["queued", "running", "cancel_requested", "succeeded", "failed", "canceled"]);
 const executionLeaseSchema = z.object({
   id: z.string().uuid(), runAttemptId: z.string().uuid(), executorPrincipalId: z.string().min(1),
-  runtimeProfile: z.literal("host_trusted"), fencingToken: z.number().int().positive(),
+  runtimeProfile: runtimeProfileV1Schema, fencingToken: z.number().int().positive(),
   status: z.enum(["offered", "active", "suspect", "expired", "released", "revoked"]),
   expiresAt: isoDateTimeSchema, graceExpiresAt: isoDateTimeSchema,
   claimedAt: isoDateTimeSchema.nullable(), lastHeartbeatAt: isoDateTimeSchema.nullable(),
@@ -104,7 +139,7 @@ const runEventSchema = z.object({
 const runAttemptSchema = z.object({
   id: z.string().uuid(), runId: z.string().uuid(), attemptNumber: z.number().int().positive(),
   deploymentRevisionId: z.string().uuid(), agentVersionId: z.string().uuid(),
-  runtimeProfile: z.literal("host_trusted"),
+  runtimeProfile: runtimeProfileV1Schema,
   executor: z.object({ principalType: z.literal("service"), principalId: z.string().min(1) }).strict(),
   fencingToken: z.number().int().positive(),
   status: z.enum(["pending", "running", "cancel_requested", "cancel_acknowledged", "succeeded", "failed", "canceled", "superseded"]),
@@ -116,6 +151,7 @@ const runAttemptSchema = z.object({
 
 export const targetWorkspaceV1Schema: z.ZodType<TargetWorkspaceV1> = z.object({
   schemaVersion: z.literal(TARGET_WORKSPACE_SCHEMA_VERSION),
+  repositorySourceRequired: z.boolean().optional(),
   targetId: z.string().uuid(),
   targetRevisionId: z.string().uuid(),
   workspaceId: z.string().uuid(),
@@ -126,6 +162,8 @@ export const targetWorkspaceV1Schema: z.ZodType<TargetWorkspaceV1> = z.object({
     status: z.enum(["draft", "active", "completed", "canceled"]),
     revisionNumber: z.number().int().positive().nullable(),
   }).strict().nullable(),
+  outcome: targetOutcomeSchema,
+  availableCommands: z.array(targetAvailableCommandSchema),
   stages: z.array(z.object({
     key: stageSchema,
     label: z.string().min(1),
@@ -150,11 +188,18 @@ export const targetWorkspaceV1Schema: z.ZodType<TargetWorkspaceV1> = z.object({
   attention: z.array(z.object({
     id: z.string().min(1),
     severity: z.enum(["info", "warning", "critical"]),
-    kind: z.enum(["draft_graph", "blocked_node", "failed_run", "awaiting_acceptance"]),
+    kind: z.enum([
+      "draft_graph", "blocked_node", "failed_run", "verification_failed",
+      "verification_inconclusive", "missing_evidence", "awaiting_review",
+      "awaiting_acceptance", "action_approval_required", "action_execution_required",
+      "unknown_effect", "invalidated_decision",
+    ]),
     title: z.string().min(1),
     detail: z.string().nullable(),
     workNodeId: z.string().uuid().nullable(),
     runId: z.string().uuid().nullable(),
+    resourceType: z.enum(["target", "submission", "review", "acceptance", "verification_result", "action_request"]).nullable(),
+    resourceId: z.string().uuid().nullable(),
     createdAt: isoDateTimeSchema,
   }).strict()),
   submissions: z.array(z.object({
@@ -182,12 +227,20 @@ export const targetWorkspaceV1Schema: z.ZodType<TargetWorkspaceV1> = z.object({
   }).strict()),
   timeline: z.array(z.object({
     id: z.string().min(1),
-    type: z.enum(["target_created", "target_revision_created", "graph_revision_created", "graph_activated", "run_created", "run_updated"]),
+    type: z.enum([
+      "target_created", "target_revision_created", "graph_revision_created", "graph_activated",
+      "run_created", "run_updated", "submission_created", "review_recorded",
+      "acceptance_created", "integration_result_recorded", "human_result_recorded",
+      "action_requested", "action_approved", "action_executed", "domain_event",
+    ]),
     title: z.string().min(1), detail: z.string().nullable(), occurredAt: isoDateTimeSchema,
+    aggregateType: z.string().min(1), aggregateId: z.string().uuid(),
   }).strict()),
 }).strict();
 
 export const targetListQuerySchema = z.object({
+  q: z.string().trim().max(200).optional(),
+  archiveState: z.enum(["unarchived", "archived", "all"]).optional().default("unarchived"),
   limit: z.coerce.number().int().min(1).max(100).optional().default(50),
   cursor: z.string().trim().min(1).max(4_096).optional(),
   collectionId: z.string().uuid().optional(),
@@ -231,9 +284,10 @@ export const createGraphRevisionSchema = z.object({
 }).strict();
 
 export const createRunSchema = z.object({
-  kind: z.enum(["agent_run", "integration_run"]),
+  kind: z.literal("agent_run"),
+  repositorySourceRevisionId: z.string().uuid().optional(),
   actor: z.object({
-    principalType: z.enum(["agent", "service"]),
+    principalType: z.literal("agent"),
     principalId: z.string().trim().min(1).max(200),
   }).strict(),
 }).strict();

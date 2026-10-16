@@ -113,6 +113,7 @@ import {
   writeHotRestartIntent,
 } from "../services/hot-restart.ts";
 import { secretService } from "../services/secrets.ts";
+import * as activityLogService from "../services/activity-log.ts";
 import {
   SUCCESSFUL_RUN_HANDOFF_EXHAUSTED_NOTICE_BODY,
   SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY,
@@ -5576,82 +5577,133 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
   it("retries a pending execution-review participant once before blocking with a recovery action", async () => {
     const { companyId, agentId, issueId, runId, stageId } = await seedInReviewParticipantRunFixture();
     const heartbeat = heartbeatService(db);
-
-    await heartbeat.resumeQueuedRuns();
-    const reviewRecoveryRun = await waitForValue(async () => {
-      const runs = await db
-        .select()
-        .from(heartbeatRuns)
-        .where(eq(heartbeatRuns.agentId, agentId));
-      return runs.find((row) =>
-        (row.contextSnapshot as Record<string, unknown> | null)?.retryReason ===
-          "execution_review_participant_recovery" &&
-        row.status !== "queued" &&
-        row.status !== "running"
-      ) ?? null;
-    }, 8_000);
-    expect(reviewRecoveryRun).toBeTruthy();
-    expect(reviewRecoveryRun).toMatchObject({
-      companyId,
-      agentId,
-      retryOfRunId: runId,
-      status: "succeeded",
-    });
-    expect(reviewRecoveryRun?.contextSnapshot).toMatchObject({
-      issueId,
-      taskId: issueId,
-      wakeReason: "execution_review_participant_recovery",
-      retryReason: "execution_review_participant_recovery",
-      source: "issue.execution_review_recovery",
-      retryOfRunId: runId,
-      currentStageId: stageId,
-      currentStageType: "review",
-      reviewRecoveryInstruction: expect.stringContaining("Submit the review decision now"),
-    });
-    expect(reviewRecoveryRun?.contextSnapshot as Record<string, unknown>).not.toHaveProperty("modelProfile");
-
-    const sourceIssue = await waitForValue(async () => {
-      const row = await db
-        .select()
-        .from(issues)
-        .where(eq(issues.id, issueId))
-        .then((rows) => rows[0] ?? null);
-      return row?.status === "blocked" ? row : null;
-    }, 8_000);
-    expect(sourceIssue).toMatchObject({
-      status: "blocked",
-      assigneeAgentId: agentId,
-      executionRunId: null,
+    // Hold the real audit commit after the recovery comment becomes visible.
+    let releaseAudit!: () => void;
+    const auditGate = new Promise<void>((resolve) => { releaseAudit = resolve; });
+    let enterAudit!: (latestRunId: string | null) => void;
+    const auditEntered = new Promise<string | null>((resolve) => { enterAudit = resolve; });
+    let recoveryRunId: string | null = null;
+    let drainPromise: Promise<void> | null = null;
+    let drainSettled = false;
+    const realLogActivity = activityLogService.logActivity;
+    const auditSpy = vi.spyOn(activityLogService, "logActivity").mockImplementation(async (...args) => {
+      const input = args[1];
+      if (
+        input.companyId === companyId &&
+        input.entityId === issueId &&
+        input.details?.source === "recovery.reconcile_execution_review_participant"
+      ) {
+        const observedRunId = typeof input.details.latestRunId === "string" ? input.details.latestRunId : null;
+        enterAudit(observedRunId);
+        await auditGate;
+      }
+      return realLogActivity(...args);
     });
 
-    const recoveryAction = await expectSourceScopedStrandedRecoveryAction({
-      companyId,
-      agentId,
-      issueId,
-      runId: reviewRecoveryRun!.id,
-      previousStatus: "in_review",
-      retryReason: "execution_review_participant_recovery",
-      cause: "execution_review_participant_recovery",
-    });
-    expect(recoveryAction.evidence).toMatchObject({
-      latestRunId: reviewRecoveryRun?.id,
-      latestRunStatus: "succeeded",
-      latestRunErrorCode: null,
-      recoveryCause: "execution_review_participant_recovery",
-    });
+    try {
+      await heartbeat.resumeQueuedRuns();
+      const reviewRecoveryRun = await waitForValue(async () => {
+        const runs = await db
+          .select()
+          .from(heartbeatRuns)
+          .where(eq(heartbeatRuns.agentId, agentId));
+        return runs.find((row) =>
+          (row.contextSnapshot as Record<string, unknown> | null)?.retryReason ===
+            "execution_review_participant_recovery" &&
+          row.status !== "queued" &&
+          row.status !== "running"
+        ) ?? null;
+      }, 8_000);
+      recoveryRunId = reviewRecoveryRun?.id ?? null;
+      expect(reviewRecoveryRun).toBeTruthy();
+      expect(reviewRecoveryRun).toMatchObject({
+        companyId,
+        agentId,
+        retryOfRunId: runId,
+        status: "succeeded",
+      });
+      expect(reviewRecoveryRun?.contextSnapshot).toMatchObject({
+        issueId,
+        taskId: issueId,
+        wakeReason: "execution_review_participant_recovery",
+        retryReason: "execution_review_participant_recovery",
+        source: "issue.execution_review_recovery",
+        retryOfRunId: runId,
+        currentStageId: stageId,
+        currentStageType: "review",
+        reviewRecoveryInstruction: expect.stringContaining("Submit the review decision now"),
+      });
+      expect(reviewRecoveryRun?.contextSnapshot as Record<string, unknown>).not.toHaveProperty("modelProfile");
+      drainPromise = heartbeat.waitForRunExecutionDrain(reviewRecoveryRun!.id).finally(() => {
+        drainSettled = true;
+      });
+      // Reuse the drain deadline so a missing audit also reaches gate cleanup.
+      const enteredRunId = await Promise.race([
+        auditEntered,
+        drainPromise.then(() => { throw new Error("Execution drained without the matching recovery audit"); }),
+      ]);
+      expect(enteredRunId).toBe(reviewRecoveryRun!.id);
 
-    const comments = await db.select().from(issueComments).where(eq(issueComments.issueId, issueId));
-    const recoveryComment = comments.find((comment) =>
-      comment.body.includes("pending execution-review participant once") &&
-        noticeMetadataReferencesRecoveryAction(comment.metadata, recoveryAction.id),
-    );
-    expect(recoveryComment).toBeTruthy();
+      const sourceIssue = await waitForValue(async () => {
+        const row = await db
+          .select()
+          .from(issues)
+          .where(eq(issues.id, issueId))
+          .then((rows) => rows[0] ?? null);
+        return row?.status === "blocked" ? row : null;
+      }, 8_000);
+      expect(sourceIssue).toMatchObject({
+        status: "blocked",
+        assigneeAgentId: agentId,
+        executionRunId: null,
+      });
 
-    const activity = await db.select().from(activityLog).where(eq(activityLog.entityId, issueId));
-    expect(activity.some((event) =>
-      (event.details as Record<string, unknown> | null)?.source ===
-        "recovery.reconcile_execution_review_participant",
-    )).toBe(true);
+      const recoveryAction = await expectSourceScopedStrandedRecoveryAction({
+        companyId,
+        agentId,
+        issueId,
+        runId: reviewRecoveryRun!.id,
+        previousStatus: "in_review",
+        retryReason: "execution_review_participant_recovery",
+        cause: "execution_review_participant_recovery",
+      });
+      expect(recoveryAction.evidence).toMatchObject({
+        latestRunId: reviewRecoveryRun?.id,
+        latestRunStatus: "succeeded",
+        latestRunErrorCode: null,
+        recoveryCause: "execution_review_participant_recovery",
+      });
+
+      const comments = await db.select().from(issueComments).where(eq(issueComments.issueId, issueId));
+      const recoveryComment = comments.find((comment) =>
+        comment.body.includes("pending execution-review participant once") &&
+          noticeMetadataReferencesRecoveryAction(comment.metadata, recoveryAction.id),
+      );
+      expect(recoveryComment).toBeTruthy();
+
+      const pendingActivity = await db.select().from(activityLog).where(eq(activityLog.entityId, issueId));
+      expect(pendingActivity.some((event) =>
+        (event.details as Record<string, unknown> | null)?.source ===
+          "recovery.reconcile_execution_review_participant",
+      )).toBe(false);
+      expect(drainSettled).toBe(false);
+      releaseAudit();
+      await drainPromise;
+
+      const activity = await db.select().from(activityLog).where(eq(activityLog.entityId, issueId));
+      expect(activity.some((event) =>
+        (event.details as Record<string, unknown> | null)?.source ===
+          "recovery.reconcile_execution_review_participant",
+      )).toBe(true);
+    } finally {
+      releaseAudit();
+      try {
+        await heartbeat.waitForRunExecutionDrain(runId);
+        if (recoveryRunId) await heartbeat.waitForRunExecutionDrain(recoveryRunId);
+      } finally {
+        auditSpy.mockRestore();
+      }
+    }
   });
 
   it("blocks failed execution-review recovery under the reviewer when the source assignee differs", async () => {

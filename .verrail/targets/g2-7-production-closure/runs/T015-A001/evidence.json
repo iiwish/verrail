@@ -1,0 +1,35 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T015-A001",
+  "task_id": "T015",
+  "status": "passed_for_dependency_progression",
+  "failure_reproduction": {
+    "error_code": "DEPLOYMENT_REVISION_NOT_ACTIVE",
+    "cause": "The Workbench requested a compatibility Agent UUID even though the domain contract requires an active DeploymentRevision UUID."
+  },
+  "fix": {
+    "source": "The Workbench reads the same-Workspace AgentLifecycle projection.",
+    "selection": "Only active revisions of active deployments are selectable; the Workspace default is preferred.",
+    "binding": "The selected DeploymentRevision ID is used as the AgentTask responsible principal and Run actor identity."
+  },
+  "runtime_proof": {
+    "target_id": "44cc7194-d8ce-46d3-8626-3da36785eced",
+    "work_graph_id": "19805915-9637-471c-8ab4-28cedf20ddd5",
+    "graph_revision_id": "af4108ab-8821-4228-9786-5b51117a47a7",
+    "deployment_revision_id": "0c72a87d-9956-4cae-97c7-98f6f4ae8e47",
+    "graph_state": "active",
+    "browser_capture": ".verrail/targets/g2-7-production-closure/runs/T015-A001/logs/browser-overview.png"
+  },
+  "verification": [
+    {"command": "TargetWorkbench focused suite", "status": "passed", "result": "18/18"},
+    {"command": "UI typecheck", "status": "passed"},
+    {"command": "token gates", "status": "passed", "result": "all four clean"},
+    {"command": "real browser GraphRevision create and activate", "status": "passed"},
+    {"command": "git diff --check", "status": "passed"}
+  ],
+  "review": {
+    "critical_or_high_findings": 0,
+    "recommendation": "accept_for_dependency_progression",
+    "reference": ".verrail/targets/g2-7-production-closure/runs/T015-A001/logs/review.md"
+  }
+}

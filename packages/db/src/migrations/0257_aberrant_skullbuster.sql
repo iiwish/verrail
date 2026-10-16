@@ -1,0 +1,2 @@
+ALTER TABLE "verrail_deployments" ADD COLUMN "is_primary" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "verrail_deployments_definition_primary_uq" ON "verrail_deployments" USING btree ("agent_definition_id") WHERE "verrail_deployments"."is_primary";

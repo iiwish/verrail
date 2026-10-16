@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T021",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T021",
+  "status": "accepted_for_dependency_progression",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T18:09:34Z",
+  "work_unit": {
+    "title": "为 Verrail 浏览器验收分配独占动态端口",
+    "goal": "让验收 runner 在未显式指定端口时分配可用 loopback 端口，并把同一端口传给 Playwright 配置与被测服务器。",
+    "requirements": ["AC-09", "AC-11"],
+    "depends_on": ["T020"],
+    "blocks": ["T010"]
+  },
+  "reason": "The release browser gate timed out before running tests because port 3203 belonged to a long-lived Domain API; the CLI moved the test server to 3211 while Playwright continued polling 3203.",
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "allowed_files": [
+      "scripts/run-verrail-acceptance.mjs",
+      "scripts/__tests__/run-verrail-acceptance.test.mjs",
+      ".verrail/targets/g2-7-production-closure/**"
+    ],
+    "rules": [
+      "Honor an explicitly supplied VERRAIL_ACCEPTANCE_PORT without rewriting it.",
+      "When no override exists, allocate an available IPv4 loopback port and propagate it to the Playwright child.",
+      "Do not terminate or reuse unrelated services already bound to a port.",
+      "Keep the isolated PAPERCLIP_HOME cleanup contract intact."
+    ]
+  },
+  "validation_loop": {
+    "commands": [
+      "node --test scripts/__tests__/run-verrail-acceptance.test.mjs",
+      "pnpm test:e2e:verrail-acceptance",
+      "git diff --check"
+    ],
+    "retry_budget": 3
+  },
+  "evidence_contract": {
+    "run_id": "T021-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T021-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T021-A001/evidence.json"
+  }
+}

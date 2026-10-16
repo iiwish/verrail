@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "packet_id": "EP-G2.7-T010",
+  "feature_id": "g2-7-production-closure",
+  "task_id": "T010",
+  "status": "in_progress",
+  "mode": "execute_one_task",
+  "adapter": "codex",
+  "base_commit": "b46307dbd05a912c38a32395b88662952286fd58",
+  "created_at": "2026-09-04T12:34:59Z",
+  "governance_inputs": [
+    ".verrail/targets/g2-7-production-closure/spec.md",
+    ".verrail/targets/g2-7-production-closure/plan.md",
+    ".verrail/targets/g2-7-production-closure/tasks.md",
+    ".verrail/targets/g2-7-production-closure/runs/T005-A001/evidence.json",
+    ".verrail/targets/g2-7-production-closure/runs/T006-A001/evidence.json",
+    ".verrail/targets/g2-7-production-closure/runs/T007-A001/evidence.json",
+    ".verrail/targets/g2-7-production-closure/runs/T008-A001/evidence.json",
+    ".verrail/targets/g2-7-production-closure/runs/T009-A001/evidence.json"
+  ],
+  "approval_gates": {
+    "implementation_dependencies": "accepted_for_dependency_progression",
+    "intermediate_plan_authority": "delegated_to_codex",
+    "final_target_acceptance": "reserved_for_outcome_owner",
+    "human_identity": "one_real_human_may_issue_distinct_review_action_approval_and_acceptance_commands",
+    "technical_evaluation_and_configuration": "用户明确委托 Codex 自行取得真实技术评测结果、如实登记并完成测试部署配置；不得将机器评测冒充真人交付评审或最终验收。"
+  },
+  "work_unit": {
+    "title": "执行真实闭环、独立评审和 Outcome Owner 验收",
+    "goal": "以完整自动化、真实飞书、真实 GitHub、故障恢复、独立技术评审和最终真人验收证明 G2 Production Closure。",
+    "epic": "E005",
+    "requirements": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11"],
+    "depends_on": ["T005", "T006", "T007", "T008", "T009"],
+    "blocks": ["G2 completion"],
+    "parallel": false
+  },
+  "external_prerequisites": [
+    "A configured real Feishu test application using its authorized transport and an operable group or direct chat. Long connections do not produce HTTP challenge receipts.",
+    "A user-authorized GitHub test repository, encrypted connection Secret and branch on which one pull request may be created."
+  ],
+  "execution_constraints": {
+    "branch": "codex/g2-7-production-closure",
+    "allowed_files": [
+      ".verrail/targets/g2-7-production-closure/runs/T010-A001/**",
+      ".verrail/targets/g2-7-production-closure/runs/T010-A002/**",
+      ".verrail/targets/g2-7-production-closure/human-handoff.md",
+      ".verrail/targets/g2-7-production-closure/reviews/**",
+      ".verrail/targets/g2-7-production-closure/target.json",
+      ".verrail/targets/g2-7-production-closure/tasks.md",
+      ".verrail/targets/g2-7-production-closure/packets/T010.json",
+      ".verrail/targets/g2-7-production-closure/timeline.jsonl",
+      "tests/verrail-acceptance/**"
+    ],
+    "rules": [
+      "Do not fabricate provider identifiers, human identities, Acceptance or review evidence.",
+      "Do not persist or log short-lived GitHub credentials or Feishu secrets.",
+      "The external pull request must converge to exactly one object and one matching EffectReceipt.",
+      "If acceptance exposes a product defect, stop this task and create a separately scoped fix packet."
+    ]
+  },
+  "validation_loop": {
+    "commands": [
+      "pnpm test:domain-api",
+      "pnpm --filter @paperclipai/db check:migrations",
+      "pnpm -r typecheck",
+      "pnpm check:token-gates",
+      "pnpm test:run",
+      "pnpm build",
+      "pnpm test:e2e:verrail-acceptance",
+      "real Feishu and GitHub fault/restore runbook",
+      "redacted secret scan",
+      "git diff --check"
+    ],
+    "retry_budget": 3
+  },
+  "evidence_contract": {
+    "run_id": "T010-A001",
+    "receipt": ".verrail/targets/g2-7-production-closure/runs/T010-A001/receipt.json",
+    "evidence": ".verrail/targets/g2-7-production-closure/runs/T010-A001/evidence.json",
+    "logs": ".verrail/targets/g2-7-production-closure/runs/T010-A001/logs/",
+    "required_items": [
+      "complete automated verification log",
+      "real Feishu transport connection, inbound event, outbound reply and delivery identifiers; HTTP challenge only for webhook transport",
+      "real GitHub pull-request URL and matching EffectReceipt",
+      "API, Worker, Runner and provider fault/recovery timeline",
+      "redacted secret scan",
+      "independent technical review",
+      "Outcome Owner final acceptance"
+    ]
+  },
+  "stop_conditions": [
+    "Any required automated gate fails after bounded diagnosis.",
+    "A provider secret or ephemeral credential appears in logs or durable facts.",
+    "The real GitHub operation creates more than one pull request.",
+    "The accepted Target cannot be reconstructed from PostgreSQL after restart.",
+    "Final human acceptance has not been explicitly recorded."
+  ]
+}

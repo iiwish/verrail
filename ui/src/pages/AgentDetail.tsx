@@ -29,6 +29,12 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { AgentSkillsTab } from "./agent-skills/AgentSkillsTab";
+import { DirectorInstructionsTab } from "./DirectorInstructionsTab";
+import { AgentProductOverview, AgentWorkRecords, DirectorCapabilities } from "./AgentProductPanels";
+import { AgentPublicationButton } from "./AgentPublicationButton";
+import { AgentVersions, AgentEffectiveVersionStatus } from "./AgentVersions";
+import { AGENT_PRODUCT_SECTIONS, agentProductSection, agentProductSectionRoute, type AgentProductSection } from "../lib/agent-product";
+import { isWorkspaceDirector } from "@paperclipai/shared";
 import { AgentConfigForm } from "../components/AgentConfigForm";
 import { PageTabBar } from "../components/PageTabBar";
 import { adapterLabels, roleLabels, help } from "../components/agent-config-primitives";
@@ -39,7 +45,7 @@ import { MarkdownEditor } from "../components/MarkdownEditor";
 import { assetsApi } from "../api/assets";
 import { toolsApi } from "../api/tools";
 import { getUIAdapter, buildTranscript, onAdapterChange } from "../adapters";
-import { StatusBadge } from "../components/StatusBadge";
+import { StatusBadge, AgentStatusBadge } from "../components/StatusBadge";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { CopyText } from "../components/CopyText";
 import { EntityRow } from "../components/EntityRow";
@@ -87,6 +93,7 @@ import {
   HelpCircle,
   FolderOpen,
   AlertTriangle,
+  MessageSquare,
 } from "lucide-react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -277,9 +284,10 @@ function scrollToContainerBottom(container: ScrollContainer, behavior: ScrollBeh
   container.scrollTo({ top: container.scrollHeight, behavior });
 }
 
-type AgentDetailView = "dashboard" | "instructions" | "configuration" | "secrets" | "skills" | "tools" | "runs" | "audit" | "budget";
+type AgentDetailView = "dashboard" | "instructions" | "configuration" | "secrets" | "skills" | "tools" | "runs" | "audit" | "budget" | "versions";
 
 export const AGENT_DETAIL_TABS: ReadonlyArray<{ value: AgentDetailView; label: string }> = [
+  { value: "versions", label: "Versions & deployments" },
   { value: "dashboard", label: "Dashboard" },
   { value: "instructions", label: "Instructions" },
   { value: "skills", label: "Skills" },
@@ -326,6 +334,7 @@ export function restoreAgentConfigHistoryEntry(
 }
 
 export function parseAgentDetailView(value: string | null): AgentDetailView {
+  if (value === "versions") return "versions";
   if (value === "instructions" || value === "prompts") return "instructions";
   if (value === "configure" || value === "configuration") return "configuration";
   if (value === "secrets") return "secrets";
@@ -772,6 +781,7 @@ export function AgentDetail() {
   const needsRunData = activeView === "runs" || Boolean(urlRunId);
   const shouldLoadHeartbeats = needsDashboardData || needsRunData;
   const [configDirty, setConfigDirty] = useState(false);
+  const [configGroup, setConfigGroup] = useState<"identity" | "runtime" | "schedule" | "permissions">("identity");
   const [configSaving, setConfigSaving] = useState(false);
   const saveConfigActionRef = useRef<(() => void) | null>(null);
   const cancelConfigActionRef = useRef<(() => void) | null>(null);
@@ -885,11 +895,12 @@ export function AgentDetail() {
     enabled: Boolean(resolvedAgentId) && needsDashboardData,
   });
 
-  const { data: heartbeats } = useQuery({
+  const heartbeatsQuery = useQuery({
     queryKey: queryKeys.heartbeats(resolvedCompanyId!, agent?.id ?? undefined),
     queryFn: () => heartbeatsApi.list(resolvedCompanyId!, agent?.id ?? undefined),
     enabled: !!resolvedCompanyId && !!agent?.id && shouldLoadHeartbeats,
   });
+  const heartbeats = heartbeatsQuery.data;
 
   const { data: allIssues } = useQuery({
     queryKey: [...queryKeys.issues.list(resolvedCompanyId!), "participant-agent", resolvedAgentId ?? "__none__"],
@@ -959,24 +970,7 @@ export function AgentDetail() {
       }
       return;
     }
-    const canonicalTab =
-      activeView === "instructions"
-        ? "instructions"
-        : activeView === "configuration"
-          ? "configuration"
-          : activeView === "secrets"
-            ? "secrets"
-            : activeView === "skills"
-              ? "skills"
-              : activeView === "tools"
-                ? "tools"
-                : activeView === "runs"
-                  ? "runs"
-                  : activeView === "audit"
-                    ? "audit"
-                    : activeView === "budget"
-                      ? "budget"
-                      : "dashboard";
+    const canonicalTab = activeView;
     if (routeAgentRef !== canonicalAgentRef || urlTab !== canonicalTab) {
       navigate(`/agents/${canonicalAgentRef}/${canonicalTab}`, { replace: true });
       return;
@@ -1074,9 +1068,11 @@ export function AgentDetail() {
         crumbs.push({ label: t("agents.detail.tabs.runs"), href: `/agents/${canonicalAgentRef}/runs` });
         crumbs.push({ label: t("agents.detail.runNamed", { id: urlRunId.slice(0, 8) }) });
       } else if (activeView === "instructions") {
-        crumbs.push({ label: t("agents.detail.tabs.instructions") });
+        crumbs.push({ label: isWorkspaceDirector(agent?.metadata) ? t("directorBehavior.title") : t("agents.detail.tabs.instructions") });
       } else if (activeView === "configuration") {
         crumbs.push({ label: t("agents.detail.tabs.configuration") });
+      } else if (activeView === "versions") {
+        crumbs.push({ label: t("agentProduct.sections.versions") });
       } else if (activeView === "secrets") {
         crumbs.push({ label: t("agents.detail.tabs.secrets") });
       // } else if (activeView === "skills") { // TODO: bring back later
@@ -1196,7 +1192,7 @@ export function AgentDetail() {
   const pausedEscalationWarning = !hasInvalidOrgChain ? agent.orgChainHealth?.escalationWarning ?? null : null;
   const showConfigActionBar = (
     activeView === "configuration" || activeView === "instructions" || activeView === "secrets"
-  ) && (configDirty || configSaving);
+  ) && !(activeView === "instructions" && isWorkspaceDirector(agent.metadata)) && (configDirty || configSaving);
   const showLeftAgentNotice = agentMembershipState === "left" && !dismissedLeftAgentIds.has(agent.id);
   const agentMembershipPending =
     membershipMutation.isPending &&
@@ -1205,6 +1201,11 @@ export function AgentDetail() {
   const agentStarred = isStarred(membershipsQuery.data, "agent", agent.id);
   const agentStarPending = agentMembershipPending && membershipMutation.variables?.starred !== undefined;
   const agentJoinLeavePending = agentMembershipPending && membershipMutation.variables?.starred === undefined;
+  const director = isWorkspaceDirector(agent.metadata);
+  const section = agentProductSection(activeView);
+  const subViews = section === "capabilities" ? ["skills", "tools"]
+    : section === "work" ? (activeView === "audit" ? ["runs", "audit"] : [])
+      : section === "settings" ? ["configuration", "secrets", "budget"] : [];
 
   function handleAgentTabChange(value: string) {
     if (value === activeView || !prepareAgentNavigation()) return;
@@ -1278,7 +1279,7 @@ export function AgentDetail() {
         </div>
       ) : null}
       {/* Header */}
-      <div className="flex items-center justify-between gap-2">
+      <div data-testid="agent-detail-header" className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <AgentIconPicker
             value={agent.icon}
@@ -1290,42 +1291,54 @@ export function AgentDetail() {
           </AgentIconPicker>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h2 className="text-2xl font-bold truncate">{agent.name}</h2>
+              <h2 className="min-w-0 break-words text-xl font-semibold">{agent.name}</h2>
+              <StarToggle
+                size="button"
+                starred={agentStarred}
+                pending={agentStarPending}
+                resourceName={agent.name}
+                onToggle={(next) => membershipMutation.mutate({
+                  resourceType: "agent",
+                  resourceId: agent.id,
+                  resourceName: agent.name,
+                  starred: next,
+                })}
+              />
             </div>
             <p className="text-sm text-muted-foreground truncate">
-              {roleLabels[agent.role] ?? agent.role}
-              {agent.title ? ` - ${agent.title}` : ""}
+              {isWorkspaceDirector(agent.metadata)
+                ? t("directorBehavior.identity")
+                : `${roleLabels[agent.role] ?? agent.role}${agent.title ? ` - ${agent.title}` : ""}`}
             </p>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <AgentStatusBadge status={agent.status} />
+              <AgentEffectiveVersionStatus agent={agent} />
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <StarToggle
-            size="button"
-            starred={agentStarred}
-            pending={agentStarPending}
-            resourceName={agent.name}
-            onToggle={(next) => membershipMutation.mutate({
-              resourceType: "agent",
-              resourceId: agent.id,
-              resourceName: agent.name,
-              starred: next,
-            })}
-          />
+        <div className="flex flex-wrap items-center gap-2">
+          {director && <Button asChild size="sm"><Link to="/chat"><MessageSquare className="size-4" />{t("agentProduct.openChat")}</Link></Button>}
           <AgentActionButtons
+            maintenanceInMenu
+            showStatus={false}
             agent={agent}
             companyId={resolvedCompanyId}
             assignLabel={t("agents.detail.assignTask")}
             runLabel={t("agents.runHeartbeat")}
             actionsDisabled={agentAction.isPending}
             workActionsDisabled={hasInvalidOrgChain}
+            hideWorkActions={director}
+            hideSessionActions={director}
             workActionsDisabledReason={t("agents.detail.repairChainFirst")}
             hasPendingNavigationChanges={configDirty}
             onBeforeNavigate={prepareAgentNavigation}
             onActionError={setActionError}
             onTerminateSuccess={() => navigate("/agents/all", { replace: true })}
-            hideTerminate={Boolean(builtInState)}
+            hideTerminate={director || Boolean(builtInState)}
             pauseConfirm={
-              builtInState
+              director
+                ? { title: t("agentProduct.pauseDirector"), description: t("agentProduct.pauseDirectorDescription") }
+                : builtInState
                 ? {
                     title: `Pause the ${builtInState.definition.displayName}?`,
                     description: (
@@ -1355,7 +1368,7 @@ export function AgentDetail() {
         </div>
       </div>
 
-      {builtInState && (
+      {builtInState && !isWorkspaceDirector(agent.metadata) && (
         <InlineBanner
           tone="info"
           title="Built-in agent"
@@ -1405,22 +1418,27 @@ export function AgentDetail() {
 
       {!urlRunId && (
         <Tabs
-          value={activeView}
-          onValueChange={handleAgentTabChange}
+          value={section}
+          onValueChange={(value) => handleAgentTabChange(agentProductSectionRoute(value as AgentProductSection, director))}
         >
           <div className="overflow-x-auto">
             <PageTabBar
-              items={AGENT_DETAIL_TABS.map((item) => ({
-                ...item,
-                label: t(`agents.detail.tabs.${item.value}`),
-              }))}
-              value={activeView}
-              onValueChange={handleAgentTabChange}
+              items={AGENT_PRODUCT_SECTIONS.map((value) => ({ value, label: t(`agentProduct.sections.${value}`) }))}
+              value={section}
+              onValueChange={(value) => handleAgentTabChange(agentProductSectionRoute(value as AgentProductSection, director))}
               align="start"
             />
           </div>
         </Tabs>
       )}
+
+      {!urlRunId && section === "settings" && <nav className="flex flex-wrap gap-1 border-b border-border pb-3" aria-label={t("agentProduct.sections.settings")}>
+        {(["identity", "runtime", "schedule", "permissions"] as const).map((group) => <Button key={group} size="sm" variant={activeView === "configuration" && configGroup === group ? "secondary" : "ghost"} aria-current={activeView === "configuration" && configGroup === group ? "page" : undefined} onClick={() => { if (activeView !== "configuration") handleAgentTabChange("configuration"); setConfigGroup(group); }}>{t(`agentProduct.settingsGroups.${group}`)}</Button>)}
+        {["secrets", "budget"].map((view) => <Button key={view} size="sm" variant={activeView === view ? "secondary" : "ghost"} aria-current={activeView === view ? "page" : undefined} onClick={() => handleAgentTabChange(view)}>{t(`agentProduct.views.${view}`)}</Button>)}
+      </nav>}
+      {!urlRunId && section !== "settings" && subViews.length > 0 && <nav className="flex flex-wrap gap-2" aria-label={t(`agentProduct.sections.${section}`)}>
+        {subViews.map((view) => <Button key={view} size="sm" variant={activeView === view ? "secondary" : "ghost"} aria-current={activeView === view ? "page" : undefined} onClick={() => handleAgentTabChange(view)}>{t(`agentProduct.views.${view}`)}</Button>)}
+      </nav>}
 
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
       {isPendingApproval && (
@@ -1489,17 +1507,19 @@ export function AgentDetail() {
 
       {/* View content */}
       {activeView === "dashboard" && (
-        <AgentOverview
+        <AgentProductOverview
           agent={agent}
           runs={heartbeats ?? []}
-          assignedIssues={assignedIssues}
-          runtimeState={runtimeState}
-          agentId={agent.id}
-          agentRouteId={canonicalAgentRef}
+          runsLoading={heartbeatsQuery.isPending}
+          runsError={heartbeatsQuery.isError}
+          retryRuns={() => void heartbeatsQuery.refetch()}
         />
       )}
 
-      {activeView === "instructions" && (
+      {activeView === "instructions" && isWorkspaceDirector(agent.metadata) && (
+        <DirectorInstructionsTab key={agent.id} agentId={agent.id} companyId={resolvedCompanyId ?? undefined} onDirtyChange={setConfigDirty} />
+      )}
+      {activeView === "instructions" && !isWorkspaceDirector(agent.metadata) && (
         <PromptsTab
           agent={agent}
           companyId={resolvedCompanyId ?? undefined}
@@ -1510,8 +1530,12 @@ export function AgentDetail() {
         />
       )}
 
+      {activeView === "versions" && <AgentVersions agent={agent} publicationAction={<AgentPublicationButton agent={agent} disabled={configDirty || configSaving || agent.status === "terminated"} />} />}
       {activeView === "configuration" && (
+        <div className="space-y-5">
+        {director && (configGroup === "runtime" || configGroup === "schedule") && <p className="max-w-3xl border-l-2 border-border pl-3 text-xs leading-relaxed text-muted-foreground">{t("agentProduct.directorConfigurationBoundary")}</p>}
         <AgentConfigurePage
+          configGroup={configGroup}
           agent={agent}
           agentId={agent.id}
           companyId={resolvedCompanyId ?? undefined}
@@ -1521,6 +1545,7 @@ export function AgentDetail() {
           onSavingChange={setConfigSaving}
           updatePermissions={updatePermissions}
         />
+        </div>
       )}
 
       {activeView === "secrets" && (
@@ -1538,18 +1563,21 @@ export function AgentDetail() {
         </div>
       )}
 
-      {activeView === "skills" && (
+      {activeView === "skills" && director && <DirectorCapabilities key={agent.id} agent={agent} skills />}
+      {activeView === "skills" && !director && (
         <AgentSkillsTab
           agent={agent}
           companyId={resolvedCompanyId ?? undefined}
         />
       )}
 
-      {activeView === "tools" && resolvedCompanyId && (
+      {activeView === "tools" && director && <DirectorCapabilities key={agent.id} agent={agent} />}
+      {activeView === "tools" && !director && resolvedCompanyId && (
         <AgentToolsTab agent={agent} companyId={resolvedCompanyId} />
       )}
 
-      {activeView === "runs" && (
+      {activeView === "runs" && !urlRunId && <AgentWorkRecords key={agent.id} agent={agent} runs={heartbeats ?? []} runsLoading={heartbeatsQuery.isPending} runsError={heartbeatsQuery.isError} retryRuns={() => void heartbeatsQuery.refetch()} />}
+      {activeView === "runs" && urlRunId && (
         <RunsTab
           runs={heartbeats ?? []}
           companyId={resolvedCompanyId!}
@@ -1965,6 +1993,7 @@ export function syncAgentRouteAfterRename(
 }
 
 function AgentConfigurePage({
+  configGroup,
   agent,
   agentId,
   companyId,
@@ -1974,6 +2003,7 @@ function AgentConfigurePage({
   onSavingChange,
   updatePermissions,
 }: {
+  configGroup: "identity" | "runtime" | "schedule" | "permissions";
   agent: AgentDetailRecord;
   agentId: string;
   companyId?: string;
@@ -2008,6 +2038,7 @@ function AgentConfigurePage({
   return (
     <div className="max-w-3xl space-y-6">
       <ConfigurationTab
+        configGroup={configGroup}
         agent={agent}
         onDirtyChange={onDirtyChange}
         onSaveActionChange={onSaveActionChange}
@@ -2018,13 +2049,13 @@ function AgentConfigurePage({
         hidePromptTemplate
         hideInstructionsFile
       />
-      <div>
+      <div hidden={configGroup !== "permissions"}>
         <h3 className="text-sm font-medium mb-3">{t("agents.detail.configuration.apiKeys")}</h3>
         <KeysTab agentId={agentId} companyId={companyId} />
       </div>
 
       {/* Configuration Revisions — collapsible at the bottom */}
-      <div>
+      <div hidden={configGroup !== "runtime"}>
         <button
           className="flex items-center gap-2 text-sm font-medium hover:text-foreground transition-colors"
           onClick={() => setRevisionsOpen((v) => !v)}
@@ -2080,6 +2111,7 @@ function AgentConfigurePage({
 /* ---- Configuration Tab ---- */
 
 function ConfigurationTab({
+  configGroup,
   agent,
   companyId,
   onDirtyChange,
@@ -2091,6 +2123,7 @@ function ConfigurationTab({
   hideInstructionsFile,
   content = "configuration",
 }: {
+  configGroup?: "identity" | "runtime" | "schedule" | "permissions";
   agent: AgentDetailRecord;
   companyId?: string;
   onDirtyChange: (dirty: boolean) => void;
@@ -2192,6 +2225,7 @@ function ConfigurationTab({
   return (
     <div className="space-y-6">
       <AgentConfigForm
+        visibleSection={configGroup}
         mode="edit"
         agent={agent}
         onSave={(patch) => updateAgent.mutateAsync(patch)}
@@ -2203,16 +2237,18 @@ function ConfigurationTab({
         hideInlineSave
         hidePromptTemplate={hidePromptTemplate}
         hideInstructionsFile={hideInstructionsFile}
+        hideReportingLine={isWorkspaceDirector(agent.metadata)}
         content={content}
-        sectionLayout="cards"
+        sectionLayout="inline"
       />
-      {content === "configuration" ? (
+      {content === "configuration" && (!configGroup || configGroup === "runtime" || configGroup === "schedule") ? (
         <p className="text-xs text-muted-foreground">
           {t("agents.detail.configuration.nextRunNotice")}
         </p>
       ) : null}
 
-      {content === "configuration" ? <TrustPresetSection
+      {content === "configuration" && (!configGroup || configGroup === "permissions") ? <p className="text-xs text-muted-foreground">{t("agentProduct.permissionsImmediate")}</p> : null}
+      {content === "configuration" && (!configGroup || configGroup === "permissions") ? <TrustPresetSection
         permissions={agent.permissions}
         disabled={updatePermissions.isPending}
         companyId={companyId}
@@ -2235,9 +2271,9 @@ function ConfigurationTab({
         }
       /> : null}
 
-      {content === "configuration" ? <div>
+      {content === "configuration" && (!configGroup || configGroup === "permissions") ? <div>
         <h3 className="text-sm font-medium mb-3">{t("agents.detail.permissions.title")}</h3>
-        <div className="border border-border rounded-lg p-4 space-y-4">
+        <div className="divide-y divide-border space-y-4">
           <div className="flex items-center justify-between gap-4 text-sm">
             <div className="space-y-1">
               <div>{t("agents.detail.permissions.createAgents")}</div>

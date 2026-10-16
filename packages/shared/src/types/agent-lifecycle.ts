@@ -27,6 +27,14 @@ export interface PublishAgentVersionInputV1 {
   supplyChain?: Record<string, unknown>;
 }
 
+export interface AgentPublicationPreviewV1 {
+  agentId: string;
+  sourceHash: string;
+  snapshot: PublishAgentVersionInputV1;
+  warnings: string[];
+  mode: "director_chat" | "compatibility_executor";
+}
+
 export interface RecordEvaluationRunInputV1 {
   candidateAgentVersionId: string;
   baselineAgentVersionId?: string | null;
@@ -48,7 +56,9 @@ export interface CreateDeploymentInputV1 {
 }
 
 export interface ReviseDeploymentInputV1 {
-  action: "pause" | "resume" | "upgrade" | "rollback" | "retire" | "set_default";
+  action: "pause" | "resume" | "upgrade" | "rollback" | "retire" | "set_default" | "activate";
+  expectedDeploymentRevisionId?: string;
+  expectedPrimaryDeploymentId?: string;
   agentVersionId?: string;
   evaluationRunId?: string;
   sourceDeploymentRevisionId?: string;
@@ -90,6 +100,7 @@ export interface DeploymentV1 {
   name: string;
   status: DeploymentStatus;
   isDefault: boolean;
+  isPrimary?: boolean;
   activeRevision: DeploymentRevisionV1 | null;
   revisions: DeploymentRevisionV1[];
   createdAt: string;

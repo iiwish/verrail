@@ -1,0 +1,24 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T022-A001",
+  "tests": [
+    {"suite": "app-vite-dev-routing and app-hmr-port", "status": "passed", "tests_passed": 12},
+    {"suite": "verrail browser acceptance", "status": "not_passed", "initial_attempt": "startup_timeout", "second_attempt": "5 passed, 1 cold-start timeout; before the final node_modules path refinement"}
+  ],
+  "typecheck": {"status": "passed", "scope": "@paperclipai/server"},
+  "build": {"status": "not_run", "reason": "Final production build remains part of the T010 release gate."},
+  "lint": {"status": "passed", "command": "git diff --check"},
+  "manual_notes": [
+    "Live stack was restored through pnpm dev:verrail using the existing verrail-g2-closure Docker project and persistent volumes. No migrations were pending and no database reset or row repair occurred.",
+    "The listener on 127.0.0.1:3270 is Node PID 34128; lsof resolved its cwd to /Users/iiwish/self/verrail/server.",
+    "API health returned status=ok, authReady=true, bootstrapStatus=ready on the expected branch and base commit.",
+    "Browser DOM renders the real Target overview and Runs view, including the two historical expired attempts and Retry control. No browser error or warning was captured after reload.",
+    "The first isolated live Vite cache used identity 216275dfe66013d8a19f871271e6f97fc74349c352793746620aee16586a855a. The concurrent acceptance server on port 56892 emitted imports from its own temporary-home cache with identity 2a1e2afa5fc4e9a7d52d59fbdab65d9153e53616298fed29b2a09a89b1c4bc9b. Reloading the live Runs page still rendered its real Target and Retry control without browser errors.",
+    "Babel was observed processing react-dom_client.js in the non-node_modules cache path. The installed @vitejs/plugin-react excludes /node_modules/ by default; the final cache path includes node_modules/.vite to retain that exclusion. Focused tests pass after this refinement.",
+    "At handoff the restored stack supervisor has exited. Docker is unavailable and no database or volume reset was performed."
+  ],
+  "missing": [
+    "Completed browser acceptance run and live-page reload using the final node_modules/.vite cache path after disk space and Docker are restored.",
+    "Final independent review and Outcome Owner acceptance remain T010 obligations."
+  ]
+}

@@ -30,6 +30,7 @@ const apiPrefixes: Record<string, string> = {
   "collections.ts": "/api",
   "connector.ts": "/api",
   "conversations.ts": "/api",
+  "conversation-invocations.ts": "/api",
   "company-skills.ts": "/api",
   "company-skill-policy.ts": "/api",
   "costs.ts": "/api",
@@ -37,6 +38,7 @@ const apiPrefixes: Record<string, string> = {
   "decision-queues.ts": "/api",
   "decisions.ts": "/api",
   "decision-training.ts": "/api",
+  "delivery-context.ts": "/api",
   "environments.ts": "/api",
   "execution-workspaces.ts": "/api",
   "file-resources.ts": "/api",
@@ -175,6 +177,51 @@ function loadSpecRoutes() {
 }
 
 describe("openapi routes", () => {
+  it("documents authorized repository preparation with strict source provenance", () => {
+    const operation = buildOpenApiSpec().paths["/api/workspaces/{workspaceId}/targets/{targetId}/repository-sources"].post;
+    expect(operation["x-paperclip-authorization"]).toEqual({ actor: "board" });
+    expect(operation.security).not.toContainEqual({ AgentBearerAuth: [] });
+    expect(operation.parameters.some((parameter: { in: string }) => parameter.in === "header")).toBe(false);
+    const body = operation.requestBody.content["application/json"].schema;
+    expect(body.additionalProperties).toBe(false);
+    expect(body.required).toEqual(["targetRevisionId", "graphRevisionId", "ref"]);
+    const receipt = operation.responses["201"].content["application/json"].schema;
+    expect(receipt.additionalProperties).toBe(false);
+    expect(receipt.required).toContain("provenanceArtifact");
+    expect(Object.keys(operation.responses).sort()).toEqual(["201", "400", "401", "403", "404", "409", "422", "503"]);
+  });
+
+  it("documents durable conversation invocation authority, replay and cancellation", () => {
+    const spec = buildOpenApiSpec();
+    const base = "/api/workspaces/{workspaceId}/conversations/{conversationId}/invocations";
+    const start = spec.paths[base].post;
+    expect(start["x-paperclip-authorization"]).toEqual({ actor: "board" });
+    expect(start.security).not.toContainEqual({ AgentBearerAuth: [] });
+    expect(start.requestBody.content["application/json"].schema).toMatchObject({
+      additionalProperties: false, required: ["body", "idempotencyKey"],
+    });
+    expect(start.responses["200"]).toBeDefined();
+    expect(start.responses["202"]).toBeDefined();
+    const view = start.responses["202"].content["application/json"].schema.properties.invocation;
+    expect(view.additionalProperties).toBe(false);
+    for (const field of ["input", "requestHash", "directorToken"]) expect(view.properties[field]).toBeUndefined();
+    expect(spec.paths[`${base}/{invocationId}/cancel`].post.responses["202"]).toBeDefined();
+    const stream = spec.paths[`${base}/{invocationId}/events`].get;
+    expect(stream.responses["200"].content["text/event-stream"]).toBeDefined();
+    expect(stream.parameters).toContainEqual(expect.objectContaining({ name: "Last-Event-ID", in: "header" }));
+  });
+
+  it("documents Director invocation authentication separately from board access", () => {
+    const spec = buildOpenApiSpec();
+    expect(spec.components.securitySchemes.DirectorInvocationToken).toMatchObject({
+      type: "apiKey", in: "header", name: "X-Verrail-Chat-Token",
+    });
+    expect(spec.paths["/api/director/mcp"].post.security).toEqual([{ DirectorInvocationToken: [] }]);
+    expect(spec.paths["/api/director/mcp"].post["x-paperclip-authorization"]).toEqual({
+      actor: "director_invocation", deploymentModes: ["local_trusted", "authenticated"],
+    });
+  });
+
   it("serves the generated OpenAPI document", async () => {
     const res = await request(createApp()).get("/api/openapi.json");
 
@@ -328,6 +375,38 @@ describe("openapi routes", () => {
     expect(spec.paths["/api/routines/{id}/run"].post.responses["422"]).toBeDefined();
   });
 
+  it("documents native artifact downloads and board-governed outbox recovery", () => {
+    const { spec } = loadSpecRoutes();
+    const download = spec.paths["/api/workspaces/{workspaceId}/artifact-revisions/{revisionId}/content"]?.get;
+    expect(download).toBeDefined();
+    expect(download["x-paperclip-authorization"]).toEqual({ actor: "board_or_agent" });
+    expect(download.responses["200"].content).toEqual({
+      "application/octet-stream": { schema: { type: "string", format: "binary" } },
+    });
+    expect(download.responses["503"]).toBeDefined();
+    const failures = spec.paths["/api/workspaces/{workspaceId}/targets/{targetId}/run-outbox-failures"]?.get;
+    expect(failures).toBeDefined();
+    expect(failures["x-paperclip-authorization"]).toEqual({ actor: "board" });
+    expect(failures.responses["200"].content["application/json"].schema.type).toBe("array");
+    const retry = spec.paths["/api/workspaces/{workspaceId}/runs/{runId}/outbox/retry"]?.post;
+    expect(retry).toBeDefined();
+    expect(retry["x-paperclip-authorization"]).toEqual({ actor: "board" });
+    expect(retry.parameters).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "workspaceId", in: "path", required: true }),
+      expect.objectContaining({ name: "runId", in: "path", required: true }),
+      expect.objectContaining({ name: "Idempotency-Key", in: "header", required: true }),
+    ]));
+    expect(retry.requestBody.content["application/json"].schema).toMatchObject({
+      required: ["eventId", "expectedAttemptCount"],
+      additionalProperties: false,
+      properties: {
+        eventId: { type: "string", format: "uuid" },
+        expectedAttemptCount: { type: "integer", minimum: 0, exclusiveMinimum: true, maximum: 2_147_483_647 },
+      },
+    });
+    expect(Object.keys(retry.responses).sort()).toEqual(["200", "400", "401", "403", "404", "409", "503"]);
+  });
+
   it("publishes the Claude browser-code grammar and strict setup-token response shapes", () => {
     const { spec } = loadSpecRoutes();
     const base = "/api/companies/{companyId}/setup-token-login-sessions";
@@ -384,6 +463,37 @@ describe("openapi routes", () => {
       "authorizationUrl",
       "transportAdvisory",
     ]);
+  });
+
+  it("documents strict observation collection without proof or credential inputs", () => {
+    const { spec } = loadSpecRoutes();
+    const operation = spec.paths["/api/workspaces/{workspaceId}/targets/{targetId}/github-ci-observations"]?.post;
+    expect(operation).toBeDefined();
+    expect(operation["x-paperclip-authorization"]).toEqual({ actor: "board" });
+    const body = operation.requestBody.content["application/json"].schema;
+    expect(body.additionalProperties).toBe(false);
+    expect(Object.keys(body.properties)).toEqual(["runId", "runAttempt"]);
+    expect(body.properties.runId.type).toBe("string");
+    expect(body.properties.runAttempt.maximum).toBe(2_147_483_647);
+    expect(Object.keys(operation.responses).sort()).toEqual(["201", "400", "401", "403", "409", "429", "502", "503"]);
+    const response = operation.responses["201"].content["application/json"].schema;
+    expect(response.additionalProperties).toBe(false);
+    expect(Object.keys(response.properties)).toEqual(["schemaVersion", "workspaceId", "targetId", "targetRevisionId", "graphRevisionId", "connectionId", "bindingId", "policySha256", "auditEventId", "observation"]);
+    expect(response.properties.observation.properties.kind.enum).toEqual(["verrail.fixed-ci-observation"]);
+  });
+
+  it("documents the separate verifier with identifiers only and idempotent result", () => {
+    const { spec } = loadSpecRoutes();
+    const operation = spec.paths["/api/workspaces/{workspaceId}/targets/{targetId}/github-fixed-ci-proofs"]?.post;
+    expect(operation["x-paperclip-authorization"]).toEqual({ actor: "board" });
+    const body = operation.requestBody.content["application/json"].schema;
+    expect(body.additionalProperties).toBe(false);
+    expect(Object.keys(body.properties)).toEqual(["runId", "runAttempt", "claimId", "workNodeId", "artifactRevisionId", "requirementId"]);
+    expect(operation.parameters).toContainEqual(expect.objectContaining({ name: "Idempotency-Key", in: "header", required: true }));
+    expect(Object.keys(operation.responses).sort()).toEqual(["200", "201", "400", "401", "403", "404", "409", "422", "429", "502", "503"]);
+    const response = operation.responses["201"].content["application/json"].schema;
+    expect(response.additionalProperties).toBe(false);
+    expect(response.properties.resourceType.enum).toEqual(["integration_run"]);
   });
 
   it("documents the 404 non-member gate on the Claude setup-token cancel route", () => {

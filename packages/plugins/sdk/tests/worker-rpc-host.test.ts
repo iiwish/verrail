@@ -157,6 +157,36 @@ describe("worker performAction context", () => {
   });
 });
 
+describe("channel reply read RPC", () => {
+  it.each([true, false])("dispatches the optional read hook and rejects legacy plugins: supported=%s", async supported => {
+    const stdin = new PassThrough(), stdout = new PassThrough(), lines = createInterface({ input: stdout });
+    const observation = { contractVersion: 1 as const, providerMessageId: "om_reply", parentProviderMessageId: "om_parent",
+      externalConversationId: "oc_chat", bodySha256: "a".repeat(64), createdAt: "2026-09-09T00:00:00.000Z" };
+    let reads = 0, sends = 0;
+    const plugin = definePlugin({ async setup() {}, async onChannelReply() { sends++; return { contractVersion: 1, providerMessageId: "sent" }; },
+      ...(supported ? { async onChannelReplyRead() { reads++; return observation; } } : {}) });
+    const worker = startWorkerRpcHost({ plugin, stdin, stdout });
+    const pending = new Map<string, (response: JsonRpcResponse) => void>();
+    let sequence = 0;
+    lines.on("line", line => { const message = parseMessage(line); if (isJsonRpcResponse(message)) { pending.get(String(message.id))?.(message); pending.delete(String(message.id)); } });
+    const call = (method: string, params: unknown) => {
+      const id = `read-${++sequence}`;
+      const result = new Promise<JsonRpcResponse>(resolve => { pending.set(id, resolve); });
+      stdin.write(serializeMessage(createRequest(method, params, id)));
+      return result;
+    };
+    try {
+      await call("initialize", { manifest: { id: "verrail.reply-read-test", apiVersion: 1, version: "1.0.0", displayName: "Reply Read Test",
+        description: "Test plugin", author: "Verrail", categories: ["automation"], capabilities: [], entrypoints: {} }, config: {}, databaseNamespace: null });
+      const response = await call("handleChannelReplyRead", { contractVersion: 1, workspaceId: "workspace", connectionId: "connection", connectorKey: "feishu", providerMessageId: "om_reply" });
+      if (supported) expect(response).toMatchObject({ result: observation });
+      else expect(response).toMatchObject({ error: { code: PLUGIN_RPC_ERROR_CODES.METHOD_NOT_IMPLEMENTED } });
+      expect(reads).toBe(supported ? 1 : 0);
+      expect(sends).toBe(0);
+    } finally { worker.stop(); lines.close(); stdin.destroy(); stdout.destroy(); }
+  });
+});
+
 describe("worker invocation scope propagation", () => {
   it("keeps overlapping company scopes local to each getData invocation", async () => {
     const hostToWorker = new PassThrough();

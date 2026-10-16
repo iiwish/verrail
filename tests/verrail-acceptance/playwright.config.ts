@@ -71,6 +71,7 @@ export default defineConfig({
       PAPERCLIP_DEPLOYMENT_MODE: "local_trusted",
       PAPERCLIP_DEPLOYMENT_EXPOSURE: "private",
       VERRAIL_CHAT_RUNTIME: "codex",
+      VERRAIL_CHAT_MODEL: "fixture-model",
       PATH: `${FIXTURE_BIN}${path.delimiter}${process.env.PATH ?? ""}`,
     },
   },

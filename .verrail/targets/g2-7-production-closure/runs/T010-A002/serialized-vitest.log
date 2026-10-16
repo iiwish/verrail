@@ -1,0 +1,55 @@
+
+> paperclip@ test:run:serialized /Users/iiwish/self/verrail
+> pnpm run preflight:workspace-links && pnpm --filter @paperclipai/plugin-sdk ensure-build-deps && node scripts/run-vitest-stable.mjs --mode serialized
+
+
+> paperclip@ preflight:workspace-links /Users/iiwish/self/verrail
+> node cli/node_modules/tsx/dist/cli.mjs scripts/ensure-workspace-package-links.ts
+
+
+> @paperclipai/plugin-sdk@1.0.0 ensure-build-deps /Users/iiwish/self/verrail/packages/plugins/sdk
+> node ../../../scripts/ensure-plugin-build-deps.mjs
+
+
+[test:run] serialized shard 1/1 running 146 of 146 suites
+
+[test:run] server/src/__tests__/access-routes-hidden-floor.test.ts
+
+ RUN  v4.1.10 /Users/iiwish/self/verrail
+
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  20:46:03
+   Duration  15.33s (transform 10.43s, setup 312ms, import 191ms, tests 14.44s, environment 0ms)
+
+
+[test:run] server/src/__tests__/access-routes-permissions-upgrade.test.ts
+
+ RUN  v4.1.10 /Users/iiwish/self/verrail
+
+ ❯ |@paperclipai/server| src/__tests__/access-routes-permissions-upgrade.test.ts (2 tests | 1 failed) 36621ms
+     × rejects owner self-lockout through the member route after the permissions upgrade 10536ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |@paperclipai/server| src/__tests__/access-routes-permissions-upgrade.test.ts > access routes permissions upgrade compatibility > rejects owner self-lockout through the member route after the permissions upgrade
+Error: Test timed out in 10000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ src/__tests__/access-routes-permissions-upgrade.test.ts:102:3
+    100|   });
+    101|
+    102|   it("rejects owner self-lockout through the member route after the pe…
+       |   ^
+    103|     const { company, owner } = await createCompanyWithOwner(db);
+    104|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  20:46:20
+   Duration  42.52s (transform 18.12s, setup 224ms, import 5.32s, tests 36.62s, environment 0ms)
+
+ ELIFECYCLE  Command failed with exit code 1.

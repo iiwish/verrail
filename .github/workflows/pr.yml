@@ -22,19 +22,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Block manual lockfile edits
-        if: >-
-          github.head_ref != 'chore/refresh-lockfile' &&
-          github.event.pull_request.user.login != 'dependabot[bot]'
-        run: |
-          # Diff the PR branch against its merge base so recent base-branch commits
-          # do not masquerade as changes made by the PR itself.
-          changed="$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")"
-          if printf '%s\n' "$changed" | grep -qx 'pnpm-lock.yaml'; then
-            echo "Do not commit pnpm-lock.yaml in pull requests. CI owns lockfile updates."
-            exit 1
-          fi
-
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
@@ -45,6 +32,10 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 24
+
+      - name: Block unapproved manual lockfile edits
+        id: lock_policy
+        run: node .github/scripts/pr-lockfile-policy.mjs
 
       - name: Validate Dockerfile deps stage
         run: node ./scripts/check-docker-deps-stage.mjs
@@ -83,10 +74,16 @@ jobs:
 
       - name: Validate dependency resolution when manifests change
         id: regen_lockfile
+        env:
+          CANDIDATE_LOCKFILE_PINNED: ${{ steps.lock_policy.outputs.pinned }}
         run: |
           changed="$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")"
           manifest_pattern='(^|/)package\.json$|^pnpm-workspace\.yaml$|^\.npmrc$|^pnpmfile\.(cjs|js|mjs)$|^patches/'
-          if printf '%s\n' "$changed" | grep -Eq "$manifest_pattern"; then
+          if [ "$CANDIDATE_LOCKFILE_PINNED" = 'true' ]; then
+            pnpm install --lockfile-only --ignore-scripts --frozen-lockfile
+            node .github/scripts/pr-lockfile-policy.mjs --verify-pinned
+            echo "regenerated=0" >> "$GITHUB_OUTPUT"
+          elif printf '%s\n' "$changed" | grep -Eq "$manifest_pattern"; then
             pnpm install --lockfile-only --ignore-scripts --no-frozen-lockfile
             echo "regenerated=1" >> "$GITHUB_OUTPUT"
           else

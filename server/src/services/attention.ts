@@ -66,6 +66,7 @@ import {
   decisionRetentionService,
   DEFAULT_DECISION_SHELF_DAYS,
 } from "./decision-retention.js";
+import { targetReadModelService } from "./target-read-model.js";
 
 const ATTENTION_SOURCE_KINDS: AttentionSourceKind[] = [
   "approval",
@@ -79,6 +80,7 @@ const ATTENTION_SOURCE_KINDS: AttentionSourceKind[] = [
   "failed_run",
   "budget_alert",
   "agent_error_alert",
+  "target",
 ];
 
 const SEVERITY_RANK: Record<AttentionSeverity, number> = {
@@ -94,12 +96,13 @@ const SOURCE_RANK: Record<AttentionSourceKind, number> = {
   blocker_attention: 2,
   budget_alert: 3,
   agent_error_alert: 4,
-  approval: 5,
-  decision: 6,
-  issue_thread_interaction: 7,
-  review: 8,
-  productivity_review: 9,
-  join_request: 10,
+  target: 5,
+  approval: 6,
+  decision: 7,
+  issue_thread_interaction: 8,
+  review: 9,
+  productivity_review: 10,
+  join_request: 11,
 };
 
 const PENDING_INTERACTION_STATUSES = ["pending"] as const;
@@ -1951,6 +1954,56 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
             images: [],
           },
         }));
+      }
+
+      // Native Target attention is projected directly from version-bound
+      // Verrail facts. It deliberately does not consult Issue or Heartbeat
+      // state, so Home can represent Target Outcome without a compatibility
+      // shadow record.
+      const targetAttention = await targetReadModelService(db).attentionItems(companyId);
+      for (const { model, attention } of targetAttention) {
+        for (const item of attention) {
+          const severity: AttentionSeverity = item.severity === "critical"
+            ? "critical"
+            : item.severity === "warning" ? "medium" : "low";
+          add(createItem({
+            companyId,
+            sourceKind: "target",
+            subject: {
+              kind: "target",
+              id: model.targetId,
+              companyId,
+              title: model.title,
+              identifier: null,
+              status: model.status,
+              href: `/${prefix}/targets/${model.targetId}/overview`,
+              metadata: {
+                attentionId: item.id,
+                attentionKind: item.kind,
+                targetRevisionId: model.activeTargetRevisionId,
+                workNodeId: item.workNodeId,
+                runId: item.runId,
+                resourceType: item.resourceType,
+                resourceId: item.resourceId,
+              },
+            },
+            whyNow: item.title,
+            decisionVerbs: decisionVerbs(
+              { id: "inspect", label: "Inspect", description: "Open the Target Workbench and resolve the current control." },
+              { id: "dismiss", label: "Dismiss", description: "Dismiss this Target attention row until its facts change." },
+            ),
+            inlineResolvable: false,
+            entryRule: "A native Target projection contains an unresolved or invalidated control.",
+            exitRule: "The underlying version-bound Target facts satisfy the control or the row is dismissed.",
+            dedupKey: `target:${model.targetId}:${item.id}`,
+            severity,
+            activityAt: item.createdAt,
+            createdAt: model.createdAt,
+            updatedAt: item.createdAt,
+            relatedIssue: null,
+            detail: { kind: "generic", summaryExcerpt: item.detail, images: [] },
+          }));
+        }
       }
 
       const deduped = new Map<string, AttentionItem>();

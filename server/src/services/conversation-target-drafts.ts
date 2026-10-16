@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import {
+  companies,
+  companyMemberships,
   verrailConversationContextBindings,
   verrailConversationMessages,
   verrailConversations,
@@ -21,6 +23,7 @@ import type {
   UpdateTargetCreationDraftInput,
 } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
+import { switchConversationContext } from "./conversation-context.js";
 
 type Actor = { principalType: "user" | "agent"; principalId: string };
 
@@ -324,6 +327,7 @@ export function targetCreationDraftService(db: Db) {
       if (current.draft.status === "canceled") throw conflict("Canceled Target draft cannot be confirmed");
       const idempotencyKey = current.draft.conversionIdempotencyKey
         ?? `target-draft:${draftId}:v${expectedRevisionNumber}`;
+      const [conversation] = await tx.select({ contextVersion: verrailConversations.contextVersion }).from(verrailConversations).where(and(eq(verrailConversations.workspaceId, workspaceId), eq(verrailConversations.id, conversationId)));
       const draft = current.draft.status === "converting"
         ? current.draft
         : await tx.update(verrailTargetCreationDrafts).set({
@@ -332,6 +336,7 @@ export function targetCreationDraftService(db: Db) {
             confirmedByPrincipalId: actor.principalId,
             confirmedAt: new Date(),
             conversionIdempotencyKey: idempotencyKey,
+            confirmationContextVersion: conversation?.contextVersion ?? null,
             updatedAt: new Date(),
           }).where(eq(verrailTargetCreationDrafts.id, draftId)).returning().then((rows) => rows[0]!);
       return { draft: mapDraft(draft, current.revision), replayed: false };
@@ -345,6 +350,12 @@ export function targetCreationDraftService(db: Db) {
       targetRevisionId: string;
       title: string;
     }) => db.transaction(async (tx) => {
+      const [existing] = await tx.select().from(verrailTargetCreationDrafts).where(and(eq(verrailTargetCreationDrafts.workspaceId, input.workspaceId), eq(verrailTargetCreationDrafts.conversationId, input.conversationId), eq(verrailTargetCreationDrafts.id, input.draftId))).for("update");
+      if (!existing) throw notFound("Target draft not found");
+      if (existing.status === "converted") {
+        if (existing.convertedTargetId !== input.targetId || existing.convertedTargetRevisionId !== input.targetRevisionId) throw conflict("Target draft already converted to another Target");
+        return existing;
+      }
       const draft = await tx.update(verrailTargetCreationDrafts).set({
         status: "converted",
         convertedTargetId: input.targetId,
@@ -374,6 +385,11 @@ export function targetCreationDraftService(db: Db) {
           href: `/targets/${input.targetId}/revisions/${input.targetRevisionId}`,
         },
       ]).onConflictDoNothing();
+      const [member] = await tx.select({ role: companyMemberships.membershipRole }).from(companyMemberships).innerJoin(companies, and(eq(companies.id, companyMemberships.companyId), eq(companies.status, "active"))).where(and(eq(companyMemberships.companyId, input.workspaceId), eq(companyMemberships.principalType, "user"), eq(companyMemberships.principalId, draft.confirmedByPrincipalId ?? ""), eq(companyMemberships.status, "active"))).for("share");
+      const [conversation] = await tx.select().from(verrailConversations).where(and(eq(verrailConversations.workspaceId, input.workspaceId), eq(verrailConversations.id, input.conversationId))).for("update");
+      if (member && member.role !== "viewer" && conversation?.status === "active" && conversation.currentTargetId === null && conversation.contextVersion === draft.confirmationContextVersion) {
+        await switchConversationContext(tx, { workspaceId: input.workspaceId, conversationId: input.conversationId, principalId: draft.confirmedByPrincipalId! }, { targetId: input.targetId, expectedContextVersion: conversation.contextVersion, idempotencyKey: `created-target-${draft.id}` });
+      }
       return draft;
     }),
   };

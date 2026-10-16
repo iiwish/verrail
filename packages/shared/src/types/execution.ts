@@ -1,6 +1,28 @@
 export const EXECUTION_SCHEMA_VERSION = 1 as const;
 
-export type RuntimeProfileV1 = "host_trusted";
+export interface RetryRunOutboxInputV1 {
+  eventId: string;
+  expectedAttemptCount: number;
+}
+
+export interface RetryRunOutboxResponseV1 {
+  schemaVersion: typeof EXECUTION_SCHEMA_VERSION;
+  runId: string;
+  eventId: string;
+  status: "pending";
+  replayed: boolean;
+}
+
+export interface RunOutboxFailureV1 {
+  eventId: string;
+  runId: string;
+  eventType: string;
+  attemptCount: number;
+  lastError: string | null;
+  createdAt: string;
+}
+
+export type RuntimeProfileV1 = "host_trusted" | "repository_sandbox";
 export type RunAttemptStatusV1 = "pending" | "running" | "cancel_requested" | "cancel_acknowledged" | "succeeded" | "failed" | "canceled" | "superseded";
 export type ExecutionLeaseStatusV1 = "offered" | "active" | "suspect" | "expired" | "released" | "revoked";
 export type RunEventTypeV1 = "claimed" | "heartbeat" | "started" | "progress" | "succeeded" | "failed" | "cancel_acknowledged" | "terminated";
@@ -72,6 +94,13 @@ export interface CreateRunAttemptResponseV1 {
   replayed: boolean;
 }
 
+export interface RunArtifactInputV1 {
+  title: string;
+  kind: "code_change" | "document" | "report";
+  contentHash: string;
+  contentRef: string;
+}
+
 export interface ReportRunEventInputV1 {
   leaseId: string;
   fencingToken: number;
@@ -79,6 +108,7 @@ export interface ReportRunEventInputV1 {
   eventType: RunEventTypeV1;
   emittedAt: string;
   payload?: Record<string, unknown>;
+  artifacts?: RunArtifactInputV1[];
   extendLeaseSeconds?: number;
 }
 

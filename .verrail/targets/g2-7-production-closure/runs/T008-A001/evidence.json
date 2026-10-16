@@ -1,0 +1,61 @@
+{
+  "target_id": "g2-7-production-closure",
+  "run_id": "T008-A001",
+  "task_id": "T008",
+  "status": "passed_for_dependency_progression",
+  "authority_matrix": [
+    { "commands": ["create_submission", "request_pull_request"], "authority": "agent_or_service", "ui": "inspectable without a board impersonation control" },
+    { "commands": ["record_review", "approve_action", "accept_submission"], "authority": "authenticated_human", "ui": "separate commands with visible immutable bindings" },
+    { "commands": ["create_graph_revision", "activate_graph_revision", "create_run", "execute_action"], "authority": "authoritative_route", "ui": "available only from server-projected command state" },
+    { "commands": ["reconcile_action"], "authority": "connector_reconciler", "ui": "automatic recovery state only" }
+  ],
+  "command_feedback_proof": {
+    "pending": "The invoked row and shared status region show pending until the route returns.",
+    "success": "Success renders only after Target detail and workspace facts are authoritatively refetched.",
+    "failure": "The server rejection code is preserved in an alert.",
+    "retry": "Retry reuses the exact command envelope and Idempotency-Key."
+  },
+  "binding_proof": [
+    "Submission hash and Review hash are displayed before Acceptance.",
+    "Action parameter hash and latest Approval id are displayed before approval or execution.",
+    "Every projected command displays its authoritative resource id when one exists."
+  ],
+  "projection_repairs": [
+    "Pending ActionRequest attention and approval use the canonical pending_approval state.",
+    "Only a non-empty draft GraphRevision is activatable; the initial empty revision is explicitly blocked."
+  ],
+  "browser_acceptance": {
+    "command": "VERRAIL_ACCEPTANCE_PORT=3244 pnpm test:e2e:verrail-acceptance",
+    "result": "6 passed",
+    "viewports": ["1440x900", "1024x768"],
+    "journey": "Create and confirm a Target through real UI, inspect blocked activation on the empty graph, verify keyboard focus and no overflow, observe native Home attention, and reopen Workbench.",
+    "page_errors": 0,
+    "console_errors": 0,
+    "failed_network_responses": 0,
+    "horizontal_overflow": false,
+    "screenshots": [
+      { "path": "tests/verrail-acceptance/screenshots/desktop-1440-target-workbench.png", "sha256": "10ecb31cc306a5a35f4a751195b3450afc021f024fcae376ba7d41f405770b0e" },
+      { "path": "tests/verrail-acceptance/screenshots/narrow-desktop-1024-target-workbench.png", "sha256": "7844e8770fcdf4749c2438352d3c2abd64fc957c74b962f498a8358956552e7e" }
+    ]
+  },
+  "verification": [
+    { "command": "focused component and projection suites", "status": "passed", "result": "5 files, 67 tests" },
+    { "command": "recursive locale parity", "status": "passed", "result": "en=3389, zh-CN=3389, missing=0" },
+    { "command": "pnpm -r typecheck", "status": "passed" },
+    { "command": "pnpm check:token-gates", "status": "passed" },
+    { "command": "pnpm --filter @paperclipai/db check:migrations", "status": "passed" },
+    { "command": "pnpm build", "status": "passed" },
+    { "command": "pnpm test:e2e:verrail-acceptance", "status": "passed", "result": "6 tests" },
+    { "command": "git diff --check", "status": "passed" }
+  ],
+  "review": {
+    "critical_or_high_findings": 0,
+    "recommendation": "accept_for_dependency_progression",
+    "final_product_authority": "not_granted",
+    "reference": ".verrail/targets/g2-7-production-closure/runs/T008-A001/logs/review.md"
+  },
+  "residual_risks": [
+    "Real Feishu delivery, real GitHub pull request and restart/fault acceptance remain T010 prerequisites.",
+    "A 1024px desktop uses a compact tab selector rather than the wide tab rail to avoid clipping."
+  ]
+}

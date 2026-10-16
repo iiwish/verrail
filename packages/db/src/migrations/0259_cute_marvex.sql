@@ -1,0 +1,6 @@
+ALTER TABLE "verrail_execution_leases" DROP CONSTRAINT "verrail_execution_leases_runtime_profile_check";--> statement-breakpoint
+ALTER TABLE "verrail_run_attempts" DROP CONSTRAINT "verrail_run_attempts_runtime_profile_check";--> statement-breakpoint
+ALTER TABLE "verrail_execution_leases" ADD CONSTRAINT "verrail_execution_leases_repository_executor_check" CHECK (("verrail_execution_leases"."runtime_profile" = 'repository_sandbox') = ("verrail_execution_leases"."executor_principal_id" = 'verrail-repository-runner'));--> statement-breakpoint
+ALTER TABLE "verrail_execution_leases" ADD CONSTRAINT "verrail_execution_leases_runtime_profile_check" CHECK ("verrail_execution_leases"."runtime_profile" in ('host_trusted', 'repository_sandbox'));--> statement-breakpoint
+ALTER TABLE "verrail_run_attempts" ADD CONSTRAINT "verrail_run_attempts_repository_executor_check" CHECK (("verrail_run_attempts"."runtime_profile" = 'repository_sandbox') = ("verrail_run_attempts"."executor_principal_id" = 'verrail-repository-runner'));--> statement-breakpoint
+ALTER TABLE "verrail_run_attempts" ADD CONSTRAINT "verrail_run_attempts_runtime_profile_check" CHECK ("verrail_run_attempts"."runtime_profile" in ('host_trusted', 'repository_sandbox'));

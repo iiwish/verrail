@@ -7,6 +7,7 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { AdapterRuntimeServiceReport } from "@paperclipai/adapter-utils";
+import { sanitizeControlPlaneEnv } from "@paperclipai/adapter-utils/control-plane-env";
 import type { Db } from "@paperclipai/db";
 import { executionWorkspaces, issueComments, issues, projectWorkspaces, workspaceRuntimeServices } from "@paperclipai/db";
 import {
@@ -675,7 +676,7 @@ export async function ensureServerWorkspaceLinksCurrent(
 }
 
 export function sanitizeRuntimeServiceBaseEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...baseEnv };
+  const env = sanitizeControlPlaneEnv(baseEnv);
   for (const key of Object.keys(env)) {
     if (key.startsWith("PAPERCLIP_")) {
       delete env[key];
@@ -878,7 +879,7 @@ async function executeProcess(input: {
     const child = spawn(input.command, input.args, {
       cwd: input.cwd,
       stdio: ["ignore", "pipe", "pipe"],
-      env: input.env ?? process.env,
+      env: sanitizeControlPlaneEnv(input.env ?? process.env),
     });
     const stdout = createProcessOutputCapture(input.maxStdoutBytes ?? DEFAULT_EXECUTE_PROCESS_OUTPUT_BYTES);
     const stderr = createProcessOutputCapture(input.maxStderrBytes ?? DEFAULT_EXECUTE_PROCESS_OUTPUT_BYTES);
@@ -4988,14 +4989,14 @@ function resolveWorkspaceCommandExecution(input: {
     renderTemplate(asString(input.command.cwd, "."), templateData),
     input.workspace.cwd,
   );
-  const env = {
+  const env = sanitizeControlPlaneEnv({
     ...sanitizeRuntimeServiceBaseEnv(process.env),
     ...input.adapterEnv,
     ...renderRuntimeServiceEnv({
       envConfig: parseObject(input.command.env),
       templateData,
     }),
-  } as Record<string, string>;
+  }) as Record<string, string>;
 
   return {
     name,
@@ -6213,7 +6214,7 @@ async function spawnLocalRuntimeService(input: StartLocalRuntimeServiceInput): P
   try {
     child = spawn(shell, ["-lc", command], {
       cwd: serviceCwd,
-      env,
+      env: sanitizeControlPlaneEnv(env),
       detached: process.platform !== "win32",
       // The service receives duplicate append-only file descriptors. Closing
       // Paperclip (or this parent handle below) cannot strand a request logger

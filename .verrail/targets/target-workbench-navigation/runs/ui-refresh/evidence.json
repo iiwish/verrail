@@ -1,0 +1,20 @@
+{
+  "target_id": "target-workbench-navigation",
+  "run_id": "ui-refresh",
+  "tests": [{"status": "passed", "files": 4, "tests": 36, "log": "/tmp/verrail-tabs-tests-final.log", "sha256": "1262296c0bf7975a516e67025c1db30b6ada6bc034a2925f8294e381aee2fe79"}],
+  "build": {"status": "passed", "log": "/tmp/verrail-tabs-build-final.log", "notes": "Existing font resolution, CSS highlight pseudo-class, and chunk-size warnings remain."},
+  "typecheck": {"status": "passed", "log": "/tmp/verrail-tabs-typecheck-final.log"},
+  "lint": {"status": "passed", "scope": "token gates and changed-source whitespace"},
+  "manual_notes": [
+    "English and Chinese keys match for the added target UI sections.",
+    "Desktop screenshot verified the graph, three primary tabs, collapsed attention, and distinct external approval control.",
+    "Graph node selection exposed its bound run; opening runs retained attempt, lease, retry, and cancellation surfaces.",
+    "A real stored artifact loaded as plain text; no markup execution or domain mutation was performed.",
+    "Activity preserved failures and unknown events while grouping 2845 routine or repeated records in the inspected local target.",
+    "At 390 CSS pixels the document width was 382 pixels, with no page-level horizontal overflow; graph geometry stays within its pannable viewport.",
+    "The existing dev server's HMR session failed during structural hot updates. An independent built-UI preview at localhost:3271 passed the final checks with no console errors and uses the existing API without restarting it.",
+    "Temporary validation logs are local references; command results are preserved in receipt.json."
+  ],
+  "missing": ["Complete repository-wide test result", "Independent human review and ship approval"],
+  "ship_status": "not_approved"
+}

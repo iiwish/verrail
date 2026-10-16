@@ -61,6 +61,7 @@ export const sessionCodec: AdapterSessionCodec = {
 };
 
 export { execute } from "./execute.js";
+export { createOpenCodeHttpClient } from "./http-client.js";
 export { listOpenCodeSkills, syncOpenCodeSkills } from "./skills.js";
 export { testEnvironment } from "./test.js";
 export {

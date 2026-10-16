@@ -1,0 +1,53 @@
+{
+  "task_id": "T023",
+  "attempt_id": "T023-A002",
+  "status": "accepted_for_dependency_progression",
+  "observed_at": "2026-09-05T07:11:00Z",
+  "authority": "User confirmed unlock and continuation after at-action connection activation request. Test sends and configuration changes were performed by Codex on the user's behalf, not independent human acceptance.",
+  "fixes": [
+    "Added board-only, workspace-scoped connection-health data diagnostics because registry readiness does not report WebSocket connectivity.",
+    "Fixed Secret resolution to use positional configuration paths, matching bindings persisted by the real settings UI. No secret permission bypass or new credential was introduced."
+  ],
+  "tdd": {
+    "red": "Scoped diagnostics test failed before workspaceHealth existed. Six connector tests failed when asserting the real positional Secret binding contract.",
+    "green": ["Feishu package: 12 tests passed", "Host configuration contract: 3 tests passed, including actual binding extractor parity after array reordering", "Feishu package build passed"]
+  },
+  "live": {
+    "base_url": "http://127.0.0.1:3270",
+    "workspace_id": "86679997-3f3a-4477-a2fa-d4da812140ae",
+    "plugin_id": "76346699-baa4-42af-b169-6a7911658b83",
+    "connection_id": "xirang-g27",
+    "application_id": "cli_a94a4cb0bafadcd4",
+    "secret_reference_id": "9288895a-65cc-4476-ba7e-31ed5cef9a95",
+    "transport": "long_connection",
+    "status": "connected",
+    "identity": "Observed native Feishu sender was mapped through the settings UI to the existing active local-board Workspace owner. No account was fabricated.",
+    "identity_discovery": "First labeled direct message was unmapped; only its provider user ID appeared in diagnostics and no conversation was persisted.",
+    "conversation_id": "52ec4656-a827-5592-8d12-b6fc694a5c0e",
+    "external_conversation_id": "oc_056631dc9f56013e5b9b09b240e480db",
+    "ordinary_message": {
+      "provider_event_id": "9e9b7766b6a3b210ec9290833190c21a",
+      "provider_message_id": "om_x100b668fb46f18a4c2c5c23d16bcefd",
+      "received_at": "2026-09-05T07:07:22.747787Z",
+      "drafts_after_ingress": 0
+    },
+    "creation_command": {
+      "provider_event_id": "cbb5301e24b86378f7dfc5bfc32bb49d",
+      "provider_message_id": "om_x100b668fb3ad20a8c384ae3532b450b",
+      "draft_id": "d033f001-039e-5944-a862-3ac3732d5c69",
+      "draft_revision_id": "dd91f8af-4100-5d59-82e6-9cac9b666106",
+      "reply_provider_message_id": "om_x100b668fb3bb60a0debc303f6376057",
+      "received_at": "2026-09-05T07:08:06.533143Z",
+      "native_reply_observed": true
+    },
+    "final_counters": { "received": 2, "failed": 0 },
+    "diagnostic_sources": ["Native Feishu and Chrome CUA accessibility state", "Read-only application conversation/draft/data APIs", "Read-only SELECT of scoped verrail_channel_events rows"],
+    "database_mutations_outside_product": false
+  },
+  "remaining": [
+    "T024: Web Chat exposes the conversation but not its existing channel draft; the New Target dialog would create a replacement. The dialog was cancelled without mutation.",
+    "Full Vitest remains unproven; focused results do not substitute for the release gate.",
+    "T010 native execution, CI, GitHub effect, independent review and final human gates remain open."
+  ],
+  "review": "Self-reviewed scoped technical progression only; not independent assurance, G2 Acceptance or a ship record."
+}
